@@ -1,0 +1,8 @@
+{
+  "error" : {
+    "code" : "file_above_max_size",
+    "message" : "Invalid file 'image[0]': maximum file size exceeded. Expected a file with maximum size 50MB, but got a file with size 55.45MB.",
+    "param" : "image[0]",
+    "type" : "invalid_request_error"
+  }
+}

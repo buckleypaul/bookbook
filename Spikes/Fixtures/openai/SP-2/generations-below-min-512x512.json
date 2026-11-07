@@ -1,0 +1,8 @@
+{
+  "error" : {
+    "code" : "invalid_value",
+    "message" : "Invalid size '512x512'. Requested resolution is below the current minimum pixel budget.",
+    "param" : "size",
+    "type" : "image_generation_user_error"
+  }
+}

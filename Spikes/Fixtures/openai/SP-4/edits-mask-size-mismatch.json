@@ -1,0 +1,8 @@
+{
+  "error" : {
+    "code" : "invalid_mask_image_format",
+    "message" : "Invalid mask image format - mask size does not match image size",
+    "param" : null,
+    "type" : "image_generation_user_error"
+  }
+}

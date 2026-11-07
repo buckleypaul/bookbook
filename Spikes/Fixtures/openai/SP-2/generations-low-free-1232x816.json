@@ -1,0 +1,27 @@
+{
+  "background" : "opaque",
+  "created" : 1794094470,
+  "data" : [
+    {
+      "b64_json" : "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAQKADAAQAAAABAAAAQAAAAABGUUKwAAAAy0lEQVRoBe2ZsQ2EQADD4Ge9YamY6TdICuRUpjW6CFtXcT/Pc5HP+77k8dcPPX1wuB8wkBwnLBD1DKAFBpLjhAWingG0wEBynLBA1DOAFhhIjhMWiHoG0AIDyXHCAlHPAFpgIDlOWCDqGUALDCTHCQtEPQNogYHkOHGfc+ILX6H/B4pB70ARhGML4IrLgAWKIBxbAFdcBixQBOHYArjiMmCBIgjHFsAVlwELFEE4tgCuuAxYoAjCsQVwxWXAAkUQji2AKy4DFiiCcPwHbkoI16p+DKcAAAAASUVORK5CYII=",
+      "generation_id" : "337b7558-1218-45bc-be75-efcf09291902"
+    }
+  ],
+  "output_format" : "png",
+  "quality" : "low",
+  "safety_identifier" : null,
+  "size" : "1232x816",
+  "usage" : {
+    "input_tokens" : 26,
+    "input_tokens_details" : {
+      "image_tokens" : 0,
+      "text_tokens" : 26
+    },
+    "output_tokens" : 133,
+    "output_tokens_details" : {
+      "image_tokens" : 133,
+      "text_tokens" : 0
+    },
+    "total_tokens" : 159
+  }
+}

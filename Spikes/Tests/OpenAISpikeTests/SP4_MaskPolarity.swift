@@ -128,3 +128,51 @@ extension LiveProviderTests {
                               model: model, estimateUSD: 0.03, fixture: "edits-mask-size-mismatch")
     }
 }
+
+extension LiveProviderTests {
+    /// SP-4 follow-up: mask B (three transparent quadrants) changed every quadrant, so polarity is confirmed with
+    /// a second single-quadrant mask. "Changed" uses colour distance (> 60) as well as the magenta fraction.
+    @Test(.timeLimit(.minutes(5)))
+    func SP4b_maskPolaritySecondQuadrant() async throws {
+        let ctx = try LiveContext.make("SP-4")
+        let base = TestImages.quadrants(size: 1024, colors: quadrantColors)
+        let prompt = "Fill the editable area with bright magenta; leave everything else unchanged."
+        let maskC = TestImages.mask(size: 1024, transparent: [.bottomRight])
+        let form = editForm(prompt: prompt, size: "1024x1024", images: [("base.png", base)], mask: maskC)
+        let c = try await ctx.perform(.multipart("/images/edits", form), tag: "maskC-bottomRight-transparent",
+                                      model: SpikeModels.image, estimateUSD: 0.015,
+                                      fixture: "edits-maskC-bottomRight-transparent", keepRealImage: true)
+        #expect(c?.status == 200)
+        guard let c, let img = firstImage(c) else { return }
+        let stats = analyse(spike: "SP-4", tag: "maskC", image: img)
+        let changed = Quadrant.allCases.filter { (stats[$0]?.distance ?? 0) > 60 }.map(\.rawValue)
+        for q in Quadrant.allCases {
+            let (x0, y0) = (q == .topLeft || q == .bottomLeft ? 0 : img.width / 2, q == .topLeft || q == .topRight ? 0 : img.height / 2)
+            var sum = 0, n = 0
+            for y in stride(from: y0 + 50, to: y0 + img.height / 2 - 50, by: 16) {
+                for x in stride(from: x0 + 50, to: x0 + img.width / 2 - 50, by: 16) { sum += Int(img.alpha(x: x, y: y)); n += 1 }
+            }
+            result("SP-4", "maskC.alpha.\(q.rawValue)", sum / max(n, 1))
+        }
+        result("SP-4", "maskC.changed-quadrants", changed.joined(separator: ","))
+        result("SP-4", "maskC.verdict", verdict(stats, transparent: [.bottomRight]).rawValue)
+    }
+}
+
+extension LiveProviderTests {
+    /// SP-4 follow-up: does the model still see the original pixels under the transparent mask area?
+    /// Asks it to keep the area's colour and add a small white star. Yellow comes back → it sees the pixels.
+    @Test(.timeLimit(.minutes(5)))
+    func SP4c_maskAreaContentVisible() async throws {
+        let ctx = try LiveContext.make("SP-4")
+        let base = TestImages.quadrants(size: 1024, colors: quadrantColors)
+        let prompt = "Inside the editable area, draw one small white star in its centre. Keep the area's existing background colour exactly as it is."
+        let maskC = TestImages.mask(size: 1024, transparent: [.bottomRight])
+        let form = editForm(prompt: prompt, size: "1024x1024", images: [("base.png", base)], mask: maskC)
+        let c = try await ctx.perform(.multipart("/images/edits", form), tag: "maskC-keep-colour-add-star",
+                                      model: SpikeModels.image, estimateUSD: 0.015,
+                                      fixture: "edits-maskC-keep-colour-add-star")
+        guard let c, let img = firstImage(c) else { return }
+        _ = analyse(spike: "SP-4", tag: "maskC-star", image: img)
+    }
+}

@@ -28,7 +28,7 @@ enum SpikeModels {
 
 /// Prints one observation line.
 func result(_ spike: String, _ key: String, _ value: Any) {
-    let text = String(describing: value).replacingOccurrences(of: "\n", with: " ")
+    let text = redactMaskedKeys(String(describing: value)).replacingOccurrences(of: "\n", with: " ")
     print("SPIKE-RESULT \(spike) \(key): \(text)")
 }
 

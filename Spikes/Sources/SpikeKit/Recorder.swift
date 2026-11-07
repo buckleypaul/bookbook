@@ -13,6 +13,7 @@ extension FixtureRecorder {
     ].compactMap { try? NSRegularExpression(pattern: $0) }
 
     private static let idReplacements: [(NSRegularExpression, String)] = [
+        (maskedKeyPattern, "sk-REDACTED"),
         ("org-[A-Za-z0-9]{6,}", "org-PLACEHOLDER"), ("proj_[A-Za-z0-9]{6,}", "proj_PLACEHOLDER"),
     ].compactMap { pattern, template in
         (try? NSRegularExpression(pattern: pattern)).map { ($0, template) }

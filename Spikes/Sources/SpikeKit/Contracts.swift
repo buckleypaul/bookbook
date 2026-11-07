@@ -147,6 +147,15 @@ public struct URLSessionHTTPClient: HTTPClient {
     }
 }
 
+/// OpenAI echoes a masked key in 401 bodies (`sk-proj-****…abcd`, last 4 characters visible).
+let maskedKeyPattern = #"sk-[A-Za-z0-9_-]*\*{4,}[A-Za-z0-9_-]{0,8}"#
+
+/// Replaces provider-masked key echoes (e.g. in a 401 message) with `sk-REDACTED`, so not even the
+/// visible key suffix reaches stdout or a fixture.
+public func redactMaskedKeys(_ text: String) -> String {
+    text.replacingOccurrences(of: maskedKeyPattern, with: "sk-REDACTED", options: .regularExpression)
+}
+
 /// Returns a copy with `authorization` and `x-goog-api-key` (any case) replaced by "<redacted>".
 public func redactedHeaders(_ headers: [String: String]) -> [String: String] {
     var out = headers

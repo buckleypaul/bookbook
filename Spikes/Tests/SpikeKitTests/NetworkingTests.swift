@@ -149,3 +149,13 @@ import Testing
         #expect(!"\(redactedHeaders(mock.requests[0].headers))".contains(key.value))
     }
 }
+
+@Suite struct MaskedKeyTests {
+    @Test func redactsProviderMaskedKeyEcho() {
+        let masked = "sk-" + "proj-" + String(repeating: "*", count: 40) + "Ab1z"
+        let text = "Incorrect API key provided: \(masked). You can find…"
+        let out = redactMaskedKeys(text)
+        #expect(out == "Incorrect API key provided: sk-REDACTED. You can find…")
+        #expect(!out.contains("Ab1z"))
+    }
+}

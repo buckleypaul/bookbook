@@ -1,9 +1,53 @@
-.DS_Store
-.build/
-DerivedData/
-*.xcuserstate
-xcuserdata/
+# --- Secrets: never commit (implementation-plan.md §2.2) ---
+.env
+.env*
 *.p8
 *.p12
-.env
-.env.*
+*.pem
+*.key
+*.mobileprovision
+*.provisionprofile
+*.cer
+AuthKey_*.p8
+
+# --- Xcode ---
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcresult
+
+# --- Swift Package Manager ---
+.build/
+.swiftpm/
+Package.resolved.orig
+
+# --- Release artefacts (Phase 15) ---
+*.dmg
+*.zip
+dist/
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# --- Editors and tools ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Claude Code local state (CLAUDE.md is tracked) ---
+.claude/*.lock
+.claude/settings.local.json
+.claude/worktrees/

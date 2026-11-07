@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash -p
 # Runs the live provider tests in fixture-record mode (implementation-plan.md §2.2).
 #
 #   scripts/record-fixtures.sh [--package DIR] [openai|gemini] [filter]

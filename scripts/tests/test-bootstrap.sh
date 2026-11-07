@@ -65,6 +65,43 @@ out="$(cd "$r" && scripts/secret-scan.sh 2>&1)" && st=0 || st=$?
 if [ "$st" -eq 1 ]; then ok "full scan fails on a tracked key"; else bad "full scan fails on a tracked key (exit $st)"; fi
 case "$out" in *"$fake_google"*) bad "full scan output does not echo the key" ;; *fixture.json:1*) ok "full scan names file:line without the key" ;; *) bad "full scan names file:line" ;; esac
 
+echo "scan edge cases (staged)"
+r="$(new_repo edge)"
+commit_blocked() { # $1 = label; expects the staged change to be refused
+  if git -C "$r" commit -qm "$1" >/dev/null 2>&1; then bad "$1"; git -C "$r" reset -q --hard HEAD~1; else ok "$1"; fi
+  git -C "$r" reset -q --hard HEAD; git -C "$r" clean -qfd
+}
+echo base > "$r/base.txt"; ln -s base.txt "$r/lnk"
+git -C "$r" add -A; git -C "$r" commit -qm base >/dev/null
+rm "$r/lnk"; printf '%s\n' "$fake_openai" > "$r/lnk"; git -C "$r" add lnk
+commit_blocked "symlink changed to a file with a key is blocked"
+printf 'x\000y\n%s\n' "$fake_google" > "$r/blob.bin"; git -C "$r" add blob.bin
+commit_blocked "key in a file with NUL bytes is blocked"
+printf '%s\n' "$fake_openai" > "$r/1:x"; git -C "$r" add "1:x"
+commit_blocked "key in a file named with a colon is blocked"
+printf 'see the %s\n' "$fake_openai" > "$r/part.txt"; git -C "$r" add part.txt; printf 'clean\n' > "$r/part.txt"
+commit_blocked "staged key is blocked even if the work tree is clean"
+for word in disk mask task; do
+  printf 'uses the %s-arbitration-framework-helper-v2\n' "$word" > "$r/fp-$word.md"
+done
+git -C "$r" add fp-*.md
+if git -C "$r" commit -qm fp >/dev/null 2>&1; then ok "words like mask-/disk-/task- are not flagged"; else bad "words like mask-/disk-/task- are not flagged"; fi
+git -C "$r" reset -q --hard HEAD; git -C "$r" clean -qfd
+
+echo "merges, worktrees and old branches"
+git -C "$r" checkout -qb lane
+printf '%s\n' "$fake_openai" > "$r/lane.txt"; git -C "$r" add lane.txt; git -C "$r" commit -q --no-verify -m lane-leak
+git -C "$r" checkout -q -
+echo other > "$r/other.txt"; git -C "$r" add other.txt; git -C "$r" commit -qm other >/dev/null
+if git -C "$r" merge -q --no-edit lane >/dev/null 2>&1; then bad "merge bringing in a key is blocked"; git -C "$r" reset -q --hard HEAD~1; else ok "merge bringing in a key is blocked"; git -C "$r" merge --abort 2>/dev/null || true; fi
+git -C "$r" worktree add -q "$work/edge-wt" -b wt >/dev/null 2>&1
+printf '%s\n' "$fake_google" > "$work/edge-wt/wt.txt"; git -C "$work/edge-wt" add wt.txt
+if git -C "$work/edge-wt" commit -qm wt >/dev/null 2>&1; then bad "hook runs in a linked worktree"; else ok "hook runs in a linked worktree"; fi
+git -C "$r" checkout -q --orphan old; git -C "$r" rm -rq --cached . >/dev/null; rm -rf "$r/scripts" "$r/.githooks"
+echo old > "$r/old.txt"; git -C "$r" add old.txt
+out="$(git -C "$r" commit -qm old 2>&1)" && st=0 || st=$?
+if [ "$st" -ne 0 ] && [[ "$out" == *"missing"* ]]; then ok "hook fails closed on a checkout without the scanner"; else bad "hook fails closed on a checkout without the scanner"; fi
+
 echo "this repo"
 if (cd "$repo_root" && scripts/secret-scan.sh >/dev/null 2>&1); then ok "repo is clean"; else bad "repo is clean"; fi
 
@@ -85,6 +122,13 @@ mkdir -p "$r/Pkg"; printf '// swift-tools-version: 6.0\n' > "$r/Pkg/Package.swif
 sed -i '' 's/service="openai-api-key"/service="bookbook-selftest-no-such-item"/' "$r/scripts/live-tests.sh"
 out="$(cd "$r" && scripts/live-tests.sh --package Pkg openai 2>&1)" && st=0 || st=$?
 if [ "$st" -eq 1 ] && [[ "$out" == *"no Keychain item"* ]]; then ok "missing Keychain item fails before any build"; else bad "missing Keychain item fails before any build"; fi
+for p in ../Pkg Pkg/sub .selftest; do
+  out="$(cd "$r" && scripts/live-tests.sh --package "$p" openai 2>&1)" && st=0 || st=$?
+  if [ "$st" -eq 2 ]; then ok "--package '$p' is rejected"; else bad "--package '$p' is rejected (exit $st)"; fi
+done
+# bash -p: an exported function named swift or security must not be picked up.
+out="$(cd "$r" && env 'BASH_FUNC_security%%=() { echo HIJACKED; }' scripts/live-tests.sh --package Pkg openai 2>&1)" || true
+case "$out" in *HIJACKED*) bad "exported functions are ignored" ;; *) ok "exported functions are ignored" ;; esac
 
 echo
 echo "$pass passed, $fail failed"

@@ -1,49 +1,48 @@
 #!/usr/bin/env bash
 # Secret scan (implementation-plan.md §2.2).
 #
-#   scripts/secret-scan.sh            scan every tracked file (what CI runs)
-#   scripts/secret-scan.sh --staged   scan only the staged changes (what the pre-commit hook runs)
+#   scripts/secret-scan.sh            scan every tracked file in the work tree (what CI runs)
+#   scripts/secret-scan.sh --staged   scan the index, i.e. exactly what the next commit will hold
+#                                     (what the pre-commit and pre-merge-commit hooks run)
 #
-# It prints the file and line number of each hit, never the matching text.
-# Exit codes: 0 clean, 1 a possible key was found, 2 usage error.
+# Binary files are scanned as text. It prints the file and line number of each hit, never the
+# matching text. Exit codes: 0 clean, 1 a possible key was found, 2 usage or scan error.
 set -euo pipefail
 set +x +v
 
 # OpenAI keys (sk-…, including sk-proj-… and sk-svcacct-…) and Google API keys (AIza…).
-PATTERN='sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}'
+# The sk- pattern needs a left boundary so words like "mask-…" or "disk-…" don't match.
+PATTERN='(^|[^A-Za-z0-9_-])sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}'
 
 mode="${1:-all}"
+case "$mode" in
+  all|--all) where=() ;;
+  --staged)  where=(--cached) ;;
+  *) echo "usage: $0 [--all|--staged]" >&2; exit 2 ;;
+esac
+
 cd "$(git rev-parse --show-toplevel)"
 
-found=0
-report() { # $1 = where; never print the matched text
-  echo "secret-scan: possible API key in $1" >&2
-  found=1
-}
+# Only "path:line" leaves the subshell. git grep exits 0 on a match, 1 on none, >1 on error.
+set +e
+hits="$(git grep ${where[@]+"${where[@]}"} --text -n -E -e "$PATTERN" -- . | cut -d: -f1,2 | sort -u
+        exit "${PIPESTATUS[0]}")"
+status=$?
+set -e
 
-case "$mode" in
-  all|--all)
-    # Every tracked file, including __Snapshots__ and fixtures. -I skips binary files.
+case "$status" in
+  0)
     while IFS= read -r hit; do
-      report "$hit"
-    done < <(git grep -I -n -E -o "$PATTERN" -- . | cut -d: -f1,2 | sort -u)
+      echo "secret-scan: possible API key in $hit${where[@]+ (staged)}" >&2
+    done <<< "$hits"
+    echo "secret-scan: refusing. Remove the key, and rotate it if it was real." >&2
+    exit 1
     ;;
-  --staged)
-    # The staged contents of every added, copied, modified or renamed file.
-    while IFS= read -r -d '' path; do
-      while IFS= read -r line; do
-        report "$path:$line (staged)"
-      done < <(git show ":$path" | LC_ALL=C grep -I -n -E -o "$PATTERN" | cut -d: -f1 | sort -un || true)
-    done < <(git diff --cached --name-only -z --diff-filter=ACMR)
+  1)
+    echo "secret-scan: clean ($mode)"
     ;;
   *)
-    echo "usage: $0 [--all|--staged]" >&2
+    echo "secret-scan: git grep failed (exit $status); treating as not clean" >&2
     exit 2
     ;;
 esac
-
-if [ "$found" -ne 0 ]; then
-  echo "secret-scan: refusing. Remove the key, and rotate it if it was real." >&2
-  exit 1
-fi
-echo "secret-scan: clean ($mode)"

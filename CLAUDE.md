@@ -18,7 +18,7 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
   OPENAI_API_KEY="$(security find-generic-password -a "$USER" -s openai-api-key -w)" \
     BOOKBOOK_LIVE_TESTS=1 swift test --skip-build --filter LiveProviderTests
   ```
-  Don't run that by hand, and don't write other scripts that read the key. No `set -x`, no `env` dumps, no echoing. Live tests never start child processes.
+  `--package` takes a folder name at the repo root (`BookBookKit` by default, `Spikes` in Phase 0). Live suites must be named `LiveProviderTests`, with test names starting with the spike ID (e.g. `SP4_maskPolarity`), or the filter matches nothing. Don't run the command above by hand, and don't write other scripts that read the key. No `set -x`, no `env` dumps, no echoing. Live tests never start child processes.
 - **Never** print, log, `echo`, write to a file, put in a fixture, commit, or paste a key into chat. Never run `security … -w` on its own, outside `$(…)`. To check that an item exists, run `security find-generic-password -a "$USER" -s <service> >/dev/null 2>&1` (no `-w`).
 - Tests read the key only from `ProcessInfo.environment`. It goes straight to the HTTP client and into nothing that can appear in a failure message.
 - `BBNet` always redacts `Authorization` and `x-goog-api-key` in its own diagnostics. Request and response bodies are never logged.
@@ -30,8 +30,8 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
 
 ## Secret scanning
 
-- After cloning, run `scripts/install-hooks.sh` once. It sets `core.hooksPath` to `.githooks/`, whose `pre-commit` runs `scripts/secret-scan.sh --staged`.
-- `scripts/secret-scan.sh` (no argument) scans every tracked file, including `__Snapshots__` and fixtures. CI runs it. It looks for `sk-[A-Za-z0-9_-]{20,}` (which covers `sk-proj-…`) and `AIza[0-9A-Za-z_-]{35}`, and it reports `file:line` without printing the match.
+- After cloning, run `scripts/install-hooks.sh` once. It copies `.githooks/pre-commit` into the clone's shared hooks folder as both `pre-commit` and `pre-merge-commit`, so it covers every branch, merge and worktree. It runs `scripts/secret-scan.sh --staged` (the whole index), and it fails closed on a checkout that has no scanner.
+- `scripts/secret-scan.sh` (no argument) scans every tracked file, including `__Snapshots__` and fixtures, with binary files read as text. CI runs it. It looks for `sk-[A-Za-z0-9_-]{20,}` (which covers `sk-proj-…`) and `AIza[0-9A-Za-z_-]{35}`, and it reports `file:line` without printing the match.
 - Never commit a key-shaped string, even a fake one. Tests that need one build it at runtime (see `scripts/tests/test-bootstrap.sh`).
 - `scripts/tests/test-bootstrap.sh` is the offline self-test for the hook and scripts.
 

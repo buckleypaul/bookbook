@@ -1,6 +1,13 @@
-#!/usr/bin/env bash
-# Pre-commit secret scan (implementation-plan.md §2.2). Installed by scripts/install-hooks.sh.
-# Never bypass it with --no-verify.
-set -euo pipefail
-set +x +v
-exec "$(git rev-parse --show-toplevel)/scripts/secret-scan.sh" --staged
+#!/bin/sh
+# Secret-scan hook (implementation-plan.md §2.2). scripts/install-hooks.sh copies this file into
+# the repo's shared hooks folder as both pre-commit and pre-merge-commit, so it applies to every
+# branch and worktree. It fails closed when the checkout has no scanner (e.g. a branch made before
+# the bootstrap was merged). Never bypass it with --no-verify.
+top="$(git rev-parse --show-toplevel)" || exit 1
+scan="$top/scripts/secret-scan.sh"
+if [ ! -x "$scan" ]; then
+  echo "secret-scan hook: $scan is missing, so nothing can be scanned. Refusing to commit." >&2
+  echo "secret-scan hook: rebase onto a main that includes scripts/secret-scan.sh." >&2
+  exit 1
+fi
+exec "$scan" --staged

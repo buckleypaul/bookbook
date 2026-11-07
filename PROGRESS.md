@@ -8,7 +8,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
-| 1a | Bootstrap (gitignore, hooks, key scripts) | not started | | | | Repo and remote were created on 2026-11-07 |
+| 1a | Bootstrap (gitignore, hooks, key scripts) | in progress | `phase-1a-bootstrap` | | | Repo and remote were created on 2026-11-07 |
 | 0 | Live-API spikes and fixtures | not started | | | | Gemini spikes wait for the key |
 | 1b | Project setup and CI | not started | | | | |
 | 2 | Thin vertical slice (M1) | not started | | | | |

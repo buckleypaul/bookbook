@@ -8,8 +8,8 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
-| 1a | Bootstrap (gitignore, hooks, key scripts) | awaiting hand checks | `phase-1a-bootstrap` | [#1](https://github.com/buckleypaul/bookbook/pull/1) | $0.00 | Repo and remote were created on 2026-11-07 |
-| 0 | Live-API spikes and fixtures | not started | | | | Gemini spikes wait for the key |
+| 1a | Bootstrap (gitignore, hooks, key scripts) | done | `phase-1a-bootstrap` | [#1](https://github.com/buckleypaul/bookbook/pull/1) | $0.00 | Repo and remote were created on 2026-11-07 |
+| 0 | Live-API spikes and fixtures | in progress | `phase-0-spikes` | | | OpenAI + local spikes; Gemini spikes (§4.2) wait for the key |
 | 1b | Project setup and CI | not started | | | | |
 | 2 | Thin vertical slice (M1) | not started | | | | |
 | 3 | Storage and library | not started | | | | |
@@ -34,7 +34,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 ### Phase 1a — Bootstrap (2026-11-07)
 
-**Status:** awaiting hand checks · branch `phase-1a-bootstrap` · PR #1 · live spend $0.00 (no provider calls; a zero-test dry run of `live-tests.sh` and `record-fixtures.sh` against a throwaway package confirmed the build-then-inline path).
+**Status:** done (hand checks passed, PR #1 squash-merged 2026-11-07) · branch `phase-1a-bootstrap` · PR #1 · live spend $0.00 (no provider calls; a zero-test dry run of `live-tests.sh` and `record-fixtures.sh` against a throwaway package confirmed the build-then-inline path).
 
 **Built:** `.gitignore`; `scripts/secret-scan.sh` (full tree or `--staged` index, binary read as text, prints `file:line` only, fails closed on grep errors); `.githooks/pre-commit` plus `scripts/install-hooks.sh` (installed as pre-commit **and** pre-merge-commit in the shared hooks dir, fails closed without a scanner); `scripts/live-tests.sh` / `scripts/record-fixtures.sh` (§2.2 shape, `bash -p`, absolute tool paths, refuse tracing); `scripts/tests/test-bootstrap.sh` (28 offline checks); repo `CLAUDE.md` with the key rules.
 
@@ -50,3 +50,13 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 - The secret scan doesn't decode UTF-16 files (e.g. `Localizable.strings`). Revisit if the app ever stores such files with secrets nearby. GitHub push protection is the backstop.
 - Phase 1b: run `scripts/secret-scan.sh` in CI, add branch protection, and extend `CLAUDE.md` with the module map.
 - `live-tests.sh` exits 0 when no test matches the filter (SwiftPM prints "No matching test cases were run"). Phase 0 could make the spend guard or the suite report counts.
+
+### Phase 0 — Live-API spikes and fixtures (2026-11-07)
+
+**Status:** in progress · branch `phase-0-spikes`.
+
+**Assumptions (plan defaults, easy to overrule):**
+- No `gemini-api-key` Keychain item exists, so §4.2 (SG-1…SG-8) is deferred to Phase 13 (or whenever the key appears). This phase runs §4.1 (SP-1…SP-7) and §4.3 (SL-1…SL-3).
+- The plan names both `spikes/REPORT.md` and `Spikes/Fixtures/`; on case-insensitive APFS these are the same folder, so everything lives under `Spikes/` (`Spikes/REPORT.md`).
+- `ModelCatalog.json` / `PriceList.json` don't exist until Phase 1b creates the resource folders, so this phase writes their first real values to `Spikes/Seeds/` for 1b to move in.
+- Spike tests use Swift Testing (`@Suite(.serialized) struct LiveProviderTests` in `OpenAISpikeTests`); observations are printed as `SPIKE-RESULT` lines and copied into the report.

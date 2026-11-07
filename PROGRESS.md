@@ -9,7 +9,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
 | 1a | Bootstrap (gitignore, hooks, key scripts) | done | `phase-1a-bootstrap` | [#1](https://github.com/buckleypaul/bookbook/pull/1) | $0.00 | Repo and remote were created on 2026-11-07 |
-| 0 | Live-API spikes and fixtures | awaiting hand checks | `phase-0-spikes` | PR_LINK | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13 |
+| 0 | Live-API spikes and fixtures | awaiting hand checks | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13 |
 | 1b | Project setup and CI | not started | | | | |
 | 2 | Thin vertical slice (M1) | not started | | | | |
 | 3 | Storage and library | not started | | | | |
@@ -53,7 +53,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 ### Phase 0 — Live-API spikes and fixtures (2026-11-07)
 
-**Status:** awaiting hand checks · branch `phase-0-spikes` · PR PR_LINK · live spend **$0.44** (37 calls, LiveSpendGuard estimate; allotment $3).
+**Status:** awaiting hand checks · branch `phase-0-spikes` · PR [#2](https://github.com/buckleypaul/bookbook/pull/2) · live spend **$0.44** (37 calls, LiveSpendGuard estimate; allotment $3).
 
 **Built:**
 - `Spikes/` SwiftPM package:

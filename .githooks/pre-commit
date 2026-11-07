@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Pre-commit secret scan (implementation-plan.md §2.2). Installed by scripts/install-hooks.sh.
+# Never bypass it with --no-verify.
+set -euo pipefail
+set +x +v
+exec "$(git rev-parse --show-toplevel)/scripts/secret-scan.sh" --staged

@@ -11,9 +11,9 @@
           "medium@1024x1024": 439,
           "high@1024x1024": 1756
         },
-        "inputImageTokensPerPixel": 0.0009765625,
+        "inputImageTokens": { "1024x1024": 1024, "256x256": 256, "128x128": 64 },
         "textTokensPerPromptChar": 0.27,
-        "notes": "Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input images cost about 1 token per 32x32 px (1024x1024 → 1024 tokens, 256x256 → 256, 128x128 → 64)."
+        "notes": "Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at three sizes. They fit \"downscale to <= 512 px a side, then 1 token per 16x16 patch\" (hypothesis; Phase 9 measures a 1536x1024 reference)."
       }
     },
     {

@@ -616,7 +616,7 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
 **OpenAI adapter (Images API):**
 - A new image with no references uses `POST /v1/images/generations`. Anything with references or a base image uses `POST /v1/images/edits` (multipart, `image[]` up to 16, base image first).
 - Parameters: `size` from §7.5, `quality` from the catalog, `output_format: png`, `n: 1`, `moderation: auto`. **`size` is always explicit.** On `/images/edits`, `size: auto` returned 1254×1254 for a 1024² base (SP-3), so refinements and region edits send the base image's size.
-- Input images are billed at about 1 token per 1024 pixels. Uploads are limited to 50 MB per image (`file_above_max_size`), which the adapter checks before sending (SP-3, SP-5).
+- Uploads are limited to 50 MB per image (`file_above_max_size`), which the adapter checks before sending (SP-5).
 - The response image is in `data[0].b64_json`. `usage` (input and output image and text tokens) feeds the actual cost.
 - **The Responses API isn't used in v1.** Server-side conversation state needs `store=true`, with at least 30 days of retention, and the app's own lineage model already gives the same refinement behaviour. Background mode (which supports server-side cancel) is noted as a future option (§7.9).
 
@@ -628,7 +628,7 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
 
 **Region editing (§8.6):**
 - Available only when `supportsMask` is true, which today means OpenAI's GPT Image models. Every current Gemini image model edits by prompt only, so the region tool is disabled for Gemini with the explanation the product requires.
-- The mask is sent as a PNG with alpha, the same size as the base image (a mismatch gives 400 `invalid_mask_image_format`), with the edit area transparent. **Polarity was confirmed live (SP-4): transparent = edit area.** The model doesn't see the original pixels under the transparent area: they come back as if erased. So the region-edit prompt has to describe everything that should appear in the area, not only the change.
+- The mask is sent as a PNG with alpha, the same size as the base image (a mismatch gives 400 `invalid_mask_image_format`), with the edit area transparent. **SP-4: the API replaces the transparent area**, so the encoding is right. But with flat test images the area often came back solid black, and the requested change landed outside the mask. The original pixels never survived under the mask, whatever RGB the mask held. **Open, and blocking for Phase 11:** re-check on a real illustration and choose between a masked edit, an unmasked edit plus the composite, or black-fill detection with a fallback (see `Spikes/REPORT.md` SP-4).
 - OpenAI documents mask edits as "prompt-based, not pixel-exact", and SP-4 saw the model repaint whole opaque (protected) quadrants. So BookBook **always composites the result locally**; this is mandatory, not a safeguard: the provider's output is blended into the original through the user's mask, feathered by about 8 px, using Core Image. This guarantees "only that area is altered". The composited result is stored as a `.regionEdit` version, and the raw provider output is kept in provenance for Details.
 - (Later, the same local composite could enable region edits for Gemini too, by sending an image with the region outlined. That's out of scope for v1, per §8.6.)
 
@@ -721,13 +721,13 @@ struct QueueItem {
   "perMillionTokens": { "textIn": 5.00, "imageIn": 8.00, "imageOut": 30.00, "cachedImageIn": 2.00 },
   "estimation": {
     "outputImageTokens": { "low@1024x1024": 200, "medium@1024x1024": 433, "high@1024x1024": 1767, "...": 0 },
-    "inputImageTokensPerPixel": 0.0009765625,   // ≈ 1 token per 32×32 px (SP-3)
+    "inputImageTokens": { "1024x1024": 1024, "256x256": 256, "128x128": 64 },   // measured (SP-3); other sizes: see below
     "textTokensPerPromptChar": 0.27 } }
 ```
 
 Gemini image entries carry `perImage` prices (e.g. `{ "1K": 0.0336, "2K": 0.0504, "4K": 0.113 }` for Nano Banana 2.1), plus input and thinking token rates and a typical thinking-token count per thinking level. Thinking can't be turned off and is always billed.
 
-**Estimator:** `CostEstimator.estimate(_ request: ImageRequest | LayoutRequest | ConsistencyRequest) -> CostEstimate`. It's a pure function, so it can be unit-tested against the official calculator figures. Output tokens are **not** proportional to pixel count (SP-2: low 1024×1536 = 158 tokens, below low 1024² = 196), so the table holds measured entries per quality and size. For sizes not in the table, it uses the nearest measured entry of the same quality, rounded up, and labels the result an estimate. Text and vision estimates count reasoning tokens as output (SP-7). A generation's estimate includes its consistency follow-up when the switch is on.
+**Estimator:** `CostEstimator.estimate(_ request: ImageRequest | LayoutRequest | ConsistencyRequest) -> CostEstimate`. It's a pure function, so it can be unit-tested against the official calculator figures. Output tokens are **not** proportional to pixel count (SP-2: low 1024×1536 = 158 tokens, below low 1024² = 196), so the table holds measured entries per quality and size. For sizes not in the table, it uses the nearest measured entry of the same quality, rounded up, and labels the result an estimate. Input-image tokens use the measured per-size table; for other sizes the estimate assumes "downscale to ≤ 512 px a side, then 1 token per 16×16 patch", which fits SP-3 but is unconfirmed (Phase 9 measures a 1536×1024 reference). Text and vision estimates count reasoning tokens as output (SP-7). A generation's estimate includes its consistency follow-up when the switch is on.
 
 **Actual cost:** when a response has `usage` or `usageMetadata`, `CostCalculator` prices the reported tokens with the same price list, broken down by modality, and the ledger entry is marked `actual`. Otherwise the estimate is recorded and marked `estimated`. Requests that fail with a 4xx or 5xx are recorded at $0, since neither provider bills those.
 
@@ -778,7 +778,7 @@ If the other provider is configured, every non-auth failure gets **"Retry with <
 
 Provider wording isn't parsed for advice. It's shown only under Details.
 
-The OpenAI mapper switches on `error.code` (and `param`), not `error.type`: many 400s carry the newer `type: image_generation_user_error` (SP-5). A 401 body echoes the key masked with its last 4 characters visible, so that fragment is redacted before `raw` is stored or shown.
+The OpenAI mapper switches on `error.code` (and `param`), not `error.type`: many 400s carry the newer `type: image_generation_user_error` (SP-5). A 401 body echoes a masked form of the key with some characters visible, so that fragment is redacted before `raw` is stored or shown.
 
 ### 7.12 Networking (BBNet)
 
@@ -1021,7 +1021,7 @@ end
 |---|---|
 | Model churn: OpenAI retired `gpt-image-1` on 2026-10-23 and removes 1.5/mini on 2026-12-01; Gemini deprecated two image models in 2026 | Data-driven catalog with successors, list-models availability checks, the custom-model escape hatch (§7.1). SP-1: all seed models are listed, and list-models returns `shutdown_date`, which the check can use to mark models deprecated early |
 | Prices drift | A dated price list the user can edit, actual-cost-from-usage where it's available, and "estimate" labels |
-| OpenAI mask polarity isn't documented | **Resolved (SP-4):** transparent = edit area. The masked content is invisible to the model, and it edits outside the mask, so local compositing (§7.6) is mandatory |
+| OpenAI mask polarity isn't documented | **Partly resolved (SP-4):** the API replaces the transparent area, but the result is often black and edits land outside the mask. Local compositing (§7.6) is mandatory, and the approach is **open and blocking for Phase 11** |
 | Gemini thought-signature requirements are documented inconsistently | Always echo signatures; fall back once to stateless on `MISSING_THOUGHT_SIGNATURE` |
 | Gemini inline request limit: the docs say both 20 MB and 100 MB | Design for 20 MB |
 | Cancellation billing is undocumented for both providers | Assume it's billed (§7.9), as the product already tells the user. OpenAI: SP-6 cancelled a request at 2026-11-07 23:39 UTC, and the dashboard check is a Phase 0 hand check |

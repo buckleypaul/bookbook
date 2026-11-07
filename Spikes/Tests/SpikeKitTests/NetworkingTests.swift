@@ -159,3 +159,19 @@ import Testing
         #expect(!out.contains("Ab1z"))
     }
 }
+
+@Suite struct ReflectionRedactionTests {
+    @Test func dumpDoesNotRevealKeyOrAuthorization() {
+        let secret = "sk" + "-" + String(repeating: "q", count: 30)
+        let key = APIKey(value: secret)
+        var out = ""
+        dump(key, to: &out)
+        #expect(!out.contains(secret))
+        let req = HTTPRequest(method: "GET", url: URL(string: "https://example.com")!,
+                              headers: ["Authorization": "Bearer \(secret)"])
+        var out2 = ""
+        dump(req, to: &out2)
+        #expect(!out2.contains(secret))
+        #expect(!String(describing: req).contains(secret))
+    }
+}

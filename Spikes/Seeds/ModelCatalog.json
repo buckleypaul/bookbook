@@ -18,7 +18,7 @@
         "maxRequestBytes": 20000000,
         "supportsMask": true,
         "maskEditAreaIsTransparent": true,
-        "maskAreaContentVisibleToModel": false,
+        "maskEditReliability": "unreliable-on-synthetic-images (SP-4: masked area often returned black); re-check in Phase 11",
         "nativeMultiTurn": false,
         "editsSizeMustBeExplicit": true,
         "aspect": { "mode": "free", "minRatio": 0.3333, "maxRatio": 3.0,

@@ -176,3 +176,72 @@ extension LiveProviderTests {
         _ = analyse(spike: "SP-4", tag: "maskC-star", image: img)
     }
 }
+
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
+
+/// A mask PNG whose transparent pixels keep the base image's RGB (non-premultiplied), instead of black.
+private func rgbFilledMask(size: Int, transparent: Set<Quadrant>) -> Data {
+    var bytes = [UInt8](repeating: 0, count: size * size * 4)
+    for y in 0..<size {
+        for x in 0..<size {
+            let left = x < size / 2, top = y < size / 2
+            let q: Quadrant = top ? (left ? .topLeft : .topRight) : (left ? .bottomLeft : .bottomRight)
+            let c = quadrantColors[Quadrant.allCases.firstIndex(of: q)!]
+            let i = (y * size + x) * 4
+            bytes[i] = c.r; bytes[i + 1] = c.g; bytes[i + 2] = c.b
+            bytes[i + 3] = transparent.contains(q) ? 0 : 255
+        }
+    }
+    let provider = CGDataProvider(data: Data(bytes) as CFData)!
+    let image = CGImage(width: size, height: size, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: size * 4,
+                        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+    let out = NSMutableData()
+    let dest = CGImageDestinationCreateWithData(out, UTType.png.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(dest, image, nil)
+    CGImageDestinationFinalize(dest)
+    return out as Data
+}
+
+/// RGB stored under a transparent pixel of a PNG, read without redrawing (no premultiplication).
+private func rawRGBUnderAlpha(_ png: Data, x: Int, y: Int) -> String {
+    guard let src = CGImageSourceCreateWithData(png as CFData, nil),
+          let img = CGImageSourceCreateImageAtIndex(src, 0, nil),
+          let data = img.dataProvider?.data as Data? else { return "unreadable" }
+    let bpp = img.bitsPerPixel / 8, i = y * img.bytesPerRow + x * bpp
+    return "\(data[i]),\(data[i + 1]),\(data[i + 2]),a=\(data[i + 3]) alphaInfo=\(img.alphaInfo.rawValue)"
+}
+
+extension LiveProviderTests {
+    /// SP-4 follow-up (review): (1) repeat mask A with the real image kept; (2) mask C with the base's RGB under
+    /// the transparent pixels, magenta prompt; (3) same mask, "keep colour, add a star" prompt.
+    /// Answers whether the black fill / invisible content came from the mask's black RGB.
+    @Test(.timeLimit(.minutes(5)))
+    func SP4d_rgbFilledMask() async throws {
+        let ctx = try LiveContext.make("SP-4")
+        let base = TestImages.quadrants(size: 1024, colors: quadrantColors)
+        let magentaPrompt = "Fill the editable area with bright magenta; leave everything else unchanged."
+        let starPrompt = "Inside the editable area, draw one small white star in its centre. Keep the area's existing background colour exactly as it is."
+        let maskC = rgbFilledMask(size: 1024, transparent: [.bottomRight])
+        result("SP-4", "rgbMask.raw-under-alpha", rawRGBUnderAlpha(maskC, x: 900, y: 900))
+
+        let runs: [(tag: String, prompt: String, mask: Data, transparent: Set<Quadrant>)] = [
+            ("maskA-repeat", magentaPrompt, TestImages.mask(size: 1024, transparent: [.topLeft]), [.topLeft]),
+            ("maskC-rgb-magenta", magentaPrompt, maskC, [.bottomRight]),
+            ("maskC-rgb-star", starPrompt, maskC, [.bottomRight]),
+        ]
+        for run in runs {
+            let form = editForm(prompt: run.prompt, size: "1024x1024", images: [("base.png", base)], mask: run.mask)
+            let r = try await ctx.perform(.multipart("/images/edits", form), tag: run.tag, model: SpikeModels.image,
+                                          estimateUSD: 0.015, fixture: "edits-\(run.tag)", keepRealImage: true)
+            guard let r, let img = firstImage(r) else { continue }
+            let stats = analyse(spike: "SP-4", tag: run.tag, image: img)
+            let changed = Quadrant.allCases.filter { (stats[$0]?.distance ?? 0) > 60 }.map(\.rawValue)
+            result("SP-4", "\(run.tag).changed-quadrants", changed.joined(separator: ","))
+            result("SP-4", "\(run.tag).verdict", verdict(stats, transparent: run.transparent).rawValue)
+        }
+    }
+}

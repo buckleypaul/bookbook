@@ -12,7 +12,9 @@ public enum Provider: String, Sendable, Codable, CaseIterable {
 }
 
 /// An API key read from the process environment. Never printable: `description` is redacted.
-public struct APIKey: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+public struct APIKey: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    /// Empty mirror, so `dump()` and reflection-based printing can't reach `value`.
+    public var customMirror: Mirror { Mirror(self, children: [:]) }
     let value: String  // internal on purpose: only SpikeKit's HTTP clients and recorder touch it.
     init(value: String) { self.value = value }
     public var description: String { "<redacted>" }
@@ -52,7 +54,13 @@ public enum LiveEnvironment {
 
 // MARK: - HTTP
 
-public struct HTTPRequest: Sendable {
+/// Description and mirror redact headers (`redactedHeaders`) and omit the body, so printing or dumping a
+/// request can't expose the Authorization header.
+public struct HTTPRequest: Sendable, CustomStringConvertible, CustomReflectable {
+    public var description: String { "\(method) \(url.absoluteString) headers=\(redactedHeaders(headers))" }
+    public var customMirror: Mirror {
+        Mirror(self, children: ["method": method, "url": url, "headers": redactedHeaders(headers)])
+    }
     public var method: String
     public var url: URL
     public var headers: [String: String]

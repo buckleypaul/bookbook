@@ -17,6 +17,8 @@ public struct APIKey: Sendable, CustomStringConvertible, CustomDebugStringConver
     init(value: String) { self.value = value }
     public var description: String { "<redacted>" }
     public var debugDescription: String { "<redacted>" }
+    /// A syntactically wrong key for the 401 spike (SP-5). Not key-shaped, so no scanner matches it.
+    public static func invalidForTesting() -> APIKey { APIKey(value: "bookbook-invalid-test-key") }
     /// True when `data` contains the key's bytes anywhere (used by the fixture recorder).
     public func occurs(in data: Data) -> Bool {
         let needle = Data(value.utf8)

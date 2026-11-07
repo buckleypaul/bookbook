@@ -27,8 +27,14 @@ extension LiveProviderTests {
             }
         }
 
-        // 2. Bogus key: APIKey's init is internal to SpikeKit, so it can't be built here.
-        result("SP-5", "401", "not tested (no way to build a bogus key outside SpikeKit)")
+        // 2. Bogus key (401 expected). The recorder still checks fixtures against the real key.
+        if let realKey = LiveEnvironment.apiKey(.openai) {
+            let bad = LiveContext(client: OpenAIClient(key: .invalidForTesting()),
+                                  recorder: FixtureRecorder(provider: .openai, spike: "SP-5", key: realKey),
+                                  spike: "SP-5")
+            try await bad.perform(.get("/models"), tag: "invalid-key", model: "none", estimateUSD: 0,
+                                  fixture: "models-invalid-key")
+        }
 
         // 3. Unknown model (404 expected).
         try await ctx.generate(tag: "unknown-model", size: "1024x1024", quality: "low",

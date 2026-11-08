@@ -2,6 +2,8 @@
 
 Use this prompt to run one implementation phase in two sessions: **A (build)** and **B (verify)**. The usual way is the short prompt: `Read PHASE_PROMPT.md and follow it exactly.` You can add any override after it. See `implementation-plan.md` §2.6 for the workflow.
 
+**Local only for now.** Don't push, open PRs, use `gh`, or wait on CI. Everything stays in the local repo; syncing with GitHub happens at the end of the project. At the end of every session (A, B, or a fix round), merge the phase branch into local `main` so main always holds the latest work.
+
 **Before you start a session, set the main-thread effort with `/model`** (the model stays Opus):
 
 | Effort | Phases |
@@ -19,10 +21,10 @@ Implement the next BookBook phase. Work out which phase and which session (A or 
 
 ## 0. Orient (you, the main thread)
 1. Read PROGRESS.md, implementation-plan.md (the core: §0–§3) and the phase's own file, `plan/phase-NN-*.md`. CLAUDE.md is already loaded. Don't read other phase files, `plan/done/` or `progress/` unless you need something specific from them. Read only the architecture.md / product-description.md sections that phase cites.
-2. Find the current state: PROGRESS.md on main, plus `gh pr list --state open` and `git branch -a --list '*phase-*'`. An open phase PR means that phase is awaiting hand checks; read PROGRESS.md from its branch.
+2. Find the current state: PROGRESS.md on local main (it's merged after every session, so it's current), plus `git branch --list '*phase-*'`.
 3. If a phase is awaiting hand checks, ask me (AskUserQuestion) whether its hand checks passed, unless I've already said so below.
-   - Passed: on the phase branch, mark it `done` in PROGRESS.md (status, merge date, ticked hand checks). Then archive it: move the "Current phase log" entry to `progress/phase-<id>-<slug>.md` and link it from the status table; move its still-open follow-ups into "Open follow-ups" (under their target phase), and drop any follow-ups this phase finished; and `git mv` its spec to `plan/done/`, updating the mapping table in implementation-plan.md. Commit and push, and wait for CI to go green. Then `gh pr merge --squash --delete-branch`, check out and pull main, and confirm main's PROGRESS.md shows the phase as `done`. (Marking it done before merging is what gets the status onto main; never record it only on the next phase's branch.) Remove the phase's lane worktrees and branches once you've confirmed their commits are in the merged branch. Then tell me the next phase and the effort it needs (table above), and stop, so the next phase starts in a fresh session.
-   - Failed: fix what I describe on that branch, verify again (§4), and stop at `awaiting hand checks` again. Don't start a new phase.
+   - Passed: on the phase branch, mark it `done` in PROGRESS.md (status, merge date, ticked hand checks). Then archive it: move the "Current phase log" entry to `progress/phase-<id>-<slug>.md` and link it from the status table; move its still-open follow-ups into "Open follow-ups" (under their target phase), and drop any follow-ups this phase finished; and `git mv` its spec to `plan/done/`, updating the mapping table in implementation-plan.md. Commit, then merge the phase branch into local main (`git checkout main && git merge --no-ff phase-<id>-<slug>`), and confirm main's PROGRESS.md shows the phase as `done`. Never record it only on the next phase's branch. Remove the phase branch, its lane worktrees and lane branches once you've confirmed their commits are in main. Then tell me the next phase and the effort it needs (table above), and stop, so the next phase starts in a fresh session.
+   - Failed: fix what I describe on that branch, verify again (§4), merge it into local main, and stop at `awaiting hand checks` again. Don't start a new phase.
 4. If a phase is `in progress`, resume it from its branch and the **Stage** line in its "Current phase log":
    - `Stage: A` (or no stage line): carry on with Session A (§1–§2).
    - `Stage: B`: this is Session B. Go straight to §4.
@@ -30,7 +32,7 @@ Implement the next BookBook phase. Work out which phase and which session (A or 
 6. Ask any blocking questions in ONE batched AskUserQuestion, with a recommended default for each. Don't ask about anything the plan or architecture already decides. For anything else, use the plan's defaults and record the assumption in PROGRESS.md.
 
 ## 1. Session A: plan the phase
-- Branch `phase-<id>-<slug>` from an up-to-date main. Mark the phase `in progress` in PROGRESS.md, and start its "Current phase log" with `**Stage:** A`.
+- Branch `phase-<id>-<slug>` from local main. Mark the phase `in progress` in PROGRESS.md, and start its "Current phase log" with `**Stage:** A`.
 - Pick up the follow-ups already filed under this phase in "Open follow-ups".
 - Split the phase into work packages. For each one, set the files and targets it owns, the contracts it uses, its tests, and a done check.
 - Write the shared contracts yourself and commit them before fanning out: public types, protocols, BookCommand cases, JSON resource schemas.
@@ -40,7 +42,7 @@ Implement the next BookBook phase. Work out which phase and which session (A or 
 You own: contracts, merges and integration, the hot-spot files (CanvasView, BookDocument, ModelCatalog.json, PriceList.json), concurrency / TextKit 2 / rendering design calls, and the final call on quality. Delegate everything else.
 
 Choose the Agent tool's `model`, and set its `effort` to **medium** for every subagent:
-- haiku: mechanical, fully specified work. Scaffolding and boilerplate; JSON and resource files from a given schema; renames; fixture tidy-up; updates to docs and PROGRESS.md; running test suites, builds and CI watches and summarising failures; grep sweeps and secret scans; checking a hand-check list against the code.
+- haiku: mechanical, fully specified work. Scaffolding and boilerplate; JSON and resource files from a given schema; renames; fixture tidy-up; updates to docs and PROGRESS.md; running test suites and builds and summarising failures; grep sweeps and secret scans; checking a hand-check list against the code.
 - sonnet: well-specified implementation against frozen contracts. A module, adapter, view or test suite; bug fixes with a known cause; tests written from the plan's test list; driving the app for hand checks.
 - opus: ambiguous design, refactors across modules, actor and concurrency bugs, AppKit canvas and TextKit 2 work, failures sonnet couldn't fix, and every independent review.
 
@@ -57,12 +59,12 @@ Rules:
 - If a result is wrong or incomplete, re-brief the same agent with SendMessage, or move up one model. Don't quietly redo the work yourself.
 - Do a small job yourself if it's only a few tool calls.
 
-**End of Session A:** once every lane is merged into the phase branch and it builds, set the log to `**Stage:** B`, and add a short note: the lanes, what's left, and anything Session B must know. Commit and push. Tell me: "Session A done. Start a new session with the same prompt for Session B." Then stop.
+**End of Session A:** once every lane is merged into the phase branch and it builds, set the log to `**Stage:** B`, and add a short note: the lanes, what's left, and anything Session B must know. Commit, then merge the phase branch into local main (`--no-ff`). Tell me: "Session A done. Start a new session with the same prompt for Session B." Then stop.
 
 ## 3. Rules that always apply
 - API keys: follow implementation-plan.md §2.2 exactly. Live calls go only through scripts/live-tests.sh or scripts/record-fixtures.sh, and only for the live checks this phase lists. Never print, log, echo, write to a file or commit a key, and never run `security … -w` outside `$(…)`. Keep the spend total in PROGRESS.md under the $10 cap, and ask me before any live run that would take it past $8. Record what each run spent.
 - Scope: build only what this phase lists. Anything else goes under "Open follow-ups" in PROGRESS.md, tagged with its target phase.
-- If the architecture is wrong or too vague, make the smallest sound choice, update architecture.md in the same PR, and log it. Product-level changes need my approval first.
+- If the architecture is wrong or too vague, make the smallest sound choice, update architecture.md in the same phase, and log it. Product-level changes need my approval first.
 - Meet the plan's definition of done (§2.1):
   - every undoable edit goes through a BookCommand;
   - everything sent to a provider is shown in Version details;
@@ -71,16 +73,16 @@ Rules:
 
 ## 4. Session B: verify before handing back
 Delegate the steps; you merge the fixes and make the calls. Don't pull full logs into the main thread.
-1. **Build and test:** a haiku subagent builds the app and runs the full test suite the same way CI does, and reports only the failures (test name, assertion, file:line). Send fixes to sonnet, or to opus for concurrency/canvas/TextKit failures.
+1. **Build and test:** a haiku subagent builds the app and runs `scripts/test.sh all` (the same steps as CI), and reports only the failures (test name, assertion, file:line). Send fixes to sonnet, or to opus for concurrency/canvas/TextKit failures.
 2. **Live checks:** run this phase's planned live checks, if it has any, within the budget.
 3. **Hand checks:** a sonnet subagent launches and uses the app (run skill, throwaway library) for as many of the phase's hand checks as it can, and reports a ticked/unticked list with one line per check. Don't drive the app or take screenshots in the main thread.
 4. **Review:** a fresh opus subagent reviews the phase diff. Give it the diff range and the phase file, not your conclusions. Ask for **must-fix issues only**, as a short list with file:line and a one-line failure scenario. Should-fix items and nits go straight to "Open follow-ups".
 5. **Cap the fix loop at two rounds** (fix → re-test → re-review of only the fixed areas). Anything still open after that goes to "Open follow-ups", or to me if it blocks a hand check.
 6. Run the secret scan over the whole diff.
-7. Push the branch. Open a PR titled "Phase <id>: <name>" with a summary and the hand-check list. A haiku subagent watches CI (or run `gh pr checks --watch` in the background) and reports pass, or the failing test names. If a failure looks flaky (passes on a re-run and locally), re-run once and log it as a follow-up.
+7. If a test looks flaky (fails once, passes on a re-run), re-run once and log it as a follow-up. Don't push or open a PR.
 
 ## 5. Session B: hand back and stop
-- Update PROGRESS.md on the branch: status `awaiting hand checks`, branch, PR link, spend, and finish the "Current phase log" entry (what was built, deviations, docs changed, follow-ups). Keep it concise: it moves to `progress/` when the phase is done. Commit and push.
+- Update PROGRESS.md on the branch: status `awaiting hand checks`, branch, spend, and finish the "Current phase log" entry (what was built, deviations, docs changed, follow-ups). Keep it concise: it moves to `progress/` when the phase is done. Commit, then merge the phase branch into local main (`--no-ff`). Keep the branch for any hand-check fixes.
 - Reply with:
   - what was built;
   - the plan's hand checks as a checkbox list, ticking the ones confirmed;

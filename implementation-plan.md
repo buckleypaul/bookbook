@@ -70,7 +70,7 @@ Sizes: **S** is a few focused days, **M** about a week, **L** about two weeks (a
 
 ### 2.1 Definition of done (applies to every phase)
 
-1. CI is green: unit and snapshot tests, the app build, and the secret scan.
+1. `scripts/test.sh all` passes locally (the same steps as CI): unit and snapshot tests, the app build, and the secret scan. While we work local-only, CI isn't a gate.
 2. The phase's **hand acceptance checks** have been run by you on macOS 27, in a Debug build launched from Xcode, or from the release build once Phase 15 is done.
 3. Every new edit that PD §8.10 says is undoable goes through a `BookCommand`, and its undo/redo has been checked by hand.
 4. Anything new that's sent to a provider is visible in Version details. That's the privacy rule in A §11.
@@ -121,9 +121,9 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
 
 ### 2.6 Phase workflow and progress tracking
 
-- **`PROGRESS.md`** at the repo root is the single record of where the build is. It has one row per phase (in the order 1a, 0, 1b, 2, 3 … 17), with a status, branch, PR, live spend and notes. Each phase session updates it. It also holds the open follow-ups (grouped by target phase) and the current phase's log. When a phase is `done`, its log moves to `progress/phase-<id>-<slug>.md` and its spec to `plan/done/`, so PROGRESS.md stays small.
-- **Statuses:** `not started` → `in progress` → `awaiting hand checks` (code is done, CI is green, the PR is open) → `done` (you've confirmed the hand checks and the PR is merged). `blocked` and `skipped (floating)` are also allowed.
-- **One phase per pair of sessions.** Session A (build: contracts, lanes, merge) and Session B (verify: tests, hand checks, review, PR) work on a branch called `phase-<id>-<slug>`, with git worktrees for parallel lanes. A **Stage** line in the current phase log tells the next session where to resume. Session B opens a PR to `main` and stops at `awaiting hand checks`. The **next** session starts by asking whether the previous phase's hand checks passed. If they did, it merges that PR (squash) and marks the phase `done` before starting the next one.
+- **`PROGRESS.md`** at the repo root is the single record of where the build is. It has one row per phase (in the order 1a, 0, 1b, 2, 3 … 17), with a status, branch, PR (none while local-only), live spend and notes. Each phase session updates it. It also holds the open follow-ups (grouped by target phase) and the current phase's log. When a phase is `done`, its log moves to `progress/phase-<id>-<slug>.md` and its spec to `plan/done/`, so PROGRESS.md stays small.
+- **Statuses:** `not started` → `in progress` → `awaiting hand checks` (code is done, local tests are green, merged into local main) → `done` (you've confirmed the hand checks). `blocked` and `skipped (floating)` are also allowed.
+- **One phase per pair of sessions.** Session A (build: contracts, lanes, merge) and Session B (verify: tests, hand checks, review) work on a branch called `phase-<id>-<slug>`, with git worktrees for parallel lanes. A **Stage** line in the current phase log tells the next session where to resume. **Local only:** no pushes, PRs or CI waits; every session ends by merging the phase branch into local `main` (`--no-ff`), so main always has the latest work. Syncing with GitHub happens at the end of the project. Session B stops at `awaiting hand checks`. The **next** session starts by asking whether the previous phase's hand checks passed. If they did, it marks the phase `done`, merges into main again and deletes the phase branch before starting the next one.
 - **Which phase is next:** the first phase in `PROGRESS.md` order that isn't `done` and whose solid dependencies (§3) are all `done`. Phase 13 is skipped while no `gemini-api-key` Keychain item exists. To check, run `security find-generic-password -s gemini-api-key >/dev/null 2>&1`; this checks the item exists without reading the key.
 - **Git identity** is set in the repo config (`Paul Buckley <paul@paulbuckley.me>`). Don't override it.
 

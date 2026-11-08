@@ -89,25 +89,34 @@ public struct BookWindow: View {
     }
 }
 
-/// The open book: page list, canvas and session panel.
+/// The open book: page list in the sidebar; the Pages overview or the page editor (canvas) in
+/// the detail area, switched with the toolbar's Overview / Editor control (PD §7, §8.5); and
+/// the session panel.
 struct BookEditor: View {
     let document: BookDocument
     @Environment(\.undoManager) private var undoManager
-    @State private var selectedPage: PageID?
+    @State private var pages: PagesController
     @State private var selectedImageBox: BoxID?
     @State private var showSession = true
     @State private var showTypography = false
+    @State private var showNumbers = true
     @State private var images: ImageCache
+    @State private var thumbnails: PageThumbnailRenderer
 
     init(document: BookDocument) {
         self.document = document
-        _images = State(initialValue: ImageCache(store: document.store))
+        let images = ImageCache(store: document.store)
+        _images = State(initialValue: images)
+        _thumbnails = State(initialValue: PageThumbnailRenderer(images: ImageCache(store: document.store,
+                                                                                   maxPixelSize: 512)))
+        _pages = State(initialValue: PagesController(document: document))
     }
 
     var body: some View {
+        @Bindable var pages = pages
         let content = document.content
         NavigationSplitView {
-            PageList(document: document, content: content, selection: $selectedPage)
+            PageList(document: document, content: content, pages: pages)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 0) {
                         Divider()
@@ -124,31 +133,117 @@ struct BookEditor: View {
             sessionPanel(content)
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
         }
-        .toolbar {
-            ToolbarItem {
-                Button { showTypography = true } label: { Label("Typography", systemImage: "textformat") }
-                    .help("Fonts, size, colour and spacing for the whole book")
-                    .disabled(!document.isEditable)
-            }
-            ToolbarItem {
-                Button { showSession.toggle() } label: { Label("Session", systemImage: "sidebar.trailing") }
-                    .help("Show or hide the session panel")
-            }
-        }
+        .toolbar { toolbar }
         .navigationTitle(content.book.title)
         .focusedSceneValue(\.focusedBook, document)
         .focusedSceneValue(\.showTypography, $showTypography)
+        .focusedSceneValue(\.pagesController, pages)
         .sheet(isPresented: $showTypography) { TypographyForm(document: document) }
+        .sheet(item: $pages.sheet, onDismiss: { pages.sheetDidDismiss() }) { sheet in
+            sheetView(sheet, content: document.content)
+        }
+        .alert("This would split a spread across two sheets",
+               isPresented: Binding(get: { pages.showsSplitWarning }, set: { _ in })) {
+            // Every button resolves the warning; the binding's setter is a no-op so dismissal
+            // can't race the chosen action.
+            Button("Insert Blank Page") { pages.resolveSplit(.insertBlankPage) }
+            Button(isReorder(pages.pendingSplit) ? "Move Anyway" : "Continue Anyway") {
+                pages.resolveSplit(.moveAnyway)
+            }
+            Button("Cancel", role: .cancel) { pages.resolveSplit(.cancel) }
+        } message: {
+            Text("A two-page spread has to start on a left-hand page to print on one sheet. BookBook can insert a blank text page before it to keep it together.")
+        }
         .onAppear {
             document.undoManager = undoManager
-            if selectedPage == nil { selectedPage = content.book.pageOrder.first }
+            if pages.selectedPage == nil { pages.selectedPage = content.book.pageOrder.first ?? content.book.coverPageID }
         }
         .onChange(of: undoManager) { _, manager in document.undoManager = manager }
-        .onChange(of: content.book.pageOrder) { _, order in
+        .onChange(of: content.book.pageOrder) {
             // An undo or redo can remove the selected page.
-            if let page = selectedPage, !order.contains(page) { selectedPage = order.first }
+            pages.validateSelection()
         }
-        .onChange(of: selectedPage) { selectedImageBox = nil }
+        .onChange(of: pages.selectedPage) { selectedImageBox = nil }
+        .onChange(of: pages.mode) { _, mode in if mode == .overview { selectedImageBox = nil } }
+    }
+
+    private func isReorder(_ command: BookCommand?) -> Bool {
+        if case .reorderPages = command { true } else { false }
+    }
+
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        @Bindable var pages = pages
+        ToolbarItem(placement: .navigation) {
+            Picker("View", selection: $pages.mode) {
+                Label("Overview", systemImage: "square.grid.2x2").tag(PagesController.Mode.overview)
+                Label("Editor", systemImage: "doc.richtext").tag(PagesController.Mode.editor)
+            }
+            .pickerStyle(.segmented)
+            .labelStyle(.iconOnly)
+            .help("Switch between the spread overview and the page editor")
+        }
+        ToolbarItemGroup {
+            Button {
+                pages.sheet = .addPage(index: pages.insertionIndex)
+            } label: { Label("Add Page", systemImage: "plus.rectangle.on.rectangle") }
+                .help("Add a page after the selected one")
+                .disabled(!document.isEditable)
+            Button { pages.sheet = .importStory } label: {
+                Label("Import Story Text", systemImage: "text.badge.plus")
+            }
+            .help("Import story text and split it into pages")
+            .disabled(!document.isEditable)
+            Menu {
+                Button("Book Settings…") { pages.sheet = .bookSettings }
+                Button("Page Numbers…") { pages.sheet = .pageNumbers }
+                Divider()
+                Toggle("Show Page Numbers in Overview", isOn: $showNumbers)
+            } label: {
+                Label("Book", systemImage: "book.closed")
+            }
+            .help("Book settings, page numbers and typography")
+            .disabled(!document.isEditable)
+        }
+        ToolbarItem {
+            Button { showTypography = true } label: { Label("Typography", systemImage: "textformat") }
+                .help("Fonts, size, colour and spacing for the whole book")
+                .disabled(!document.isEditable)
+        }
+        ToolbarItem {
+            Button { showSession.toggle() } label: { Label("Session", systemImage: "sidebar.trailing") }
+                .help("Show or hide the session panel")
+        }
+    }
+
+    @ViewBuilder
+    private func sheetView(_ sheet: PagesController.Sheet, content: BookContent) -> some View {
+        let presets = Presets.bundledTemplates
+        let trim = content.style.pageSetup.trimSize
+        switch sheet {
+        case let .addPage(index):
+            let choices = PagesOverviewModel.templateChoices(forCover: false, in: content, presets: presets)
+            let current = pages.selectedPage.flatMap { content.pages[$0] }
+                .flatMap { $0.kind == .story ? $0.templateID : nil }
+            TemplatePickerSheet(title: "Add Page", confirmTitle: "Add", templates: choices, trimSize: trim,
+                                initialSelection: current ?? Presets.storyTemplateID) { [pages] id in
+                pages.dismissSheet { pages.addPage(templateID: id, at: index) }
+            }
+        case let .changeLayout(page):
+            let choices = PagesOverviewModel.templateChoices(forCover: pages.isCover(page), in: content,
+                                                             presets: presets)
+            TemplatePickerSheet(title: pages.isCover(page) ? "Change Cover Layout" : "Change Layout",
+                                confirmTitle: "Change", templates: choices, trimSize: trim,
+                                initialSelection: content.pages[page]?.templateID) { [pages] id in
+                pages.dismissSheet { pages.changeLayout(page, to: id) }
+            }
+        case .importStory:
+            StoryImportSheet(document: document, pages: pages)
+        case .bookSettings:
+            BookSettingsSheet(document: document)
+        case .pageNumbers:
+            PageNumbersSheet(pages: pages, style: content.style.pageNumbers)
+        }
     }
 
     @ViewBuilder
@@ -163,8 +258,10 @@ struct BookEditor: View {
                     .background(.secondary.opacity(0.15))
             }
             if !document.missingFonts.isEmpty { MissingFontsBanner(fonts: document.missingFonts) }
-            FormatBar(formatting: document.formatting)
-            Divider()
+            if pages.mode == .editor {
+                FormatBar(formatting: document.formatting)
+                Divider()
+            }
             if let error = document.lastSaveError {
                 Label("Couldn't save changes: \(StoreErrorText.message(for: error))", systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
@@ -172,57 +269,76 @@ struct BookEditor: View {
                     .frame(maxWidth: .infinity)
                     .background(.yellow.opacity(0.25))
             }
-            if let page = selectedPage, content.pages[page] != nil {
-                PageCanvas(document: document, content: content, pageID: page, imageSource: images,
-                           selectedImageBox: $selectedImageBox)
-                    // Read-only: no text editing or box selection (the canvas is AppKit).
-                    .allowsHitTesting(document.isEditable)
-            } else {
-                ContentUnavailableView("No Page Selected", systemImage: "doc",
-                                       description: Text("Choose a page, or add one with +."))
+            switch pages.mode {
+            case .overview:
+                PagesOverview(document: document, pages: pages, thumbnails: thumbnails, showNumbers: $showNumbers)
+            case .editor:
+                if let page = pages.selectedPage, content.pages[page] != nil {
+                    PageCanvas(document: document, content: content, pageID: page, imageSource: images,
+                               selectedImageBox: $selectedImageBox)
+                        // Read-only: no text editing or box selection (the canvas is AppKit).
+                        .allowsHitTesting(document.isEditable)
+                } else {
+                    ContentUnavailableView("No Page Selected", systemImage: "doc",
+                                           description: Text("Choose a page, or add one with +."))
+                }
             }
         }
     }
 
     @ViewBuilder
     private func sessionPanel(_ content: BookContent) -> some View {
-        if let page = selectedPage, let box = selectedImageBox, content.pages[page]?.images[box] != nil {
+        if pages.mode == .editor, let page = pages.selectedPage, let box = selectedImageBox,
+           content.pages[page]?.images[box] != nil {
             SessionPanel(document: document, content: content, pageID: page, boxID: box, images: images)
                 .id(box)
                 .disabled(!document.isEditable)
         } else {
             ContentUnavailableView("No Image Box Selected", systemImage: "photo",
-                                   description: Text("Click an image box on the page to see its session."))
+                                   description: Text(pages.mode == .editor
+                                                     ? "Click an image box on the page to see its session."
+                                                     : "Double-click a page to open it, then click an image box."))
         }
     }
 }
 
-/// The page list: story pages in reading order, with add and delete (both undoable).
+/// The page list: the cover, then story pages in reading order. Click selects; double-click
+/// opens the page editor; right-click for page commands; + inserts a page after the selection
+/// and − deletes the selected story page (all undoable).
 struct PageList: View {
     let document: BookDocument
     let content: BookContent
-    @Binding var selection: PageID?
+    let pages: PagesController
 
     var body: some View {
-        List(selection: $selection) {
+        @Bindable var pages = pages
+        let cover = content.coverPage
+        List(selection: $pages.selectedPage) {
+            if let cover {
+                row("Cover", status: content.status(of: cover)).tag(cover.id)
+            }
             ForEach(PageListing.items(content)) { item in
-                HStack {
-                    Text(item.title)
-                    Spacer()
-                    Text(item.statusText).font(.caption).foregroundStyle(.secondary)
-                }
-                .tag(item.id)
+                row(item.title, status: item.status).tag(item.id)
             }
         }
-        .onDeleteCommand(perform: deleteSelected)
+        .contextMenu(forSelectionType: PageID.self) { ids in
+            if let page = ids.first { PageContextMenu(pages: pages, page: page) }
+        } primaryAction: { ids in
+            if let page = ids.first { pages.open(page) }
+        }
+        .onDeleteCommand {
+            if let page = pages.selectedPage { pages.delete(page) }
+        }
         .safeAreaInset(edge: .bottom) {
             HStack(spacing: 2) {
-                Button(action: addPage) { Image(systemName: "plus") }
+                Button { pages.sheet = .addPage(index: pages.insertionIndex) } label: { Image(systemName: "plus") }
                     .help("Add a page after the selected one")
-                    .disabled(!document.isEditable || PageListing.storyTemplateID(in: content) == nil)
-                Button(action: deleteSelected) { Image(systemName: "minus") }
+                    .disabled(!document.isEditable)
+                Button {
+                    if let page = pages.selectedPage { pages.delete(page) }
+                } label: { Image(systemName: "minus") }
                     .help("Delete the selected page")
-                    .disabled(!document.isEditable || selection == nil)
+                    .disabled(!document.isEditable || !pages.isStoryPage(pages.selectedPage))
                 Spacer()
             }
             .buttonStyle(.borderless)
@@ -230,17 +346,11 @@ struct PageList: View {
         }
     }
 
-    private func addPage() {
-        guard let templateID = PageListing.storyTemplateID(in: content) else { return }
-        let index = PageListing.insertionIndex(after: selection, in: content)
-        guard document.perform(.addPage(index: index, templateID: templateID)) else { return }
-        let order = document.content.book.pageOrder
-        if order.indices.contains(index) { selection = order[index] }
-    }
-
-    private func deleteSelected() {
-        guard let page = selection else { return }
-        let next = PageListing.selectionAfterDeleting(page, in: content)
-        if document.perform(.deletePage(page)) { selection = next }
+    private func row(_ title: String, status: PageStatus) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            StatusBadge(status: status).font(.caption)
+        }
     }
 }

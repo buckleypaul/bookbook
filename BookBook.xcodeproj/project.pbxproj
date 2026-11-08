@@ -31,6 +31,7 @@
 		1D2FE8D9E7801F129E8B503E /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		2DB3D4EA1121AF67BA4AE5E3 /* BookBookApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookBookApp.swift; sourceTree = "<group>"; };
 		6438090B9A7067B8C0902718 /* BookBookKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BookBookKit; path = BookBookKit; sourceTree = SOURCE_ROOT; };
+		80D66B2299556DD98AE8BEBE /* BookBookTests-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "BookBookTests-Release.xcconfig"; sourceTree = "<group>"; };
 		87AE83E4EA61562E17B98471 /* BookBookTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BookBookTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		92FBD6153F984B5D6C184BBC /* BookBookTests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = BookBookTests.xcconfig; sourceTree = "<group>"; };
 		A9E82584A124947B00C3DD54 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
@@ -60,6 +61,7 @@
 			children = (
 				F4640A62208E473B9EF64D8D /* BookBook-Debug.xcconfig */,
 				B35DC1A5B3BEBC2CD3B904FA /* BookBook-Release.xcconfig */,
+				80D66B2299556DD98AE8BEBE /* BookBookTests-Release.xcconfig */,
 				92FBD6153F984B5D6C184BBC /* BookBookTests.xcconfig */,
 				1D2FE8D9E7801F129E8B503E /* Debug.xcconfig */,
 				A9E82584A124947B00C3DD54 /* Release.xcconfig */,
@@ -307,7 +309,7 @@
 		};
 		3AF6DF1F3987EEB8DF6D6399 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 92FBD6153F984B5D6C184BBC /* BookBookTests.xcconfig */;
+			baseConfigurationReference = 80D66B2299556DD98AE8BEBE /* BookBookTests-Release.xcconfig */;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
 				LD_RUNPATH_SEARCH_PATHS = (

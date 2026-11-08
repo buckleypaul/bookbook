@@ -36,7 +36,7 @@ targets:
       - path: App/BookBookTests
     configFiles:
       Debug: App/Config/BookBookTests.xcconfig
-      Release: App/Config/BookBookTests.xcconfig
+      Release: App/Config/BookBookTests-Release.xcconfig
     dependencies:
       - target: BookBook
 schemes:

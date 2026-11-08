@@ -16,7 +16,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 4 | Text and typography | done | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. From Phase 5 on, no PRs: merge into main and push directly. [Log](progress/phase-4-text-typography.md) |
 | 5 | Pages tab, ordering and cover | done | `phase-5-pages-cover` | — | $0.00 | No live checks. [Log](progress/phase-5-pages-cover.md) |
 | 6 | Template editor | done | `phase-6-template-editor` | — | $0.00 | No live checks. [Log](progress/phase-6-template-editor.md) |
-| 7 | Style guide and page setup | in progress | `phase-7-style-page-setup` | — | $0.00 | No live checks. |
+| 7 | Style guide and page setup | awaiting hand checks | `phase-7-style-page-setup` | — | $0.00 | No live checks. |
 | 8 | Sessions and versions | not started | | | | |
 | 9 | Queue, cost, errors and settings (M2) | not started | | | | |
 | 10 | Assets and character sheets | not started | | | | |
@@ -82,6 +82,12 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Later
+- Style tab: does SwiftUI `TextEditor` typing log to the window undo manager, so a second ⌘Z while focused undoes typing into the draft, which leaving the field commits as a new edit and clears redo? Picking a preset while Description has uncommitted typing now drops the typing (from Phase 7 review).
+- Flags: an image generated at revision N+1, followed by an undo of the style edit back to N, isn't flagged "style changed" (documented decision; revisit now that revisions are never reused). No tests for undo → redo → different edit, or for decoding a high-water mark below `visualRevision` (from Phase 7 review).
+- Choosing a different version keeps the old image's `acknowledged.styleRevision`, so an older version can hide "style changed"; A §4.4 needs a decision (from Phase 7 review).
+- Style reference drops accept any URL; a non-file URL is read with blocking `Data(contentsOf:)` on the main actor. Accept file URLs only (from Phase 7 review).
+- No UI path to import an image into a box yet, so hand checks needed placed versions written into package JSON (from Phase 7 hand checks; Phase 10/16).
+- The negative-guidance box once showed duplicated text while `style.json` was correct; not reproduced (from Phase 7 hand checks).
 - Template-editor drag throttle: each drag tick copies `BookContent`, schedules a save and refreshes missing fonts inside `BookDocument.perform`; needs coalescing there (from Phase 6, still open after Phase 7).
 - Template editor: dragging an edge off a spread's fold makes its bleed reappear after the drag (outline jumps 9 pt) (from Phase 7).
 - Template editor: no snapping during ⇧ aspect-locked resize; no multi-box resize handles; the in-place text editor isn't rotated for rotated text boxes (from Phase 6).
@@ -134,7 +140,7 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 7 — Style guide and page setup
 
-**Stage:** B
+**Stage:** B (done; awaiting hand checks)
 
 Started 2026-11-08. Session A done 2026-11-08; `scripts/test.sh all` green at the end of A.
 
@@ -148,4 +154,9 @@ Started 2026-11-08. Session A done 2026-11-08; `scripts/test.sh all` green at th
 **Decisions (logged in architecture.md §4.4, §8.2):** style-changed formula is `max(provenance.styleRevision, acknowledged.styleRevision) < visualRevision` (the A §4.4 wording was inverted); imported versions never get style changed; undo of a style edit restores the revision exactly; placements aren't rewritten on page-setup change (focal point/zoom re-clamped at draw, so reverting restores the crop); fold rule; rotation centre.
 
 **For Session B:** no live checks. Hand checks need a book with placed images (use fixture/imported images; imported versions have no provenance, so "style changed" needs a generated version — check what the hand-check driver can do offline, or note it for the user). Check undo for every Style-tab and page-setup field. Style references are stored but not sent to the provider yet (Phase 8 follow-up) — confirm Version details doesn't claim otherwise.
+
+**Session B (2026-11-08):** `scripts/test.sh all` green; secret scan clean; no live checks ($0.00).
+- Review round 1 (`a1ba052`): `visualRevision` is now monotonic through `StyleGuide.visualRevisionHighWater` (tolerant decode, defaults to `visualRevision`; A §4.1/§4.4 updated). Undo restores the fields and the revision but never lowers the high-water mark. `.chooseVersion` of the placed version is a no-op. The Style tab text editors follow model changes, so ⌘Z isn't reversed on blur. Re-review: no must-fix.
+- Hand-check round 2 (`d7a12b8`): `CommitField` (margins, bleed, custom size, box inspector) shows the committed value and ends editing on Return, so Edit > Undo works. Confirmed in the app.
+- Driven hand checks (placed versions written into a throwaway package's JSON, because there is no image import UI yet): checks 1–3 passed; undo passed for every Style/page-setup field; Version details doesn't claim references are sent. The title-box B follow-up wasn't reachable (the box opens Book Settings; B is disabled), so it stays open.
 

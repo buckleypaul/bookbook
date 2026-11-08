@@ -46,19 +46,24 @@ public struct DirtySet: Hashable, Sendable {
     public var pages: Set<PageID>
     public var sessions: Set<SessionID>
     public var deletedPages: Set<PageID>
+    /// Phase 6: templates removed from the book; `templates/<id>.json` is deleted in the same transaction.
+    public var deletedTemplates: Set<TemplateID>
 
     public init(book: Bool = false, style: Bool = false, templates: Set<TemplateID> = [], pages: Set<PageID> = [],
-                sessions: Set<SessionID> = [], deletedPages: Set<PageID> = []) {
+                sessions: Set<SessionID> = [], deletedPages: Set<PageID> = [],
+                deletedTemplates: Set<TemplateID> = []) {
         self.book = book
         self.style = style
         self.templates = templates
         self.pages = pages
         self.sessions = sessions
         self.deletedPages = deletedPages
+        self.deletedTemplates = deletedTemplates
     }
 
     public var isEmpty: Bool {
         !book && !style && templates.isEmpty && pages.isEmpty && sessions.isEmpty && deletedPages.isEmpty
+            && deletedTemplates.isEmpty
     }
 
     public mutating func formUnion(_ other: DirtySet) {
@@ -71,6 +76,10 @@ public struct DirtySet: Hashable, Sendable {
         deletedPages.subtract(other.pages)
         pages.subtract(other.deletedPages)
         deletedPages.formUnion(other.deletedPages)
+        // Likewise for templates (delete, then undo re-inserts it).
+        deletedTemplates.subtract(other.templates)
+        templates.subtract(other.deletedTemplates)
+        deletedTemplates.formUnion(other.deletedTemplates)
     }
 
     /// Everything in `content` (used when creating a book).

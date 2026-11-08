@@ -96,6 +96,7 @@ public actor BookStore {
         guard !readOnly else { throw StoreError.readOnly }
         let files = try PackageCoding.files(for: content, dirty: dirty)
         let deletions = dirty.deletedPages.map { PackageCoding.pagePath($0) }
+            + dirty.deletedTemplates.map { PackageCoding.templatePath($0) }.filter { files[$0] == nil }
         guard !files.isEmpty || !deletions.isEmpty else { return }
         let fault = saveFaultHook
         try PackageCoding.io("save") {

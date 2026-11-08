@@ -37,6 +37,17 @@ public enum AspectFitter {
         while w * h < minPixels {
             if Double(w) / Double(h) < ratio { w += m } else { h += m }
         }
+        // Rounding can push the ratio just outside the model's limits: step a side until it is inside,
+        // preferring the step that keeps the pixel count in bounds.
+        var guardSteps = 0
+        while guardSteps < 64, Double(w) / Double(h) > maxRatio || Double(w) / Double(h) < minRatio {
+            guardSteps += 1
+            if Double(w) / Double(h) > maxRatio {
+                if (w - m) * h >= minPixels { w -= m } else { h += m }
+            } else {
+                if w * (h - m) >= minPixels { h -= m } else { w += m }
+            }
+        }
         return PixelSize(width: w, height: h)
     }
 

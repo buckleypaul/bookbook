@@ -8,6 +8,8 @@ import Testing
     static let boxes: [(name: String, aspect: Double)] = [
         ("square", 1), ("landscape 3:2", 1.5), ("portrait 2:3", 2.0 / 3), ("very wide 5:1", 5), ("very tall 1:5", 0.2),
         ("slice image box", 540.0 / (0.57 * 792)),
+        ("exactly 3:1", 3), ("exactly 1:3", 1.0 / 3), ("just beyond 3:1", 3.2), ("just beyond 1:3", 0.31),
+        ("lower bound 0.3333", 0.3333), ("huge", 100), ("tiny", 0.001),
     ]
 
     @Test(arguments: boxes.map(\.name), QualityLevel.allCases)
@@ -26,6 +28,7 @@ import Testing
             let ceiling = min(maxPixels, experimental ?? maxPixels)
             #expect(size.width % multiple == 0 && size.height % multiple == 0, "\(name) \(quality) \(size)")
             #expect(size.pixelCount >= minPixels && size.pixelCount <= ceiling, "\(name) \(quality) \(size)")
+            #expect(size.aspect <= maxRatio && size.aspect >= minRatio, "\(name) \(quality) \(size) outside ratio bounds")
             let clamped = min(max(aspect, minRatio), maxRatio)
             #expect(abs(log(size.aspect / clamped)) < 0.06, "\(name) \(quality) \(size) vs \(clamped)")
         }
@@ -38,8 +41,8 @@ import Testing
             Issue.record("expected pixels")
             return
         }
-        #expect(wide.aspect <= 3.05 && wide.aspect > 2.9)
-        #expect(tall.aspect >= 0.32 && tall.aspect < 0.37)
+        #expect(wide.aspect <= 3.0 && wide.aspect > 2.9)
+        #expect(tall.aspect >= 0.3333 && tall.aspect < 0.37)
     }
 
     @Test func degenerateAspectDoesNotCrash() throws {

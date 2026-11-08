@@ -75,7 +75,7 @@ public actor GenerationQueue {
         guard runningTask == nil,
               let index = entries.firstIndex(where: { $0.state == .waiting }) else { return }
         let item = entries[index].item
-        entries[index].state = .running(startedAt: now(), progress: nil)
+        entries[index].state = .running(startedAt: now(), progress: nil, attempt: 1)
         runningID = item.id
         cancelRequested = false
         publish()
@@ -94,8 +94,8 @@ public actor GenerationQueue {
 
     private func updateProgress(_ id: QueueItemID, _ progress: GenerationProgress) {
         guard let index = entries.firstIndex(where: { $0.id == id }),
-              case let .running(startedAt, _) = entries[index].state else { return }
-        entries[index].state = .running(startedAt: startedAt, progress: progress)
+              case let .running(startedAt, _, attempt) = entries[index].state else { return }
+        entries[index].state = .running(startedAt: startedAt, progress: progress, attempt: attempt)
         publish()
     }
 
@@ -145,7 +145,7 @@ public actor GenerationQueue {
             styleRevision: report.styleRevision, storyTextIncluded: report.storyTextIncluded,
             intent: item.intent, usage: result.usage, revisedPrompt: result.revisedPrompt,
             parametersSent: result.parametersSent)
-        await host.deliver(GenerationDelivery(item: item, outcome: .success(result: result, provenance: provenance)))
+        _ = await host.deliver(GenerationDelivery(item: item, outcome: .success(result: result, provenance: provenance)))
         entries.removeAll { $0.id == item.id }
         publish()
     }
@@ -155,9 +155,9 @@ public actor GenerationQueue {
             // A cancelled item is not kept: the user asked for it to go.
             entries.removeAll { $0.id == item.id }
         } else if let index = entries.firstIndex(where: { $0.id == item.id }) {
-            entries[index].state = .failed(error)
+            entries[index].state = .failed(QueueFailure(error: error, report: nil, attempts: 1, failedAt: now()))
         }
         publish()
-        await host.deliver(GenerationDelivery(item: item, outcome: .failure(error)))
+        _ = await host.deliver(GenerationDelivery(item: item, outcome: .failure(error)))
     }
 }

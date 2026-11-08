@@ -19,8 +19,10 @@ public struct BookWriter: GenerationHost {
         await openBooks.content(for: bookID)
     }
 
-    public func deliver(_ delivery: GenerationDelivery) async {
+    // Phase 9 contract stub: the wiring lane returns the real result from OpenBooks.
+    public func deliver(_ delivery: GenerationDelivery) async -> DeliveryResult {
         await openBooks.deliver(delivery, now: now)
+        return .delivered
     }
 
     /// Image files are immutable and content-addressed, so they're read without the book lock.

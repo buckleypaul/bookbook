@@ -103,17 +103,17 @@ public enum MessageStatus: Hashable, Sendable {
         if let itemID = message.queueItemID {
             if let entry = snapshot.entry(for: itemID) {
                 switch entry.state {
-                case .waiting: return .waiting
-                case let .running(startedAt, _): return .running(startedAt: startedAt, typicalSeconds: typical(entry.item.intent))
-                case let .failed(error): return .failed(error)
+                case .waiting, .retrying: return .waiting
+                case let .running(startedAt, _, _): return .running(startedAt: startedAt, typicalSeconds: typical(entry.item.intent))
+                case let .failed(failure): return .failed(failure.error)
                 }
             }
             return pendingThisLaunch.contains(itemID) ? .waiting : .interrupted
         }
         if message.producedVersion == nil, let text = deliveryFailures[message.id] { return .notSaved(text) }
         if let entry = snapshot.entries.first(where: { $0.item.messageID == message.id }),
-           case let .failed(error) = entry.state {
-            return .failed(error)
+           case let .failed(failure) = entry.state {
+            return .failed(failure.error)
         }
         if let produced = message.producedVersion { return .produced(produced) }
         return .none

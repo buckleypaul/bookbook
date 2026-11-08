@@ -37,7 +37,8 @@ let package = Package(
         .target(
             name: "BBAI",
             dependencies: ["BBAICore", "BBModel", collections],
-            resources: [.copy("Resources/ModelCatalog.json"), .copy("Resources/PriceList.json"), .copy("Resources/Prompts")],
+            resources: [.copy("Resources/ModelCatalog.json"), .copy("Resources/PriceList.json"), .copy("Resources/Prompts"),
+                        .copy("Resources/SensitiveTerms.json")],
             swiftSettings: settings
         ),
         .target(name: "BBOpenAI", dependencies: ["BBAICore", "BBNet"], swiftSettings: settings),

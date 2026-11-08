@@ -18,7 +18,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 6 | Template editor | done | `phase-6-template-editor` | — | $0.00 | No live checks. [Log](progress/phase-6-template-editor.md) |
 | 7 | Style guide and page setup | done | `phase-7-style-page-setup` | — | $0.00 | No live checks. [Log](progress/phase-7-style-page-setup.md) |
 | 8 | Sessions and versions | done | `phase-8-sessions-versions` | — | $0.02 | Live check `SP8_refinementLowQuality` passed. [Log](progress/phase-8-sessions-versions.md) |
-| 9 | Queue, cost, errors and settings (M2) | not started | | | | |
+| 9 | Queue, cost, errors and settings (M2) | in progress | `phase-9-queue-cost-settings` | — | $0.00 | |
 | 10 | Assets and character sheets | not started | | | | |
 | 11 | Region editing | not started | | | | |
 | 12 | Consistency check and AI templates (M3) | not started | | | | |
@@ -138,3 +138,19 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
+
+### Phase 9 — Queue, cost, errors and settings
+
+**Stage:** A
+
+**Contracts (main thread, 2026-11-08):** `BBModel/Cost.swift` (`CostRecord`, `LedgerSummary`); `BBAI/CostContracts.swift` (`PriceList`, `CostEstimate`, `ImageEstimateInput`, `CostPricing`, `CostDecision`); `BBAI/Contracts.swift` queue types (`QueueItem` now Codable with `estimate`/`display`/`enqueuedAt`, `QueueFailure`, `.retrying`, `QueuePause`, `QueuePosition`, `DeliveryResult`, `GenerationHost.recordCost`, `QueuePersistence`, `PersistedQueue`; `AssemblyReport` Codable with `storyText`); `BBAI/AdvisorContracts.swift` (`FailureAdvice`, `AdviceContext`, `CustomModelSpec`, `ModelAvailability`); BBAICore `ProviderError` Codable, `ModelLister`, `CatalogModel.copiesFrom`; `BBStore/AppSupportFiles.swift`; `Resources/SensitiveTerms.json`.
+
+**Assumptions (plan defaults; overrule if wrong):**
+- Confirmation threshold default **$0.50** per request or batch.
+- Money is `Decimal` USD throughout (matches `Book.budget`).
+- One ledger line per provider request, including automatic retries. $0 for HTTP 4xx/5xx failures; the estimate for cancels, timeouts and transport errors (they may be billed).
+- Custom model IDs and the default model/quality/threshold are stored in `UserDefaults` (A §5.5 put catalog overrides in `pricelist.json`; recorded in architecture.md).
+- Template and consistency default-model settings wait for Phase 12 (nothing uses them yet).
+- "Retry with <other provider>" is computed but hidden until Phase 13 (only OpenAI is configured).
+- A delivery to a book locked by another process is kept in memory by the queue and retried; it's lost if the app quits first.
+

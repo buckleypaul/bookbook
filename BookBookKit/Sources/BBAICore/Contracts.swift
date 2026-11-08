@@ -17,10 +17,16 @@ public struct CatalogModel: Hashable, Codable, Sendable {
     /// Typical seconds per quality level, for the elapsed-time display.
     public var typicalDurationSeconds: [QualityLevel: Double]
     public var image: ImageCapabilities
+    /// Phase 9: for a custom model ID (A §7.1 item 3), the catalog model whose capabilities and
+    /// prices it copies. Price lookups use `pricingModelID`. nil for bundled models.
+    public var copiesFrom: String?
+
+    public var pricingModelID: String { copiesFrom ?? id }
 
     public init(provider: ProviderID, id: String, displayName: String, status: ModelStatus = .current,
                 successor: String? = nil, typicalDurationSeconds: [QualityLevel: Double] = [:],
-                image: ImageCapabilities) {
+                image: ImageCapabilities, copiesFrom: String? = nil) {
+        self.copiesFrom = copiesFrom
         self.provider = provider
         self.id = id
         self.displayName = displayName
@@ -194,6 +200,14 @@ public enum GenerationProgress: Sendable, Equatable {
 
 // MARK: - Protocols
 
+/// Phase 9: the provider's list-models endpoint, called with the stored key by "Test
+/// connection" and when Settings opens (A §7.1 "model churn"). Sends no book data.
+public protocol ModelLister: Sendable {
+    var id: ProviderID { get }
+    /// The model IDs the key can use. Throws `.missingKey`, `.invalidKey`, `.offline`, ….
+    func listModelIDs() async throws(ProviderError) -> Set<String>
+}
+
 public protocol ImageProvider: Sendable {
     var id: ProviderID { get }
     func generate(_ request: ImageRequest,
@@ -204,7 +218,7 @@ public protocol ImageProvider: Sendable {
 
 /// The raw provider response, kept for the Details disclosure. The adapter redacts any key
 /// echo (e.g. `Redaction.redactMaskedKeys`) before building this; it never holds the key.
-public struct ProviderErrorRaw: Hashable, Sendable {
+public struct ProviderErrorRaw: Hashable, Codable, Sendable {
     public var status: Int?
     public var code: String?
     public var body: String
@@ -215,11 +229,11 @@ public struct ProviderErrorRaw: Hashable, Sendable {
     }
 }
 
-public enum RefusalStage: String, Sendable {
+public enum RefusalStage: String, Codable, Sendable {
     case input, output, unknown
 }
 
-public enum ProviderError: Error, Hashable, Sendable {
+public enum ProviderError: Error, Hashable, Codable, Sendable {
     case invalidKey(ProviderErrorRaw?)
     /// No key is stored for the provider.
     case missingKey

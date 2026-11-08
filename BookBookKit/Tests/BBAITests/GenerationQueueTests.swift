@@ -65,7 +65,7 @@ actor FakeHost: GenerationHost {
         return images[ref]
     }
     func reads() -> [ImageRef] { imageReads }
-    func deliver(_ delivery: GenerationDelivery) async { deliveries.append(delivery) }
+    func deliver(_ delivery: GenerationDelivery) async -> DeliveryResult { deliveries.append(delivery); return .delivered }
     func delivered() -> [GenerationDelivery] { deliveries }
 }
 
@@ -141,7 +141,7 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
         }
         await eventually("settled") { await queue.snapshot().entries.count == 1 }
         let snapshot = await queue.snapshot()
-        #expect(snapshot.entry(for: first.id)?.state == .failed(.refused(stage: .input, categories: ["x"], nil)))
+        #expect(snapshot.entry(for: first.id)?.failure?.error == .refused(stage: .input, categories: ["x"], nil))
         #expect(snapshot.entry(for: second.id) == nil)
         // Failed entries can be removed.
         await queue.remove(first.id)
@@ -158,8 +158,8 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
         try await Task.sleep(for: .milliseconds(50))
         #expect(await provider.startedPrompts().count == 1)
         let running = await queue.snapshot()
-        #expect(running.entry(for: first.id)?.state == .running(startedAt: Date(timeIntervalSince1970: 100), progress: nil)
-                || running.entry(for: first.id)?.state == .running(startedAt: Date(timeIntervalSince1970: 100), progress: .sent))
+        #expect(running.entry(for: first.id)?.state == .running(startedAt: Date(timeIntervalSince1970: 100), progress: nil, attempt: 1)
+                || running.entry(for: first.id)?.state == .running(startedAt: Date(timeIntervalSince1970: 100), progress: .sent, attempt: 1))
         #expect(running.entry(for: second.id)?.state == .waiting)
         await queue.remove(first.id)
         #expect(await queue.snapshot().entries.count == 2)
@@ -203,7 +203,7 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
             Issue.record("expected unknown")
             return
         }
-        #expect(await queue.snapshot().entry(for: item.id)?.state == .failed(.unknown(nil)))
+        #expect(await queue.snapshot().entry(for: item.id)?.failure?.error == .unknown(nil))
 
         var badModel = makeItem()
         badModel.intent.model = "nope"
@@ -286,5 +286,12 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
             return
         }
         #expect(await provider.receivedRequests().isEmpty)
+    }
+}
+
+extension QueueEntry {
+    /// The failure, if this entry has failed.
+    var failure: QueueFailure? {
+        if case let .failed(failure) = state { failure } else { nil }
     }
 }

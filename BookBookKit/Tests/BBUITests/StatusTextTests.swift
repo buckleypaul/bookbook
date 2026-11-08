@@ -93,9 +93,9 @@ struct MessageStatusTests {
     @Test func pendingStates() {
         #expect(resolve(message(queued: true), .waiting) == .waiting)
         let start = Fixtures.date
-        #expect(resolve(message(queued: true), .running(startedAt: start, progress: .sent))
+        #expect(resolve(message(queued: true), .running(startedAt: start, progress: .sent, attempt: 1))
             == .running(startedAt: start, typicalSeconds: 14))
-        #expect(resolve(message(queued: true), .failed(.offline)) == .failed(.offline))
+        #expect(resolve(message(queued: true), .failed(QueueFailure(error: .offline, report: nil, attempts: 1, failedAt: Date()))) == .failed(.offline))
     }
 
     @Test func pendingButNotInQueue() {
@@ -105,7 +105,7 @@ struct MessageStatusTests {
 
     @Test func finished() {
         // Failure delivered: the message's queueItemID is cleared, the queue keeps the failed entry.
-        #expect(resolve(message(queued: false), .failed(.missingKey)) == .failed(.missingKey))
+        #expect(resolve(message(queued: false), .failed(QueueFailure(error: .missingKey, report: nil, attempts: 1, failedAt: Date()))) == .failed(.missingKey))
         let version = VersionID()
         #expect(resolve(message(queued: false, produced: version), nil) == .produced(version))
         #expect(resolve(message(queued: false), nil) == MessageStatus.none)

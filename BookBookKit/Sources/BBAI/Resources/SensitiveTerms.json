@@ -1,0 +1,10 @@
+{
+  "schemaNote": "Story-context words that often trigger provider safety filters (A §7.11 rule 2). Matched case-insensitively as whole words; `forms` lists inflections. Advice wording: \"Try removing the word '<X>'.\"",
+  "terms": [
+    { "term": "naked", "forms": ["nude"] },
+    { "term": "bath", "forms": ["bathe", "bathing", "bathtub"] },
+    { "term": "blood", "forms": ["bloody", "bleeding"] },
+    { "term": "gun", "forms": ["guns", "pistol", "rifle"] },
+    { "term": "kill", "forms": ["kills", "killed", "killing"] }
+  ]
+}

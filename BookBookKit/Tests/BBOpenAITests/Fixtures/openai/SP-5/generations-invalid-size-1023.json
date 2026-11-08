@@ -1,0 +1,8 @@
+{
+  "error" : {
+    "code" : "invalid_value",
+    "message" : "Invalid size '1023x1023'. Width and height must both be divisible by 16.",
+    "param" : "size",
+    "type" : "image_generation_user_error"
+  }
+}

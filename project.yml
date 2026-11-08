@@ -1,0 +1,55 @@
+# XcodeGen spec for BookBook.xcodeproj. This file is the source of truth:
+# edit it, run `xcodegen generate`, and commit both. CI fails if they drift.
+name: BookBook
+options:
+  bundleIdPrefix: app.bookbook
+  deploymentTarget:
+    macOS: "27.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+configFiles:
+  Debug: App/Config/Debug.xcconfig
+  Release: App/Config/Release.xcconfig
+packages:
+  BookBookKit:
+    path: BookBookKit
+targets:
+  BookBook:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/BookBook
+    configFiles:
+      Debug: App/Config/BookBook-Debug.xcconfig
+      Release: App/Config/BookBook-Release.xcconfig
+    dependencies:
+      - package: BookBookKit
+        product: BBUI
+      - package: BookBookKit
+        product: BBOpenAI
+      - package: BookBookKit
+        product: BBGemini
+  BookBookTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: App/BookBookTests
+    configFiles:
+      Debug: App/Config/BookBookTests.xcconfig
+      Release: App/Config/BookBookTests-Release.xcconfig
+    dependencies:
+      - target: BookBook
+schemes:
+  BookBook:
+    build:
+      targets:
+        BookBook: all
+        BookBookTests: [test]
+    test:
+      config: Debug
+      targets:
+        - BookBookTests
+    run:
+      config: Debug
+    archive:
+      config: Release

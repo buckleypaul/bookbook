@@ -1,0 +1,6 @@
+#include "Release.xcconfig"
+PRODUCT_BUNDLE_IDENTIFIER = app.bookbook.BookBookTests
+PRODUCT_NAME = BookBookTests
+GENERATE_INFOPLIST_FILE = YES
+TEST_HOST = $(BUILT_PRODUCTS_DIR)/BookBook.app/Contents/MacOS/BookBook
+BUNDLE_LOADER = $(TEST_HOST)

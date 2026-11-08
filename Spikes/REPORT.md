@@ -171,7 +171,7 @@ Full detail is in [`notes/local-spikes.md`](notes/local-spikes.md).
 - (b) An app-level "reopen last books" list, opened with `openWindow(value:)`. That can't create duplicates.
 - (c) Set `NSQuitAlwaysKeepsWindows` in the app's own defaults domain.
 
-This is recorded under Follow-ups in `PROGRESS.md`.
+**Decided 2026-11-07: (b), always reopen.** Recorded in PD §8.1 and A §6.1; built in Phase 3.
 
 ## Hand checks (only you can do these)
 

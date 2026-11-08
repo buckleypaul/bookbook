@@ -7,7 +7,37 @@ BookBook is a macOS 27 app for writing and illustrating picture books with AI im
 - `implementation-plan.md`: the phases, working rules (§2), and dependencies (§3).
 - `PROGRESS.md`: where the build is now. `PHASE_PROMPT.md`: how one phase session runs.
 
-The module map and file-ownership rules are added in Phase 1b (plan §2.5).
+## Module map
+
+Targets are defined in `BookBookKit/Package.swift` (architecture.md §3). Dependencies listed are the only ones allowed.
+
+| Target | Folder | Holds | May depend on |
+|---|---|---|---|
+| BBModel | `BookBookKit/Sources/BBModel` | value types, IDs, schema versions, derived queries. Foundation only, no I/O | swift-collections |
+| BBStore | `BookBookKit/Sources/BBStore` | package I/O, journal, library, migrations, image store, keychain. Bundles presets | BBModel |
+| BBLayout | `BookBookKit/Sources/BBLayout` | geometry, page order, TextKit 2 layout, PageRenderer. AppKit only for TextKit 2 and fonts; no views | BBModel |
+| BBNet | `BookBookKit/Sources/BBNet` | HTTP client, multipart, SSE. Redacts `Authorization` and `x-goog-api-key` | nothing |
+| BBAICore | `BookBookKit/Sources/BBAICore` | provider protocols and request/response types shared by BBAI and the adapters | BBModel |
+| BBAI | `BookBookKit/Sources/BBAI` | queue, context assembly, cost, errors, catalog. Bundles the catalog, prices and prompts | BBAICore, BBModel, swift-collections |
+| BBOpenAI | `BookBookKit/Sources/BBOpenAI` | OpenAI provider adapter | BBAICore, BBNet |
+| BBGemini | `BookBookKit/Sources/BBGemini` | Gemini provider adapter | BBAICore, BBNet |
+| BBExport | `BookBookKit/Sources/BBExport` | PDF, booklet, upscale, preflight | BBLayout, BBModel |
+| BBUI | `BookBookKit/Sources/BBUI` | SwiftUI features, AppKit canvas, view models | BBExport, BBAI, BBStore, BBLayout, BBModel |
+| BBTestSupport | `BookBookKit/Sources/BBTestSupport` | live-test gate, bundled test font. Test-only, never linked into the app | nothing |
+| BookBook (app) | `App/BookBook` | thin: `@main`, scenes and wiring only | BBUI, BBOpenAI, BBGemini |
+| BookBookTests | `App/BookBookTests` | app-level tests | BookBook |
+
+- The app wires up the concrete providers. Providers depend on BBAICore, never the reverse.
+- Bundled resources: `BBAI/Resources/ModelCatalog.json`, `PriceList.json`, `Prompts/`; `BBStore/Resources/Presets/` (`StylePresets.json`, `TemplatePresets.json`); `BBTestSupport/Resources/Fonts/` (test font, OFL).
+
+## File ownership (implementation-plan.md §2.5)
+
+- Contracts first: the main thread lands the public types and protocols that a phase's lanes share before any lane starts.
+- One git worktree per lane. The main thread merges lanes and runs the hand checks.
+- Two lanes never edit the same file at once.
+- Hot spots: `CanvasView`, `BookDocument`, `ModelCatalog.json`, `PriceList.json`, `BookBookKit/Package.swift` and `project.yml`. Only the main thread edits these, or one lane at a time.
+- `BookBook.xcodeproj` is generated. Never hand-edit it: edit `project.yml` and run `xcodegen generate`, then commit both.
+- Subagents edit only the files their brief lists.
 
 ## API key hygiene (implementation-plan.md §2.2): mandatory for everyone, including subagents
 

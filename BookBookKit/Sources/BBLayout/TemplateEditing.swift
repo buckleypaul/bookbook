@@ -60,11 +60,14 @@ public struct EditableBox: Hashable, Sendable {
     public var id: BoxID
     public var rect: CGRect
     public var rotationDegrees: Double
+    /// Text boxes draw above all image boxes whatever their layer order (A §8), so they are hit first.
+    public var isText: Bool
 
-    public init(id: BoxID, rect: CGRect, rotationDegrees: Double) {
+    public init(id: BoxID, rect: CGRect, rotationDegrees: Double, isText: Bool = false) {
         self.id = id
         self.rect = rect
         self.rotationDegrees = rotationDegrees
+        self.isText = isText
     }
 }
 
@@ -75,13 +78,13 @@ public enum BoxHitTesting {
         rotate(point, about: CGPoint(x: rect.midX, y: rect.midY), degrees: -rotationDegrees)
     }
 
-    /// The topmost box (last in layer order) containing `point`, honouring rotation.
+    /// The topmost box containing `point`, honouring rotation. Follows the draw order: text boxes
+    /// (last in layer order first) are hit before any image box, then image boxes in reverse layer order.
     public static func box(at point: CGPoint, in boxes: [EditableBox]) -> BoxID? {
-        for box in boxes.reversed()
-        where box.rect.contains(unrotate(point, rect: box.rect, rotationDegrees: box.rotationDegrees)) {
-            return box.id
-        }
-        return nil
+        let topFirst = boxes.reversed().filter(\.isText) + boxes.reversed().filter { !$0.isText }
+        return topFirst.first {
+            $0.rect.contains(unrotate(point, rect: $0.rect, rotationDegrees: $0.rotationDegrees))
+        }?.id
     }
 
     /// The handle within `tolerance` points of `point`, if any. `rotationKnobOffset` is the

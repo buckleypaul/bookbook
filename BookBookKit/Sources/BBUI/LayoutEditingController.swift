@@ -93,7 +93,8 @@ final class LayoutEditingController: CanvasController {
 
     private func editableBoxes(_ template: Template, _ geometry: PageGeometry) -> [EditableBox] {
         template.boxes.map {
-            EditableBox(id: $0.id, rect: geometry.trimRect(for: $0.frame), rotationDegrees: $0.rotationDegrees)
+            EditableBox(id: $0.id, rect: geometry.trimRect(for: $0.frame), rotationDegrees: $0.rotationDegrees,
+                        isText: $0.content != .image)
         }
     }
 

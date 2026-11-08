@@ -42,7 +42,7 @@ struct BookLock {
         return (true, try? PackageCoding.decoder().decode(LockOwner.self, from: data))
     }
 
-    enum Outcome {
+    enum Outcome: Equatable {
         /// This store wrote the lock file and owns it.
         case wrote(LockOwner)
         /// The file already names this process (re-entrant); this store does not own the file.
@@ -51,24 +51,58 @@ struct BookLock {
     }
 
     func acquire(now: Date = Date()) throws -> Outcome {
-        let mine = LockOwner(pid: Self.currentPID, host: Self.currentHost, acquiredAt: now)
-        // A couple of rounds covers losing a create race to another process and then re-checking.
-        for _ in 0..<3 {
+        try acquire(as: LockOwner(pid: Self.currentPID, host: Self.currentHost, acquiredAt: now))
+    }
+
+    /// `mine` names the acquiring process. Tests pass other identities to stand in for separate
+    /// processes; the app always uses this process's.
+    func acquire(as mine: LockOwner) throws -> Outcome {
+        let isMine = { (owner: LockOwner) in owner.host == mine.host && owner.pid == mine.pid }
+        // A few rounds cover losing a create or takeover race and then re-checking.
+        for _ in 0..<5 {
             let current = read()
             if let owner = current.owner {
-                if Self.isCurrentProcess(owner) { return .reentrant }
+                if isMine(owner) { return .reentrant }
                 if Self.isLive(owner) { return .heldByOther(owner) }
             }
             if current.exists {
-                // Stale (dead PID on this host, or garbage): take it over atomically.
-                try write(mine, exclusive: false)
-                return .wrote(mine)
+                // Stale (dead PID on this host, or garbage): take it over, one contender at a time.
+                if try takeOverStale(with: mine) { return .wrote(mine) }
+                continue
             }
             if try write(mine, exclusive: true) { return .wrote(mine) }
         }
-        let owner = read().owner
-        if let owner, !Self.isCurrentProcess(owner) { return .heldByOther(owner) }
-        return .reentrant
+        guard let owner = read().owner else { throw Self.posixError(EAGAIN) }
+        return isMine(owner) ? .reentrant : .heldByOther(owner)
+    }
+
+    /// Replaces a stale lock with `mine` while holding `flock(2)` on the package folder, so two
+    /// contenders that both saw the same stale lock can't both win: under the flock it re-reads
+    /// the file and replaces it only if it still exists and is still stale (a contender that won
+    /// first has left a live lock). Returns false if not, and the caller re-checks.
+    /// Only takeovers need the flock: `link(2)` can't succeed while any lock file exists, and
+    /// `release` removes only its own live lock, so neither can change a stale file under us.
+    private func takeOverStale(with mine: LockOwner) throws -> Bool {
+        let dir = url.deletingLastPathComponent().path(percentEncoded: false)
+        let fd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard fd >= 0 else { throw Self.posixError(errno) }
+        defer { close(fd) }
+        while flock(fd, LOCK_EX) != 0 {
+            guard errno == EINTR else { throw Self.posixError(errno) }
+        }
+        defer { flock(fd, LOCK_UN) }
+        let current = read()
+        guard current.exists else { return false }
+        if let owner = current.owner, Self.isLive(owner) || owner.host == mine.host && owner.pid == mine.pid {
+            return false
+        }
+        try write(mine, exclusive: false)
+        return true
+    }
+
+    private static func posixError(_ code: Int32) -> NSError {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(code),
+                userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(code))])
     }
 
     /// Writes `owner` to a temp file, then either `link(2)`s it into place (exclusive: fails with
@@ -81,8 +115,7 @@ struct BookLock {
         if exclusive {
             if link(tmp.path(percentEncoded: false), url.path(percentEncoded: false)) == 0 { return true }
             if errno == EEXIST { return false }
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno),
-                          userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(errno))])
+            throw Self.posixError(errno)
         }
         try PackageCoding.rename(tmp, to: url)
         return true

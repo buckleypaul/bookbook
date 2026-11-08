@@ -171,10 +171,25 @@ public final class OpenBooks {
     // MARK: Deliveries (A §6.4)
 
     /// A snapshot of the book for context assembly: the open document, else the package on disk.
+    /// A closed book is read under its lock (serialized with this process's opens and
+    /// deliveries); if another process holds the lock, it's read read-only, so nothing in the
+    /// package is touched (no journal recovery, migration, ledger repair or sweep).
     public func content(for id: BookID) async -> BookContent? {
         if let document = documents[id] { return document.content }
-        guard let url = await packageURL(for: id) else { return nil }
-        return try? await BookStore(packageURL: url).load()
+        return await serialized(id) { [self] () async -> BookContent? in
+            if let document = documents[id] { return document.content }
+            guard let url = await packageURL(for: id) else { return nil }
+            let store = BookStore(packageURL: url)
+            switch try? await store.acquireLock() {
+            case .acquired:
+                let content = try? await store.load()
+                await store.releaseLock()
+                return content
+            case .heldByOther, nil:
+                await store.setReadOnly()
+                return try? await store.load()
+            }
+        }
     }
 
     /// Writes a finished generation into its book, open or closed. The image file is always
@@ -203,6 +218,20 @@ public final class OpenBooks {
             return
         }
         let store = BookStore(packageURL: url)
+        // Take the lock before `load()`, which may recover the journal, migrate and sweep. If
+        // another process has the book, nothing is written here and the delivery is reported.
+        do {
+            if case let .heldByOther(owner) = try await store.acquireLock() { throw StoreError.locked(owner) }
+        } catch {
+            Self.log.error("Couldn't lock a closed book for a delivery: \(String(describing: error), privacy: .public)")
+            report(delivery, StoreErrorText.message(for: error))
+            return
+        }
+        await writeDelivery(delivery, to: store, now: now)
+        await store.releaseLock()
+    }
+
+    private func writeDelivery(_ delivery: GenerationDelivery, to store: BookStore, now: @Sendable () -> Date) async {
         do {
             var content = try await store.load()
             let ref = await storeImage(of: delivery, in: store)

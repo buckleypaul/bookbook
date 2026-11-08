@@ -9,12 +9,25 @@ public enum PageNumbering {
     /// front matter. A spread shows a number on each of its two positions.
     public static func numbers(layout: SequenceLayout, style: PageNumberStyle,
                                pageRoles: [PageID: PageRole]) -> [Int: String] {
-        fatalError("Phase 5 lane L1")
+        guard style.enabled else { return [:] }
+        var result: [Int: String] = [:]
+        for page in layout.pages {
+            if style.skippedPages.contains(page.id) { continue }
+            if style.skipFrontMatter, pageRoles[page.id]?.isFrontMatter == true { continue }
+            for position in page.position..<(page.position + page.span) where position >= 1 {
+                result[position] = String(style.startNumber + position - 1)
+            }
+        }
+        return result
     }
 
     /// The marks to pass in `RenderOptions.pageNumbers` for one page.
     public static func marks(for page: PageID, layout: SequenceLayout,
                              numbers: [Int: String]) -> [PageNumberMark] {
-        fatalError("Phase 5 lane L1")
+        guard let entry = layout.position(of: page) else { return [] }
+        return (entry.position..<(entry.position + entry.span)).compactMap { position in
+            guard let text = numbers[position] else { return nil }
+            return PageNumberMark(text: text, half: position - entry.position, isLeftHand: position % 2 == 0)
+        }
     }
 }

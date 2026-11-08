@@ -24,15 +24,74 @@ public enum StoryImportError: Error, Hashable, Sendable {
 public enum StoryTextImporter {
     /// Reads a `.txt` (UTF-8, falling back to detected encoding) or `.rtf` file.
     public static func read(_ url: URL, typography: Typography) throws(StoryImportError) -> RichText {
-        fatalError("Phase 5 lane L1")
+        switch url.pathExtension.lowercased() {
+        case "rtf":
+            guard let data = try? Data(contentsOf: url),
+                  let attributed = try? NSAttributedString(
+                      data: data, options: [.documentType: NSAttributedString.DocumentType.rtf],
+                      documentAttributes: nil)
+            else { throw .unreadable }
+            return richText(from: attributed, typography: typography)
+        case "txt":
+            guard let data = try? Data(contentsOf: url) else { throw .unreadable }
+            if let text = String(data: data, encoding: .utf8) { return richText(fromPlain: text) }
+            var converted: NSString?
+            let encoding = NSString.stringEncoding(for: data, encodingOptions: nil, convertedString: &converted,
+                                                   usedLossyConversion: nil)
+            if encoding != 0, let converted { return richText(fromPlain: converted as String) }
+            guard let text = String(data: data, encoding: .isoLatin1) else { throw .unreadable }
+            return richText(fromPlain: text)
+        default:
+            throw .unsupportedType
+        }
     }
 
     /// Plain (pasted) text as RichText with no overrides.
     public static func richText(fromPlain text: String) -> RichText {
-        fatalError("Phase 5 lane L1")
+        RichText(plain: normalizeNewlines(text))
     }
 
     public static func split(_ text: RichText, rule: StorySplitRule) -> [RichText] {
-        fatalError("Phase 5 lane L1")
+        func plain(_ p: Paragraph) -> String { p.runs.map(\.text).joined() }
+        func isBlank(_ p: Paragraph) -> Bool {
+            plain(p).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        var chunks: [[Paragraph]] = [[]]
+        for paragraph in text.paragraphs {
+            let isSeparator: Bool
+            switch rule {
+            case .blankLines:
+                isSeparator = isBlank(paragraph)
+            case .marker(let marker):
+                isSeparator = plain(paragraph).trimmingCharacters(in: .whitespacesAndNewlines)
+                    == marker.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if isSeparator { chunks.append([]) } else { chunks[chunks.count - 1].append(paragraph) }
+        }
+        return chunks.compactMap { chunk in
+            var paragraphs = chunk[...]
+            while let first = paragraphs.first, isBlank(first) { paragraphs = paragraphs.dropFirst() }
+            while let last = paragraphs.last, isBlank(last) { paragraphs = paragraphs.dropLast() }
+            return paragraphs.isEmpty ? nil : RichText(paragraphs: Array(paragraphs))
+        }
+    }
+
+    private static func normalizeNewlines(_ text: String) -> String {
+        text.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\n")
+    }
+
+    private static func richText(from attributed: NSAttributedString, typography: Typography) -> RichText {
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        for pattern in ["\r\n", "\r", "\u{2028}", "\u{2029}"] {
+            while true {
+                let range = (mutable.string as NSString).range(of: pattern)
+                if range.location == NSNotFound { break }
+                mutable.replaceCharacters(in: range, with: "\n")
+            }
+        }
+        return RichTextBridge.richText(from: mutable, typography: typography)
     }
 }

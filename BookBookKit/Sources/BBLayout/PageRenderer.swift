@@ -12,6 +12,8 @@ public struct PageRenderer {
     static let placeholderStroke = CGColor(srgbRed: 0.80, green: 0.80, blue: 0.82, alpha: 1)
     static let safeAreaGuide = CGColor(srgbRed: 0.20, green: 0.55, blue: 0.95, alpha: 0.6)
     static let boxGuide = CGColor(srgbRed: 0.55, green: 0.55, blue: 0.60, alpha: 0.6)
+    /// The trim line, drawn when bleed is on.
+    static let trimGuide = CGColor(srgbRed: 0.90, green: 0.20, blue: 0.20, alpha: 0.75)
 
     public var images: any PageImageSource
     /// Optional layout cache (the canvas sets it). When nil, every draw lays out afresh.
@@ -33,16 +35,16 @@ public struct PageRenderer {
     /// page's content stream. The caller clips to `visibleRect`; `nil` draws every box.
     public func draw(page: Page, in content: BookContent, into ctx: CGContext, options: RenderOptions,
                      visibleRect: CGRect?) {
-        let geometry = PageGeometry(setup: content.style.pageSetup)
+        let template = content.template(for: page)
+        let geometry = PageGeometry(drawSetup: content.style.pageSetup, isSpread: template?.kind == .spread)
         ctx.saveGState()
         defer { ctx.restoreGState() }
 
         // 1. Background (covers the bleed too, for when the context shows it).
-        let bleed = geometry.bleed
         ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
-        ctx.fill(geometry.trimRect.insetBy(dx: -bleed, dy: -bleed))
+        ctx.fill(geometry.bleedRect)
 
-        guard let template = content.template(for: page) else { return }
+        guard let template else { return }
 
         func isVisible(_ box: Box) -> Bool {
             guard let visibleRect else { return true }
@@ -82,7 +84,7 @@ public struct PageRenderer {
     /// True if any text box on the page overflows.
     public func overflowingTextBoxes(page: Page, in content: BookContent) -> Set<BoxID> {
         guard let template = content.template(for: page) else { return [] }
-        let geometry = PageGeometry(setup: content.style.pageSetup)
+        let geometry = PageGeometry(drawSetup: content.style.pageSetup, isSpread: template.kind == .spread)
         var result: Set<BoxID> = []
         for box in template.boxes {
             guard case .text(let style) = box.content,
@@ -159,13 +161,20 @@ public struct PageRenderer {
         layout.draw(in: ctx, origin: inner.origin)
     }
 
+    /// Screen-only overlays (A §8.4 step 5): the trim line when bleed is on (the area outside
+    /// it is the bleed), each page's safe area (two on a spread, with the margins on both
+    /// sides of the fold), and every box's outline. Never drawn into an export.
     private func drawGuides(template: Template, geometry: PageGeometry, ctx: CGContext) {
         ctx.saveGState()
         defer { ctx.restoreGState() }
         ctx.setLineWidth(0.75)
+        if geometry.bleed > 0 {
+            ctx.setStrokeColor(Self.trimGuide)
+            ctx.stroke(geometry.trimRect)
+        }
         ctx.setLineDash(phase: 0, lengths: [4, 3])
         ctx.setStrokeColor(Self.safeAreaGuide)
-        ctx.stroke(geometry.safeArea)
+        for area in geometry.pageSafeAreas { ctx.stroke(area) }
         ctx.setStrokeColor(Self.boxGuide)
         for box in template.boxes {
             let rect = geometry.renderRect(for: box)
@@ -210,7 +219,8 @@ public struct PageRenderer {
 
     // MARK: Helpers
 
-    /// The box's render rect, grown to cover its rotation.
+    /// The box's render rect, grown to cover its rotation (about the render rect's centre, see
+    /// `PageGeometry.renderRect(for:)`).
     static func bounds(of box: Box, geometry: PageGeometry) -> CGRect {
         let rect = geometry.renderRect(for: box)
         guard box.rotationDegrees != 0, box.rotationDegrees.isFinite else { return rect }
@@ -220,7 +230,9 @@ public struct PageRenderer {
         return rect.applying(transform)
     }
 
-    /// Rotates the context around the box centre (clockwise on the page for positive degrees).
+    /// Rotates the context around the centre of the box's RENDER rect (bleed-extended when bleed
+    /// is on; clockwise on the page for positive degrees). The editors outline and hit-test
+    /// about the same centre (`PageGeometry.renderRect(for:)`).
     private func applyRotation(_ box: Box, rect: CGRect, ctx: CGContext) {
         guard box.rotationDegrees != 0, box.rotationDegrees.isFinite else { return }
         ctx.translateBy(x: rect.midX, y: rect.midY)

@@ -14,6 +14,36 @@ enum LayoutEditingMath {
     /// ⇧ while rotating: snap to multiples of this.
     static let shiftRotationStep: Double = 15
 
+    // MARK: Boxes on screen
+
+    /// The template's boxes as the editor handles them: RENDER rects (bleed-extended when
+    /// bleed is on), so outlines, handles, hit-testing and the rotation pivot match what
+    /// `PageRenderer` draws (it rotates about the render rect's centre).
+    static func editableBoxes(_ template: Template, geometry: PageGeometry) -> [EditableBox] {
+        template.boxes.map {
+            EditableBox(id: $0.id, rect: geometry.renderRect(for: $0), rotationDegrees: $0.rotationDegrees,
+                        isText: $0.content != .image)
+        }
+    }
+
+    /// The stored frame for a box whose render rect an edit moved to `rect`: the bleed that
+    /// was pushed out (`pushedEdges`, taken before the edit) is removed, then normalized.
+    static func frame(forRender rect: CGRect, pushedEdges: EdgeSet, geometry: PageGeometry) -> NormalizedRect {
+        geometry.normalizedFrame(for: geometry.trimRect(fromRender: rect, pushedEdges: pushedEdges))
+    }
+
+    /// Snap targets for a drag: `SnapTargets.make`, plus the bleed's outer edges when bleed
+    /// is on (a full-bleed box's render edges sit there).
+    static func snapTargets(geometry: PageGeometry, others: [EditableBox]) -> SnapTargets {
+        var targets = SnapTargets.make(geometry: geometry, isSpread: geometry.isSpread, others: others)
+        let bleed = geometry.bleed
+        guard bleed > 0 else { return targets }
+        let sheet = geometry.bleedRect
+        targets.xs = Array(Set(targets.xs + [sheet.minX, sheet.maxX])).sorted()
+        targets.ys = Array(Set(targets.ys + [sheet.minY, sheet.maxY])).sorted()
+        return targets
+    }
+
     // MARK: Clicks
 
     /// The selection after a click on `hit` (nil = empty space), and whether the click may

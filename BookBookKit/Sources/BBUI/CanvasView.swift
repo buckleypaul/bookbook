@@ -13,8 +13,18 @@ struct CanvasScene {
     var images: any PageImageSource
     /// Draw the centre fold (screen only).
     var showsFold: Bool = false
-    /// Show the bleed area around the trim (the sheet grows by the bleed).
+    /// Show the bleed area around the trim (the sheet grows by the bleed). Both editors set
+    /// it whenever bleed is on, so full-bleed boxes visibly extend past the trim line.
     var showsBleed: Bool = false
+
+    /// The draw geometry (spread-aware: fold, per-page safe areas, no bleed at the fold).
+    var geometry: PageGeometry { PageGeometry.drawGeometry(for: page, in: content) }
+
+    /// The area fitted to the view: the trim, grown by the bleed when it's shown.
+    var sheetRect: CGRect {
+        let geometry = geometry
+        return showsBleed ? geometry.bleedRect : geometry.trimRect
+    }
 }
 
 /// A canvas mode (plan Phase 6 Risks): supplies the scene and its overlays and handles input.
@@ -96,18 +106,13 @@ final class CanvasView: NSView {
     // MARK: Geometry
 
     /// The scene's geometry (its `setup` is the draw trim: double width for a spread).
-    var geometry: PageGeometry? { controller?.scene.map { PageGeometry(setup: $0.content.style.pageSetup) } }
+    var geometry: PageGeometry? { controller?.scene?.geometry }
 
-    /// The area fitted to the view: the trim, grown by the bleed when it's shown.
-    private func sheetRect(_ scene: CanvasScene, geometry: PageGeometry) -> CGRect {
-        scene.showsBleed ? geometry.trimRect.insetBy(dx: -geometry.bleed, dy: -geometry.bleed) : geometry.trimRect
-    }
-
-    /// View ↔ page transform.
+    /// View ↔ page transform. Page points stay trim space (origin at the trim's top-left) even
+    /// when the bleed is shown: the bleed only widens the fitted area.
     var transform: CanvasTransform? {
         guard let scene = controller?.scene else { return nil }
-        let geometry = PageGeometry(setup: scene.content.style.pageSetup)
-        return CanvasTransform(viewSize: bounds.size, fitting: sheetRect(scene, geometry: geometry))
+        return CanvasTransform(viewSize: bounds.size, fitting: scene.sheetRect)
     }
 
     private var lastPagePoint: CGPoint?
@@ -124,8 +129,8 @@ final class CanvasView: NSView {
         ctx.fill(bounds)
         controller?.willDraw()
         guard let controller, let scene = controller.scene else { return }
-        let geometry = PageGeometry(setup: scene.content.style.pageSetup)
-        let sheet = sheetRect(scene, geometry: geometry)
+        let geometry = scene.geometry
+        let sheet = scene.sheetRect
         let transform = CanvasTransform(viewSize: bounds.size, fitting: sheet)
 
         ctx.saveGState()
@@ -161,7 +166,8 @@ final class CanvasView: NSView {
         ctx.restoreGState()
     }
 
-    /// Applies `rotationDegrees` about `rect`'s centre (as `PageRenderer` does).
+    /// Applies `rotationDegrees` about `rect`'s centre (as `PageRenderer` does). Pass the box's
+    /// render rect (`PageGeometry.renderRect(for:)`), the pivot every drawer agrees on.
     static func applyRotation(_ rotationDegrees: Double, about rect: CGRect, ctx: CGContext) {
         guard rotationDegrees != 0, rotationDegrees.isFinite else { return }
         ctx.translateBy(x: rect.midX, y: rect.midY)

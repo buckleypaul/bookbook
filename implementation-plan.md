@@ -2,7 +2,7 @@
 
 **Status:** Draft v1, for review
 **Date:** 2026-11-07
-**Inputs:** `product-description.md` v4 (cited as **PD §n**) and `architecture.md` v1.1 (cited as **A §n**). `architecture-notes.md` is background only.
+**Inputs:** `product-description.md` v4 (cited as **PD §n**) and `architecture.md` v1.1 (cited as **A §n**). `architecture-notes.md` was background only (since removed). A §15–§16 now live in `architecture-decisions.md`.
 **Next step:** carry out the plan, one phase at a time. The phase specs live in `plan/` (one file per phase; finished phases in `plan/done/`). A phase session reads this core file (§0–§3) plus its own phase file. This document sets the order of work. It does not change the design. Where the plan needed a design detail, it's flagged as a **plan decision** so you can overrule it.
 
 ---
@@ -12,7 +12,7 @@
 | Topic | Decision | Where it's recorded |
 |---|---|---|
 | A §15 product changes | Already applied to PD v3. Nothing outstanding. | PD header |
-| A §16 decisions made without asking | All 8 accepted as written. | A §16 |
+| A §16 decisions made without asking | All 8 accepted as written. | `architecture-decisions.md` §16 |
 | Minimum OS | **macOS 27.** macOS 26 is no longer supported. | PD §3, A §2 |
 | Toolchain | Xcode 27.x (Swift 6.4), locally and in CI. CI uses GitHub's `xcode-27` runner label (macOS 27, Apple Silicon). | A §2, D13, §13.2 |
 | Repository | Public on GitHub at **`buckleypaul/bookbook`** (personal account), created 2026-11-07 with the planning docs as the first commit. Commits use the repo-local identity `Paul Buckley <paul@paulbuckley.me>`. The Homebrew tap will be `buckleypaul/homebrew-tap`. | A §13.2, §13.3 |
@@ -121,7 +121,7 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
 
 ### 2.6 Phase workflow and progress tracking
 
-- **`PROGRESS.md`** at the repo root is the single record of where the build is. It has one row per phase (in the order 1a, 0, 1b, 2, 3 … 17), with a status, branch, PR, live spend and notes. Each phase session updates it.
+- **`PROGRESS.md`** at the repo root is the single record of where the build is. It has one row per phase (in the order 1a, 0, 1b, 2, 3 … 17), with a status, branch, PR, live spend and notes. Each phase session updates it. It also holds the open follow-ups (grouped by target phase) and the current phase's log. When a phase is `done`, its log moves to `progress/phase-<id>-<slug>.md` and its spec to `plan/done/`, so PROGRESS.md stays small.
 - **Statuses:** `not started` → `in progress` → `awaiting hand checks` (code is done, CI is green, the PR is open) → `done` (you've confirmed the hand checks and the PR is merged). `blocked` and `skipped (floating)` are also allowed.
 - **One phase per session.** The session works on a branch called `phase-<id>-<slug>`, with git worktrees for parallel lanes. It opens a PR to `main` and stops at `awaiting hand checks`. The **next** session starts by asking whether the previous phase's hand checks passed. If they did, it merges that PR (squash) and marks the phase `done` before starting the next one.
 - **Which phase is next:** the first phase in `PROGRESS.md` order that isn't `done` and whose solid dependencies (§3) are all `done`. Phase 13 is skipped while no `gemini-api-key` Keychain item exists. To check, run `security find-generic-password -s gemini-api-key >/dev/null 2>&1`; this checks the item exists without reading the key.

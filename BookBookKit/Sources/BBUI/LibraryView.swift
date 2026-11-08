@@ -25,6 +25,7 @@ public struct LibraryView: View {
                     Text("Your books will appear here.")
                 } actions: {
                     Button("New Book…") { app.newBookRequested = true }
+                    Button("New Book from Story…") { app.newBookFromStoryRequested = true }
                 }
             } else {
                 grid
@@ -35,6 +36,10 @@ public struct LibraryView: View {
             ToolbarItemGroup {
                 Button { app.newBookRequested = true } label: { Label("New Book…", systemImage: "plus") }
                     .help("Create a new book")
+                Button { app.newBookFromStoryRequested = true } label: {
+                    Label("New Book from Story…", systemImage: "text.book.closed")
+                }
+                .help("Create a new book and import its story text")
                 Button { if let selection { openWindow(value: selection) } } label: {
                     Label("Open", systemImage: "arrow.up.forward.square")
                 }
@@ -50,6 +55,9 @@ public struct LibraryView: View {
         }
         .sheet(isPresented: $app.newBookRequested) {
             NewBookSheet { id in openWindow(value: id) }
+        }
+        .sheet(isPresented: $app.newBookFromStoryRequested) {
+            NewBookSheet(fromStory: true) { id in openWindow(value: id) }
         }
         .bookActions($actions)
         .task {
@@ -171,6 +179,9 @@ struct NewBookSheet: View {
     @State private var title = "Untitled"
     @State private var error: String?
     @State private var creating = false
+    /// Open the new book with the Import Story Text sheet up. Cancelling that sheet leaves the
+    /// new, empty book.
+    var fromStory = false
     let onCreated: (BookID) -> Void
 
     var body: some View {
@@ -182,7 +193,7 @@ struct NewBookSheet: View {
         }
         .formStyle(.grouped)
         .frame(width: 360)
-        .navigationTitle("New Book")
+        .navigationTitle(fromStory ? "New Book from Story" : "New Book")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
@@ -199,7 +210,7 @@ struct NewBookSheet: View {
         Task {
             defer { creating = false }
             do {
-                let entry = try await app.createBook(title: title)
+                let entry = try await app.createBook(title: title, thenImportStory: fromStory)
                 dismiss()
                 onCreated(entry.id)
             } catch {

@@ -21,6 +21,8 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate {
     /// The rich text the view currently shows (what was last loaded or sent).
     private(set) var shownText: RichText
     private let onChange: (RichText) -> Void
+    /// Escape ends editing.
+    var onCancel: () -> Void = {}
     private let undoManagerProvider: () -> UndoManager?
     #if DEBUG
     private var switchObserver: (any NSObjectProtocol)?
@@ -135,6 +137,12 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate {
         guard text != shownText else { return }
         shownText = text
         onChange(text)
+    }
+
+    func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard selector == #selector(NSResponder.cancelOperation(_:)) else { return false }
+        onCancel()
+        return true
     }
 
     /// Undo for the text view's own operations resolves to the document's manager.

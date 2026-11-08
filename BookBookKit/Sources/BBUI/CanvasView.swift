@@ -143,6 +143,7 @@ final class CanvasView: NSView {
             pageID: pageID, boxID: boxID, text: content.pages[pageID]?.text[boxID] ?? .empty,
             typography: content.style.typography, undoManager: { [weak self] in self?.undoManagerProvider() },
             onChange: { [weak self] text in self?.onTextChange(pageID, boxID, text) })
+        editor.onCancel = { [weak self] in self?.endEditing() }
         self.editor = editor
         addSubview(editor.host)
         positionEditor()

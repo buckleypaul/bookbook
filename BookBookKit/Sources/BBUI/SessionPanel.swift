@@ -110,6 +110,7 @@ struct SessionPanel: View {
                     ForEach(Array(session.versions.enumerated()), id: \.element.id) { index, version in
                         Button {
                             inspectedVersion = version.id
+                            guard version.id != placedID else { return }
                             document.perform(.chooseVersion(page: pageID, box: boxID, version: version.id))
                         } label: {
                             thumbnail(version)

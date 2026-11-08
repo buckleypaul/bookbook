@@ -86,7 +86,10 @@ public final class AppModel {
     // MARK: Open books
 
     public func openBook(_ id: BookID) async throws -> BookDocument { try await openBooks.open(id) }
-    public func closeBook(_ id: BookID) async { await openBooks.close(id) }
+    public func closeBook(_ id: BookID) async {
+        await openBooks.close(id)
+        await refreshLibrary()
+    }
     public func flushAll() async { await openBooks.flushAll() }
 
     // MARK: Keys (A §5.5, plan §2.2: the key goes only to the Keychain)

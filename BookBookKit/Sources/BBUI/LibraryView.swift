@@ -1,14 +1,19 @@
+import AppKit
 import BBModel
 import BBStore
 import SwiftUI
 
-/// The Library window (A §6.1; Phase 2: a folder scan plus New Book).
+/// The Library window (A §6.1, PD §8.1): a grid of books with cover thumbnails and modified dates.
+/// Open, Rename…, Duplicate, Move to Trash and Show in Finder from the context menu and toolbar.
 public struct LibraryView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.openWindow) private var openWindow
     @State private var selection: BookID?
+    @State private var actions = BookActionRequests()
 
     public init() {}
+
+    private var selectedEntry: LibraryEntry? { selection.flatMap { app.entry(for: $0) } }
 
     public var body: some View {
         @Bindable var app = app
@@ -22,25 +27,10 @@ public struct LibraryView: View {
                     Button("New Book…") { app.newBookRequested = true }
                 }
             } else {
-                List(app.libraryEntries, selection: $selection) { entry in
-                    HStack {
-                        Label(entry.title, systemImage: "book.closed")
-                        Spacer()
-                        Text(entry.modifiedAt, format: .dateTime.day().month().year().hour().minute())
-                            .foregroundStyle(.secondary)
-                    }
-                    .tag(entry.id)
-                }
-                .contextMenu(forSelectionType: BookID.self) { ids in
-                    if let id = ids.first {
-                        Button("Open") { openWindow(value: id) }
-                    }
-                } primaryAction: { ids in
-                    for id in ids { openWindow(value: id) }
-                }
+                grid
             }
         }
-        .frame(minWidth: 480, minHeight: 320)
+        .frame(minWidth: 520, minHeight: 360)
         .toolbar {
             ToolbarItemGroup {
                 Button { app.newBookRequested = true } label: { Label("New Book…", systemImage: "plus") }
@@ -50,12 +40,127 @@ public struct LibraryView: View {
                 }
                 .help("Open the selected book")
                 .disabled(selection == nil)
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([app.libraryRoot])
+                } label: {
+                    Label("Show Library in Finder", systemImage: "folder")
+                }
+                .help("Show the library folder in the Finder")
             }
         }
         .sheet(isPresented: $app.newBookRequested) {
             NewBookSheet { id in openWindow(value: id) }
         }
-        .task { await app.refreshLibrary() }
+        .bookActions($actions)
+        .task {
+            await app.start()
+            await app.reopenBooks { openWindow(value: $0) }
+        }
+        .onChange(of: app.libraryEntries) { _, entries in
+            if let id = selection, !entries.contains(where: { $0.id == id }) { selection = nil }
+        }
+    }
+
+    private var grid: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 210), spacing: 20)], spacing: 24) {
+                // Keyed by URL: two packages can carry the same book ID (a Finder copy).
+                ForEach(app.libraryEntries, id: \.url) { entry in
+                    LibraryCell(entry: entry, isSelected: selection == entry.id)
+                        .onTapGesture(count: 2) { openWindow(value: entry.id) }
+                        .simultaneousGesture(TapGesture().onEnded { selection = entry.id })
+                        .contextMenu { menu(for: entry) }
+                }
+            }
+            .padding(20)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { selection = nil }
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.return) {
+            guard let selection else { return .ignored }
+            openWindow(value: selection)
+            return .handled
+        }
+        .onDeleteCommand { actions.trashing = selectedEntry }
+    }
+
+    @ViewBuilder
+    private func menu(for entry: LibraryEntry) -> some View {
+        Button("Open") { openWindow(value: entry.id) }
+        Divider()
+        Button("Rename…") { actions.renaming = entry }
+        Button("Duplicate") { duplicate(entry) }
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([entry.url]) }
+        Divider()
+        Button("Move to Trash…", role: .destructive) { actions.trashing = entry }
+    }
+
+    private func duplicate(_ entry: LibraryEntry) {
+        Task {
+            do {
+                selection = try await app.duplicate(entry).id
+            } catch {
+                actions.error = "Couldn't duplicate “\(entry.title)”. \(StoreErrorText.message(for: error))"
+            }
+        }
+    }
+}
+
+/// One book in the grid: its thumbnail (or a placeholder), title and modified date.
+struct LibraryCell: View {
+    let entry: LibraryEntry
+    let isSelected: Bool
+    @Environment(AppModel.self) private var app
+    @State private var image: NSImage?
+
+    private struct ThumbnailKey: Hashable {
+        var url: URL?
+        var modifiedAt: Date
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .shadow(radius: 2, y: 1)
+                } else {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(.quaternary)
+                        .aspectRatio(3 / 4, contentMode: .fit)
+                        .overlay {
+                            Image(systemName: "book.closed").font(.largeTitle).foregroundStyle(.secondary)
+                        }
+                }
+            }
+            .frame(height: 180)
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor.opacity(0.25) : .clear))
+            Text(entry.title)
+                .font(.callout.weight(.medium))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+            Text(entry.modifiedAt, format: .dateTime.day().month().year().hour().minute())
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .task(id: ThumbnailKey(url: entry.thumbnailURL, modifiedAt: entry.modifiedAt)) {
+            guard let source = entry.thumbnailURL else {
+                image = nil
+                return
+            }
+            let rendition = await app.thumbnails.rendition(of: source, bookID: entry.id, maxPixelSize: 400)
+            // Read the bytes (not `NSImage(contentsOf:)`) so a rewritten file isn't served from a cache.
+            image = rendition.flatMap { try? Data(contentsOf: $0) }.flatMap { NSImage(data: $0) }
+        }
     }
 }
 

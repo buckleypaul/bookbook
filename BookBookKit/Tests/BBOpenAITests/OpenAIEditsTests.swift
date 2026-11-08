@@ -20,7 +20,8 @@ import Testing
     }
 
     static func editRequest(base: ImagePayload? = payload(size: PixelSize(width: 1024, height: 1536)),
-                            references: [ReferenceImage] = [], exactSize: PixelSize? = nil) -> ImageRequest {
+                            references: [ReferenceImage] = [],
+                            exactSize: PixelSize? = PixelSize(width: 1024, height: 1536)) -> ImageRequest {
         var request = TestSupport.request(boxAspect: 1, exactSize: exactSize)
         request.baseImage = base
         request.references = references
@@ -93,6 +94,14 @@ import Testing
         #expect(result.parametersSent["size"] == "1232x816")
         let text = String(decoding: try #require(client.requests.first?.body), as: UTF8.self)
         #expect(text.contains("name=\"size\"\r\n\r\n1232x816\r\n"))
+    }
+
+    @Test func editSizeIsRequestSizeNotRawBaseSize() async throws {
+        let client = TestSupport.client(.fixture(Self.fixture))
+        let base = Self.payload(size: PixelSize(width: 2550, height: 3300))
+        let request = Self.editRequest(base: base, exactSize: PixelSize(width: 1152, height: 1488))
+        let result = try await Self.provider(client).generate(request, progress: { _ in })
+        #expect(result.parametersSent["size"] == "1152x1488")
     }
 
     @Test func sixteenImagesAllowedSeventeenRejected() async throws {

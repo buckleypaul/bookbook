@@ -14,7 +14,9 @@ import Foundation
 /// whether to show the spread-split warning (PD §8.5).
 ///
 /// A command whose `templateID` names a bundled preset the book doesn't have yet copies
-/// that preset into the book as part of the same undo step.
+/// that preset into the book (as does blank insertion for the text-only preset). Like new
+/// sessions, the copy is made irreversibly: undo removes the pages but leaves the unused
+/// template in the book, because a package can't delete a template file (`DirtySet`).
 public enum BookCommand: Hashable, Sendable {
     /// Replace a text box's rich text. Consecutive edits to the same box coalesce into one
     /// undo step until a 1 s pause, a box switch or a formatting change (A §6.3, Phase 4).

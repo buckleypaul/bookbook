@@ -156,6 +156,26 @@ public final class OpenBooks {
         }
     }
 
+    /// Sets a book's title, one at a time with its other operations: through its document if it's
+    /// open (flushed), otherwise through `Library.rename` (headless store under the lock), so a
+    /// delivery or snapshot of the same closed book can't run alongside it.
+    public func rename(_ entry: LibraryEntry, to title: String, in library: Library, now: Date) async throws {
+        let result: Result<Void, any Error> = await serialized(entry.id) { [self] in
+            if let document = documents[entry.id], !document.isClosed {
+                guard document.rename(to: title) else { return .failure(StoreError.readOnly) }
+                await document.flush()
+                return .success(())
+            }
+            do {
+                _ = try await library.rename(entry, to: title, now: now)
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }
+        try result.get()
+    }
+
     /// Writes every open book's pending autosave (hide).
     public func flushAll() async {
         for document in documents.values { await document.flush() }

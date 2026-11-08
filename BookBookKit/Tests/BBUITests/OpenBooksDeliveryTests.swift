@@ -145,6 +145,27 @@ struct OpenBooksDeliveryTests {
         #expect(snapshot?.sessions[s.sessionID]?.versions.isEmpty == true)
     }
 
+    /// A rename of a closed book racing a delivery and snapshots of it: both writes land (they
+    /// run one at a time), and no `.lock` is left behind.
+    @Test func renameRacingAClosedBookDelivery_bothLand() async throws {
+        let s = try await setup()
+        defer { try? FileManager.default.removeItem(at: s.root) }
+        let books = s.books, delivery = s.delivery, entry = s.entry
+        let library = Library(root: s.root)
+        let renaming = Task { try await books.rename(entry, to: "Renamed", in: library, now: Fixtures.date) }
+        let delivering = Task { await books.deliver(delivery, now: { Fixtures.date }) }
+        let snapshots = Task {
+            for _ in 0..<5 { _ = await books.content(for: entry.id) }
+        }
+        try await renaming.value
+        await delivering.value
+        await snapshots.value
+        let content = try await onDisk(s)
+        #expect(content.book.title == "Renamed")
+        expectDelivered(content, s)
+        #expect(!FileManager.default.fileExists(atPath: s.entry.url.appending(path: ".lock").path(percentEncoded: false)))
+    }
+
     @Test func deliveryToAnOpenBook_isSavedByTheNextClose() async throws {
         let s = try await setup()
         defer { try? FileManager.default.removeItem(at: s.root) }

@@ -97,6 +97,8 @@ struct BookEditor: View {
     @Environment(\.undoManager) private var undoManager
     @Environment(AppModel.self) private var app
     @State private var pages: PagesController
+    @State private var layouts: TemplateEditorModel
+    @State private var sidebarTab: SidebarTab = .pages
     @State private var selectedImageBox: BoxID?
     @State private var showSession = true
     @State private var showTypography = false
@@ -111,13 +113,22 @@ struct BookEditor: View {
         _thumbnails = State(initialValue: PageThumbnailRenderer(images: ImageCache(store: document.store,
                                                                                    maxPixelSize: 512)))
         _pages = State(initialValue: PagesController(document: document))
+        _layouts = State(initialValue: TemplateEditorModel(document: document))
     }
 
     var body: some View {
         @Bindable var pages = pages
         let content = document.content
         NavigationSplitView {
-            PageList(document: document, content: content, pages: pages)
+            sidebar(content)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Picker("Sidebar", selection: $sidebarTab) {
+                        ForEach(SidebarTab.allCases) { tab in Label(tab.title, systemImage: tab.symbol).tag(tab) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .padding(8)
+                }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 0) {
                         Divider()
@@ -166,8 +177,17 @@ struct BookEditor: View {
             // An undo or redo can remove the selected page.
             pages.validateSelection()
         }
+        .onChange(of: sidebarTab) { layouts.finishContinuousEdit() }
         .onChange(of: pages.selectedPage) { selectedImageBox = nil }
         .onChange(of: pages.mode) { _, mode in if mode == .overview { selectedImageBox = nil } }
+    }
+
+    @ViewBuilder
+    private func sidebar(_ content: BookContent) -> some View {
+        switch sidebarTab {
+        case .pages: PageList(document: document, content: content, pages: pages)
+        case .layouts: TemplateList(document: document, content: content, model: layouts)
+        }
     }
 
     private func isReorder(_ command: BookCommand?) -> Bool {
@@ -261,7 +281,7 @@ struct BookEditor: View {
                     .background(.secondary.opacity(0.15))
             }
             if !document.missingFonts.isEmpty { MissingFontsBanner(fonts: document.missingFonts) }
-            if pages.mode == .editor {
+            if sidebarTab == .pages && pages.mode == .editor {
                 FormatBar(formatting: document.formatting)
                 Divider()
             }
@@ -272,6 +292,9 @@ struct BookEditor: View {
                     .frame(maxWidth: .infinity)
                     .background(.yellow.opacity(0.25))
             }
+            if sidebarTab == .layouts {
+                LayoutsDetail(document: document, model: layouts, images: images)
+            } else {
             switch pages.mode {
             case .overview:
                 PagesOverview(document: document, pages: pages, thumbnails: thumbnails, showNumbers: $showNumbers)
@@ -286,12 +309,16 @@ struct BookEditor: View {
                                            description: Text("Choose a page, or add one with +."))
                 }
             }
+            }
         }
     }
 
     @ViewBuilder
     private func sessionPanel(_ content: BookContent) -> some View {
-        if pages.mode == .editor, let page = pages.selectedPage, let box = selectedImageBox,
+        if sidebarTab == .layouts {
+            BoxInspector(model: layouts)
+                .disabled(!document.isEditable)
+        } else if pages.mode == .editor, let page = pages.selectedPage, let box = selectedImageBox,
            content.pages[page]?.images[box] != nil {
             SessionPanel(document: document, content: content, pageID: page, boxID: box, images: images)
                 .id(box)

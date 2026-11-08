@@ -1,3 +1,4 @@
+import BBLayout
 import BBModel
 import BBStore
 import Foundation
@@ -21,6 +22,11 @@ public final class BookDocument {
     public let isReadOnly: Bool
     /// Set by `close()`; edits are ignored from then on.
     public private(set) var isClosed = false
+    /// Phase 4: the window's format bar / Format menu state, driven by the inline text editor.
+    public let formatting = TextFormatController()
+    /// Phase 4: PostScript names the book uses that don't resolve (book-level warning, A §8.3).
+    /// Refreshed when the book opens, after a font import and after typography/text changes.
+    public private(set) var missingFonts: [String] = []
 
     @ObservationIgnored public let store: BookStore
     /// The window's undo manager (SwiftUI `@Environment(\.undoManager)`), set by the window.
@@ -92,6 +98,13 @@ public final class BookDocument {
 
     /// False while read-only or closed.
     public var isEditable: Bool { !isReadOnly && !isClosed }
+
+    /// Phase 4 contract: imports a font file into `fonts/`, registers it for this process and
+    /// refreshes `missingFonts`. Not undoable (PD §8.10). Returns the inspected info so the
+    /// caller can warn when `embeddingAllowed` is false. Throws for unreadable files.
+    public func importFont(from url: URL) async throws -> FontFileInfo {
+        throw FontError.unreadable("not implemented") // Phase 4 lane A
+    }
 
     // MARK: Undoable edits
 
@@ -207,7 +220,7 @@ public final class BookDocument {
 
     private func makeEdit(for command: BookCommand) -> Edit? {
         switch command {
-        case let .setRichText(pageID, boxID, text):
+        case let .setRichText(pageID, boxID, text, _):
             guard let page = content.pages[pageID], let template = content.template(for: page),
                   let box = template.box(boxID), case .text = box.content else { return nil }
             return .setText(page: pageID, box: boxID, text: text)
@@ -232,6 +245,9 @@ public final class BookDocument {
         case let .deletePage(pageID):
             guard content.book.pageOrder.contains(pageID) else { return nil }
             return .removePage(pageID)
+
+        case .setTypography:
+            return nil // Phase 4 lane A implements this.
         }
     }
 

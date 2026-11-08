@@ -70,7 +70,7 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
 ## Git and workflow
 
 - One phase per pair of sessions (A: build, B: verify; see `PHASE_PROMPT.md`), on branch `phase-<id>-<slug>` (plan §2.6). Update `PROGRESS.md` as you go.
-- **Local only for now:** don't push, open PRs, use `gh`, or wait on CI. Every session ends by merging the phase branch into local `main` (`--no-ff`). `scripts/test.sh all` is the green gate. Syncing with GitHub happens at the end.
+- **No PRs or CI waits:** don't open PRs, use `gh`, or wait on CI. Every session ends by merging the phase branch into `main` (`--no-ff`) and pushing `main` directly (`git push origin main`). `scripts/test.sh all` is the green gate.
 - Small, logical commits with conventional messages. Never force-push `main`, never use `--no-verify`, and never change the repo's git identity (`Paul Buckley <paul@paulbuckley.me>`, set in the repo config).
 - Build only what the current phase lists. Put anything else under "Open follow-ups" in `PROGRESS.md`, tagged with its target phase.
 - If the architecture is wrong or too vague, make the smallest sound choice, update `architecture.md` in the same phase, and log it. Product-level changes need the user's approval.

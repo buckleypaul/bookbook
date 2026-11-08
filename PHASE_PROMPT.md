@@ -2,7 +2,7 @@
 
 Use this prompt to run one implementation phase in two sessions: **A (build)** and **B (verify)**. The usual way is the short prompt: `Read PHASE_PROMPT.md and follow it exactly.` You can add any override after it. See `implementation-plan.md` §2.6 for the workflow.
 
-**Local only for now.** Don't push, open PRs, use `gh`, or wait on CI. Everything stays in the local repo; syncing with GitHub happens at the end of the project. At the end of every session (A, B, or a fix round), merge the phase branch into local `main` so main always holds the latest work.
+**No PRs or CI.** Don't open PRs, use `gh`, or wait on CI. At the end of every session (A, B, or a fix round), merge the phase branch into `main` (`--no-ff`) and push `main` straight to `origin` (`git push origin main`), so main always holds the latest work, locally and on GitHub. GitHub may warn that a required status check is expected; that's fine.
 
 **Before you start a session, set the main-thread effort with `/model`** (the model stays Opus):
 
@@ -21,10 +21,10 @@ Implement the next BookBook phase. Work out which phase and which session (A or 
 
 ## 0. Orient (you, the main thread)
 1. Read PROGRESS.md, implementation-plan.md (the core: §0–§3) and the phase's own file, `plan/phase-NN-*.md`. CLAUDE.md is already loaded. Don't read other phase files, `plan/done/` or `progress/` unless you need something specific from them. Read only the architecture.md / product-description.md sections that phase cites.
-2. Find the current state: PROGRESS.md on local main (it's merged after every session, so it's current), plus `git branch --list '*phase-*'`.
+2. Find the current state: PROGRESS.md on main (it's merged after every session, so it's current; `git pull --ff-only` first), plus `git branch --list '*phase-*'`.
 3. If a phase is awaiting hand checks, ask me (AskUserQuestion) whether its hand checks passed, unless I've already said so below.
-   - Passed: on the phase branch, mark it `done` in PROGRESS.md (status, merge date, ticked hand checks). Then archive it: move the "Current phase log" entry to `progress/phase-<id>-<slug>.md` and link it from the status table; move its still-open follow-ups into "Open follow-ups" (under their target phase), and drop any follow-ups this phase finished; and `git mv` its spec to `plan/done/`, updating the mapping table in implementation-plan.md. Commit, then merge the phase branch into local main (`git checkout main && git merge --no-ff phase-<id>-<slug>`), and confirm main's PROGRESS.md shows the phase as `done`. Never record it only on the next phase's branch. Remove the phase branch, its lane worktrees and lane branches once you've confirmed their commits are in main. Then tell me the next phase and the effort it needs (table above), and stop, so the next phase starts in a fresh session.
-   - Failed: fix what I describe on that branch, verify again (§4), merge it into local main, and stop at `awaiting hand checks` again. Don't start a new phase.
+   - Passed: on the phase branch, mark it `done` in PROGRESS.md (status, merge date, ticked hand checks). Then archive it: move the "Current phase log" entry to `progress/phase-<id>-<slug>.md` and link it from the status table; move its still-open follow-ups into "Open follow-ups" (under their target phase), and drop any follow-ups this phase finished; and `git mv` its spec to `plan/done/`, updating the mapping table in implementation-plan.md. Commit, then merge the phase branch into local main (`git checkout main && git merge --no-ff phase-<id>-<slug>`), push main, and confirm main's PROGRESS.md shows the phase as `done`. Never record it only on the next phase's branch. Remove the phase branch (locally and on `origin` if it's there), its lane worktrees and lane branches once you've confirmed their commits are in main. Then tell me the next phase and the effort it needs (table above), and stop, so the next phase starts in a fresh session.
+   - Failed: fix what I describe on that branch, verify again (§4), merge it into main and push, and stop at `awaiting hand checks` again. Don't start a new phase.
 4. If a phase is `in progress`, resume it from its branch and the **Stage** line in its "Current phase log":
    - `Stage: A` (or no stage line): carry on with Session A (§1–§2).
    - `Stage: B`: this is Session B. Go straight to §4.
@@ -32,7 +32,7 @@ Implement the next BookBook phase. Work out which phase and which session (A or 
 6. Ask any blocking questions in ONE batched AskUserQuestion, with a recommended default for each. Don't ask about anything the plan or architecture already decides. For anything else, use the plan's defaults and record the assumption in PROGRESS.md.
 
 ## 1. Session A: plan the phase
-- Branch `phase-<id>-<slug>` from local main. Mark the phase `in progress` in PROGRESS.md, and start its "Current phase log" with `**Stage:** A`.
+- Branch `phase-<id>-<slug>` from an up-to-date main. Mark the phase `in progress` in PROGRESS.md, and start its "Current phase log" with `**Stage:** A`.
 - Pick up the follow-ups already filed under this phase in "Open follow-ups".
 - Split the phase into work packages. For each one, set the files and targets it owns, the contracts it uses, its tests, and a done check.
 - Write the shared contracts yourself and commit them before fanning out: public types, protocols, BookCommand cases, JSON resource schemas.
@@ -59,7 +59,7 @@ Rules:
 - If a result is wrong or incomplete, re-brief the same agent with SendMessage, or move up one model. Don't quietly redo the work yourself.
 - Do a small job yourself if it's only a few tool calls.
 
-**End of Session A:** once every lane is merged into the phase branch and it builds, set the log to `**Stage:** B`, and add a short note: the lanes, what's left, and anything Session B must know. Commit, then merge the phase branch into local main (`--no-ff`). Tell me: "Session A done. Start a new session with the same prompt for Session B." Then stop.
+**End of Session A:** once every lane is merged into the phase branch and it builds, set the log to `**Stage:** B`, and add a short note: the lanes, what's left, and anything Session B must know. Commit, then merge the phase branch into main (`--no-ff`) and push main. Tell me: "Session A done. Start a new session with the same prompt for Session B." Then stop.
 
 ## 3. Rules that always apply
 - API keys: follow implementation-plan.md §2.2 exactly. Live calls go only through scripts/live-tests.sh or scripts/record-fixtures.sh, and only for the live checks this phase lists. Never print, log, echo, write to a file or commit a key, and never run `security … -w` outside `$(…)`. Keep the spend total in PROGRESS.md under the $10 cap, and ask me before any live run that would take it past $8. Record what each run spent.
@@ -79,10 +79,10 @@ Delegate the steps; you merge the fixes and make the calls. Don't pull full logs
 4. **Review:** a fresh opus subagent reviews the phase diff. Give it the diff range and the phase file, not your conclusions. Ask for **must-fix issues only**, as a short list with file:line and a one-line failure scenario. Should-fix items and nits go straight to "Open follow-ups".
 5. **Cap the fix loop at two rounds** (fix → re-test → re-review of only the fixed areas). Anything still open after that goes to "Open follow-ups", or to me if it blocks a hand check.
 6. Run the secret scan over the whole diff.
-7. If a test looks flaky (fails once, passes on a re-run), re-run once and log it as a follow-up. Don't push or open a PR.
+7. If a test looks flaky (fails once, passes on a re-run), re-run once and log it as a follow-up. Don't open a PR.
 
 ## 5. Session B: hand back and stop
-- Update PROGRESS.md on the branch: status `awaiting hand checks`, branch, spend, and finish the "Current phase log" entry (what was built, deviations, docs changed, follow-ups). Keep it concise: it moves to `progress/` when the phase is done. Commit, then merge the phase branch into local main (`--no-ff`). Keep the branch for any hand-check fixes.
+- Update PROGRESS.md on the branch: status `awaiting hand checks`, branch, spend, and finish the "Current phase log" entry (what was built, deviations, docs changed, follow-ups). Keep it concise: it moves to `progress/` when the phase is done. Commit, then merge the phase branch into main (`--no-ff`) and push main. Keep the branch for any hand-check fixes.
 - Reply with:
   - what was built;
   - the plan's hand checks as a checkbox list, ticking the ones confirmed;

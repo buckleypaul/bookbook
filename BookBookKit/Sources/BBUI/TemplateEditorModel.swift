@@ -41,7 +41,15 @@ public final class TemplateEditorModel {
     }
 
     /// The open template, read live from the document.
-    public var template: Template? { templateID.flatMap { document.content.templates[$0] } }
+    /// A bundled preset the book hasn't copied yet reads through until its first edit.
+    public var template: Template? {
+        templateID.flatMap { id in document.content.templates[id] ?? Presets.bundledTemplates.first { $0.id == id } }
+    }
+
+    /// True while the open template is a bundled preset not (yet) in the book.
+    public var isUncopiedPreset: Bool {
+        templateID.map { document.content.templates[$0] == nil } ?? false
+    }
 
     /// The geometry the open template is edited in (spread = double width).
     public var geometry: PageGeometry? {
@@ -59,14 +67,13 @@ public final class TemplateEditorModel {
 
     // MARK: Opening and the template list
 
-    /// Opens a template. A bundled preset the book doesn't have yet is first copied in with
-    /// `.addTemplate` under its own ID. Clears the selection.
+    /// Opens a template. A bundled preset the book doesn't have yet opens read-through (no
+    /// document change); it is copied in under its own ID, folded into the first edit's undo
+    /// step. Clears the selection.
     public func open(_ id: TemplateID) {
         finishContinuousEdit()
-        if document.content.templates[id] == nil {
-            guard let preset = Presets.bundledTemplates.first(where: { $0.id == id }),
-                  document.perform(.addTemplate(preset)) else { return }
-        }
+        guard document.content.templates[id] != nil || Presets.bundledTemplates.contains(where: { $0.id == id })
+        else { return }
         templateID = id
         selection = []
         activeGuides = []
@@ -117,6 +124,15 @@ public final class TemplateEditorModel {
         var edited = current
         change(&edited)
         guard edited != current else { return }
+        if isUncopiedPreset {
+            // First edit of a preset: copy it into the book and edit it as one undo step.
+            document.beginUndoGroup()
+            if document.perform(.addTemplate(current)) {
+                document.perform(.updateTemplate(edited, actionName: actionName))
+            }
+            document.endUndoGroup(actionName: actionName)
+            return
+        }
         document.perform(.updateTemplate(edited, actionName: actionName))
     }
 

@@ -40,16 +40,47 @@ struct TemplateEditorModelTests {
 
     func frame(_ model: TemplateEditorModel, _ id: BoxID) -> NormalizedRect { model.template!.box(id)!.frame }
 
-    @Test func openPreset_copiesInWithOneUndoStep() throws {
+    @Test func openPreset_readsThroughWithoutChangingTheBook() throws {
         let (model, doc, undo) = try make()
         let preset = Presets.bundledTemplates.first { doc.content.templates[$0.id] == nil && $0.kind == .single }!
+        let before = doc.content
         step(undo) { model.open(preset.id) }
         #expect(model.templateID == preset.id)
-        #expect(doc.content.templates[preset.id] == preset)
+        #expect(model.template == preset)
+        #expect(model.isUncopiedPreset)
+        #expect(doc.content == before)
+        #expect(undo.undoActionName != "Add Layout")
+    }
+
+    @Test func firstEditOfPreset_copiesInAsOneUndoStep() throws {
+        let (model, doc, undo) = try make()
+        let preset = Presets.bundledTemplates.first { doc.content.templates[$0.id] == nil && $0.kind == .single }!
+        model.open(preset.id)
+        step(undo) { model.update(actionName: "Rename Layout") { $0.name = "Mine" } }
+        #expect(doc.content.templates[preset.id]?.name == "Mine")
+        #expect(!model.isUncopiedPreset)
         undo.undo()
         #expect(doc.content.templates[preset.id] == nil)
+        #expect(undo.undoActionName != "Rename Layout")
+        #expect(model.template == preset)
         undo.redo()
-        #expect(doc.content.templates[preset.id] == preset)
+        #expect(doc.content.templates[preset.id]?.name == "Mine")
+    }
+
+    @Test func delete_uncopiedPresetIsRefused_copiedOneDeletes() throws {
+        let (model, doc, undo) = try make()
+        let preset = Presets.bundledTemplates.first { doc.content.templates[$0.id] == nil && $0.kind == .single }!
+        model.open(preset.id)
+        var refused = true
+        step(undo) { refused = !model.delete(preset.id) }
+        #expect(refused)
+        #expect(model.templateID == preset.id)
+        #expect(undo.undoActionName != "Add Layout")
+        step(undo) { model.update(actionName: "Rename Layout") { $0.name = "Mine" } }
+        var deleted = false
+        step(undo) { deleted = model.delete(preset.id) }
+        #expect(deleted)
+        #expect(doc.content.templates[preset.id] == nil)
     }
 
     @Test func open_unknownIDDoesNothing() throws {

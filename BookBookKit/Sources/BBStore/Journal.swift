@@ -22,7 +22,7 @@ struct Journal {
     @discardableResult
     func run(files: [String: Data], deletions: [String], commit: Bool = true, apply shouldApply: Bool = true) throws -> URL {
         let fm = FileManager.default
-        let tx = root.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        let tx = root.appending(path: Self.newTxid(), directoryHint: .isDirectory)
         let staged = tx.appending(path: "staged", directoryHint: .isDirectory)
         try fm.createDirectory(at: staged, withIntermediateDirectories: true)
         for (path, data) in files {
@@ -66,6 +66,18 @@ struct Journal {
         /^(book\.json|style\.json|(templates|pages|sessions)\/[0-9A-Fa-f-]{36}\.json)$/
     }
 
+    /// `<20-digit wall-clock nanoseconds>-<UUID>`: names sort by creation time, so recovery
+    /// replays committed transactions oldest-first.
+    static func newTxid() -> String {
+        let ns = UInt64(max(0, Date().timeIntervalSince1970) * 1e9)
+        let digits = String(ns)
+        return String(repeating: "0", count: max(0, 20 - digits.count)) + digits + "-" + UUID().uuidString
+    }
+
+    private static var txidPattern: Regex<Substring> {
+        /^[0-9]{20}-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/
+    }
+
     /// Symlink-resolved path without a trailing slash.
     private static func resolved(_ url: URL) -> String {
         var p = url.resolvingSymlinksInPath().path(percentEncoded: false)
@@ -76,7 +88,7 @@ struct Journal {
     /// True if the txid folder name, every manifest path and every resolved source and
     /// destination parent stay inside the journal / package.
     func isSafe(_ tx: URL) -> Bool {
-        guard UUID(uuidString: tx.lastPathComponent) != nil,
+        guard tx.lastPathComponent.wholeMatch(of: Self.txidPattern) != nil,
               let data = try? Data(contentsOf: tx.appending(path: Self.manifestName)),
               let manifest = try? PackageCoding.decoder().decode(Manifest.self, from: data) else { return false }
         let package = Self.resolved(packageURL)

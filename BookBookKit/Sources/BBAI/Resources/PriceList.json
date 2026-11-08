@@ -25,11 +25,12 @@
         },
         "inputImageTokens": {
           "1024x1024": 1024,
+          "1536x1024": 1536,
           "256x256": 256,
           "128x128": 64
         },
         "textTokensPerPromptChar": 0.27,
-        "notes": "Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at three sizes. They fit \"downscale to <= 512 px a side, then 1 token per 16x16 patch\" (hypothesis; Phase 9 measures a 1536x1024 reference)."
+        "notes": "Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at four sizes; 1536x1024 (Phase 9, SP9) is 1536, so the \"downscale to <= 512 px, 16x16 patch\" rule (704) underestimates large references; unmeasured sizes are flagged as extrapolated."
       }
     },
     {
@@ -92,11 +93,12 @@
         },
         "inputImageTokens": {
           "1024x1024": 1024,
+          "1536x1024": 1536,
           "256x256": 256,
           "128x128": 64
         },
         "textTokensPerPromptChar": 0.27,
-        "notes": "Output-token table copied from gpt-image-2.5-sunburst (not measured for this model). Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at three sizes. They fit \"downscale to <= 512 px a side, then 1 token per 16x16 patch\" (hypothesis; Phase 9 measures a 1536x1024 reference)."
+        "notes": "Output-token table copied from gpt-image-2.5-sunburst (not measured for this model). Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at four sizes; 1536x1024 (Phase 9, SP9) is 1536, so the \"downscale to <= 512 px, 16x16 patch\" rule (704) underestimates large references; unmeasured sizes are flagged as extrapolated."
       }
     },
     {
@@ -122,11 +124,12 @@
         },
         "inputImageTokens": {
           "1024x1024": 1024,
+          "1536x1024": 1536,
           "256x256": 256,
           "128x128": 64
         },
         "textTokensPerPromptChar": 0.27,
-        "notes": "Output-token table copied from gpt-image-2.5-sunburst (not measured for this model). Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at three sizes. They fit \"downscale to <= 512 px a side, then 1 token per 16x16 patch\" (hypothesis; Phase 9 measures a 1536x1024 reference)."
+        "notes": "Output-token table copied from gpt-image-2.5-sunburst (not measured for this model). Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at four sizes; 1536x1024 (Phase 9, SP9) is 1536, so the \"downscale to <= 512 px, 16x16 patch\" rule (704) underestimates large references; unmeasured sizes are flagged as extrapolated."
       }
     },
     {
@@ -152,11 +155,12 @@
         },
         "inputImageTokens": {
           "1024x1024": 1024,
+          "1536x1024": 1536,
           "256x256": 256,
           "128x128": 64
         },
         "textTokensPerPromptChar": 0.27,
-        "notes": "Output-token table copied from gpt-image-2.5-sunburst (not measured for this model). Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at three sizes. They fit \"downscale to <= 512 px a side, then 1 token per 16x16 patch\" (hypothesis; Phase 9 measures a 1536x1024 reference)."
+        "notes": "Output-token table copied from gpt-image-2.5-sunburst (not measured for this model). Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at four sizes; 1536x1024 (Phase 9, SP9) is 1536, so the \"downscale to <= 512 px, 16x16 patch\" rule (704) underestimates large references; unmeasured sizes are flagged as extrapolated."
       }
     },
     {
@@ -182,11 +186,12 @@
         },
         "inputImageTokens": {
           "1024x1024": 1024,
+          "1536x1024": 1536,
           "256x256": 256,
           "128x128": 64
         },
         "textTokensPerPromptChar": 0.27,
-        "notes": "Output-token table copied from gpt-image-2.5-sunburst (not measured for this model). Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at three sizes. They fit \"downscale to <= 512 px a side, then 1 token per 16x16 patch\" (hypothesis; Phase 9 measures a 1536x1024 reference)."
+        "notes": "Output-token table copied from gpt-image-2.5-sunburst (not measured for this model). Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at four sizes; 1536x1024 (Phase 9, SP9) is 1536, so the \"downscale to <= 512 px, 16x16 patch\" rule (704) underestimates large references; unmeasured sizes are flagged as extrapolated."
       }
     }
   ]

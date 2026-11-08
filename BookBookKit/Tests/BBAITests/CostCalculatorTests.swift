@@ -20,17 +20,38 @@ import Testing
         #expect(cost == Decimal(string: "0.020691"))
     }
 
-    @Test func cachedUsesCachedRateWhenPresent() throws {
-        let cost = try calculator().actualCost(of: TokenUsage(cachedInputTokens: 1_000_000), provider: .openai,
-                                               model: "gpt-image-2.5-sunburst")
-        #expect(cost == 2)
+    private func list(_ rates: [String: Decimal]) -> PriceList {
+        PriceList(asOf: "x", entries: [PriceEntry(provider: .openai, model: "m", asOf: "x", perMillionTokens: rates)])
     }
 
-    @Test func cachedFallsBackToImageInRate() throws {
-        let list = PriceList(asOf: "x", entries: [
-            PriceEntry(provider: .openai, model: "m", asOf: "x", perMillionTokens: ["imageIn": 4])])
-        let cost = CostCalculator(priceList: list).actualCost(of: TokenUsage(cachedInputTokens: 500_000), provider: .openai, model: "m")
-        #expect(cost == 2)
+    @Test func cachedTextIsChargedAtCachedRateOnlyForItsShare() {
+        // 1M text in, 400k of it cached: 600k at 10 + 400k at 1.
+        let usage = TokenUsage(inputTextTokens: 1_000_000, cachedInputTokens: 400_000)
+        let cost = CostCalculator(priceList: list(["textIn": 10, "cachedTextIn": 1])).actualCost(of: usage, provider: .openai, model: "m")
+        #expect(cost == Decimal(string: "6.4"))
+    }
+
+    @Test func cachedOverflowsFromTextToImage() {
+        // 100k text + 1M image in, 300k cached: 100k text cached, 200k image cached.
+        let usage = TokenUsage(inputTextTokens: 100_000, inputImageTokens: 1_000_000, cachedInputTokens: 300_000)
+        let rates: [String: Decimal] = ["textIn": 5, "cachedTextIn": 1, "imageIn": 8, "cachedImageIn": 2]
+        let cost = CostCalculator(priceList: list(rates)).actualCost(of: usage, provider: .openai, model: "m")
+        // 0.1*1 + 0.8*8 + 0.2*2 = 0.1 + 6.4 + 0.4
+        #expect(cost == Decimal(string: "6.9"))
+    }
+
+    @Test func cachedFallsBackToFullRatesAndNeverExceedsInput() {
+        let usage = TokenUsage(inputTextTokens: 500_000, inputImageTokens: 500_000, cachedInputTokens: 9_000_000)
+        let cost = CostCalculator(priceList: list(["textIn": 2, "imageIn": 4])).actualCost(of: usage, provider: .openai, model: "m")
+        #expect(cost == 3)
+    }
+
+    @Test func cachedRateAppliesWithBundledPrices() throws {
+        let full = try calculator().actualCost(of: TokenUsage(inputImageTokens: 1_000_000), provider: .openai, model: "gpt-image-2.5-sunburst")
+        let cached = try calculator().actualCost(of: TokenUsage(inputImageTokens: 1_000_000, cachedInputTokens: 1_000_000),
+                                                 provider: .openai, model: "gpt-image-2.5-sunburst")
+        #expect(cached == 2)
+        #expect(try #require(full) > 2)
     }
 
     @Test func textOutputAndMissingRates() throws {

@@ -28,7 +28,7 @@ struct SessionPanel: View {
     @State private var problem: String?
     @State private var estimate = CostEstimate.unknown
     @State private var costAlert: String?
-    @State private var pendingRefine: VersionID??
+    @State private var pendingAction: PendingGeneration?
 
     private var slot: ImageSlot? { content.pages[pageID]?.images[boxID] }
     private var session: Session? { slot.flatMap { content.sessions[$0.sessionID] } }
@@ -100,11 +100,11 @@ struct SessionPanel: View {
         }
         .alert("Confirm Cost", isPresented: Binding(get: { costAlert != nil }, set: { if !$0 { costAlert = nil } })) {
             Button("Generate") {
-                if let pending = pendingRefine { performGenerate(refining: pending) }
-                pendingRefine = nil
+                if let pending = pendingAction { perform(pending) }
+                pendingAction = nil
             }
             .keyboardShortcut(.defaultAction)
-            Button("Cancel", role: .cancel) { pendingRefine = nil }
+            Button("Cancel", role: .cancel) { pendingAction = nil }
         } message: {
             Text(costAlert ?? "")
         }
@@ -283,10 +283,10 @@ struct SessionPanel: View {
                 VersionDetailsGrid(version: version, session: session, bookID: document.id)
                 if version.provenance != nil {
                     Button("Regenerate with Same Settings") {
-                        app.regenerate(version, page: pageID, box: boxID, in: document)
+                        regenerate(version)
                     }
                     .controlSize(.small)
-                    .disabled(!app.hasOpenAIKey)
+                    .disabled(!app.hasOpenAIKey || !app.isOnline)
                     .padding(.top, 6)
                 }
             }
@@ -372,21 +372,46 @@ struct SessionPanel: View {
         let story = includeStoryText ?? app.defaults.includeStoryText
         let current = app.estimate(prompt: prompt, quality: q, includeStoryText: story, refines: base,
                                    page: pageID, box: boxID, in: document)
+        confirmThenPerform(.generate(base), estimate: current)
+    }
+
+    /// "Regenerate with Same Settings" goes through the same cost decision as Generate.
+    private func regenerate(_ version: Version) {
+        guard app.hasOpenAIKey, app.isOnline else { return }
+        let current = app.regenerateEstimate(version, page: pageID, box: boxID, in: document) ?? .unknown
+        confirmThenPerform(.regenerate(version), estimate: current)
+    }
+
+    private func confirmThenPerform(_ action: PendingGeneration, estimate current: CostEstimate) {
         Task {
             let decision = await app.costDecision(for: current, in: document)
             guard decision.needsConfirmation || decision.overBudget else {
-                performGenerate(refining: base)
+                perform(action)
                 return
             }
             let spent = decision.overBudget ? await app.ledgerSummary(for: document.id).total : 0
             if let text = CostText.requestAlert(estimate: current, decision: decision, spent: spent,
                                                 budget: document.content.book.budget) {
-                pendingRefine = .some(base)
+                pendingAction = action
                 costAlert = text
             } else {
-                performGenerate(refining: base)
+                perform(action)
             }
         }
+    }
+
+    private func perform(_ action: PendingGeneration) {
+        switch action {
+        case let .generate(base): performGenerate(refining: base)
+        case let .regenerate(version):
+            guard app.hasOpenAIKey else { return }
+            app.regenerate(version, page: pageID, box: boxID, in: document)
+        }
+    }
+
+    private enum PendingGeneration {
+        case generate(VersionID?)
+        case regenerate(Version)
     }
 
     private func performGenerate(refining base: VersionID?) {

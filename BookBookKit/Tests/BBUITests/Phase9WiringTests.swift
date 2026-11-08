@@ -251,6 +251,31 @@ struct Phase9WiringTests {
 
     // MARK: Cost decision
 
+    @Test func regenerateEstimate_usesStoredIntentAndFeedsCostDecision() async throws {
+        let h = try Phase9Harness()
+        defer { h.tearDown() }
+        let entry = try h.createBook()
+        let app = h.makeApp()
+        await app.start()
+        let document = try await app.openBook(entry.id)
+        let ref = ImageRef(sha256: String(repeating: "a", count: 64), contentType: "public.png")
+        let size = PixelSize(width: 1024, height: 1024)
+        let imported = Version(image: ref, pixelSize: size, source: .imported, createdAt: Date())
+        #expect(app.regenerateEstimate(imported, page: PageID(), box: BoxID(), in: document) == nil)
+
+        let intent = GenerationIntent(messageText: "a fox", provider: .openai, model: "gpt-image-2.5-sunburst",
+                                      quality: .high)
+        let provenance = Provenance(provider: .openai, model: intent.model, quality: .high, outputSize: size,
+                                    promptSent: "a fox", styleRevision: 1, storyTextIncluded: false, intent: intent)
+        let generated = Version(image: ref, pixelSize: size, source: .generated, createdAt: Date(), provenance: provenance)
+        // Box is not in the book, so the estimate is unknown, which always needs confirmation.
+        let estimate = try #require(app.regenerateEstimate(generated, page: PageID(), box: BoxID(), in: document))
+        let decision = await app.costDecision(for: estimate, in: document)
+        #expect(decision.needsConfirmation)
+        await app.closeBook(entry.id)
+    }
+
+
     @Test func costDecision_usesThresholdLedgerTotalAndBudget() async throws {
         let h = try Phase9Harness()
         defer { h.tearDown() }

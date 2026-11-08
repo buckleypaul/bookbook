@@ -58,6 +58,8 @@ struct ModelSettings: View {
                 }
                 HStack {
                     TextField("Model ID", text: $customID, prompt: Text("Model ID"))
+                        .labelsHidden()
+                        .frame(minWidth: 180, maxWidth: .infinity)
                     Picker("Copies", selection: $family) {
                         ForEach(models.filter { $0.copiesFrom == nil }, id: \.id) { Text($0.displayName).tag($0.id) }
                     }

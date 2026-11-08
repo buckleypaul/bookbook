@@ -71,9 +71,17 @@ import Testing
         #expect(CostEstimator.patchTokens(sq(2048)) == 32 * 32)
         #expect(CostEstimator.patchTokens(sq(100)) == 7 * 7)  // small images are not upscaled
         let list = try PriceList.bundled()
-        let est = CostEstimator.estimate(try input(sq(1024), images: [PixelSize(width: 1536, height: 1024)]), priceList: list)
-        #expect(est.amount == Decimal(string: "0.011512"))  // (196*30 + 704*8) / 1e6 -> 5880 + 5632
+        let est = CostEstimator.estimate(try input(sq(1024), images: [sq(2048)]), priceList: list)
+        #expect(est.amount == Decimal(string: "0.014072"))  // (196*30 + 1024*8) / 1e6 -> 5880 + 8192
         #expect(est.extrapolated)
+    }
+
+    @Test func measuredLandscapeReference() throws {
+        // SP9 measured 1536 input tokens for a 1536x1024 reference (the patch rule predicts 704).
+        let list = try PriceList.bundled()
+        let est = CostEstimator.estimate(try input(sq(1024), images: [PixelSize(width: 1536, height: 1024)]), priceList: list)
+        #expect(est.amount == Decimal(string: "0.018168"))  // 5880 + 1536*8 (12288)
+        #expect(est.extrapolated == false)
     }
 
     @Test func textTokensRoundUp() throws {

@@ -4,7 +4,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 **Statuses:** `not started` · `in progress` · `awaiting hand checks` · `done` · `blocked` · `skipped (floating)`
 
-**Live API spend so far:** $0.47 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
+**Live API spend so far:** $0.51 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
@@ -18,7 +18,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 6 | Template editor | done | `phase-6-template-editor` | — | $0.00 | No live checks. [Log](progress/phase-6-template-editor.md) |
 | 7 | Style guide and page setup | done | `phase-7-style-page-setup` | — | $0.00 | No live checks. [Log](progress/phase-7-style-page-setup.md) |
 | 8 | Sessions and versions | done | `phase-8-sessions-versions` | — | $0.02 | Live check `SP8_refinementLowQuality` passed. [Log](progress/phase-8-sessions-versions.md) |
-| 9 | Queue, cost, errors and settings (M2) | in progress | `phase-9-queue-cost-settings` | — | $0.00 | |
+| 9 | Queue, cost, errors and settings (M2) | done | `phase-9-queue-cost-settings` | — | $0.04 | Live check `SP9_twoRequestsAndCancel` passed. [Log](progress/phase-9-queue-cost-settings.md) |
 | 10 | Assets and character sheets | not started | | | | |
 | 11 | Region editing | not started | | | | |
 | 12 | Consistency check and AI templates (M3) | not started | | | | |
@@ -44,9 +44,6 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
-### Phase 9
-- Session B live pass: `SP9_twoRequestsAndCancel` (≈ $0.10) also **measures input tokens for a 1536×1024 reference**; put the figure into `PriceList.json` `inputImageTokens` (the patch rule predicts 704).
-
 ### Phase 11
 - **Blocking:** re-check OpenAI masked edits on a real illustration, and choose the region-edit approach (masked edit / unmasked edit plus composite / black-fill detection plus fallback) (from Phase 0).
 
@@ -62,6 +59,12 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Later
+- Phase 9 review should-fixes: `queue.json` saves run in a detached task that quit doesn't await (`GenerationQueue.swift:291`); a newer-schema `queue.json` is ignored then overwritten (`QueueFileStore.swift:23`); one corrupt `costs.jsonl` line makes `costRecords` return `[]` so totals read $0 (`OpenBooks.swift:328`); Recent Requests caps at 50 while the total sums all (`Cost.swift:88`); an unknown estimate is ledgered as $0 with `includesEstimates` false (`GenerationQueue.swift:495`); `restoredCount` doesn't shrink as restored items are removed (`GenerationQueue.swift:101`); `.offline` retries (nothing sent) are charged at the estimate (`QueueRetryPolicy.swift:70`); `OpenAIErrorMapper` key-occurrence check misses JSON-escaped keys and the mask stops at `.`; `CostLedger.repair()` runs without the book lock (from Phase 9 review).
+- Cached input tokens are attributed to text first, then image (OpenAI gives one cached count); revisit if image caching matters (from Phase 9).
+- The 16×16 patch rule underestimates large reference images (1536×1024 measured 1536, rule gives 704); measure more sizes or switch the fallback rule (from Phase 9).
+- Draft all counts the cover's image box ("13 requests" for a 12-page book); confirm that's intended (from Phase 9 hand checks).
+- Sidebar queue badge says "13 in queue" while paused; consider showing "paused" (from Phase 9 hand checks).
+- Ad-hoc rebuilt app builds trigger Keychain access prompts for `app.bookbook.api-key` on every rebuild (signing identity changes) (from Phase 9 hand checks).
 - Unclassified OpenAI 403s still map to `.unknown(raw)` (documented in `OpenAIErrorMapper`); classify more codes as they're seen (from Phase 2, kept in Phase 9).
 - A brief lock held by a delivery/snapshot makes a concurrent open in another process see "locked" (from Phase 3, not addressed in Phase 9).
 - Deliveries to a book locked by another process are retried from memory only; they're lost if the app quits first, and each retry re-reports the "couldn't save" problem until it lands (from Phase 9).
@@ -134,32 +137,3 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
-
-### Phase 9 — Queue, cost, errors and settings
-
-**Stage:** B
-
-**Contracts (main thread, 2026-11-08):** `BBModel/Cost.swift` (`CostRecord`, `LedgerSummary`); `BBAI/CostContracts.swift` (`PriceList`, `CostEstimate`, `ImageEstimateInput`, `CostPricing`, `CostDecision`); `BBAI/Contracts.swift` queue types (`QueueItem` now Codable with `estimate`/`display`/`enqueuedAt`, `QueueFailure`, `.retrying`, `QueuePause`, `QueuePosition`, `DeliveryResult`, `GenerationHost.recordCost`, `QueuePersistence`, `PersistedQueue`; `AssemblyReport` Codable with `storyText`); `BBAI/AdvisorContracts.swift` (`FailureAdvice`, `AdviceContext`, `CustomModelSpec`, `ModelAvailability`); BBAICore `ProviderError` Codable, `ModelLister`, `CatalogModel.copiesFrom`; `BBStore/AppSupportFiles.swift`; `Resources/SensitiveTerms.json`.
-
-**Assumptions (plan defaults; overrule if wrong):**
-- Confirmation threshold default **$0.50** per request or batch.
-- Money is `Decimal` USD throughout (matches `Book.budget`).
-- One ledger line per provider request, including automatic retries. $0 for HTTP 4xx/5xx failures; the estimate for cancels, timeouts and transport errors (they may be billed).
-- Custom model IDs and the default model/quality/threshold are stored in `UserDefaults` (A §5.5 put catalog overrides in `pricelist.json`; recorded in architecture.md).
-- Template and consistency default-model settings wait for Phase 12 (nothing uses them yet).
-- "Retry with <other provider>" is computed but hidden until Phase 13 (only OpenAI is configured).
-- A delivery to a book locked by another process is kept in memory by the queue and retried; it's lost if the app quits first.
-- Prices checked against OpenAI's pricing page on 2026-11-08: image models unchanged; `gpt-6-luna` $0.10/$0.50 and `gpt-6.1-terra` $1.00/$5.00 per 1M (no longer placeholders); the other four image models got entries reusing the 2.5-sunburst output-token table (unmeasured).
-
-**Session A lanes (all merged into the phase branch):**
-- Cost (sonnet): `PriceList` loading/override, `CostEstimator` (+ `estimateInput` via `ContextAssembler.plan`), `CostCalculator`, `CostPolicy`. 12 Draft 1024² ≈ $0.072.
-- Queue (opus): full A §7.9 queue: retries/backoff/`Retry-After`, 300 s timeout, pause reasons, persistence and restore, ledger per request, redelivery for locked books. `QueueRetryPolicy.swift`.
-- OpenAI (sonnet): `OpenAIModelLister`, error mapping tests for every fixture plus synthetic bodies, shared transport mapping, cancellation test, live test `SP9_twoRequestsAndCancel` (written, **not run**).
-- Advisor/catalog (sonnet): `RefusalAdvisor` (ordered rules), `SensitiveTerms`, `ModelCatalog.adding/resolve/imageModels/availability`, `AssemblyReport.storyText`.
-- Views (sonnet): Queue window, sidebar badge, resume/offline banners, cost next to Generate + confirm/budget alert, cancel notice, `FailureAdviceView`, Draft All Empty Boxes…, Book Settings cost + budget, Version details cost, Settings (Test Connection, Models tab, Cost tab with price list editor).
-- Wiring (opus): AppModel on the new queue (restore-gated op chain), `QueueFileStore`, `NetworkMonitor`, ledger writes open/closed, `DeliveryResult`, Draft all planner, list-models at launch, custom-model catalog and pricing pushes.
-
-**State at end of Session A:** `swift build --build-tests` clean (no warnings); all package tests pass; `scripts/test.sh app` passes. `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` failed once again and passed on re-run (known flaky, Later).
-
-**For Session B:** run `scripts/test.sh all`; the live pass `scripts/live-tests.sh openai SP9` (≈ $0.10, total stays well under $8) and record the 1536×1024 input-token figure; hand checks need a throwaway library (`-BookBookLibraryRoot`) and the in-app key; review should look hard at `GenerationQueue.swift`, `AppModel.swift` / `AppModel+Phase9.swift` (op chain, restore gate) and `OpenBooks.swift` (ledger/delivery under locks).
-

@@ -176,16 +176,12 @@ public final class AppModel {
     }
 
     /// Sets a book's title (the folder keeps its name): through its `BookDocument` if it's open
-    /// (not undoable), otherwise through a headless store.
+    /// (not undoable), otherwise through a headless store. Serialized with that book's opens,
+    /// closes and deliveries (`OpenBooks.rename`).
     public func rename(_ entry: LibraryEntry, to title: String) async throws {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
-        if let document = openBooks.document(for: entry.id), !document.isClosed {
-            guard document.rename(to: title) else { throw StoreError.readOnly }
-            await document.flush()
-        } else {
-            _ = try await library.rename(entry, to: title, now: now())
-        }
+        try await openBooks.rename(entry, to: title, in: library, now: now())
         await refreshLibrary()
     }
 

@@ -12,6 +12,7 @@ import Testing
         assertPromptSnapshot(request.instruction.rendered)
         #expect(report.promptText == request.instruction.rendered)
         #expect(report.storyTextIncluded)
+        #expect(report.storyText?.isEmpty == false)
         #expect(report.styleRevision == 3)
         #expect(report.estimatedInputBytes == request.instruction.rendered.utf8.count)
         #expect(request.quality == .draft)
@@ -25,7 +26,7 @@ import Testing
         let book = SliceBook.make()
         let (request, report) = try assembleBook(book, intent(story: false))
         assertPromptSnapshot(request.instruction.rendered)
-        #expect(!report.storyTextIncluded)
+        #expect(!report.storyTextIncluded && report.storyText == nil)
         #expect(request.instruction.sections.map(\.key) == ["role", "style", "avoid", "composition", "request"])
     }
 

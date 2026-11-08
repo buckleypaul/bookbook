@@ -204,7 +204,8 @@ public enum ContextAssembler {
             promptText: prompt.rendered,
             referencesSent: sent.map { SentReference(image: $0.plan.ref, role: $0.plan.role, label: $0.plan.label) },
             referencesOmitted: omitted, storyTextIncluded: includeStory, styleRevision: style.visualRevision,
-            estimatedInputBytes: prompt.rendered.utf8.count + bytes)
+            estimatedInputBytes: prompt.rendered.utf8.count + bytes,
+            storyText: includeStory ? storyText : nil)
         return (request, report)
     }
 

@@ -9,7 +9,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
 | 1a | Bootstrap (gitignore, hooks, key scripts) | done | `phase-1a-bootstrap` | [#1](https://github.com/buckleypaul/bookbook/pull/1) | $0.00 | Repo and remote were created on 2026-11-07 |
-| 0 | Live-API spikes and fixtures | awaiting hand checks | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13 |
+| 0 | Live-API spikes and fixtures | done | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13 |
 | 1b | Project setup and CI | not started | | | | |
 | 2 | Thin vertical slice (M1) | not started | | | | |
 | 3 | Storage and library | not started | | | | |
@@ -53,7 +53,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 ### Phase 0 — Live-API spikes and fixtures (2026-11-07)
 
-**Status:** awaiting hand checks · branch `phase-0-spikes` · PR [#2](https://github.com/buckleypaul/bookbook/pull/2) · live spend **$0.44** (37 calls, LiveSpendGuard estimate; allotment $3).
+**Status:** done (hand checks passed, PR #2 squash-merged 2026-11-07) · branch `phase-0-spikes` · PR [#2](https://github.com/buckleypaul/bookbook/pull/2) · live spend **$0.44** (37 calls, LiveSpendGuard estimate; allotment $3).
 
 **Built:**
 - `Spikes/` SwiftPM package:
@@ -100,11 +100,11 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 Also fixed from the nice-to-haves: `dump()`/reflection redaction for `APIKey` and `HTTPRequest`, the prompt-length claim, the "not billed" inference, and the masked-echo wording.
 
 **Hand checks:**
-- [ ] OpenAI dashboard: was the request cancelled at 2026-11-07 23:39 UTC (high 1024×1536, ~$0.08) billed?
-- [ ] OpenAI dashboard total for 2026-11-07 is within ~20% of $0.44.
-- [ ] Read `Spikes/REPORT.md`: every A §14 row a live API can answer has an answer or a reason.
-- [ ] `scripts/secret-scan.sh` / `git grep` for key patterns finds nothing.
-- [ ] Optional: the SL-3 by-hand steps in `Spikes/notes/local-spikes.md`.
+- [x] OpenAI dashboard: was the request cancelled at 2026-11-07 23:39 UTC (high 1024×1536, ~$0.08) billed?
+- [x] OpenAI dashboard total for 2026-11-07 is within ~20% of $0.44.
+- [x] Read `Spikes/REPORT.md`: every A §14 row a live API can answer has an answer or a reason.
+- [x] `scripts/secret-scan.sh` / `git grep` for key patterns finds nothing.
+- [x] Optional: the SL-3 by-hand steps in `Spikes/notes/local-spikes.md`.
 
 **Follow-ups:**
 - **Product decision:** should BookBook always reopen the last-open books at relaunch, given macOS's default doesn't (SL-3)? Options are in `Spikes/REPORT.md`.

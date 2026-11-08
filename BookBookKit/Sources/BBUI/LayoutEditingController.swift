@@ -48,8 +48,8 @@ final class LayoutEditingController: CanvasController {
         var start: CGPoint
         var current: CGPoint
         var modifiers: NSEvent.ModifierFlags
-        /// The undo group is open (the mouse moved past the slop).
-        var began = false
+        /// The interaction token once the undo group is open (the mouse moved past the slop).
+        var interaction: Int?
     }
 
     init(model: TemplateEditorModel, imageSource: ImageCache) {
@@ -223,10 +223,12 @@ final class LayoutEditingController: CanvasController {
         guard var drag, let scale = canvas?.transform?.scale else { return }
         drag.current = point
         drag.modifiers = event.modifierFlags
-        if !drag.began {
+        if let interaction = drag.interaction {
+            // An undo or redo mid-drag closed the group: the drag is over until the next mouse-down.
+            guard model.isInteractionOpen(interaction) else { return cancelDrag() }
+        } else {
             guard hypot(point.x - drag.start.x, point.y - drag.start.y) * scale >= Self.dragSlop else { return }
-            model.beginInteraction()
-            drag.began = true
+            drag.interaction = model.beginInteraction(actionName: drag.kind.actionName)
         }
         self.drag = drag
         apply(drag, scale: scale)
@@ -235,12 +237,22 @@ final class LayoutEditingController: CanvasController {
     func mouseUp(with event: NSEvent, at point: CGPoint) {
         guard let drag else { return }
         self.drag = nil
-        if drag.began { model.endInteraction(actionName: drag.kind.actionName) }
+        if let interaction = drag.interaction, model.isInteractionOpen(interaction) {
+            model.endInteraction(actionName: drag.kind.actionName)
+        }
+    }
+
+    /// Drops a drag whose interaction an undo or redo ended. Edits nothing.
+    private func cancelDrag() {
+        drag = nil
+        model.activeGuides = []
+        canvas?.needsDisplay = true
     }
 
     /// ⌘ (snapping off) or ⇧ (aspect / 15°) pressed or released mid-drag: re-apply.
     func flagsChanged(with event: NSEvent) {
-        guard var drag, drag.began, let scale = canvas?.transform?.scale else { return }
+        guard var drag, let interaction = drag.interaction, let scale = canvas?.transform?.scale else { return }
+        guard model.isInteractionOpen(interaction) else { return cancelDrag() }
         drag.modifiers = event.modifierFlags
         self.drag = drag
         apply(drag, scale: scale)

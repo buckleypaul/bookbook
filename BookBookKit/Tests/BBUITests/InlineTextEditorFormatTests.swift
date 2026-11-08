@@ -228,7 +228,12 @@ struct InlineTextEditorFormatTests {
 }
 
 /// The pure RichText range edits behind the format actions.
+@MainActor
 struct RichTextFormattingTests {
+    let typography = Typography.default
+
+    func runs(_ text: RichText?) -> [Run] { text?.paragraphs.flatMap(\.runs) ?? [] }
+
     @Test func applying_splitsRunsAtTheRangeEdges_acrossParagraphs() {
         let text = RichText(paragraphs: [
             Paragraph(runs: [Run(text: "abc"), Run(text: "def", italic: true)]),
@@ -252,12 +257,57 @@ struct RichTextFormattingTests {
     @Test func state_reportsCommonValuesOrNil() {
         let red = RGBA(red: 1, green: 0, blue: 0)
         let state = RichTextFormatting.state(of: [Run(text: "a", bold: true, size: 30, color: red),
-                                                  Run(text: "b", bold: true, italic: true, color: red)])
+                                                  Run(text: "b", bold: true, italic: true, color: red)],
+                                             typography: typography)
         #expect(state.bold == true)
         #expect(state.italic == nil)
         #expect(state.underline == false)
         #expect(state.size == nil)
         #expect(state.color == red)
         #expect(state.font == nil)
+    }
+
+    // MARK: Bold base face (title): B shows and toggles what is drawn (A §4.2)
+
+    var title: Typography { Typography.default.resolved(for: .title) }
+
+    @Test func titleBaseFace_stateShowsDrawnBold() {
+        #expect(title.bodyFont.postScriptName == "AvenirNext-Bold")
+        // Unformatted title text is drawn bold: B is on.
+        #expect(RichTextFormatting.state(of: [Run(text: "The Fox")], typography: title).bold == true)
+        // The relative flag draws the regular weight: B is off.
+        #expect(RichTextFormatting.state(of: [Run(text: "Fox", bold: true)], typography: title).bold == false)
+        #expect(RichTextFormatting.state(of: [Run(text: "a"), Run(text: "b", bold: true)], typography: title).bold == nil)
+        // Body text (regular base face): drawn and stored agree.
+        #expect(RichTextFormatting.state(of: [Run(text: "a")], typography: typography).bold == false)
+        #expect(RichTextFormatting.state(of: [Run(text: "a", bold: true)], typography: typography).bold == true)
+    }
+
+    @Test func titleBaseFace_toggleBoldFlipsDrawnWeight() throws {
+        let toggle = try #require(RichTextFormatting.transform(for: .toggleBold, current: [Run(text: "Fox")],
+                                                                typography: title))
+        var run = Run(text: "Fox")
+        toggle(&run)
+        #expect(run.bold) // stored relative: draws regular
+        #expect(RichTextFormatting.state(of: [run], typography: title).bold == false)
+        // Mixed (one drawn bold, one not): everything becomes drawn bold.
+        let mixed = [Run(text: "a"), Run(text: "b", bold: true)]
+        let toBold = try #require(RichTextFormatting.transform(for: .toggleBold, current: mixed, typography: title))
+        let edited = mixed.map { var r = $0; toBold(&r); return r }
+        #expect(edited.allSatisfy { !$0.bold })
+        #expect(RichTextFormatting.state(of: edited, typography: title).bold == true)
+    }
+
+    @Test func titleEditor_formatStateMatchesDrawnText() {
+        let sent = InlineTextEditorFormatTests.Sent()
+        let editor = InlineTextEditor(pageID: PageID(), boxID: BoxID(), text: RichText(plain: "The Fox"),
+                                      typography: title, formatting: nil, undoManager: { nil },
+                                      onChange: { sent.changes.append(($0, $1)) })
+        editor.place(viewRect: CGRect(x: 0, y: 0, width: 300, height: 200), pageSize: CGSize(width: 300, height: 200))
+        editor.textView.setSelectedRange(NSRange(location: 4, length: 3))
+        #expect(editor.formatState.bold == true)
+        editor.apply(.toggleBold)
+        #expect(editor.formatState.bold == false)
+        #expect(runs(sent.changes.last?.0) == [Run(text: "The "), Run(text: "Fox", bold: true)])
     }
 }

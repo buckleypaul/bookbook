@@ -214,7 +214,7 @@ extension InlineTextEditor {
         let selection = textView.selectedRange()
         let text = currentText()
         let runs = selection.length == 0 ? [typingRun()] : RichTextFormatting.runs(in: selection, of: text)
-        var state = RichTextFormatting.state(of: runs)
+        var state = RichTextFormatting.state(of: runs, typography: typography)
         state.alignment = RichTextFormatting.alignment(in: selection, of: text)
         return state
     }
@@ -282,6 +282,7 @@ extension InlineTextEditor {
 
 /// Pure edits of `RichText` over a UTF-16 range of its attributed form (paragraphs joined by
 /// one newline), used by the editor's format actions.
+@MainActor
 enum RichTextFormatting {
     /// Points per step for Bigger / Smaller.
     static let sizeStep: Double = 1
@@ -357,26 +358,43 @@ enum RichTextFormatting {
     }
 
     /// Common values of `runs`; nil where they differ (or, for overrides, where none is set).
-    static func state(of runs: [Run]) -> FormatState {
+    /// Bold and italic are what the runs draw (A §4.2: the stored flags are relative to the base
+    /// face), so B is on over a bold title even though its runs store `bold: false`.
+    static func state(of runs: [Run], typography: Typography) -> FormatState {
         func common<T: Hashable>(_ key: (Run) -> T?) -> T? {
             let values = Set(runs.map(key))
             return values.count == 1 ? values.first ?? nil : nil
         }
-        return FormatState(bold: common { $0.bold }, italic: common { $0.italic },
+        let drawn = runs.map { RichTextBridge.drawnTraits(of: $0, typography: typography) }
+        func commonDrawn(_ key: ((bold: Bool, italic: Bool)) -> Bool) -> Bool? {
+            let values = Set(drawn.map(key))
+            return values.count == 1 ? values.first : nil
+        }
+        return FormatState(bold: commonDrawn(\.bold), italic: commonDrawn(\.italic),
                            underline: common { $0.underline }, font: common { $0.fontFamily },
                            size: common { $0.size }, color: common { $0.color }, alignment: nil)
     }
 
     /// The run transform for a (non-alignment) action, given the runs it applies to.
+    /// Bold and italic toggle what is drawn: if every run draws bold, they all become non-bold,
+    /// else all bold; each run's relative flag is set to get there from its base face (A §4.2).
     static func transform(for action: FormatAction, current runs: [Run],
                           typography: Typography) -> ((inout Run) -> Void)? {
         switch action {
         case .toggleBold:
-            let value = !runs.allSatisfy(\.bold)
-            return { $0.bold = value }
+            let value = !runs.allSatisfy { RichTextBridge.drawnTraits(of: $0, typography: typography).bold }
+            return { run in
+                var base = run
+                base.bold = false
+                run.bold = RichTextBridge.drawnTraits(of: base, typography: typography).bold != value
+            }
         case .toggleItalic:
-            let value = !runs.allSatisfy(\.italic)
-            return { $0.italic = value }
+            let value = !runs.allSatisfy { RichTextBridge.drawnTraits(of: $0, typography: typography).italic }
+            return { run in
+                var base = run
+                base.italic = false
+                run.italic = RichTextBridge.drawnTraits(of: base, typography: typography).italic != value
+            }
         case .toggleUnderline:
             let value = !runs.allSatisfy(\.underline)
             return { $0.underline = value }

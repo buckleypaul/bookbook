@@ -92,8 +92,9 @@ public enum BookMutations {
 
             if let page, let slot, slot.placement == nil, let template = content.template(for: page),
                let box = template.box(boxID) {
-                let placement = ImagePlacement(versionID: version.id, boxAspectWhenPlaced: content.boxAspect(box))
+                let placement = ImagePlacement(versionID: version.id, boxAspectWhenPlaced: content.boxAspect(box, in: template))
                 content.pages[pageID]?.images[boxID]?.placement = placement
+                content.pages[pageID]?.images[boxID]?.acknowledged.boxAspect = nil
                 dirty.pages.insert(pageID)
             }
         }

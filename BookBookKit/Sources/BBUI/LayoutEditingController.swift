@@ -4,7 +4,7 @@ import BBModel
 import Observation
 
 /// The template editor mode (PD §8.4, A §6.2): draws the open template with sample content,
-/// the trim, bleed and safe areas, selection handles and live snap guides, and turns clicks,
+/// the trim, bleed and safe areas (`PageRenderer`'s screen guides, as on the page canvas), selection handles and live snap guides, and turns clicks,
 /// drags and keys into `TemplateEditorModel` edits. Each drag is one undo step
 /// (`beginInteraction` … `endInteraction`). The maths lives in `LayoutEditingMath`.
 @MainActor
@@ -45,6 +45,8 @@ final class LayoutEditingController: CanvasController {
     private struct Drag {
         var kind: DragKind
         var geometry: PageGeometry
+        /// Each box's bleed-pushed edges when the drag began, to turn render rects back into frames.
+        var pushedEdges: [BoxID: EdgeSet]
         var start: CGPoint
         var current: CGPoint
         var modifiers: NSEvent.ModifierFlags
@@ -91,11 +93,13 @@ final class LayoutEditingController: CanvasController {
         }
     }
 
+    /// Render rects (bleed-extended): see `LayoutEditingMath.editableBoxes`.
     private func editableBoxes(_ template: Template, _ geometry: PageGeometry) -> [EditableBox] {
-        template.boxes.map {
-            EditableBox(id: $0.id, rect: geometry.trimRect(for: $0.frame), rotationDegrees: $0.rotationDegrees,
-                        isText: $0.content != .image)
-        }
+        LayoutEditingMath.editableBoxes(template, geometry: geometry)
+    }
+
+    private func pushedEdges(_ template: Template, _ geometry: PageGeometry) -> [BoxID: EdgeSet] {
+        Dictionary(template.boxes.map { ($0.id, geometry.pushedBleedEdges(for: $0)) }, uniquingKeysWith: { a, _ in a })
     }
 
     /// The one selected box, if exactly one is selected (only it gets handles).
@@ -112,23 +116,8 @@ final class LayoutEditingController: CanvasController {
         ctx.saveGState()
         defer { ctx.restoreGState() }
 
-        // The trim line, when the bleed is showing around it.
-        if geometry.bleed > 0 {
-            ctx.setStrokeColor(NSColor.systemRed.withAlphaComponent(0.7).cgColor)
-            ctx.setLineWidth(1 / s)
-            ctx.stroke(geometry.trimRect)
-        }
-        // Each page's safe area. (`PageRenderer`'s guides draw one safe area over the whole
-        // trim, which on a spread misses the margins either side of the fold.)
-        if geometry.isSpread {
-            ctx.saveGState()
-            ctx.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.6).cgColor)
-            ctx.setLineWidth(0.75 / s)
-            ctx.setLineDash(phase: 0, lengths: [4 / s, 3 / s])
-            for area in geometry.pageSafeAreas { ctx.stroke(area) }
-            ctx.restoreGState()
-        }
-
+        // The trim line, the bleed and each page's safe area are `PageRenderer`'s screen guides
+        // (the same as the page canvas); this overlay adds selection, handles and snap guides.
         let boxes = editableBoxes(template, geometry)
         let accent = NSColor.controlAccentColor.cgColor
         for box in boxes where model.selection.contains(box.id) {
@@ -195,8 +184,7 @@ final class LayoutEditingController: CanvasController {
         let boxes = editableBoxes(template, geometry)
         let shift = event.modifierFlags.contains(.shift)
         func targets(excluding moving: Set<BoxID>) -> SnapTargets {
-            SnapTargets.make(geometry: geometry, isSpread: geometry.isSpread,
-                             others: boxes.filter { !moving.contains($0.id) })
+            LayoutEditingMath.snapTargets(geometry: geometry, others: boxes.filter { !moving.contains($0.id) })
         }
 
         // A handle of the selected box comes first: it may sit outside the box.
@@ -206,7 +194,7 @@ final class LayoutEditingController: CanvasController {
             let kind: DragKind = handle == .rotation
                 ? .rotate(box: box)
                 : .resize(box: box, handle: handle, targets: targets(excluding: [box.id]))
-            drag = Drag(kind: kind, geometry: geometry, start: point, current: point, modifiers: event.modifierFlags)
+            drag = Drag(kind: kind, geometry: geometry, pushedEdges: pushedEdges(template, geometry), start: point, current: point, modifiers: event.modifierFlags)
             return
         }
 
@@ -216,7 +204,7 @@ final class LayoutEditingController: CanvasController {
         guard canMove else { return }
         let moving = boxes.filter { selection.contains($0.id) }
         drag = Drag(kind: .move(boxes: moving, targets: targets(excluding: selection)), geometry: geometry,
-                    start: point, current: point, modifiers: event.modifierFlags)
+                    pushedEdges: pushedEdges(template, geometry), start: point, current: point, modifiers: event.modifierFlags)
     }
 
     func mouseDragged(with event: NSEvent, at point: CGPoint) {
@@ -237,8 +225,9 @@ final class LayoutEditingController: CanvasController {
     func mouseUp(with event: NSEvent, at point: CGPoint) {
         guard let drag else { return }
         self.drag = nil
-        if let interaction = drag.interaction, model.isInteractionOpen(interaction) {
-            model.endInteraction(actionName: drag.kind.actionName)
+        // Closes only this drag's group (a no-op if an undo or redo already ended it).
+        if let interaction = drag.interaction {
+            model.endInteraction(interaction, actionName: drag.kind.actionName)
         }
     }
 
@@ -271,8 +260,10 @@ final class LayoutEditingController: CanvasController {
             guides = result.guides
             model.update(actionName: drag.kind.actionName) { template in
                 for index in template.boxes.indices {
-                    if let rect = result.rects[template.boxes[index].id] {
-                        template.boxes[index].frame = geometry.normalizedFrame(for: rect)
+                    let id = template.boxes[index].id
+                    if let rect = result.rects[id] {
+                        template.boxes[index].frame = LayoutEditingMath.frame(
+                            forRender: rect, pushedEdges: drag.pushedEdges[id] ?? [], geometry: geometry)
                     }
                 }
             }
@@ -283,7 +274,8 @@ final class LayoutEditingController: CanvasController {
             guides = result.guides
             model.update(actionName: drag.kind.actionName) { template in
                 if let index = template.boxes.firstIndex(where: { $0.id == box.id }) {
-                    template.boxes[index].frame = geometry.normalizedFrame(for: result.rect)
+                    template.boxes[index].frame = LayoutEditingMath.frame(
+                        forRender: result.rect, pushedEdges: drag.pushedEdges[box.id] ?? [], geometry: geometry)
                 }
             }
         case let .rotate(box):

@@ -73,14 +73,20 @@ final class PlacementController: CanvasController {
         var options = RenderOptions.screen
         if let editing = textEditing.editingBoxID { options.hiddenTextBoxes = [editing] }
         options.pageNumbers = pageNumberMarks
+        let geometry = PageGeometry.drawGeometry(for: page, in: renderContent)
         return CanvasScene(content: renderContent, page: page, options: options, images: imageSource,
-                           showsFold: renderContent.template(for: page)?.kind == .spread)
+                           showsFold: geometry.isSpread, showsBleed: geometry.bleed > 0)
     }
 
     /// The draw geometry: double width with a fold for a spread template.
-    private var geometry: PageGeometry? { renderContent.map { PageGeometry(setup: $0.style.pageSetup) } }
+    private var geometry: PageGeometry? {
+        guard let renderContent, let page else { return nil }
+        return PageGeometry.drawGeometry(for: page, in: renderContent)
+    }
 
-    /// Every box on the page with its render rect, in layer order.
+    /// Every box on the page with its render rect (bleed-extended when bleed is on), in layer
+    /// order. Hit-testing and the selection outline rotate about this rect's centre, as
+    /// `PageRenderer` draws.
     var boxRects: [(box: Box, rect: CGRect)] {
         guard let content, let page, let template = content.template(for: page), let geometry else { return [] }
         return template.boxes.map { ($0, geometry.renderRect(for: $0)) }

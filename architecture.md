@@ -297,15 +297,17 @@ struct Provenance {
 | Derived value | How it's computed |
 |---|---|
 | Page **status** | *Empty* when there is no text and no placement. *Done* when `isDone`. Otherwise *in progress*. |
-| **Style changed** | The placed version's `styleRevision` is below `max(currentVisualRevision, acknowledged.styleRevision)`. |
+| **Style changed** | `max(placedVersion.provenance.styleRevision, acknowledged.styleRevision) < currentVisualRevision`. Imported versions (no provenance) are never flagged (Phase 7). |
 | **Asset changed** | For any asset in the placed version's `assetRevisions`, the recorded revision is below the current one, and that hasn't been acknowledged. |
-| **Layout changed** | `abs(log(currentBoxAspect / placement.boxAspectWhenPlaced)) > 0.05` (about a 5% change in shape). |
+| **Layout changed** | `abs(log(currentBoxAspect / (acknowledged.boxAspect ?? placement.boxAspectWhenPlaced))) > 0.05` (about a 5% change in shape). `currentBoxAspect` is the render rect's aspect, so bleed counts. Placing a new version clears `acknowledged.boxAspect` (Phase 7). |
 | **Consistency warning** | The placed version has an undismissed warning. |
 | **Where used** (§8.3) | An in-memory index `[AssetID: Set<UsageSite>]`, rebuilt incrementally from checklists, mentions and version provenance. |
 | **Physical page positions** | `PageSequencer` (§8.1) |
 | **Cost totals** | Summed from the cost ledger (§7.10). |
 
 Flags clear on their own when the box gets a newer version. "Mark as OK" (a small addition to §8.5) writes the current revisions into `acknowledged`.
+
+**Phase 7 decisions.** Undoing a style edit restores the previous fields *and* `visualRevision` exactly, so flags it raised disappear on undo. Page-setup changes don't rewrite placements: box frames are already trim-normalized, and `PageGeometry.imageRect` re-clamps the stored focal point and zoom at draw time, so reverting a size change restores the original crop ("crops are kept where possible").
 
 ---
 
@@ -833,6 +835,9 @@ Page numbers come from physical positions, the style's starting number, and its 
   - for spreads, the fold position.
 - A box's **render rect** is its normalized frame times the trim size, with each edge in `bleedEdges` pushed out by the bleed. That's how turning bleed on "slightly enlarges full-bleed boxes" (§8.2) without changing the stored data.
 - Rotation and corner radius are applied as transforms and clip paths at draw time. Hit-testing uses the inverse transform.
+- **Fold rule (Phase 7):** on a spread, a box edge lying on the fold (within 0.5 pt) gets no bleed even if it's in `bleedEdges`, so a half-spread full-bleed box never spills onto the facing page (`PageGeometry.pushedBleedEdges`; `BookContent.boxAspect` uses the same rule).
+- **Rotation centre (Phase 7):** rotation is about the *render rect's* centre (bleed-extended when bleed is on) in `PageRenderer`, the page canvas and the template editor alike.
+- **Guides (Phase 7):** `PageRenderer.drawGuides` (screen only) draws the trim line when bleed is on, one safe area per page half, and box outlines; both editors use it. With bleed on, the page canvas shows the bleed area around the trim.
 
 ### 8.3 Text layout
 

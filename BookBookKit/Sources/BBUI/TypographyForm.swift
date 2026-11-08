@@ -16,6 +16,8 @@ struct TypographyForm: View {
     @State private var colorTask: Task<Void, Never>?
     @State private var showImporter = false
     @State private var alert: FontAlert?
+    /// Bumped after a font import so the pickers re-read the installed families.
+    @State private var fontsEpoch = 0
     @FocusState private var sizeFocused: Bool
 
     struct FontAlert: Identifiable {
@@ -55,13 +57,16 @@ struct TypographyForm: View {
                         Text(String(format: "%.2f", draft.lineSpacing)).monospacedDigit().frame(width: 40)
                     }
                 }
-                Picker("Alignment", selection: $draft.alignment) {
-                    Text("Left").tag(BBModel.TextAlignment.leading)
-                    Text("Centre").tag(BBModel.TextAlignment.center)
-                    Text("Right").tag(BBModel.TextAlignment.trailing)
-                    Text("Justified").tag(BBModel.TextAlignment.justified)
+                LabeledContent("Alignment") {
+                    Picker("Alignment", selection: $draft.alignment) {
+                        Text("Left").tag(BBModel.TextAlignment.leading)
+                        Text("Centre").tag(BBModel.TextAlignment.center)
+                        Text("Right").tag(BBModel.TextAlignment.trailing)
+                        Text("Justified").tag(BBModel.TextAlignment.justified)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 }
-                .pickerStyle(.segmented)
             }
             if !document.missingFonts.isEmpty {
                 Text("Missing: \(document.missingFonts.joined(separator: ", "))")
@@ -80,6 +85,9 @@ struct TypographyForm: View {
             draft = new
             sizeText = String(format: "%g", new.bodySize)
         }
+        // Escape or a click-away closes the sheet without `Done`: keep a typed size and any
+        // pending colour, and stop the colour timer so nothing fires afterwards.
+        .onDisappear { flush() }
         .onChange(of: draft.bodyFont) { commit() }
         .onChange(of: draft.titleFont) { commit() }
         .onChange(of: draft.alignment) { commit() }
@@ -97,6 +105,7 @@ struct TypographyForm: View {
         [.font] + ["ttf", "otf", "ttc"].compactMap { UTType(filenameExtension: $0) }
 
     private func fontPicker(_ title: String, selection: Binding<FontRef>) -> some View {
+        _ = fontsEpoch
         let name = selection.wrappedValue.postScriptName
         let family = FontFamilies.family(of: name)
         return Picker(title, selection: Binding(
@@ -132,10 +141,16 @@ struct TypographyForm: View {
         document.perform(.setTypography(draft))
     }
 
-    private func finish() {
+    private func flush() {
         colorTask?.cancel()
+        colorTask = nil
+        guard document.isEditable else { return }
         commitSize()
         commit()
+    }
+
+    private func finish() {
+        flush()
         dismiss()
     }
 
@@ -145,6 +160,7 @@ struct TypographyForm: View {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
                 let info = try await document.importFont(from: url)
+                fontsEpoch += 1
                 if !info.embeddingAllowed {
                     alert = FontAlert(
                         title: "This font can't be embedded",

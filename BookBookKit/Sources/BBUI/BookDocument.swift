@@ -314,7 +314,7 @@ public final class BookDocument {
         case let .importStoryText(texts, templateID, index, _):
             unfixed = .importStoryText(texts, templateID: templateID, index: index)
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate:
+             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK:
             return false
         }
         guard let prepared = prepare(unfixed) else { return false }
@@ -424,7 +424,9 @@ public final class BookDocument {
     /// these, looking entities up by ID and doing nothing if the target has gone (A §6.3).
     enum Edit: Sendable {
         case setText(page: PageID, box: BoxID, text: RichText?)
-        case setPlacement(page: PageID, box: BoxID, placement: ImagePlacement?)
+        /// `baseline` non-nil also replaces the slot's `acknowledged` (placing a new version
+        /// clears its `boxAspect`; the inverse restores the old baseline).
+        case setPlacement(page: PageID, box: BoxID, placement: ImagePlacement?, baseline: FlagBaseline? = nil)
         case insertPage(Page, index: Int)
         case removePage(PageID)
         case setTypography(Typography)
@@ -433,6 +435,12 @@ public final class BookDocument {
         /// Replace an existing page wholesale (template change, done flag).
         case replacePage(Page)
         case setPageNumberStyle(PageNumberStyle)
+        /// Phase 7: set the visual style fields and `visualRevision` exactly.
+        case setStyleVisual(StyleVisual, revision: Int)
+        /// Phase 7: replace the page setup.
+        case setPageSetup(PageSetup)
+        /// Phase 7: replace the `acknowledged` baselines of the listed image slots.
+        case setBaselines(page: PageID, [BoxID: FlagBaseline])
         /// Phase 6: add a template (no-op if the ID exists). Inverse: `removeTemplate`.
         case insertTemplate(Template)
         /// Remove a template (no-op while a page uses it). Inverse: `insertTemplate`.
@@ -466,6 +474,27 @@ public final class BookDocument {
         let edit: Edit
 
         switch command {
+        case let .setStyleVisual(visual):
+            guard visual != content.style.visual else { return nil }
+            let revision = content.style.applying(visual).visualRevision
+            edit = .setStyleVisual(visual, revision: revision)
+
+        case let .setPageSetup(setup):
+            guard setup != content.style.pageSetup else { return nil }
+            edit = .setPageSetup(setup)
+
+        case let .markFlagsOK(pageID, boxID):
+            guard let page = content.pages[pageID], let template = content.template(for: page) else { return nil }
+            var baselines: [BoxID: FlagBaseline] = [:]
+            for box in template.imageBoxes where boxID == nil || box.id == boxID {
+                guard var slot = page.images[box.id], slot.placement != nil else { continue }
+                slot.acknowledged.styleRevision = content.style.visualRevision
+                slot.acknowledged.boxAspect = content.boxAspect(box, in: template)
+                if slot.acknowledged != page.images[box.id]?.acknowledged { baselines[box.id] = slot.acknowledged }
+            }
+            guard !baselines.isEmpty else { return nil }
+            edit = .setBaselines(page: pageID, baselines)
+
         case let .setRichText(pageID, boxID, text, _):
             guard let page = content.pages[pageID], let template = content.template(for: page),
                   let box = template.box(boxID), case .text = box.content else { return nil }
@@ -475,8 +504,10 @@ public final class BookDocument {
             guard let page = content.pages[pageID], let template = content.template(for: page),
                   let box = template.box(boxID), let slot = page.images[boxID],
                   content.sessions[slot.sessionID]?.version(versionID) != nil else { return nil }
-            let placement = ImagePlacement(versionID: versionID, boxAspectWhenPlaced: content.boxAspect(box))
-            edit = .setPlacement(page: pageID, box: boxID, placement: placement)
+            let placement = ImagePlacement(versionID: versionID, boxAspectWhenPlaced: content.boxAspect(box, in: template))
+            var baseline = slot.acknowledged
+            baseline.boxAspect = nil
+            edit = .setPlacement(page: pageID, box: boxID, placement: placement, baseline: baseline)
 
         case let .addPage(index, templateID, fix):
             guard let template = resolveTemplate(templateID, into: &created), template.kind.isStory else { return nil }
@@ -709,12 +740,40 @@ public final class BookDocument {
             content.pages[pageID]?.text[boxID] = text
             return (.setText(page: pageID, box: boxID, text: old), DirtySet(pages: [pageID]))
 
-        case let .setPlacement(pageID, boxID, placement):
+        case let .setPlacement(pageID, boxID, placement, baseline):
             guard let slot = content.pages[pageID]?.images[boxID] else { return nil }
             // Never point at a version that was deleted (non-undoable) since.
             if let placement, content.sessions[slot.sessionID]?.version(placement.versionID) == nil { return nil }
             content.pages[pageID]?.images[boxID]?.placement = placement
-            return (.setPlacement(page: pageID, box: boxID, placement: slot.placement), DirtySet(pages: [pageID]))
+            if let baseline { content.pages[pageID]?.images[boxID]?.acknowledged = baseline }
+            return (.setPlacement(page: pageID, box: boxID, placement: slot.placement,
+                                  baseline: baseline == nil ? nil : slot.acknowledged),
+                    DirtySet(pages: [pageID]))
+
+        case let .setStyleVisual(visual, revision):
+            let old = content.style
+            content.style.presetID = visual.presetID
+            content.style.visualDescription = visual.visualDescription
+            content.style.styleReferences = visual.styleReferences
+            content.style.negativeGuidance = visual.negativeGuidance
+            content.style.visualRevision = revision
+            return (.setStyleVisual(old.visual, revision: old.visualRevision), DirtySet(style: true))
+
+        case let .setPageSetup(setup):
+            let old = content.style.pageSetup
+            content.style.pageSetup = setup
+            return (.setPageSetup(old), DirtySet(style: true))
+
+        case let .setBaselines(pageID, baselines):
+            guard content.pages[pageID] != nil else { return nil }
+            var old: [BoxID: FlagBaseline] = [:]
+            for (boxID, baseline) in baselines {
+                guard let slot = content.pages[pageID]?.images[boxID] else { continue }
+                old[boxID] = slot.acknowledged
+                content.pages[pageID]?.images[boxID]?.acknowledged = baseline
+            }
+            guard !old.isEmpty else { return nil }
+            return (.setBaselines(page: pageID, old), DirtySet(pages: [pageID]))
 
         case let .insertPage(page, index):
             guard content.pages[page.id] == nil, content.templates[page.templateID] != nil else { return nil }

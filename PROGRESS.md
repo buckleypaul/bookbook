@@ -16,7 +16,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 4 | Text and typography | done | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. From Phase 5 on, no PRs: merge into main and push directly. [Log](progress/phase-4-text-typography.md) |
 | 5 | Pages tab, ordering and cover | done | `phase-5-pages-cover` | — | $0.00 | No live checks. [Log](progress/phase-5-pages-cover.md) |
 | 6 | Template editor | done | `phase-6-template-editor` | — | $0.00 | No live checks. [Log](progress/phase-6-template-editor.md) |
-| 7 | Style guide and page setup | not started | | | | |
+| 7 | Style guide and page setup | in progress | `phase-7-style-page-setup` | — | $0.00 | No live checks. |
 | 8 | Sessions and versions | not started | | | | |
 | 9 | Queue, cost, errors and settings (M2) | not started | | | | |
 | 10 | Assets and character sheets | not started | | | | |
@@ -45,17 +45,10 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
 ### Phase 7
-- **High priority (review must-fix left after the two-round cap):** `TemplateEditorModel.beginInteraction` (`TemplateEditorModel.swift:149`) joins a pending `updateContinuously` burst: a canvas drag or Rotation slider started within 0.6 s of a stepper/colour change joins that group, then freezes when the timer closes it, and one undo reverts both. Call `finishContinuousEdit()` first. Likewise a one-shot `update` (toggle, Return) within 0.6 s lands in the open burst (from Phase 6 review).
-- Template editor: `endInteraction` should take the token so it can't close another caller's group; undo while a group is open but has no edit yet doesn't end the interaction (from Phase 6 review).
-- Template editor: layer order between a text box and an image box has no visible effect (text always draws above images, A §8), so Send to Back on a text box over an image looks like a no-op; disable or explain it (from Phase 6 hand checks).
-- Rotated full-bleed boxes: the editor rotates handles/hit-tests about the trim rect's centre, `PageRenderer` about the bleed-extended rect (`LayoutEditingController.swift:97`, `PageRenderer.swift:225`), so outline and clicks don't match the drawing (from Phase 6 review).
-- Template editor lane leftovers: no snapping during ⇧ aspect-locked resize; no multi-box resize handles; `PageRenderer`'s `showGuides` strokes one safe area across a spread (`PageRenderer.swift:167`); the in-place text editor isn't rotated for rotated text boxes; each drag tick copies `BookContent`, schedules a save and refreshes missing fonts (throttle) (from Phase 6).
 - Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phase 5).
-- The Page Numbers sheet's "Pages skipped" label shows "None" while "Skip front matter" is on; it counts only explicitly skipped pages, and IDs of deleted pages stay in `skippedPages` (from Phase 5).
-- Page Numbers sheet: pressing Done without touching the font swaps a stored non-regular face (e.g. `Helvetica-Bold`) for the family's regular face (`PageNumbersSheet.swift:110`) (from Phase 5 review).
-- Typography form: the body-font menu is stale after Import Font… until the sheet reopens; the "Alignment" label wraps; Escape loses a typed size that wasn't committed; a pending colour commit can fire after the sheet closes (from Phase 4).
 
 ### Phase 8
+- Send style reference images with generation requests (`ContextAssembler` doesn't read `styleReferences`) and show them in Version details (from Phase 7).
 - A page restored by undoing its deletion lacks slots for image boxes added to its template since; create slots lazily (from Phase 6).
 - Edits/references/masks in the OpenAI adapter (from Phase 2).
 - Separate "inspect" from "place" in the version strip (from Phase 2).
@@ -89,6 +82,11 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Later
+- Template-editor drag throttle: each drag tick copies `BookContent`, schedules a save and refreshes missing fonts inside `BookDocument.perform`; needs coalescing there (from Phase 6, still open after Phase 7).
+- Template editor: dragging an edge off a spread's fold makes its bleed reappear after the drag (outline jumps 9 pt) (from Phase 7).
+- Template editor: no snapping during ⇧ aspect-locked resize; no multi-box resize handles; the in-place text editor isn't rotated for rotated text boxes (from Phase 6).
+- Page setup has one uniform margin field; per-edge margins aren't editable (from Phase 7).
+- No regression tests for the Page Numbers Done font-keep fix or the Typography form fixes (from Phase 7).
 - `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` is flaky (EINVAL writing `.journal/staged` under concurrent saves/opens); failed in Phase 6 Sessions A and B, passed on re-run. Likely a real race in BBStore journal-folder handling (from Phase 6).
 - After a split is accepted ("Continue Anyway"), every later structural command shows the split warning again; compare against the split state before the command (`BookDocument.wouldSplitSpread`) (from Phase 5 review).
 - An old bound title/author box whose text has no same-role target in the new template falls through to the generic mapping and lands in a body box; `pageNumberSlot` isn't excluded from body text (from Phase 5).
@@ -134,4 +132,20 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-_No phase running._
+### Phase 7 — Style guide and page setup
+
+**Stage:** B
+
+Started 2026-11-08. Session A done 2026-11-08; `scripts/test.sh all` green at the end of A.
+
+**Lanes (all merged into `phase-7-style-page-setup`):**
+- Contracts (main thread): `PageSizePreset`, `Orientation.square`, `PageSetup.sizePreset` + `applying(preset:orientation:customSize:)`, `StyleVisual`/`StyleGuide.applying(_:)`, `ImageFlags` + `BookContent.imageFlags`, `BookCommand.setStyleVisual/.setPageSetup/.markFlagsOK`, `StylePreset` + `Presets.stylePresets()`.
+- L1 model + commands (sonnet): presets and sizes, `PageSetup` decoder (missing `sizePreset` → `.usLetter` for 612×792, else `.custom`), revision bump, flag derivation, bleed/spread/fold-aware `boxAspect(_:in:)`, the three commands with undo, placing a version clears `acknowledged.boxAspect`; 8 text-only style presets.
+- L2 UI (sonnet): Style tab (sidebar `.style`, now icon-only tabs to fit the minimum window width), preset picker, description, reference images (stored via `store.storeImage`), negative guidance, Typography sheet button, `PageSetupForm` (one uniform margin field), flag icons on thumbnails and page list, "Mark Images as OK" context menu, `ImageFlagsRow` with Mark as OK above the page editor's session panel.
+- L3 canvas (opus): page canvas shows the bleed area; shared `PageRenderer.drawGuides` (trim line with bleed on, safe area per page half, box outlines) in both editors; fold rule; rotation about the render rect's centre everywhere; 8 new snapshots (`PageSetupSnapshotTests`), geometry tests. No existing snapshots re-recorded.
+- L4 follow-ups (sonnet): template-editor undo grouping (burst closed before drags/one-shots, token `endInteraction`), layer-order controls disabled when they'd have no visible effect, Page Numbers skipped count and bold-face keep, Typography form fixes.
+
+**Decisions (logged in architecture.md §4.4, §8.2):** style-changed formula is `max(provenance.styleRevision, acknowledged.styleRevision) < visualRevision` (the A §4.4 wording was inverted); imported versions never get style changed; undo of a style edit restores the revision exactly; placements aren't rewritten on page-setup change (focal point/zoom re-clamped at draw, so reverting restores the crop); fold rule; rotation centre.
+
+**For Session B:** no live checks. Hand checks need a book with placed images (use fixture/imported images; imported versions have no provenance, so "style changed" needs a generated version — check what the hand-check driver can do offline, or note it for the user). Check undo for every Style-tab and page-setup field. Style references are stored but not sent to the provider yet (Phase 8 follow-up) — confirm Version details doesn't claim otherwise.
+

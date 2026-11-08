@@ -58,6 +58,17 @@ public enum BookCommand: Hashable, Sendable {
     /// Delete a book template. Ignored while any page uses it (`BookContent.pages(using:)`).
     /// Undo restores it.
     case deleteTemplate(TemplateID)
+    /// Phase 7: replace the visual style (preset, description, references, negative
+    /// guidance) via `StyleGuide.applying(_:)`, which bumps `visualRevision` on a real change.
+    /// Undo restores the previous fields and revision exactly.
+    case setStyleVisual(StyleVisual)
+    /// Phase 7: replace the page setup (size, orientation, margins, bleed). Box frames are
+    /// normalized to the trim and placements' focal points are clamped at draw time, so
+    /// nothing else changes. `layoutChanged` flags follow from the new box aspects.
+    case setPageSetup(PageSetup)
+    /// Phase 7 "Mark as OK": write the current revisions and box aspect into the slot's
+    /// `acknowledged` (`box: nil` = every image box on the page). Undoable.
+    case markFlagsOK(page: PageID, box: BoxID?)
 
     /// The undo menu title ("Undo Typing", …).
     public var actionName: String {
@@ -76,6 +87,9 @@ public enum BookCommand: Hashable, Sendable {
         case .addTemplate: "Add Layout"
         case let .updateTemplate(_, name): name
         case .deleteTemplate: "Delete Layout"
+        case .setStyleVisual: "Change Style"
+        case .setPageSetup: "Change Page Setup"
+        case .markFlagsOK: "Mark as OK"
         }
     }
 }

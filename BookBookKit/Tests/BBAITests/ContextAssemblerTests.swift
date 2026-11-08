@@ -16,8 +16,8 @@ import Testing
         #expect(report.styleRevision == 3)
         #expect(report.estimatedInputBytes == request.instruction.rendered.utf8.count)
         #expect(request.quality == .draft)
-        #expect(abs(request.output.boxAspect - book.content.boxAspect(try #require(
-            book.content.templates.values.first { $0.kind == .single }?.box(book.imageBox)))) < 1e-9)
+        let single = try #require(book.content.templates.values.first { $0.kind == .single })
+        #expect(abs(request.output.boxAspect - book.content.boxAspect(try #require(single.box(book.imageBox)), in: single)) < 1e-9)
     }
 
     @Test func promptWithoutStoryText() throws {

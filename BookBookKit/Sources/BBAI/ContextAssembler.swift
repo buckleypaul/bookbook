@@ -18,7 +18,7 @@ public enum ContextAssembler {
         let style = content.style
         let storyText = page.storyText(in: template)
         let includeStory = intent.includeStoryText && !storyText.isEmpty
-        let aspect = content.boxAspect(box)
+        let aspect = content.boxAspect(box, in: template)
 
         let values: [(key: String, placeholders: [String: String], required: Bool)] = [
             ("role", [:], true),

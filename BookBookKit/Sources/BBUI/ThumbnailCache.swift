@@ -67,11 +67,10 @@ public actor ThumbnailCache {
 /// Renders a book's library thumbnail (`thumbnail.png`, A §5.1). Thumbnail lane implements it.
 @MainActor
 public enum BookThumbnail {
-    /// PNG of the cover page, or the first story page while the cover is hidden (until Phase 5),
+    /// PNG of the cover page, or the first story page if there is none,
     /// longest side `maxPixelSize`. Nil if the book has no pages.
     public static func png(for content: BookContent, imageURL: (ImageRef) -> URL, maxPixelSize: Int = 512) -> Data? {
-        // The cover stays hidden until Phase 5, so the thumbnail is the first story page.
-        guard maxPixelSize > 0, let page = content.storyPages.first else { return nil }
+        guard maxPixelSize > 0, let page = content.coverPage ?? content.storyPages.first else { return nil }
         let trim = content.style.pageSetup.trimSize
         guard trim.width > 0, trim.height > 0 else { return nil }
         let scale = Double(maxPixelSize) / max(trim.width, trim.height)

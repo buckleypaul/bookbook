@@ -47,7 +47,7 @@ struct FontEmbeddingTests {
 
         let provider = try #require(CGDataProvider(data: data as CFData))
         let cgDoc = try #require(CGPDFDocument(provider))
-        let pageDict = try #require(cgDoc.page(at: 1)?.dictionary)
+        let pageDict = try #require(cgDoc.page(at: 2)?.dictionary)
         let fonts = EmbeddedFonts.fonts(inPage: pageDict)
         let atkinson = try #require(fonts.first { $0.baseFont.hasSuffix("+AtkinsonHyperlegible-Regular") })
         #expect(atkinson.isEmbedded)

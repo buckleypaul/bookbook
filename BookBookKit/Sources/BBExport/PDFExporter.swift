@@ -11,20 +11,23 @@ public enum PDFExportError: Error, Equatable, Sendable {
     case contextCreationFailed
 }
 
-/// File ▸ Export PDF… (Standard) for the slice: story pages in order at trim size, fonts
-/// embedded, text kept as real text (A §9.1, thin). The cover is left out until Phase 5.
+/// File ▸ Export PDF… (Standard) for the slice: the cover, then story pages in order at trim size, fonts
+/// embedded, text kept as real text (A §9.1, thin). The cover is the first page.
 @MainActor
 public enum PDFExporter {
-    public static func exportStandard(_ content: BookContent, images: any PageImageSource, to url: URL) throws {
-        let data = try standardPDFData(content, images: images)
+    public static func exportStandard(_ content: BookContent, images: any PageImageSource, to url: URL,
+                                       pageNumbers: (PageID) -> [PageNumberMark] = { _ in [] }) throws {
+        let data = try standardPDFData(content, images: images, pageNumbers: pageNumbers)
         try data.write(to: url, options: .atomic)
     }
 
     /// Same, into memory (tests).
-    public static func standardPDFData(_ content: BookContent, images: any PageImageSource) throws -> Data {
-        let pages = content.storyPages
-        guard !pages.isEmpty else { throw PDFExportError.noPages }
+    public static func standardPDFData(_ content: BookContent, images: any PageImageSource,
+                                        pageNumbers: (PageID) -> [PageNumberMark] = { _ in [] }) throws -> Data {
+        let story = content.storyPages
+        guard !story.isEmpty else { throw PDFExportError.noPages }
 
+        let pages = (content.coverPage.map { [$0] } ?? []) + story
         let geometry = PageGeometry(setup: content.style.pageSetup)
         var mediaBox = geometry.trimRect
         let data = NSMutableData()
@@ -42,7 +45,7 @@ public enum PDFExporter {
             // PageRenderer draws in trim space with a top-left origin, y down.
             ctx.translateBy(x: 0, y: mediaBox.height)
             ctx.scaleBy(x: 1, y: -1)
-            renderer.draw(page: page, in: content, into: ctx, options: .pdf)
+            renderer.draw(page: page, in: content, into: ctx, options: RenderOptions(target: .pdfTrim, pageNumbers: pageNumbers(page.id)))
             ctx.restoreGState()
             ctx.endPDFPage()
         }

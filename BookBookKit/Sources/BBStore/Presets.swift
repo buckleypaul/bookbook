@@ -73,7 +73,18 @@ public struct StylePreset: Hashable, Codable, Sendable, Identifiable {
 }
 
 extension Presets {
-    /// The bundled style presets, in menu order. Phase 7 lane: implement (decode
-    /// `Presets/StylePresets.json`).
-    public static func stylePresets() throws(StoreError) -> [StylePreset] { [] }
+    /// The bundled style presets, in menu order (decoded from `Presets/StylePresets.json`).
+    public static func stylePresets() throws(StoreError) -> [StylePreset] {
+        guard let url = Bundle.module.url(forResource: "StylePresets", withExtension: "json",
+                                          subdirectory: "Presets") else {
+            throw StoreError.notFound("Presets/StylePresets.json")
+        }
+        let data = try PackageCoding.io("read presets") { try Data(contentsOf: url) }
+        return try PackageCoding.decode(StylePresetFile.self, from: data, what: "StylePresets.json").presets
+    }
+
+    private struct StylePresetFile: Decodable {
+        var schemaVersion: Int
+        var presets: [StylePreset]
+    }
 }

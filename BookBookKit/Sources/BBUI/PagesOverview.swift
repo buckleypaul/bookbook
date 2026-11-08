@@ -100,13 +100,19 @@ struct PagesOverview: View {
         let canDrag = isStory && document.isEditable
         return PageThumbnailView(image: image, part: part, sideSize: ctx.side, sides: sides,
                                  status: page.map { content.status(of: $0) },
+                                 flags: page.map { content.imageFlags(of: $0) } ?? [],
                                  label: showNumbers || label == "Cover" ? label : nil,
                                  isSelected: pages.selectedPage == pageID,
                                  isDropTarget: dropTarget == pageID)
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { pages.open(pageID) }
             .simultaneousGesture(TapGesture().onEnded { pages.selectedPage = pageID })
-            .contextMenu { PageContextMenu(pages: pages, page: pageID) }
+            .contextMenu {
+                PageContextMenu(pages: pages, page: pageID,
+                                flags: page.map { content.imageFlags(of: $0) } ?? []) {
+                    _ = document.perform(.markFlagsOK(page: pageID, box: nil))
+                }
+            }
             .modifier(PageDragDrop(pageID: pageID, canDrag: canDrag, canDrop: isStory && document.isEditable,
                                    dropTarget: $dropTarget) { moving in
                 pages.move(moving, onto: pageID)
@@ -194,6 +200,9 @@ struct PageDragDrop: ViewModifier {
 struct PageContextMenu: View {
     let pages: PagesController
     let page: PageID
+    /// The page's image flags; "Mark as OK" is enabled only when there are some.
+    var flags: ImageFlags = []
+    var markFlagsOK: () -> Void = {}
 
     var body: some View {
         let story = pages.isStoryPage(page)
@@ -212,6 +221,8 @@ struct PageContextMenu: View {
         Divider()
         Button(pages.isDone(page) ? "Mark as Not Done" : "Mark as Done") { pages.toggleDone(page) }
             .disabled(!editable)
+        Button("Mark Images as OK", action: markFlagsOK)
+            .disabled(!editable || flags.isEmpty)
         Button("Change Layout…") {
             pages.selectedPage = page
             pages.sheet = .changeLayout(page)

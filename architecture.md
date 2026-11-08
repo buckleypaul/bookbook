@@ -297,15 +297,17 @@ struct Provenance {
 | Derived value | How it's computed |
 |---|---|
 | Page **status** | *Empty* when there is no text and no placement. *Done* when `isDone`. Otherwise *in progress*. |
-| **Style changed** | The placed version's `styleRevision` is below `max(currentVisualRevision, acknowledged.styleRevision)`. |
+| **Style changed** | `max(placedVersion.provenance.styleRevision, acknowledged.styleRevision) < currentVisualRevision`. Imported versions (no provenance) are never flagged (Phase 7). |
 | **Asset changed** | For any asset in the placed version's `assetRevisions`, the recorded revision is below the current one, and that hasn't been acknowledged. |
-| **Layout changed** | `abs(log(currentBoxAspect / placement.boxAspectWhenPlaced)) > 0.05` (about a 5% change in shape). |
+| **Layout changed** | `abs(log(currentBoxAspect / (acknowledged.boxAspect ?? placement.boxAspectWhenPlaced))) > 0.05` (about a 5% change in shape). `currentBoxAspect` is the render rect's aspect, so bleed counts. Placing a new version clears `acknowledged.boxAspect` (Phase 7). |
 | **Consistency warning** | The placed version has an undismissed warning. |
 | **Where used** (§8.3) | An in-memory index `[AssetID: Set<UsageSite>]`, rebuilt incrementally from checklists, mentions and version provenance. |
 | **Physical page positions** | `PageSequencer` (§8.1) |
 | **Cost totals** | Summed from the cost ledger (§7.10). |
 
 Flags clear on their own when the box gets a newer version. "Mark as OK" (a small addition to §8.5) writes the current revisions into `acknowledged`.
+
+**Phase 7 decisions.** Undoing a style edit restores the previous fields *and* `visualRevision` exactly, so flags it raised disappear on undo. Page-setup changes don't rewrite placements: box frames are already trim-normalized, and `PageGeometry.imageRect` re-clamps the stored focal point and zoom at draw time, so reverting a size change restores the original crop ("crops are kept where possible").
 
 ---
 

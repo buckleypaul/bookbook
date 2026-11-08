@@ -47,7 +47,12 @@ struct Journal {
         let fm = FileManager.default
         let tx = root.appending(path: Self.newTxid(), directoryHint: .isDirectory)
         let staged = tx.appending(path: "staged", directoryHint: .isDirectory)
-        try fm.createDirectory(at: staged, withIntermediateDirectories: true)
+        // Another store in this process opening the book must not discard this transaction
+        // while it is still uncommitted. (A crashed process leaves no entry, so it is recovered.)
+        let key = tx.standardizedFileURL.path(percentEncoded: false)
+        Self.inFlight.withLock { _ = $0.insert(key) }
+        defer { Self.inFlight.withLock { _ = $0.remove(key) } }
+        try Self.createDirectoryRetrying(staged)
         for (path, data) in files {
             let dest = staged.appending(path: path)
             try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -89,7 +94,7 @@ struct Journal {
             applied += 1
             try fault?(.renamed, applied)
         }
-        try fm.removeItem(at: tx)
+        try Self.removeIfPresent(tx)
         removeRootIfEmpty()
         try fault?(.cleanedUp, applied)
     }
@@ -97,7 +102,40 @@ struct Journal {
     /// `.journal/` exists only while a save is in flight (A §5.1). `rmdir(2)` fails harmlessly
     /// while another transaction is still in it.
     func removeRootIfEmpty() {
+        // ENOTEMPTY (another transaction appeared) and ENOENT (already gone) are both fine.
         _ = rmdir(root.path(percentEncoded: false))
+    }
+
+    /// Transaction folders this process is writing right now (standardized paths).
+    private static let inFlight = Mutex<Set<String>>([])
+
+    /// `mkdir -p` that survives another store `rmdir`-ing an empty `.journal` between creating
+    /// it and creating the transaction folder inside it. Once the tx folder exists, `.journal`
+    /// is non-empty and no `rmdir` can remove it.
+    static func createDirectoryRetrying(_ url: URL) throws {
+        var attempt = 0
+        while true {
+            do {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                return
+            } catch where attempt < 5 && isNoSuchFile(error) {
+                attempt += 1
+            }
+        }
+    }
+
+    static func isNoSuchFile(_ error: any Error) -> Bool {
+        if let e = error as? CocoaError, e.code == .fileNoSuchFile || e.code == .fileReadNoSuchFile { return true }
+        let ns = error as NSError
+        if ns.domain == NSPOSIXErrorDomain, ns.code == Int(ENOENT) { return true }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError,
+           underlying.domain == NSPOSIXErrorDomain, underlying.code == Int(ENOENT) { return true }
+        return false
+    }
+
+    /// `removeItem` that treats "already gone" as success (another store finished it first).
+    private static func removeIfPresent(_ url: URL) throws {
+        do { try FileManager.default.removeItem(at: url) } catch where isNoSuchFile(error) {}
     }
 
     private static var pathPattern: Regex<(Substring, Substring, Substring?)> {
@@ -159,16 +197,23 @@ struct Journal {
     /// On open: roll committed transactions forward, discard the rest.
     func recover() throws {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: root.path(percentEncoded: false)) else { return }
-        let txs = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        let txs: [URL]
+        do {
+            txs = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        } catch where Self.isNoSuchFile(error) {
+            return // no journal (or another store just removed the empty folder): nothing to recover
+        }
         for tx in txs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            // Still being written by another store in this process: theirs to finish.
+            let key = tx.standardizedFileURL.path(percentEncoded: false)
+            if Self.inFlight.withLock({ $0.contains(key) }) { continue }
             let committed = fm.fileExists(atPath: tx.appending(path: Self.commitName).path(percentEncoded: false))
             // A journal may come from a shared book, so it is untrusted: anything that is not
             // exactly what this store writes is discarded whole, never partly applied.
             if committed, isSafe(tx) {
                 try apply(tx)
             } else {
-                try fm.removeItem(at: tx)
+                try Self.removeIfPresent(tx)
             }
         }
         removeRootIfEmpty()

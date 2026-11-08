@@ -140,4 +140,62 @@ extension Trait where Self == CheapSync {
         #expect(try await BookStore(packageURL: url).load() == before)
         #expect(!exists(url.appending(path: ".journal")))
     }
+
+    /// Another store in this process opening the book mid-save (e.g. a headless store) neither
+    /// discards the uncommitted transaction nor trips over it; the save still lands.
+    @Test func recoveryDuringAnotherStoresSaveLeavesItAlone() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "B.bookbook")
+        var content = try sampleContent()
+        try BookStore.create(content, at: url)
+        let store = BookStore(packageURL: url)
+        let journal = url.appending(path: ".journal")
+        await store.setSaveFaultHook { step, _ in
+            guard step == .staged || step == .committed || step == .renamed else { return }
+            try Journal(packageURL: url).recover()
+            let left = try FileManager.default.contentsOfDirectory(atPath: journal.path(percentEncoded: false))
+            if left.count != 1 { throw StoreError.corrupt("in-flight transaction was discarded at \(step)") }
+        }
+        content.book.title = "Mid-save open"
+        try await store.save(content, dirty: DirtySet(book: true, style: true))
+        #expect(!exists(journal))
+        #expect(try await BookStore(packageURL: url).load() == content)
+    }
+
+    /// Recovery with no `.journal` (or one removed concurrently) is "nothing to recover".
+    @Test func recoverWithoutJournalFolderIsANoOp() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Journal(packageURL: dir.appending(path: "B.bookbook")).recover()
+        try Journal(packageURL: dir).recover()
+    }
+
+    /// Several stores on one book saving and opening at once (the empty `.journal` is created
+    /// and removed constantly) never fail on the folder vanishing or reappearing.
+    @Test func concurrentSavesAndOpensDoNotRaceOnJournalFolder() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "B.bookbook")
+        let content = try sampleContent()
+        try BookStore.create(content, at: url)
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for worker in 0..<6 {
+                group.addTask {
+                    let store = BookStore(packageURL: url)
+                    for i in 0..<25 {
+                        if worker.isMultiple(of: 2) {
+                            var c = content
+                            c.style.visualDescription = "w\(worker)-\(i)"
+                            try await store.save(c, dirty: DirtySet(style: true))
+                        } else {
+                            _ = try await store.load()
+                        }
+                    }
+                }
+            }
+            try await group.waitForAll()
+        }
+        #expect(!exists(url.appending(path: ".journal")))
+    }
 }

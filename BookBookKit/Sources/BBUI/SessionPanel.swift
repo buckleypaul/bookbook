@@ -286,7 +286,7 @@ struct SessionPanel: View {
                         regenerate(version)
                     }
                     .controlSize(.small)
-                    .disabled(!app.hasOpenAIKey)
+                    .disabled(!app.hasOpenAIKey || !app.isOnline)
                     .padding(.top, 6)
                 }
             }

@@ -102,6 +102,7 @@ struct ThumbnailCacheTests {
 
         var empty = content
         empty.book.pageOrder = []
+        empty.pages = [:] // no cover either
         #expect(BookThumbnail.png(for: empty, imageURL: { _ in none }) == nil)
     }
 }

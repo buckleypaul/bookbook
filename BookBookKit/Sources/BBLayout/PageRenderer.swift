@@ -4,7 +4,7 @@ import Foundation
 
 /// One renderer for screen, thumbnails and PDF (A §8.4, D8). Draw order: background, image
 /// boxes in layer order (clipped, placement transform), text boxes (panel then text),
-/// page number (Phase 5), screen-only guides.
+/// page numbers, screen-only guides.
 @MainActor
 public struct PageRenderer {
     /// Fill for empty image boxes when `showEmptyImagePlaceholders` is on.
@@ -45,11 +45,15 @@ public struct PageRenderer {
         let typography = content.style.typography
         for box in template.boxes {
             guard case .text(let style) = box.content, !options.hiddenTextBoxes.contains(box.id) else { continue }
-            drawTextBox(box, style: style, text: page.text[box.id], typography: typography.resolved(for: box.role),
+            drawTextBox(box, style: style, text: CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id],
+                        typography: typography.resolved(for: box.role),
                         geometry: geometry, ctx: ctx)
         }
 
-        // 4. Page number: Phase 5.
+        // 4. Page numbers.
+        for mark in options.pageNumbers {
+            PageNumberDrawing.draw(mark, content: content, template: template, geometry: geometry, ctx: ctx)
+        }
 
         // 5. Guides, on screen only.
         if options.showGuides, options.target == .screen {
@@ -63,7 +67,9 @@ public struct PageRenderer {
         let geometry = PageGeometry(setup: content.style.pageSetup)
         var result: Set<BoxID> = []
         for box in template.boxes {
-            guard case .text(let style) = box.content, let text = page.text[box.id], !text.paragraphs.isEmpty
+            guard case .text(let style) = box.content,
+                  let text = CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id],
+                  !text.paragraphs.isEmpty
             else { continue }
             let rect = geometry.renderRect(for: box).insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
             let typography = content.style.typography.resolved(for: box.role)

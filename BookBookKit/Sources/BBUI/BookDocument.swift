@@ -156,10 +156,12 @@ public final class BookDocument {
     /// nothing) if the command's target doesn't exist, or the book is read-only or closed.
     @discardableResult
     public func perform(_ command: BookCommand) -> Bool {
-        guard isEditable, let edit = makeEdit(for: command) else {
+        guard isEditable, let prepared = prepare(command) else {
             typing.close()
             return false
         }
+        let edit = prepared.edit
+        commitIrreversibleParts(of: prepared)
         // A typing edit that joins the open step changes the content but registers nothing: the
         // step's undo entry still restores the text from before the step began (A §6.3).
         let sameManager = typingUndoManager != nil && typingUndoManager === undoManager
@@ -186,6 +188,46 @@ public final class BookDocument {
         content.book.modifiedAt = now()
         dirty.book = true
         scheduleSave(dirty)
+    }
+
+    /// True when performing `command` (with `fixSplits: false`) would leave a spread split
+    /// across two sheets (PD §8.5). The UI then warns and offers the `fixSplits: true`
+    /// variant. False for non-structural commands.
+    ///
+    /// Simulates the command on a copy of the content; nothing is mutated or saved. A book whose
+    /// order is already split (and stays split) answers true for any structural command.
+    public func wouldSplitSpread(_ command: BookCommand) -> Bool {
+        let unfixed: BookCommand
+        switch command {
+        case let .addPage(index, templateID, _): unfixed = .addPage(index: index, templateID: templateID)
+        case let .duplicatePage(id, _): unfixed = .duplicatePage(id)
+        case let .deletePage(id, _): unfixed = .deletePage(id)
+        case let .reorderPages(order, _): unfixed = .reorderPages(order)
+        case let .setPageTemplate(page, templateID, _): unfixed = .setPageTemplate(page: page, templateID: templateID)
+        case let .importStoryText(texts, templateID, index, _):
+            unfixed = .importStoryText(texts, templateID: templateID, index: index)
+        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle:
+            return false
+        }
+        guard let prepared = prepare(unfixed) else { return false }
+        var copy = content
+        Self.merge(prepared, into: &copy)
+        guard Self.applyEdit(prepared.edit, to: &copy) != nil else { return false }
+        return PageSequencer.layout(Self.sequence(of: copy), cover: copy.book.coverPageID).hasSplitSpread
+    }
+
+    /// Book Settings (PD §8.12): set the author. Not undoable, like `rename(to:)`; the cover
+    /// redraws from `content.book`. Returns false for a read-only book.
+    @discardableResult
+    public func setAuthor(_ author: String) -> Bool {
+        let author = author.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isEditable else { return false }
+        performIrreversible { content in
+            guard content.book.author != author else { return DirtySet() }
+            content.book.author = author
+            return DirtySet(book: true)
+        }
+        return true
     }
 
     /// Renames the book (`Book.title`; the package folder keeps its name). Not undoable
@@ -278,39 +320,200 @@ public final class BookDocument {
         case insertPage(Page, index: Int)
         case removePage(PageID)
         case setTypography(Typography)
+        /// Replace `pageOrder` with a permutation of it.
+        case setPageOrder([PageID])
+        /// Replace an existing page wholesale (template change, done flag).
+        case replacePage(Page)
+        case setPageNumberStyle(PageNumberStyle)
+        /// Several edits as one undo step, applied in order; the inverse is the reversed
+        /// inverses. A sub-edit whose target has gone is skipped.
+        case compound([Edit])
     }
 
-    private func makeEdit(for command: BookCommand) -> Edit? {
+    /// A command translated into its undoable edit, plus what it creates irreversibly
+    /// (A §6.3): empty sessions for new image boxes, and bundled presets copied into the book.
+    /// Both stay behind as harmless orphans if the edit is undone. A package can't drop a
+    /// template file (`DirtySet` has no template deletions), so preset copy-in is deliberately
+    /// outside the undo step.
+    struct Prepared {
+        var edit: Edit
+        var sessions: [SessionID: Session] = [:]
+        var templates: [TemplateID: Template] = [:]
+    }
+
+    /// Translates `command` without mutating anything. Nil if its target doesn't exist or it
+    /// would change nothing.
+    private func prepare(_ command: BookCommand) -> Prepared? {
+        var created = Prepared(edit: .compound([]))
+        var fixSplits = false
+        let edit: Edit
+
         switch command {
         case let .setRichText(pageID, boxID, text, _):
             guard let page = content.pages[pageID], let template = content.template(for: page),
                   let box = template.box(boxID), case .text = box.content else { return nil }
-            return .setText(page: pageID, box: boxID, text: text)
+            edit = .setText(page: pageID, box: boxID, text: text)
 
         case let .chooseVersion(pageID, boxID, versionID):
             guard let page = content.pages[pageID], let template = content.template(for: page),
                   let box = template.box(boxID), let slot = page.images[boxID],
                   content.sessions[slot.sessionID]?.version(versionID) != nil else { return nil }
             let placement = ImagePlacement(versionID: versionID, boxAspectWhenPlaced: content.boxAspect(box))
-            return .setPlacement(page: pageID, box: boxID, placement: placement)
+            edit = .setPlacement(page: pageID, box: boxID, placement: placement)
 
-        case let .addPage(index, templateID):
-            guard let template = content.templates[templateID], template.kind == .single else { return nil }
-            // The new page's empty sessions are created irreversibly (they're harmless if the
-            // add is undone); the page itself is the undoable part.
-            var sessions: [SessionID: Session] = [:]
-            let page = BookContent.makePage(kind: .story, template: template, sessions: &sessions)
-            content.sessions.merge(sessions) { current, _ in current }
-            scheduleSave(DirtySet(sessions: Set(sessions.keys)))
-            return .insertPage(page, index: index)
+        case let .addPage(index, templateID, fix):
+            guard let template = resolveTemplate(templateID, into: &created), template.kind.isStory else { return nil }
+            let page = BookContent.makePage(kind: .story, template: template, sessions: &created.sessions)
+            edit = .insertPage(page, index: clamped(index))
+            fixSplits = fix
 
-        case let .deletePage(pageID):
+        case let .duplicatePage(pageID, fix):
+            guard let index = content.book.pageOrder.firstIndex(of: pageID), let source = content.pages[pageID]
+            else { return nil }
+            edit = .insertPage(duplicate(source, sessions: &created.sessions), index: index + 1)
+            fixSplits = fix
+
+        case let .deletePage(pageID, fix):
             guard content.book.pageOrder.contains(pageID) else { return nil }
-            return .removePage(pageID)
+            edit = .removePage(pageID)
+            fixSplits = fix
+
+        case let .reorderPages(order, fix):
+            let current = content.book.pageOrder
+            guard order.count == current.count, Set(order).count == order.count, Set(order) == Set(current)
+            else { return nil }
+            edit = .setPageOrder(order)
+            fixSplits = fix
+
+        case let .setPageTemplate(pageID, templateID, fix):
+            guard let page = content.pages[pageID], page.templateID != templateID,
+                  let old = content.template(for: page),
+                  let new = resolveTemplate(templateID, into: &created),
+                  page.kind == .cover ? new.kind == .cover : new.kind.isStory else { return nil }
+            let result = TemplateReassignment.reassign(page, from: old, to: new)
+            var changed = result.page
+            for boxID in result.unassignedImageBoxes {
+                let session = Session(owner: .pageBox(pageID, boxID))
+                created.sessions[session.id] = session
+                changed.images[boxID] = ImageSlot(sessionID: session.id)
+            }
+            edit = .replacePage(changed)
+            fixSplits = fix
+
+        case let .importStoryText(texts, templateID, index, fix):
+            guard !texts.isEmpty, let template = resolveTemplate(templateID, into: &created),
+                  template.kind.isStory, let textBox = Self.firstTextBox(of: template) else { return nil }
+            let start = clamped(index)
+            var inserts: [Edit] = []
+            for (offset, text) in texts.enumerated() {
+                var page = BookContent.makePage(kind: .story, template: template, sessions: &created.sessions)
+                page.text[textBox] = text
+                inserts.append(.insertPage(page, index: start + offset))
+            }
+            edit = .compound(inserts)
+            fixSplits = fix
+
+        case let .setPageDone(pageID, done):
+            guard var page = content.pages[pageID], page.isDone != done else { return nil }
+            page.isDone = done
+            edit = .replacePage(page)
 
         case let .setTypography(typography):
-            return .setTypography(typography)
+            edit = .setTypography(typography)
+
+        case let .setPageNumberStyle(style):
+            guard style != content.style.pageNumbers else { return nil }
+            edit = .setPageNumberStyle(style)
         }
+
+        created.edit = edit
+        if fixSplits {
+            guard let blanks = blankInsertions(after: &created) else { return nil }
+            if !blanks.isEmpty { created.edit = .compound([edit] + blanks) }
+        }
+        if case let .setPageOrder(order) = created.edit, order == content.book.pageOrder { return nil }
+        return created
+    }
+
+    /// The edits that insert blank text-only pages so `prepared` leaves no spread split
+    /// (A §8.1, applied after its edit), adding the blank template and pages' sessions to
+    /// `prepared`. Nil if the text-only preset can't be found.
+    private func blankInsertions(after prepared: inout Prepared) -> [Edit]? {
+        var copy = content
+        Self.merge(prepared, into: &copy)
+        guard Self.applyEdit(prepared.edit, to: &copy) != nil else { return [] }
+        let insertions = PageSequencer.blankInsertions(for: Self.sequence(of: copy))
+        guard !insertions.isEmpty else { return [] }
+        guard let blank = resolveTemplate(Presets.textOnlyTemplateID, into: &prepared) else { return nil }
+        var edits: [Edit] = []
+        for index in insertions {
+            let page = BookContent.makePage(kind: .story, template: blank, sessions: &prepared.sessions)
+            edits.append(.insertPage(page, index: index))
+        }
+        return edits
+    }
+
+    /// The book's template, else the bundled preset with that ID (recorded in `prepared`, to
+    /// be copied in).
+    private func resolveTemplate(_ id: TemplateID, into prepared: inout Prepared) -> Template? {
+        if let template = content.templates[id] ?? prepared.templates[id] { return template }
+        guard let preset = try? Presets.template(id) else { return nil }
+        prepared.templates[id] = preset
+        return preset
+    }
+
+    private func clamped(_ index: Int) -> Int { min(max(0, index), content.book.pageOrder.count) }
+
+    /// A copy of `source` under a new ID: same template, text, checklist and placements, each
+    /// image box's session copied under a new ID (versions keep their IDs, so placements still
+    /// resolve; images are content-addressed, so no files are copied). Not done.
+    private func duplicate(_ source: Page, sessions: inout [SessionID: Session]) -> Page {
+        var page = source
+        page.id = PageID()
+        page.isDone = false
+        for (boxID, slot) in source.images {
+            var session = content.sessions[slot.sessionID] ?? Session(owner: .pageBox(page.id, boxID))
+            session.id = SessionID()
+            session.owner = .pageBox(page.id, boxID)
+            // Requests still in flight deliver to the original session only.
+            for i in session.messages.indices { session.messages[i].queueItemID = nil }
+            sessions[session.id] = session
+            page.images[boxID]?.sessionID = session.id
+            if let placement = slot.placement, session.version(placement.versionID) == nil {
+                page.images[boxID]?.placement = nil
+            }
+        }
+        return page
+    }
+
+    /// The template's first text box in reading order, by the rule `TemplateReassignment` uses
+    /// (story import, PD §8.5): reassigning one role-less text box onto `template` puts its
+    /// text in exactly that box.
+    private static func firstTextBox(of template: Template) -> BoxID? {
+        let probe = Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 1), content: .text(TextBoxStyle()))
+        let source = Template(name: "", kind: template.kind, boxes: [probe])
+        let page = Page(kind: .story, templateID: source.id, text: [probe.id: RichText(plain: "x")])
+        return TemplateReassignment.reassign(page, from: source, to: template).page.text.keys.first
+    }
+
+    /// The story order as the sequencer sees it.
+    private static func sequence(of content: BookContent) -> [SequenceEntry] {
+        content.book.pageOrder.map { id in
+            let kind = content.pages[id].flatMap { content.template(for: $0) }?.kind
+            return SequenceEntry(id: id, isSpread: kind == .spread)
+        }
+    }
+
+    private static func merge(_ prepared: Prepared, into content: inout BookContent) {
+        content.sessions.merge(prepared.sessions) { current, _ in current }
+        content.templates.merge(prepared.templates) { current, _ in current }
+    }
+
+    /// Writes the irreversible parts of `prepared` (new sessions, copied-in presets).
+    private func commitIrreversibleParts(of prepared: Prepared) {
+        guard !prepared.sessions.isEmpty || !prepared.templates.isEmpty else { return }
+        Self.merge(prepared, into: &content)
+        scheduleSave(DirtySet(templates: Set(prepared.templates.keys), sessions: Set(prepared.sessions.keys)))
     }
 
     @discardableResult
@@ -335,9 +538,13 @@ public final class BookDocument {
         return true
     }
 
-    /// Applies one edit to `content`, returning its inverse and what changed, or nil if the
-    /// target no longer exists.
     private func applyEdit(_ edit: Edit) -> (Edit, DirtySet)? {
+        Self.applyEdit(edit, to: &content)
+    }
+
+    /// Applies one edit to `content`, returning its inverse and what changed, or nil if the
+    /// target no longer exists. Pure on `content`, so `wouldSplitSpread` can simulate.
+    private static func applyEdit(_ edit: Edit, to content: inout BookContent) -> (Edit, DirtySet)? {
         switch edit {
         case let .setText(pageID, boxID, text):
             guard content.pages[pageID] != nil else { return nil }
@@ -371,6 +578,39 @@ public final class BookDocument {
             let old = content.style.typography
             content.style.typography = typography
             return (.setTypography(old), DirtySet(style: true))
+
+        case let .setPageOrder(order):
+            // Only a permutation of the current order: pages added or removed since make it stale.
+            let old = content.book.pageOrder
+            guard order.count == old.count, Set(order) == Set(old) else { return nil }
+            content.book.pageOrder = order
+            return (.setPageOrder(old), DirtySet(book: true))
+
+        case let .replacePage(page):
+            guard let old = content.pages[page.id], content.templates[page.templateID] != nil else { return nil }
+            content.pages[page.id] = page
+            return (.replacePage(old), DirtySet(pages: [page.id]))
+
+        case let .setPageNumberStyle(style):
+            let old = content.style.pageNumbers
+            content.style.pageNumbers = style
+            return (.setPageNumberStyle(old), DirtySet(style: true))
+
+        case let .compound(edits):
+            var inverses: [Edit] = []
+            var dirty = DirtySet()
+            for edit in edits {
+                guard let (inverse, changed) = applyEdit(edit, to: &content) else { continue }
+                inverses.append(inverse)
+                dirty.formUnion(changed)
+            }
+            guard !inverses.isEmpty else { return nil }
+            return (.compound(inverses.reversed()), dirty)
         }
     }
+}
+
+private extension TemplateKind {
+    /// Story pages use single or spread templates; the cover uses `.cover`.
+    var isStory: Bool { self == .single || self == .spread }
 }

@@ -1,3 +1,4 @@
+import BBLayout
 import BBModel
 import CoreGraphics
 
@@ -28,7 +29,30 @@ struct CanvasTransform: Equatable {
     }
 }
 
+/// What a click on the canvas does.
+enum CanvasClick: Equatable {
+    /// Clicked outside every box: end editing, clear the image selection.
+    case deselect
+    case selectImage(BoxID)
+    case editText(BoxID)
+    /// A double-click on a `.title`/`.author` box: its text is the book's (PD §8.7).
+    case openBookSettings
+    /// A single click on a bound box: end editing, nothing else.
+    case ignore
+}
+
 enum CanvasHitTest {
+    /// The action for a click that hit `box` (nil: no box).
+    static func click(on box: Box?, clickCount: Int) -> CanvasClick {
+        guard let box else { return .deselect }
+        switch box.content {
+        case .image: return .selectImage(box.id)
+        case .text:
+            if CoverText.isBound(box.role) { return clickCount >= 2 ? .openBookSettings : .ignore }
+            return .editText(box.id)
+        }
+    }
+
     /// The topmost box containing `point` (boxes are in layer order, first drawn first).
     static func box(at point: CGPoint, in boxes: [(box: Box, rect: CGRect)]) -> Box? {
         boxes.last { $0.rect.contains(point) }?.box

@@ -20,6 +20,8 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate {
     private var typography: Typography
     /// The rich text the view currently shows (what was last loaded or sent).
     private(set) var shownText: RichText
+    /// True while the view is being reloaded from the model (its changes aren't edits).
+    private var isReloading = false
     private let onChange: (RichText) -> Void
     /// Escape ends editing.
     var onCancel: () -> Void = {}
@@ -92,7 +94,11 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate {
     /// Reloads the view if the model's text changed from outside (undo/redo).
     func reloadIfNeeded(modelText: RichText, typography: Typography) {
         guard modelText != shownText || typography != self.typography else { return }
-        guard !textView.hasMarkedText() else { return }
+        // An undo during IME composition: commit the marked text first, so the view and the model
+        // don't drift apart (the next keystroke would otherwise overwrite the undo).
+        isReloading = true
+        defer { isReloading = false }
+        if textView.hasMarkedText() { textView.unmarkText() }
         self.typography = typography
         let selection = textView.selectedRange()
         load(modelText)
@@ -133,6 +139,7 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate {
     // MARK: NSTextViewDelegate
 
     func textDidChange(_ notification: Notification) {
+        guard !isReloading else { return }
         let text = RichTextBridge.richText(from: textView.attributedString(), typography: typography)
         guard text != shownText else { return }
         shownText = text

@@ -86,13 +86,17 @@ public enum MessageStatus: Hashable, Sendable {
     case failed(ProviderError)
     /// Pending in the book, but the in-memory queue (Phase 2) no longer has it: the app quit.
     case interrupted
+    /// The picture arrived but couldn't be written into the book (plain-language reason).
+    case notSaved(String)
     case produced(VersionID)
 
     /// - Parameters:
     ///   - pendingThisLaunch: queue items enqueued since launch (covers the moment before the
     ///     queue's first snapshot includes a new item).
     ///   - typical: typical seconds for an intent's model and quality.
+    ///   - deliveryFailures: pictures that couldn't be saved, by message.
     public static func resolve(_ message: Message, snapshot: QueueSnapshot, pendingThisLaunch: Set<QueueItemID>,
+                               deliveryFailures: [MessageID: String] = [:],
                                typical: (GenerationIntent) -> Double?) -> MessageStatus {
         if let itemID = message.queueItemID {
             if let entry = snapshot.entry(for: itemID) {
@@ -104,6 +108,7 @@ public enum MessageStatus: Hashable, Sendable {
             }
             return pendingThisLaunch.contains(itemID) ? .waiting : .interrupted
         }
+        if message.producedVersion == nil, let text = deliveryFailures[message.id] { return .notSaved(text) }
         if let entry = snapshot.entries.first(where: { $0.item.messageID == message.id }),
            case let .failed(error) = entry.state {
             return .failed(error)

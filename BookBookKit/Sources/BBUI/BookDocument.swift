@@ -43,6 +43,9 @@ public final class BookDocument {
     @ObservationIgnored private var typing: TypingCoalescer
     /// The undo manager the open typing step was registered with.
     @ObservationIgnored private weak var typingUndoManager: UndoManager?
+    /// Open undo groups (`beginUndoGroup`): nesting depth and the inverses collected so far.
+    @ObservationIgnored private var groupDepth = 0
+    @ObservationIgnored private var groupInverses: [Edit] = []
 
     // Library thumbnail (A §5.1): rewritten at most every `thumbnailInterval` after a change,
     // and on flush and close, never on the typing path.
@@ -162,6 +165,12 @@ public final class BookDocument {
         }
         let edit = prepared.edit
         commitIrreversibleParts(of: prepared)
+        if groupDepth > 0 {
+            // Inside an undo group: apply and save, but collect the inverse for `endUndoGroup`.
+            guard let inverse = applyAndSave(edit) else { return false }
+            groupInverses.append(inverse)
+            return true
+        }
         // A typing edit that joins the open step changes the content but registers nothing: the
         // step's undo entry still restores the text from before the step began (A §6.3).
         let sameManager = typingUndoManager != nil && typingUndoManager === undoManager
@@ -186,14 +195,22 @@ public final class BookDocument {
     /// usual (pages update live) but registers no undo; the group's inverses are collected.
     /// Closes any open typing step. Nested calls are ignored (the outer group wins).
     public func beginUndoGroup() {
-        fatalError("Phase 6 lane L1")
+        typing.close()
+        groupDepth += 1
     }
 
     /// Closes the open group (mouse-up) and registers one undo step named `actionName` that
     /// restores everything from before `beginUndoGroup()`. Registers nothing if no edit was
     /// performed in the group. No-op without an open group.
     public func endUndoGroup(actionName: String) {
-        fatalError("Phase 6 lane L1")
+        guard groupDepth > 0 else { return }
+        groupDepth -= 1
+        guard groupDepth == 0 else { return }
+        let inverses = groupInverses
+        groupInverses = []
+        guard !inverses.isEmpty else { return }
+        // Undo replays the inverses newest first, so everything returns to the state at begin.
+        registerUndo(.compound(inverses.reversed()), actionName: actionName)
     }
 
     /// For non-undoable writes (A §6.3): AI results, session changes, renaming the book. Never
@@ -343,6 +360,12 @@ public final class BookDocument {
         /// Replace an existing page wholesale (template change, done flag).
         case replacePage(Page)
         case setPageNumberStyle(PageNumberStyle)
+        /// Phase 6: add a template (no-op if the ID exists). Inverse: `removeTemplate`.
+        case insertTemplate(Template)
+        /// Remove a template (no-op while a page uses it). Inverse: `insertTemplate`.
+        case removeTemplate(TemplateID)
+        /// Replace an existing template of the same kind. Inverse: the old template.
+        case setTemplate(Template)
         /// Several edits as one undo step, applied in order; the inverse is the reversed
         /// inverses. A sub-edit whose target has gone is skipped.
         case compound([Edit])
@@ -357,6 +380,9 @@ public final class BookDocument {
         var edit: Edit
         var sessions: [SessionID: Session] = [:]
         var templates: [TemplateID: Template] = [:]
+        /// Image slots (with the sessions above) for image boxes new to a template, on the pages
+        /// using it. Added irreversibly; an existing slot is never replaced.
+        var slots: [PageID: [BoxID: ImageSlot]] = [:]
     }
 
     /// Translates `command` without mutating anything. Nil if its target doesn't exist or it
@@ -443,8 +469,27 @@ public final class BookDocument {
             guard style != content.style.pageNumbers else { return nil }
             edit = .setPageNumberStyle(style)
 
-        case .addTemplate, .updateTemplate, .deleteTemplate:
-            return nil // Phase 6 lane L1
+        case let .addTemplate(template):
+            guard content.templates[template.id] == nil else { return nil }
+            edit = .insertTemplate(template)
+
+        case let .updateTemplate(template, _):
+            guard let old = content.templates[template.id], old.kind == template.kind, old != template
+            else { return nil }
+            let oldBoxes = Set(old.boxes.map(\.id))
+            for box in template.imageBoxes where !oldBoxes.contains(box.id) {
+                for pageID in content.pages(using: template.id) {
+                    guard content.pages[pageID]?.images[box.id] == nil else { continue }
+                    let session = Session(owner: .pageBox(pageID, box.id))
+                    created.sessions[session.id] = session
+                    created.slots[pageID, default: [:]][box.id] = ImageSlot(sessionID: session.id)
+                }
+            }
+            edit = .setTemplate(template)
+
+        case let .deleteTemplate(id):
+            guard content.templates[id] != nil, content.pages(using: id).isEmpty else { return nil }
+            edit = .removeTemplate(id)
         }
 
         created.edit = edit
@@ -528,24 +573,42 @@ public final class BookDocument {
     private static func merge(_ prepared: Prepared, into content: inout BookContent) {
         content.sessions.merge(prepared.sessions) { current, _ in current }
         content.templates.merge(prepared.templates) { current, _ in current }
+        for (pageID, slots) in prepared.slots {
+            for (boxID, slot) in slots where content.pages[pageID]?.images[boxID] == nil {
+                content.pages[pageID]?.images[boxID] = slot
+            }
+        }
     }
 
     /// Writes the irreversible parts of `prepared` (new sessions, copied-in presets).
     private func commitIrreversibleParts(of prepared: Prepared) {
-        guard !prepared.sessions.isEmpty || !prepared.templates.isEmpty else { return }
+        guard !prepared.sessions.isEmpty || !prepared.templates.isEmpty || !prepared.slots.isEmpty else { return }
         Self.merge(prepared, into: &content)
-        scheduleSave(DirtySet(templates: Set(prepared.templates.keys), sessions: Set(prepared.sessions.keys)))
+        scheduleSave(DirtySet(templates: Set(prepared.templates.keys), pages: Set(prepared.slots.keys),
+                              sessions: Set(prepared.sessions.keys)))
     }
 
     @discardableResult
     private func apply(_ edit: Edit, actionName: String) -> Bool {
         // Undo and redo replay through here too, so they can't write a read-only or closed book.
-        guard isEditable, let (inverse, dirty) = applyEdit(edit) else { return false }
+        guard isEditable, let inverse = applyAndSave(edit) else { return false }
+        registerUndo(inverse, actionName: actionName)
+        return true
+    }
+
+    /// Applies `edit`, schedules the save and returns the inverse. Registers nothing.
+    private func applyAndSave(_ edit: Edit) -> Edit? {
+        guard isEditable, let (inverse, dirty) = applyEdit(edit) else { return nil }
         content.book.modifiedAt = now()
         var allDirty = dirty
         allDirty.book = true
         scheduleSave(allDirty)
         refreshMissingFonts()
+        return inverse
+    }
+
+    /// Registers `inverse` as one undo step; replaying it registers the redo.
+    private func registerUndo(_ inverse: Edit, actionName: String) {
         if let undoManager {
             undoManager.registerUndo(withTarget: self) { doc in
                 MainActor.assumeIsolated {
@@ -556,7 +619,6 @@ public final class BookDocument {
             }
             undoManager.setActionName(actionName)
         }
-        return true
     }
 
     private func applyEdit(_ edit: Edit) -> (Edit, DirtySet)? {
@@ -616,6 +678,21 @@ public final class BookDocument {
             let old = content.style.pageNumbers
             content.style.pageNumbers = style
             return (.setPageNumberStyle(old), DirtySet(style: true))
+
+        case let .insertTemplate(template):
+            guard content.templates[template.id] == nil else { return nil }
+            content.templates[template.id] = template
+            return (.removeTemplate(template.id), DirtySet(templates: [template.id]))
+
+        case let .removeTemplate(id):
+            guard let old = content.templates[id], content.pages(using: id).isEmpty else { return nil }
+            content.templates[id] = nil
+            return (.insertTemplate(old), DirtySet(deletedTemplates: [id]))
+
+        case let .setTemplate(template):
+            guard let old = content.templates[template.id], old.kind == template.kind else { return nil }
+            content.templates[template.id] = template
+            return (.setTemplate(old), DirtySet(templates: [template.id]))
 
         case let .compound(edits):
             var inverses: [Edit] = []

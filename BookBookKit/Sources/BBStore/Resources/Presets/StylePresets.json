@@ -1,4 +1,45 @@
 {
-  "presets" : [],
-  "schemaVersion" : 1
+  "presets": [
+    {
+      "id": "watercolour",
+      "name": "Watercolour",
+      "visualDescription": "Soft watercolour illustration with translucent washes, visible paper grain, gentle colour bleeds and loose, hand-painted edges."
+    },
+    {
+      "id": "crayon",
+      "name": "Crayon",
+      "visualDescription": "Waxy children's crayon drawing with bold, textured strokes, bright saturated colours and a little white paper showing through."
+    },
+    {
+      "id": "cut-paper",
+      "name": "Cut paper",
+      "visualDescription": "Layered cut-paper collage with crisp shapes, flat colours, subtle shadows between layers and a handmade, tactile feel."
+    },
+    {
+      "id": "gouache",
+      "name": "Gouache",
+      "visualDescription": "Opaque gouache painting with flat, matte colour areas, visible brush marks and a warm, slightly chalky finish."
+    },
+    {
+      "id": "ink-and-wash",
+      "name": "Ink and wash",
+      "visualDescription": "Loose pen-and-ink linework with delicate watercolour wash over it, expressive lines and plenty of white space."
+    },
+    {
+      "id": "coloured-pencil",
+      "name": "Coloured pencil",
+      "visualDescription": "Hand-drawn coloured pencil artwork with fine hatching, soft layered colour and a visible paper texture."
+    },
+    {
+      "id": "storybook-digital",
+      "name": "Digital storybook",
+      "visualDescription": "Clean digital storybook illustration with smooth shapes, rich saturated colours, soft lighting and friendly, rounded characters."
+    },
+    {
+      "id": "linocut",
+      "name": "Linocut print",
+      "visualDescription": "Bold linocut-style print with chunky carved lines, limited flat ink colours and a slightly uneven, printed texture."
+    }
+  ],
+  "schemaVersion": 1
 }

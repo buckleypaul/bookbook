@@ -115,10 +115,33 @@ public enum PageSizePreset: String, Codable, Sendable, CaseIterable {
     case usLetter, a4, halfLetter, a5, square8, square8_5, eightByTen, tenByEight, custom
 
     /// Size in points as named (`tenByEight` is landscape by name); nil for `.custom`.
-    /// Phase 7 lane: implement.
-    public var baseSize: PointSize? { nil }
-    /// Menu title ("US Letter", "A4", "5.5 × 8.5 in", …). Phase 7 lane: implement.
-    public var displayName: String { rawValue }
+    public var baseSize: PointSize? {
+        switch self {
+        case .usLetter: PointSize(width: 612, height: 792)
+        case .a4: PointSize(width: 595.28, height: 841.89)
+        case .halfLetter: PointSize(width: 396, height: 612)
+        case .a5: PointSize(width: 419.53, height: 595.28)
+        case .square8: PointSize(width: 576, height: 576)
+        case .square8_5: PointSize(width: 612, height: 612)
+        case .eightByTen: PointSize(width: 576, height: 720)
+        case .tenByEight: PointSize(width: 720, height: 576)
+        case .custom: nil
+        }
+    }
+    /// Menu title ("US Letter", "A4", "5.5 × 8.5 in", …).
+    public var displayName: String {
+        switch self {
+        case .usLetter: "US Letter"
+        case .a4: "A4"
+        case .halfLetter: "5.5 × 8.5 in"
+        case .a5: "A5"
+        case .square8: "8 × 8 in"
+        case .square8_5: "8.5 × 8.5 in"
+        case .eightByTen: "8 × 10 in"
+        case .tenByEight: "10 × 8 in"
+        case .custom: "Custom"
+        }
+    }
     /// Prints as a booklet on Letter / A4 paper (PD §8.2): `halfLetter`, `a5`.
     public var isBookletSize: Bool { self == .halfLetter || self == .a5 }
 }
@@ -147,8 +170,18 @@ extension StyleGuide {
     }
 
     /// Returns a copy with `visual` applied; `visualRevision` goes up by one when the
-    /// description, references or negative guidance change (A §4.1). Phase 7 lane: implement.
-    public func applying(_ visual: StyleVisual) -> StyleGuide { self }
+    /// description, references or negative guidance change (A §4.1).
+    public func applying(_ visual: StyleVisual) -> StyleGuide {
+        var copy = self
+        let changed = visual.visualDescription != visualDescription || visual.styleReferences != styleReferences
+            || visual.negativeGuidance != negativeGuidance
+        copy.presetID = visual.presetID
+        copy.visualDescription = visual.visualDescription
+        copy.styleReferences = visual.styleReferences
+        copy.negativeGuidance = visual.negativeGuidance
+        if changed { copy.visualRevision += 1 }
+        return copy
+    }
 }
 
 /// Page setup, in points. Phase 2 only uses Letter portrait with no bleed.
@@ -161,7 +194,7 @@ public struct PageSetup: Hashable, Codable, Sendable {
     /// Bleed amount in points (default 0.125 in = 9 pt), used only when `bleedEnabled`.
     public var bleedAmount: Double
     /// Which preset `trimSize` came from (Phase 7). Files without it decode as `.usLetter`
-    /// when the trim is 612×792 (either orientation), else `.custom`. Phase 7 lane: decoder.
+    /// when the trim is 612×792 (either orientation), else `.custom`.
     public var sizePreset: PageSizePreset
 
     public init(trimSize: PointSize, orientation: Orientation, margins: EdgeInsetsPt,
@@ -176,8 +209,49 @@ public struct PageSetup: Hashable, Codable, Sendable {
 
     /// A copy using `preset` in `orientation` (swapping the base size for landscape; square
     /// sizes always get `.square`). Margins and bleed are kept. For `.custom`, `customSize`
-    /// is used as given and the orientation is derived from it. Phase 7 lane: implement.
-    public func applying(preset: PageSizePreset, orientation: Orientation, customSize: PointSize? = nil) -> PageSetup { self }
+    /// is used as given and the orientation is derived from it.
+    public func applying(preset: PageSizePreset, orientation: Orientation, customSize: PointSize? = nil) -> PageSetup {
+        var copy = self
+        copy.sizePreset = preset
+        let size: PointSize
+        if let base = preset.baseSize {
+            let portrait = PointSize(width: min(base.width, base.height), height: max(base.width, base.height))
+            if portrait.width == portrait.height {
+                size = portrait
+                copy.orientation = .square
+            } else if orientation == .landscape {
+                size = PointSize(width: portrait.height, height: portrait.width)
+                copy.orientation = .landscape
+            } else {
+                size = portrait
+                copy.orientation = .portrait
+            }
+        } else {
+            size = customSize ?? trimSize
+            copy.orientation = size.width == size.height ? .square : (size.width > size.height ? .landscape : .portrait)
+        }
+        copy.trimSize = size
+        return copy
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case trimSize, orientation, margins, bleedEnabled, bleedAmount, sizePreset
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        trimSize = try c.decode(PointSize.self, forKey: .trimSize)
+        orientation = try c.decode(Orientation.self, forKey: .orientation)
+        margins = try c.decode(EdgeInsetsPt.self, forKey: .margins)
+        bleedEnabled = try c.decode(Bool.self, forKey: .bleedEnabled)
+        bleedAmount = try c.decode(Double.self, forKey: .bleedAmount)
+        if let preset = try c.decodeIfPresent(PageSizePreset.self, forKey: .sizePreset) {
+            sizePreset = preset
+        } else {
+            let t = trimSize
+            sizePreset = (t.width == 612 && t.height == 792) || (t.width == 792 && t.height == 612) ? .usLetter : .custom
+        }
+    }
 
     public static let letterPortrait = PageSetup(
         trimSize: PointSize(width: 612, height: 792), orientation: .portrait,

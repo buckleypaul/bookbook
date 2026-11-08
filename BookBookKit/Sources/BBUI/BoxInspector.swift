@@ -17,8 +17,9 @@ struct CommitField: View {
             .multilineTextAlignment(.trailing)
             .focused($focused)
             .onAppear { text = format(value) }
-            .onChange(of: value) { _, new in if !focused { text = format(new) } }
+            .onChange(of: value) { _, new in text = format(new) }  // also while focused: Return keeps focus
             .onSubmit(finish)
+            .onKeyPress(.return) { finish(); return .handled }
             .onChange(of: focused) { _, now in if !now { finish() } }
     }
 
@@ -150,7 +151,7 @@ struct BoxInspector: View {
                         edit: @escaping (String, @escaping (inout Box) -> Void) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(title)
+                Text(title).lineLimit(1).fixedSize()
                 Spacer()
                 CommitField(title: title, value: value) { v in edit(action) { apply(&$0, v) } }
                     .frame(width: 64)

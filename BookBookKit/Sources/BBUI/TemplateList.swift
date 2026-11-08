@@ -129,7 +129,7 @@ struct TemplateList: View {
         let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != (content.templates[id]?.name ?? Presets.bundledTemplates.first { $0.id == id }?.name)
         else { return }
-        if model.templateID != id { model.open(id) }
+        if model.templateID != id { model.open(id) }  // a preset copies in with this edit's undo step
         model.update(actionName: "Rename Layout") { $0.name = name }
     }
 

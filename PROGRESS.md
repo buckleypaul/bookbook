@@ -17,7 +17,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 5 | Pages tab, ordering and cover | done | `phase-5-pages-cover` | — | $0.00 | No live checks. [Log](progress/phase-5-pages-cover.md) |
 | 6 | Template editor | done | `phase-6-template-editor` | — | $0.00 | No live checks. [Log](progress/phase-6-template-editor.md) |
 | 7 | Style guide and page setup | done | `phase-7-style-page-setup` | — | $0.00 | No live checks. [Log](progress/phase-7-style-page-setup.md) |
-| 8 | Sessions and versions | not started | | | | |
+| 8 | Sessions and versions | in progress | `phase-8-sessions-versions` | — | | |
 | 9 | Queue, cost, errors and settings (M2) | not started | | | | |
 | 10 | Assets and character sheets | not started | | | | |
 | 11 | Region editing | not started | | | | |
@@ -136,4 +136,7 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-_No phase in progress._
+### Phase 8 — Sessions and versions
+
+**Stage:** A
+

@@ -11,7 +11,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 1a | Bootstrap (gitignore, hooks, key scripts) | done | `phase-1a-bootstrap` | [#1](https://github.com/buckleypaul/bookbook/pull/1) | $0.00 | Repo and remote were created on 2026-11-07 |
 | 0 | Live-API spikes and fixtures | done | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13 |
 | 1b | Project setup and CI | done | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27` |
-| 2 | Thin vertical slice (M1) | not started | | | | |
+| 2 | Thin vertical slice (M1) | in progress | `phase-2-thin-slice` | | | |
 | 3 | Storage and library | not started | | | | |
 | 4 | Text and typography | not started | | | | |
 | 5 | Pages tab, ordering and cover | not started | | | | |
@@ -157,3 +157,16 @@ Also fixed from the nice-to-haves: `dump()`/reflection redaction for `APIKey` an
 - `actions/checkout` v4.2.2 / `actions/cache` v4.2.0 are Node 20 actions; bump them when GitHub retires Node 20.
 - Product decision recorded on this branch (2026-11-07): BookBook always reopens the books that were open at quit. PD §8.1, A §6.1, plan Phase 3, `Spikes/REPORT.md`.
 - From 1a, still open: `live-tests.sh` exits 0 when no test matches (SwiftPM prints a warning); fine for this phase's check.
+
+### Phase 2 — Thin vertical slice (started 2026-11-08)
+
+**Status:** in progress · branch `phase-2-thin-slice`.
+
+**Decisions taken at the start (your answers, 2026-11-08):** Generate uses **Standard** quality (OpenAI `medium`); the default body font is **Avenir Next** (`AvenirNext-Regular`, title `AvenirNext-Bold`); a new book starts with **1 story page**.
+
+**Assumptions (plan defaults, easy to overrule):**
+- The cover page is created with every book (so `Book.coverPageID` is valid) but isn't shown, edited or exported until Phase 5.
+- A new result is placed automatically only when its box is empty; otherwise it joins the version strip and the user clicks it to place it (`ChooseVersion`, undoable).
+- Page commands never touch sessions. Deleting a page keeps its session files; undoing an add leaves the new page's empty sessions behind (clean-up is Phase 16).
+- TextKit 2 layout, `PageRenderer` and PDF export are `@MainActor` in the slice; Phase 14 revisits background export.
+

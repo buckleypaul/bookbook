@@ -104,7 +104,7 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 3 — Storage and library
 
-**Stage:** A
+**Stage:** B
 
 Started 2026-11-08.
 
@@ -115,3 +115,31 @@ Started 2026-11-08.
 - The library location is saved in `UserDefaults` key `libraryPath` (A §5.5). The `-BookBookLibraryRoot` launch argument still wins. Moving the books needs every book window closed first (the app closes them after flushing).
 - A book held by another live process opens read-only: editing is disabled and nothing is written (no journal replay, migration, sweep or ledger repair).
 - The library thumbnail is the first story page while the cover is hidden (until Phase 5).
+
+**Session A (2026-11-08): all lanes merged, the package builds and every package test passes (5 runs in a row).**
+- **L1 store durability (opus):**
+  - Fault injection at each of the 5 save steps × 3 entity mixes.
+  - `.lock` (`BookLock.swift`: `link(2)` create, stale-PID takeover, re-entrant in-process) and read-only mode.
+  - Orphan image sweep (`ImageSweep.swift`), `writeThumbnail`, and `load()` wiring (recover → migrate → ledger repair → decode → sweep).
+  - **Fixed a Phase 2 bug:** a committed transaction that crashed partway through its renames was discarded on reopen.
+  - The empty `.journal` folder is now removed after saves. That opened a race; it's fixed by making `recover()` tolerate a missing folder and skip this process's in-flight transactions.
+  - ReviewFixTests' fixed sleeps became polling (the "CI flake" follow-up).
+  - A test-only `PackageCoding.fullSync` task-local swaps `F_FULLFSYNC` for `fsync` in the crash suites.
+- **L2 Migrator + CostLedger (sonnet):** `Fixtures/SchemaV1.bookbook`.
+- **L3 LibraryIndex + Library ops (sonnet):** FSEvents uses `realpath` because FSEvents reports `/private/var/...`. `Library.rename` is `async` (contract change, main thread).
+- **L4 app/UI (opus):**
+  - Library grid, rename/duplicate/trash/Show in Finder.
+  - `OpenBooks` keeps `openBookIDs` and reopens them at launch.
+  - Lock alert with read-only banner; sidebar `BookSwitcher`; Settings ▸ General library location with a move offer (`LibraryLocation.resolve`).
+  - Thumbnails written at most every 3 s and on close.
+- **L5 ThumbnailCache + BookThumbnail (sonnet).**
+
+**For Session B:**
+- The xcodebuild app build/test passed in L4's worktree, but not yet on the merged branch.
+- The lock/read-only UI was written against the stub. It's only truly exercised now that L1 has landed, so check it by hand: open the same library from a second app instance with `-BookBookLibraryRoot`, or plant a `.lock` with a live foreign PID/host.
+- The worktrees `.claude/worktrees/agent-*` and branches `worktree-agent-*` / `worktree-l5-thumbnails` are merged; remove them when the phase is done.
+- Candidate follow-ups from the lanes, to file in Session B:
+  - Library actions have no menu-bar items (`BookBookCommands.swift`).
+  - A Finder copy of a package keeps the same `Book.id`, so give one of them a new ID on detection (Phase 16 import?).
+  - A read-only open of an older-schema book has no in-memory migration (Phase 16/17).
+  - A restored window for a deleted book may flash briefly after ⌥⌘Q.

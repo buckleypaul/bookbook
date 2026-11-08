@@ -141,8 +141,8 @@ final class CanvasView: NSView {
         ctx.clip(to: trim)
         var options = RenderOptions.screen
         if let editing = editor?.boxID { options.hiddenTextBoxes = [editing] }
-        let renderer = PageRenderer(images: imageSource)
-        // TODO(merge): renderer.layouts = layoutCache
+        var renderer = PageRenderer(images: imageSource)
+        renderer.layouts = layoutCache
         renderer.draw(page: page, in: content, into: ctx, options: options)
         ctx.restoreGState()
 

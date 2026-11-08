@@ -114,7 +114,20 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 4 — Text and typography
 
-**Stage:** A
+**Stage:** B
 
-**Assumptions:** none yet.
+**Session A (2026-11-08):** contracts on the branch (`TextFormatting.swift`, `Fonts.swift`, `BookStore+Fonts.swift`, `TextBoxLayoutCache`, `Typography.resolved(for:)`, `BookCommand.setRichText(…, coalescing:)` and `.setTypography`). Four lanes merged:
+- A (opus): `TypingCoalescer`, coalesced undo in `BookDocument.perform`, `.setTypography`, font registration on open, `importFont`, `missingFonts`, `InlineTextEditor` as `TextFormatTarget`, layout cache and red "+" overflow badge in `CanvasView`, title-role typography.
+- B (sonnet): `FontInspector` (fsType), `FontRegistry`, `FontAvailability`, LRU `TextBoxLayoutCache`, `PageRenderer.layouts` and title role; fixed a missing-font + bold/italic round-trip bug; empty text no longer overflows. Property, overflow-edge, screen-vs-PDF and font-embedding tests.
+- C (sonnet): `fonts/<sha256>.<ext>` store; orphan sweep never touches `fonts/`.
+- D (sonnet): `FormatBar`, Format menu (⌘B/I/U, ⌘+/-, ⌘{ ⌘| ⌘}), `TypographyForm` sheet (toolbar "Typography" button, Format ▸ Typography…) with Import Font…, `MissingFontsBanner`.
 
+At the end of Session A, `swift test` (all targets) is green and the app builds with xcodebuild. Nothing has been checked by hand or reviewed yet.
+
+**For Session B:**
+- The typography form is a sheet; the full Style tab is Phase 7.
+- `fontFileURLs()` returns `/private/var/...` while `storeFont` returns `/var/...`, so compare font URLs by file name.
+- `missingFonts` isn't refreshed on coalesced typing edits.
+- A trailing empty paragraph loses its alignment and formatting on a round trip.
+- Undo tests spin the run loop once per keystroke (`TestRunLoop`), so watch them for flakiness in CI.
+- No live checks this phase.

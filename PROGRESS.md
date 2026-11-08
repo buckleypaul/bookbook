@@ -11,7 +11,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 1a | Bootstrap (gitignore, hooks, key scripts) | done | `phase-1a-bootstrap` | [#1](https://github.com/buckleypaul/bookbook/pull/1) | $0.00 | Repo and remote were created on 2026-11-07 |
 | 0 | Live-API spikes and fixtures | done | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13 |
 | 1b | Project setup and CI | done | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27` |
-| 2 | Thin vertical slice (M1) | awaiting hand checks | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | |
+| 2 | Thin vertical slice (M1) | done | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | |
 | 3 | Storage and library | not started | | | | |
 | 4 | Text and typography | not started | | | | |
 | 5 | Pages tab, ordering and cover | not started | | | | |
@@ -160,7 +160,7 @@ Also fixed from the nice-to-haves: `dump()`/reflection redaction for `APIKey` an
 
 ### Phase 2 — Thin vertical slice (2026-11-08)
 
-**Status:** awaiting hand checks · branch `phase-2-thin-slice` · PR [#4](https://github.com/buckleypaul/bookbook/pull/4) · live spend **$0.006**.
+**Status:** done (merged 2026-11-08) · branch `phase-2-thin-slice` · PR [#4](https://github.com/buckleypaul/bookbook/pull/4) · live spend **$0.006**.
 
 **Decisions taken at the start (your answers, 2026-11-08):** Generate uses **Standard** quality (OpenAI `medium`); the default body font is **Avenir Next** (`AvenirNext-Regular`, title `AvenirNext-Bold`); a new book starts with **1 story page**.
 

@@ -67,7 +67,8 @@ public struct BookContent: Hashable, Sendable {
         let book = Book(title: title, author: author, createdAt: now, modifiedAt: now,
                         pageOrder: order, coverPageID: cover.id)
         return BookContent(book: book, style: StyleGuide(),
-                           templates: [storyTemplate.id: storyTemplate, coverTemplate.id: coverTemplate],
+                           templates: Dictionary([storyTemplate, coverTemplate].map { ($0.id, $0) },
+                                                 uniquingKeysWith: { first, _ in first }),
                            pages: pages, sessions: sessions)
     }
 

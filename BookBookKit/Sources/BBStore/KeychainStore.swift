@@ -1,7 +1,6 @@
 import BBModel
 import Foundation
-
-// Owned by the Store lane. Contract stub: signatures are frozen, bodies are placeholders.
+import Security
 
 /// The app's own API keys (A §5.5): generic-password items, service `app.bookbook.api-key`,
 /// account = provider ID, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, not synchronizable.
@@ -15,21 +14,43 @@ public struct KeychainStore: Sendable {
         self.service = service
     }
 
+    private func query(_ provider: ProviderID) -> [CFString: Any] {
+        [kSecClass: kSecClassGenericPassword,
+         kSecAttrService: service,
+         kSecAttrAccount: provider.rawValue,
+         kSecAttrSynchronizable: false]
+    }
+
     public func read(_ provider: ProviderID) -> APIKey? {
-        fatalError("Phase 2 Store lane: not implemented")
+        var q = query(provider)
+        q[kSecReturnData] = true
+        q[kSecMatchLimit] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data, let string = String(data: data, encoding: .utf8) else { return nil }
+        return APIKey(string)
     }
 
     /// True if an item exists, without reading the secret.
     public func hasKey(_ provider: ProviderID) -> Bool {
-        fatalError("Phase 2 Store lane: not implemented")
+        SecItemCopyMatching(query(provider) as CFDictionary, nil) == errSecSuccess
     }
 
     /// Adds or replaces the item.
     public func save(_ key: APIKey, for provider: ProviderID) throws(StoreError) {
-        fatalError("Phase 2 Store lane: not implemented")
+        let data = Data(key.revealForTransport().utf8)
+        var status = SecItemUpdate(query(provider) as CFDictionary, [kSecValueData: data] as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query(provider)
+            item[kSecValueData] = data
+            item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw StoreError.keychain(status) }
     }
 
     public func delete(_ provider: ProviderID) throws(StoreError) {
-        fatalError("Phase 2 Store lane: not implemented")
+        let status = SecItemDelete(query(provider) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw StoreError.keychain(status) }
     }
 }

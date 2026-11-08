@@ -234,6 +234,8 @@ struct Run {
 
 Converting between this model and `NSAttributedString` is done in one place (`BBLayout.RichTextBridge`). The style guide's defaults are resolved there, so "layered on the style guide defaults" (§8.6) falls out naturally: a run with no override follows the style guide when it changes.
 
+`bold` and `italic` are relative to the run's base face (its `fontFamily`, else the role's style font from `Typography.resolved(for:)`): `true` means "the opposite of the base face". With a regular base face that's ordinary bold/italic. With a bold base face (the default title font, `AvenirNext-Bold`) an unformatted run is drawn bold but stored as `bold: false`, so it follows a later change of the title font, and `bold: true` draws the family's regular weight.
+
 ### 4.3 Sessions and versions
 
 ```swift
@@ -833,7 +835,7 @@ Page numbers come from physical positions, the style's starting number, and its 
 - **Overflow:** the box overflows if `usageBoundsForTextContainer` is taller than the container, or if the last layout fragment doesn't reach the end of the document. The canvas shows a red "+" badge, and preflight lists the box.
 - **Rendering:** each `NSTextLayoutFragment` is drawn with `draw(at:in:)` into the target `CGContext`, wrapped in an `NSGraphicsContext`. In a PDF context, glyphs stay real text and fonts are embedded as subsets by Core Graphics.
 - **The TextKit 1 trap:** code must never touch `NSTextView.layoutManager`, because doing so permanently switches that view to TextKit 1 and breaks the shared layout path. A debug assertion watches for the switch notification.
-- **As built (Phase 2):** `RichTextBridge` uses a family's real bold/italic faces when they exist and otherwise fakes them (stroke width for bold, obliqueness for italic), so the flags survive a round trip. A missing font falls back to the system font, and the requested PostScript name is kept in a private attribute so it round-trips. When text overflows, lines that don't fully fit aren't drawn (no half-cut lines).
+- **As built (Phase 2):** `RichTextBridge` uses a family's real bold/italic faces when they exist and otherwise fakes them (stroke width for bold, obliqueness for italic), so the flags survive a round trip. As of Phase 4 the flags toggle relative to the run's base face (§4.2): reading back, a run is bold/italic only if its drawn trait differs from the base face's, and writing, a flag on a bold/italic base face removes the trait (a family with no such face draws its base face). A missing font falls back to the system font, and the requested PostScript name is kept in a private attribute so it round-trips. When text overflows, lines that don't fully fit aren't drawn (no half-cut lines).
 - **Fonts:**
   - Installed fonts are referenced by PostScript name.
   - Imported fonts are copied into `fonts/` and registered with `CTFontManagerRegisterFontURLs(…, .process, …)` when the book opens.

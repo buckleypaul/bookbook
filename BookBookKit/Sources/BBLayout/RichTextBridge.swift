@@ -7,9 +7,15 @@ import Foundation
 ///
 /// - Fonts are looked up by PostScript name (`Run.fontFamily`, else `Typography.bodyFont`).
 ///   A missing font falls back to the system font at the same size.
-/// - Bold and italic pick the family's bold/italic face through `NSFontManager`. If the family
-///   has no such face, they are synthesized (negative stroke width for bold, obliqueness for
-///   italic), so the flags survive a round trip.
+/// - `Run.bold`/`Run.italic` are relative to the run's base face (the face named by
+///   `Run.fontFamily`, else `Typography.bodyFont`): a flag set means "the opposite of what the
+///   base face has". With a regular base face that is plain bold/italic; with a bold base face
+///   (the default title font, `AvenirNext-Bold`) an unformatted run draws bold and reads back as
+///   `bold: false`, so it follows the style when the font changes, and `bold: true` draws the
+///   family's regular weight. The flag picks the family's other face through `NSFontManager`.
+///   If the family has no bold/italic face, they are synthesized (negative stroke width for bold,
+///   obliqueness for italic), so the flags survive a round trip. A family with no non-bold or
+///   non-italic face can't draw the "off" state and draws its base face instead.
 /// - Paragraphs are separated by "\n". Each paragraph gets a paragraph style built from the
 ///   typography (alignment, `lineHeightMultiple` = `lineSpacing`), with its alignment override.
 ///
@@ -60,7 +66,7 @@ public enum RichTextBridge {
     static func runAttributes(_ run: Run, typography: Typography) -> [NSAttributedString.Key: Any] {
         let name = run.fontFamily ?? typography.bodyFont.postScriptName
         let size = CGFloat(run.size ?? typography.bodySize)
-        let resolved = resolveFont(postScriptName: name, size: size, bold: run.bold, italic: run.italic)
+        let resolved = resolveFont(postScriptName: name, size: size, toggleBold: run.bold, toggleItalic: run.italic)
         let color = run.color ?? typography.color
         var attributes: [NSAttributedString.Key: Any] = [
             .font: resolved.font,
@@ -140,8 +146,8 @@ public enum RichTextBridge {
                        color: colorOverride(attributes, typography: typography))
         }
         let traits = font.fontDescriptor.symbolicTraits
-        let bold = traits.contains(.bold) || ((attributes[.strokeWidth] as? CGFloat).map { $0 < 0 } ?? false)
-        let italic = traits.contains(.italic) || ((attributes[.obliqueness] as? CGFloat).map { $0 > 0 } ?? false)
+        let drawnBold = traits.contains(.bold) || ((attributes[.strokeWidth] as? CGFloat).map { $0 < 0 } ?? false)
+        let drawnItalic = traits.contains(.italic) || ((attributes[.obliqueness] as? CGFloat).map { $0 > 0 } ?? false)
         let size = font.pointSize
         let baseName = baseFontName(of: font)
 
@@ -149,7 +155,7 @@ public enum RichTextBridge {
         // resolves to this font (keeps missing-font names); otherwise the font's own base face.
         var family = baseName
         if let requested = attributes[requestedFontKey] as? String {
-            let requestedBase = baseFontName(of: resolveFont(postScriptName: requested, size: size, bold: false, italic: false).font)
+            let requestedBase = baseFontName(of: baseFace(postScriptName: requested, size: size))
             // A missing font is drawn with the system font (whose bold/italic faces can have
             // differently named bases), so accept the requested name when the run uses that fallback.
             let usesSystemFallback = font.fontName.hasPrefix(".")
@@ -160,7 +166,13 @@ public enum RichTextBridge {
         let bodyName = typography.bodyFont.postScriptName
         let isDefaultFamily = family == bodyName
             || (family == baseName
-                && baseFontName(of: resolveFont(postScriptName: bodyName, size: size, bold: false, italic: false).font) == baseName)
+                && baseFontName(of: baseFace(postScriptName: bodyName, size: size)) == baseName)
+
+        // Flags are relative to the base face the run will be written with (A §4.2).
+        let baseTraits = baseFace(postScriptName: isDefaultFamily ? bodyName : family, size: size)
+            .fontDescriptor.symbolicTraits
+        let bold = drawnBold != baseTraits.contains(.bold)
+        let italic = drawnItalic != baseTraits.contains(.italic)
 
         return Run(text: text, bold: bold, italic: italic, underline: isUnderlined(attributes),
                    fontFamily: isDefaultFamily ? nil : family,
@@ -190,19 +202,34 @@ public enum RichTextBridge {
         var syntheticItalic: Bool
     }
 
-    /// The font for a PostScript name with bold/italic applied; system font if it is missing.
-    static func resolveFont(postScriptName: String, size: CGFloat, bold: Bool, italic: Bool) -> ResolvedFont {
-        var font = NSFont(name: postScriptName, size: size) ?? NSFont.systemFont(ofSize: size)
+    /// The face a PostScript name names; the system font if it is missing.
+    static func baseFace(postScriptName: String, size: CGFloat) -> NSFont {
+        NSFont(name: postScriptName, size: size) ?? NSFont.systemFont(ofSize: size)
+    }
+
+    /// The base face for a PostScript name with bold/italic toggled relative to it: a toggle on a
+    /// regular face adds the trait (real face, else synthesized); on a bold/italic face it removes
+    /// it (if the family has such a face). System font if the name is missing.
+    static func resolveFont(postScriptName: String, size: CGFloat, toggleBold: Bool, toggleItalic: Bool) -> ResolvedFont {
+        var font = baseFace(postScriptName: postScriptName, size: size)
         let manager = NSFontManager.shared
         var syntheticBold = false
         var syntheticItalic = false
-        if bold, !font.fontDescriptor.symbolicTraits.contains(.bold) {
-            let converted = manager.convert(font, toHaveTrait: .boldFontMask)
-            if converted.fontDescriptor.symbolicTraits.contains(.bold) { font = converted } else { syntheticBold = true }
+        if toggleBold {
+            if font.fontDescriptor.symbolicTraits.contains(.bold) {
+                font = manager.convert(font, toNotHaveTrait: .boldFontMask)
+            } else {
+                let converted = manager.convert(font, toHaveTrait: .boldFontMask)
+                if converted.fontDescriptor.symbolicTraits.contains(.bold) { font = converted } else { syntheticBold = true }
+            }
         }
-        if italic, !font.fontDescriptor.symbolicTraits.contains(.italic) {
-            let converted = manager.convert(font, toHaveTrait: .italicFontMask)
-            if converted.fontDescriptor.symbolicTraits.contains(.italic) { font = converted } else { syntheticItalic = true }
+        if toggleItalic {
+            if font.fontDescriptor.symbolicTraits.contains(.italic) {
+                font = manager.convert(font, toNotHaveTrait: .italicFontMask)
+            } else {
+                let converted = manager.convert(font, toHaveTrait: .italicFontMask)
+                if converted.fontDescriptor.symbolicTraits.contains(.italic) { font = converted } else { syntheticItalic = true }
+            }
         }
         return ResolvedFont(font: font, syntheticBold: syntheticBold, syntheticItalic: syntheticItalic)
     }

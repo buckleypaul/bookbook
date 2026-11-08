@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "billing_hard_limit_reached",
+    "message": "Billing hard limit has been reached.",
+    "param": null,
+    "type": "invalid_request_error"
+  }
+}

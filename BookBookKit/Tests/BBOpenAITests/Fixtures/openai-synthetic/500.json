@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "internal_error",
+    "message": "The server had an error while processing your request.",
+    "param": null,
+    "type": "server_error"
+  }
+}

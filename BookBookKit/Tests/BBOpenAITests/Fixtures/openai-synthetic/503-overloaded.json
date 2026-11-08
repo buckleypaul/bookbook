@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "server_is_overloaded",
+    "message": "The server is overloaded. Please try again later.",
+    "param": null,
+    "type": "server_error"
+  }
+}

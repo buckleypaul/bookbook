@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": null,
+    "message": "Your organization must be verified to use the model `gpt-image`. Please go to the platform settings and click Verify Organization.",
+    "param": null,
+    "type": "invalid_request_error"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "file_above_max_size",
+    "message": "File is larger than the maximum allowed size.",
+    "param": "image[]",
+    "type": "image_generation_user_error"
+  }
+}

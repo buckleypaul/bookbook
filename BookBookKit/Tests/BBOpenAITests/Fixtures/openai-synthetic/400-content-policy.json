@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "image_content_policy_violation",
+    "message": "Your request was rejected as a result of our safety system.",
+    "param": null,
+    "type": "image_generation_user_error"
+  }
+}

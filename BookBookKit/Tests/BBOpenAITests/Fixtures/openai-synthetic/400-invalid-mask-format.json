@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_mask_image_format",
+    "message": "Invalid mask: it must have an alpha channel.",
+    "param": "mask",
+    "type": "image_generation_user_error"
+  }
+}

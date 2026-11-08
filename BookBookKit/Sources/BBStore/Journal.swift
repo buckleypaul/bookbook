@@ -1,6 +1,27 @@
 import Foundation
 import Synchronization
 
+/// The steps of one save (A §5.2). Test hook: a `SaveFaultHook` is called after each step
+/// completes and may throw `SimulatedCrash` to stop the save there, as if the process had died.
+enum SaveStep: Int, CaseIterable, Sendable {
+    /// Step 1: new image files are in `images/` (they are stored before `save` is called).
+    case imagesWritten = 1
+    /// Step 2: staged files and `manifest.json` written.
+    case staged
+    /// Step 3: fsync, `COMMIT`, fsync.
+    case committed
+    /// Step 4: one rename or deletion applied. Called after each, with the running count.
+    case renamed
+    /// Step 5: the transaction folder removed.
+    case cleanedUp
+}
+
+/// Thrown by a test's fault hook. Nothing after the faulting step runs, not even clean-up.
+struct SimulatedCrash: Error {}
+
+/// `(step, operationsApplied)`: `operationsApplied` counts step-4 renames and deletions so far.
+typealias SaveFaultHook = @Sendable (_ step: SaveStep, _ operationsApplied: Int) throws -> Void
+
 /// A journaled transaction (A §5.2 steps 2-5). Staged files live in
 /// `.journal/<txid>/staged/<relative path>`; `manifest.json` lists targets and deletions;
 /// an empty `COMMIT` file makes the transaction durable.
@@ -21,7 +42,8 @@ struct Journal {
     /// Stages (and, if `commit`, commits and applies) one transaction. Returns the txid folder.
     /// `commit: false` exists so tests can simulate a crash before COMMIT.
     @discardableResult
-    func run(files: [String: Data], deletions: [String], commit: Bool = true, apply shouldApply: Bool = true) throws -> URL {
+    func run(files: [String: Data], deletions: [String], commit: Bool = true, apply shouldApply: Bool = true,
+             fault: SaveFaultHook? = nil) throws -> URL {
         let fm = FileManager.default
         let tx = root.appending(path: Self.newTxid(), directoryHint: .isDirectory)
         let staged = tx.appending(path: "staged", directoryHint: .isDirectory)
@@ -35,32 +57,47 @@ struct Journal {
         try PackageCoding.writeSynced(PackageCoding.encoder().encode(manifest),
                                       to: tx.appending(path: Self.manifestName))
         try PackageCoding.fsync(tx)
+        try fault?(.staged, 0)
         guard commit else { return tx }
         try PackageCoding.writeSynced(Data(), to: tx.appending(path: Self.commitName))
         try PackageCoding.fsync(tx)
-        if shouldApply { try apply(tx) }
+        try fault?(.committed, 0)
+        if shouldApply { try apply(tx, fault: fault) }
         return tx
     }
 
     /// Moves staged files into place, applies deletions, removes the transaction folder.
     /// Idempotent, so a half-applied transaction can be replayed.
-    func apply(_ tx: URL) throws {
+    func apply(_ tx: URL, fault: SaveFaultHook? = nil) throws {
         let fm = FileManager.default
         let manifest = try PackageCoding.decoder().decode(
             Manifest.self, from: Data(contentsOf: tx.appending(path: Self.manifestName)))
         let staged = tx.appending(path: "staged", directoryHint: .isDirectory)
+        var applied = 0
         for path in manifest.targets {
             let src = staged.appending(path: path)
             guard fm.fileExists(atPath: src.path(percentEncoded: false)) else { continue }
             let dest = packageURL.appending(path: path)
             try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
             try PackageCoding.rename(src, to: dest)
+            applied += 1
+            try fault?(.renamed, applied)
         }
         for path in manifest.deletions {
             let url = packageURL.appending(path: path)
             if fm.fileExists(atPath: url.path(percentEncoded: false)) { try fm.removeItem(at: url) }
+            applied += 1
+            try fault?(.renamed, applied)
         }
         try fm.removeItem(at: tx)
+        removeRootIfEmpty()
+        try fault?(.cleanedUp, applied)
+    }
+
+    /// `.journal/` exists only while a save is in flight (A §5.1). `rmdir(2)` fails harmlessly
+    /// while another transaction is still in it.
+    func removeRootIfEmpty() {
+        _ = rmdir(root.path(percentEncoded: false))
     }
 
     private static var pathPattern: Regex<(Substring, Substring, Substring?)> {
@@ -109,7 +146,11 @@ struct Journal {
             guard dest == package || dest.hasPrefix(package + "/") else { return false }
         }
         for path in manifest.targets {
-            let src = Self.resolved(tx.appending(path: "staged").appending(path: path))
+            let srcURL = tx.appending(path: "staged").appending(path: path)
+            // Already renamed by a crashed apply: `apply` skips it, and a missing path cannot be
+            // resolved (so it would wrongly fail the prefix check and discard a half-applied commit).
+            guard FileManager.default.fileExists(atPath: srcURL.path(percentEncoded: false)) else { continue }
+            let src = Self.resolved(srcURL)
             guard src.hasPrefix(staged + "/") else { return false }
         }
         return true
@@ -130,5 +171,6 @@ struct Journal {
                 try fm.removeItem(at: tx)
             }
         }
+        removeRootIfEmpty()
     }
 }

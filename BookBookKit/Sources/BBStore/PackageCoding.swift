@@ -102,11 +102,17 @@ enum PackageCoding {
         try fsync(url)
     }
 
+    /// Test hook: false makes `fsync` use plain `fsync(2)` instead of `F_FULLFSYNC` for the
+    /// current task. `F_FULLFSYNC` flushes the whole drive, so a test that saves hundreds of times
+    /// (fault injection, which simulates crashes rather than power loss) would otherwise stall
+    /// every other test's disk I/O. Never set by the app.
+    @TaskLocal static var fullSync = true
+
     static func fsync(_ url: URL) throws {
         let fd = open(url.path(percentEncoded: false), O_RDONLY)
         guard fd >= 0 else { throw CocoaError(.fileReadNoPermission) }
         defer { close(fd) }
-        _ = fcntl(fd, F_FULLFSYNC)
+        if fullSync { _ = fcntl(fd, F_FULLFSYNC) } else { _ = Darwin.fsync(fd) }
     }
 
     /// `rename(2)`: atomic, replaces an existing target.

@@ -258,3 +258,30 @@ struct BoxInspector: View {
         }
     }
 }
+
+/// An image box's out-of-date flags with a Mark as OK button (page editor inspector). Shows
+/// nothing when the box has no flags.
+struct ImageFlagsRow: View {
+    let flags: ImageFlags
+    let editable: Bool
+    let markOK: () -> Void
+
+    var body: some View {
+        if !flags.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(FlagText.entries(flags), id: \.title) { entry in
+                    Label(entry.title, systemImage: entry.symbol)
+                        .foregroundStyle(entry.color)
+                        .help(entry.help)
+                }
+                Button("Mark as OK", action: markOK)
+                    .disabled(!editable)
+                    .help("Accept this image as it is and clear its flags")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(.bar)
+            Divider()
+        }
+    }
+}

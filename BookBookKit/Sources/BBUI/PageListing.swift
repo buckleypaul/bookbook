@@ -7,6 +7,8 @@ public struct PageListItem: Hashable, Sendable, Identifiable {
     public var id: PageID
     public var number: Int
     public var status: PageStatus
+    /// Out-of-date flags over the page's images (A §4.4).
+    public var flags: ImageFlags = []
 
     public var title: String { "Page \(number)" }
 
@@ -23,7 +25,8 @@ public struct PageListItem: Hashable, Sendable, Identifiable {
 public enum PageListing {
     public static func items(_ content: BookContent) -> [PageListItem] {
         content.storyPages.enumerated().map { index, page in
-            PageListItem(id: page.id, number: index + 1, status: content.status(of: page))
+            PageListItem(id: page.id, number: index + 1, status: content.status(of: page),
+                         flags: content.imageFlags(of: page))
         }
     }
 

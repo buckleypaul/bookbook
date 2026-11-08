@@ -1,5 +1,6 @@
 import AppKit
 import BBModel
+import BBTestSupport
 import Testing
 @testable import BBLayout
 
@@ -74,7 +75,10 @@ struct RichTextRoundTripPropertyTests {
         return x == y
     }
 
-    @Test func randomRunsRoundTrip() {
+    /// Body role (regular base face) and title role (bold base face, A §4.2).
+    @Test(arguments: [BoxRole?.none, .title])
+    func randomRunsRoundTrip(role: BoxRole?) {
+        let typography = typography.resolved(for: role)
         var generator = SeededGenerator(seed: 0xB00C_B00C)
         var failures: [String] = []
         for caseIndex in 0..<300 {
@@ -105,5 +109,23 @@ struct RichTextRoundTripPropertyTests {
         #expect(style.alignment == .center)
         // And converting back against the new typography keeps the overrides, not the defaults.
         #expect(RichTextBridge.richText(from: s, typography: changed) == text)
+    }
+
+    @Test func titleRunsWithoutOverridesFollowTitleFontChanges() throws {
+        let text = RichText(paragraphs: [Paragraph(runs: [Run(text: "plain "), Run(text: "light", bold: true)])])
+        var style = typography
+        let boldTitle = RichTextBridge.attributedString(from: text, typography: style.resolved(for: .title))
+        let drawnBold = try #require(boldTitle.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        #expect(drawnBold.fontName == TestFonts.Face.bold.rawValue)
+        let toggled = try #require(boldTitle.attribute(.font, at: 6, effectiveRange: nil) as? NSFont)
+        #expect(toggled.fontName == TestFonts.Face.regular.rawValue)
+        #expect(RichTextBridge.richText(from: boldTitle, typography: style.resolved(for: .title)) == text)
+
+        style.titleFont = FontRef(postScriptName: TestFonts.Face.regular.rawValue)
+        let regularTitle = RichTextBridge.attributedString(from: text, typography: style.resolved(for: .title))
+        let plain = try #require(regularTitle.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+        #expect(plain.fontName == TestFonts.Face.regular.rawValue)
+        let bold = try #require(regularTitle.attribute(.font, at: 6, effectiveRange: nil) as? NSFont)
+        #expect(bold.fontName == TestFonts.Face.bold.rawValue)
     }
 }

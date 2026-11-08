@@ -51,20 +51,25 @@ struct BookSettingsSheet: View {
         .frame(width: 420)
     }
 
+    /// Title first, then the author only once the title has been applied, so a failed rename
+    /// doesn't leave the book half-changed.
     private func save() {
         let book = document.content.book
         let newAuthor = author.trimmingCharacters(in: .whitespacesAndNewlines)
-        if newAuthor != book.author, !document.setAuthor(newAuthor) {
-            error = "Couldn't change the author."
-            return
+        let applyAuthor = {
+            if newAuthor == document.content.book.author || document.setAuthor(newAuthor) {
+                dismiss()
+            } else {
+                error = "Couldn't change the author."
+            }
         }
         guard trimmedTitle != book.title else {
-            dismiss()
+            applyAuthor()
             return
         }
         guard let entry = app.entry(for: document.id) else {
             // Not in the library index (yet): set it on the open book directly.
-            if document.rename(to: trimmedTitle) { dismiss() } else { error = "Couldn't change the title." }
+            if document.rename(to: trimmedTitle) { applyAuthor() } else { error = "Couldn't change the title." }
             return
         }
         saving = true
@@ -73,7 +78,7 @@ struct BookSettingsSheet: View {
             defer { saving = false }
             do {
                 try await app.rename(entry, to: title)
-                dismiss()
+                applyAuthor()
             } catch {
                 self.error = "Couldn't change the title. \(StoreErrorText.message(for: error))"
             }

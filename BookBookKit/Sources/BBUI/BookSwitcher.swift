@@ -3,9 +3,11 @@ import BBStore
 import SwiftUI
 
 /// The sidebar book switcher (PD §7): switch to another book (its own window), create,
-/// duplicate or delete books. Book Settings comes in Phase 16.
+/// duplicate or delete books, and open Book Settings.
 struct BookSwitcher: View {
     let document: BookDocument
+    /// Opens the Book Settings sheet (the window's `PagesController`).
+    var onBookSettings: () -> Void = {}
     @Environment(AppModel.self) private var app
     @Environment(\.openWindow) private var openWindow
     @State private var actions = BookActionRequests()
@@ -37,8 +39,8 @@ struct BookSwitcher: View {
             Button("Move to Trash…") { actions.trashing = entry }
                 .disabled(entry == nil)
             Divider()
-            Button("Book Settings…") {}
-                .disabled(true)
+            Button("Book Settings…", action: onBookSettings)
+                .disabled(!document.isEditable)
         } label: {
             Label(document.content.book.title, systemImage: "book.closed")
                 .lineLimit(1)

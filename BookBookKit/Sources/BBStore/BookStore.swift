@@ -10,6 +10,7 @@ public actor BookStore {
     private var pending: (content: BookContent, dirty: DirtySet, generation: Int)?
     private var timer: Task<Void, Never>?
     private var timerToken = 0
+    private var autosaveResultHandler: (@Sendable (StoreError?) -> Void)?
 
     public init(packageURL: URL) {
         self.init(packageURL: packageURL, debounce: .seconds(1))
@@ -57,13 +58,14 @@ public actor BookStore {
         let probe = try PackageCoding.decode(SchemaProbe.self, from: bookData, what: "book.json")
         if probe.schemaVersion > Book.currentSchemaVersion { throw StoreError.schemaTooNew(probe.schemaVersion) }
         let book = try PackageCoding.decode(Book.self, from: bookData, what: "book.json")
-        let style = try PackageCoding.decode(StyleGuide.self, from: readFile(PackageCoding.stylePath), what: "style.json")
+        var style = try PackageCoding.decode(StyleGuide.self, from: readFile(PackageCoding.stylePath), what: "style.json")
+        style.styleReferences.removeAll { !$0.isValid }
         var templates: [TemplateID: Template] = [:]
         for t in try readAll("templates", Template.self) { templates[t.id] = t }
         var pages: [PageID: Page] = [:]
         for p in try readAll("pages", Page.self) { pages[p.id] = p }
         var sessions: [SessionID: Session] = [:]
-        for s in try readAll("sessions", Session.self) { sessions[s.id] = s }
+        for s in try readAll("sessions", Session.self) { sessions[s.id] = s.droppingInvalidImageRefs() }
         return BookContent(book: book, style: style, templates: templates, pages: pages, sessions: sessions)
     }
 
@@ -94,25 +96,45 @@ public actor BookStore {
         timerToken += 1
         let token = timerToken
         let delay = debounce
-        timer = Task { [weak self] in
+        // Holds the store strongly until it fires (short-lived), so a save scheduled just before
+        // the document closes still completes. A newer schedule or `flush` cancels it.
+        timer = Task {
             do { try await Task.sleep(for: delay) } catch { return }
-            await self?.fire(token)
+            self.fire(token)
         }
+    }
+
+    /// Called after every timer-fired or flushed save: nil on success, the error on failure.
+    /// A failed save keeps its pending snapshot, so the next `flush` or `scheduleSave` retries.
+    public func setAutosaveResultHandler(_ handler: @escaping @Sendable (StoreError?) -> Void) {
+        autosaveResultHandler = handler
     }
 
     private func fire(_ token: Int) {
         guard token == timerToken else { return }
         timer = nil
-        // On failure the pending save is kept so the next flush retries it.
-        try? performPending()
+        do throws(StoreError) {
+            try performPending()
+            autosaveResultHandler?(nil)
+        } catch {
+            autosaveResultHandler?(error)
+        }
     }
 
-    /// Performs any pending scheduled save now (window close, quit, hide).
+    /// Performs any pending scheduled save now (window close, quit, hide). A no-op (and no
+    /// handler call) if nothing is pending.
     public func flush() throws(StoreError) {
         timer?.cancel()
         timer = nil
         timerToken += 1
-        try performPending()
+        guard pending != nil else { return }
+        do throws(StoreError) {
+            try performPending()
+            autosaveResultHandler?(nil)
+        } catch {
+            autosaveResultHandler?(error)
+            throw error
+        }
     }
 
     private func performPending() throws(StoreError) {
@@ -126,12 +148,19 @@ public actor BookStore {
     public func storeImage(_ data: Data, contentType: String) throws(StoreError) -> ImageRef {
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let ref = ImageRef(sha256: hash, contentType: contentType)
+        guard ref.isValid else { throw StoreError.io("unsupported image content type: \(contentType)") }
         let dest = imageURL(for: ref)
         try PackageCoding.io("storeImage") {
             let fm = FileManager.default
-            if fm.fileExists(atPath: dest.path(percentEncoded: false)) { return }
             let dir = dest.deletingLastPathComponent()
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            // Refuse if `images/` (or the package) is a symlink leading outside the package.
+            let package = packageURL.resolvingSymlinksInPath().path(percentEncoded: false)
+            let images = dir.resolvingSymlinksInPath().path(percentEncoded: false)
+            guard images.hasPrefix(package.hasSuffix("/") ? package : package + "/") else {
+                throw StoreError.io("images folder is outside the package")
+            }
+            if fm.fileExists(atPath: dest.path(percentEncoded: false)) { return }
             let tmp = dir.appending(path: ".tmp-\(UUID().uuidString)")
             do {
                 try PackageCoding.writeSynced(data, to: tmp)
@@ -144,9 +173,11 @@ public actor BookStore {
         return ref
     }
 
-    /// Where an image file lives (it may not exist yet).
+    /// Where an image file lives (it may not exist yet). Always inside `images/`: a ref that
+    /// fails validation (untrusted `sha256`) maps to a file name that never exists.
     public nonisolated func imageURL(for ref: ImageRef) -> URL {
-        packageURL.appending(path: "images").appending(path: ref.fileName)
+        let images = packageURL.appending(path: "images", directoryHint: .isDirectory)
+        return images.appending(path: ref.isValid ? ref.fileName : "_invalid-image")
     }
 
     // MARK: Reading

@@ -35,15 +35,17 @@ struct BookBookApp: App {
     }
 }
 
-/// Owns the app model and flushes open books on hide and quit (A §5.3).
+/// Owns the app model and flushes open books on hide and quit (A §5.3). At quit it marks the app
+/// as terminating first, so the open-books list survives the windows closing (A §6.1).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppWiring.makeModel()
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let model = model
+        model.beginTermination()
         Task {
-            await model.flushAll()
+            await model.prepareForQuit()
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

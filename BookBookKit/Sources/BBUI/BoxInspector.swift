@@ -184,8 +184,8 @@ struct BoxInspector: View {
                 if editing {
                     sliderInteraction = model.beginInteraction(actionName: action)
                 } else {
-                    if let token = sliderInteraction, model.isInteractionOpen(token) {
-                        model.endInteraction(actionName: action)
+                    if let token = sliderInteraction {
+                        model.endInteraction(token, actionName: action)
                     }
                     sliderInteraction = nil
                 }

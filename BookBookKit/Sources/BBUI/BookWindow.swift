@@ -268,7 +268,7 @@ struct BookEditor: View {
         case .bookSettings:
             BookSettingsSheet(document: document)
         case .pageNumbers:
-            PageNumbersSheet(pages: pages, style: content.style.pageNumbers)
+            PageNumbersSheet(pages: pages, style: content.style.pageNumbers, content: content)
         }
     }
 

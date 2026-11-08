@@ -16,7 +16,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 4 | Text and typography | done | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. From Phase 5 on, no PRs: merge into main and push directly. [Log](progress/phase-4-text-typography.md) |
 | 5 | Pages tab, ordering and cover | done | `phase-5-pages-cover` | — | $0.00 | No live checks. [Log](progress/phase-5-pages-cover.md) |
 | 6 | Template editor | done | `phase-6-template-editor` | — | $0.00 | No live checks. [Log](progress/phase-6-template-editor.md) |
-| 7 | Style guide and page setup | not started | | | | |
+| 7 | Style guide and page setup | in progress | `phase-7-style-page-setup` | — | $0.00 | No live checks. |
 | 8 | Sessions and versions | not started | | | | |
 | 9 | Queue, cost, errors and settings (M2) | not started | | | | |
 | 10 | Assets and character sheets | not started | | | | |
@@ -134,4 +134,9 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-_No phase running._
+### Phase 7 — Style guide and page setup
+
+**Stage:** A
+
+Started 2026-11-08.
+

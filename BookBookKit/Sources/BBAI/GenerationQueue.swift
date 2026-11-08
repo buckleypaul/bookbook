@@ -109,9 +109,22 @@ public actor GenerationQueue {
         guard let provider = providers[item.intent.provider] else {
             return await fail(item, .unknown(nil))
         }
-        guard let (request, report) = ContextAssembler.assemble(intent: item.intent, target: item.target,
-                                                                content: content, model: model) else {
+        // Intent was fixed at enqueue time; context and image bytes are resolved now (A §7.9).
+        guard let planned = ContextAssembler.plan(intent: item.intent, target: item.target,
+                                                  messageID: item.messageID, content: content) else {
             return await fail(item, .unknown(nil))
+        }
+        var imageData: [ImageRef: Data] = [:]
+        for image in planned {
+            if let data = await host.imageData(for: image.ref, in: item.bookID) { imageData[image.ref] = data }
+        }
+        let request: ImageRequest, report: AssemblyReport
+        do throws(AssemblyError) {
+            (request, report) = try ContextAssembler.assemble(
+                intent: item.intent, target: item.target, messageID: item.messageID, content: content,
+                model: model, imageData: imageData)
+        } catch {
+            return await fail(item, error.providerError)
         }
         let id = item.id
         let result: ImageResult

@@ -1,0 +1,1 @@
+The page fold runs vertically through this image, about {{percent}}% of the way across its width from the left. Keep faces and key details away from the fold.

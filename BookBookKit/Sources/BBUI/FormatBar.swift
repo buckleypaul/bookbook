@@ -25,8 +25,25 @@ struct FormatBar: View {
     let formatting: TextFormatController
 
     var body: some View {
+        // The bar must not set the detail column's minimum width. Its controls are rigid, so a
+        // plain HStack's minimum is its full width (about 600 pt, more with a long font name),
+        // which is wider than the detail column at the default window size. The split view
+        // (`NavigationSplitView` + `.inspector`) then can't satisfy its column constraints, and
+        // AppKit aborts the window inside the update-constraints pass ("more Update Constraints
+        // in Window passes than there are views"). In a horizontal scroll view the controls keep
+        // their size, the bar's minimum width is 0, and a narrow column scrolls the bar instead.
+        ScrollView(.horizontal) {
+            controls
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(.bar)
+        .accessibilityIdentifier("format-bar")
+    }
+
+    private var controls: some View {
         let state = formatting.state
-        HStack(spacing: 10) {
+        return HStack(spacing: 10) {
             HStack(spacing: 2) {
                 toggle("bold", "Bold", on: state?.bold, .toggleBold)
                 toggle("italic", "Italic", on: state?.italic, .toggleItalic)
@@ -48,15 +65,12 @@ struct FormatBar: View {
             Button { formatting.perform(.setColor(nil)) } label: { Image(systemName: "arrow.uturn.backward") }
                 .help("Use the style's text colour")
             alignmentPicker(state?.alignment)
-            Spacer(minLength: 0)
         }
         .buttonStyle(.borderless)
         .focusable(false)
         .disabled(!formatting.isEditing)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(.bar)
-        .accessibilityIdentifier("format-bar")
     }
 
     private func toggle(_ symbol: String, _ title: String, on: Bool?, _ action: FormatAction) -> some View {

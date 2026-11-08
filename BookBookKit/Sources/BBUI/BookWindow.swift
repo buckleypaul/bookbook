@@ -20,6 +20,13 @@ public struct BookWindow: View {
         self.bookID = bookID
     }
 
+    /// The window's minimum width. It must not be less than the editor's own minimum: an explicit
+    /// `frame(minWidth:)` replaces the content's minimum, so a smaller value lets the window shrink
+    /// below what `NavigationSplitView` + `.inspector` accept, and AppKit aborts in the window's
+    /// update-constraints pass. Measured on macOS 27 (`BookEditorLayoutTests`): with the session
+    /// panel shown the editor needs sidebar ideal + 2 × inspector ideal = 190 + 2 × 320 = 830 pt.
+    static let minimumWidth: CGFloat = 840
+
     public var body: some View {
         Group {
             if let document {
@@ -39,7 +46,7 @@ public struct BookWindow: View {
                 ProgressView("Opening…")
             }
         }
-        .frame(minWidth: 760, minHeight: 520)
+        .frame(minWidth: Self.minimumWidth, minHeight: 520)
         .task(id: bookID) { await load(readOnly: false) }
         .task { await app.reopenBooks { openWindow(value: $0) } }
         .alert(

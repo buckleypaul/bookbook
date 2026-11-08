@@ -19,6 +19,7 @@ public final class BookDocument {
     /// The window's undo manager (SwiftUI `@Environment(\.undoManager)`), set by the window.
     @ObservationIgnored public weak var undoManager: UndoManager?
     @ObservationIgnored private var saveChain: Task<Void, Never>?
+    @ObservationIgnored private var autosaveResults: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let now: () -> Date
 
@@ -27,6 +28,20 @@ public final class BookDocument {
         self.content = content
         self.store = store
         self.now = now
+        // Report every autosave result (timer-fired or flushed) so the window's banner shows a
+        // failure within about a second, not only at close. First link of the save chain, so
+        // it's installed before any save is scheduled.
+        let (results, continuation) = AsyncStream.makeStream(of: StoreError?.self)
+        saveChain = Task {
+            await store.setAutosaveResultHandler { continuation.yield($0) }
+        }
+        autosaveResults = Task { [weak self] in
+            for await error in results { self?.lastSaveError = error }
+        }
+    }
+
+    isolated deinit {
+        autosaveResults?.cancel()
     }
 
     /// Loads the package at `url` (rolling the journal forward first).

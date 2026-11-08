@@ -1,5 +1,6 @@
 import BBModel
 import BBStore
+import CryptoKit
 import Foundation
 import Testing
 @testable import BBUI
@@ -141,10 +142,26 @@ struct BookDocumentCommandTests {
         #expect(reloaded == doc.content)
     }
 
+    @Test func autosaveFailure_reachesLastSaveError_withoutAFlush() async throws {
+        let content = BookContent.makeNew(title: "Test", storyTemplate: story, coverTemplate: cover,
+                                          now: Date(timeIntervalSince1970: 0))
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "BookDocumentTests-\(UUID().uuidString).bookbook")
+        try BookStore.create(content, at: url)
+        let doc = BookDocument(content: content, store: BookStore(packageURL: url, debounce: .milliseconds(50)))
+        // Replace the package with a plain file so the save can't write.
+        try FileManager.default.removeItem(at: url)
+        try Data().write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        doc.perform(.setRichText(page: firstPage(doc), box: textBox.id, text: RichText(plain: "x")))
+        for _ in 0..<100 where doc.lastSaveError == nil { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(doc.lastSaveError != nil)
+    }
+
     /// Adds a generated version to the page's image-box session, as a delivery would.
     @discardableResult
     func addVersion(to doc: BookDocument, page: PageID) -> VersionID {
-        let version = Version(image: ImageRef(sha256: UUID().uuidString, contentType: "public.png"),
+        let version = Version(image: ImageRef(sha256: Self.randomSHA256(), contentType: "public.png"),
                               pixelSize: PixelSize(width: 1024, height: 1024), source: .generated,
                               createdAt: Date(timeIntervalSince1970: 1))
         let sessionID = doc.content.pages[page]!.images[imageBox.id]!.sessionID
@@ -153,5 +170,9 @@ struct BookDocumentCommandTests {
             return DirtySet(sessions: [sessionID])
         }
         return version.id
+    }
+
+    static func randomSHA256() -> String {
+        SHA256.hash(data: Data(UUID().uuidString.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }

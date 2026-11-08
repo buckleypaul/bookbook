@@ -89,6 +89,7 @@ struct BookEditor: View {
     @State private var selectedPage: PageID?
     @State private var selectedImageBox: BoxID?
     @State private var showSession = true
+    @State private var showTypography = false
     @State private var images: ImageCache
 
     init(document: BookDocument) {
@@ -118,12 +119,19 @@ struct BookEditor: View {
         }
         .toolbar {
             ToolbarItem {
+                Button { showTypography = true } label: { Label("Typography", systemImage: "textformat") }
+                    .help("Fonts, size, colour and spacing for the whole book")
+                    .disabled(!document.isEditable)
+            }
+            ToolbarItem {
                 Button { showSession.toggle() } label: { Label("Session", systemImage: "sidebar.trailing") }
                     .help("Show or hide the session panel")
             }
         }
         .navigationTitle(content.book.title)
         .focusedSceneValue(\.focusedBook, document)
+        .focusedSceneValue(\.showTypography, $showTypography)
+        .sheet(isPresented: $showTypography) { TypographyForm(document: document) }
         .onAppear {
             document.undoManager = undoManager
             if selectedPage == nil { selectedPage = content.book.pageOrder.first }
@@ -147,6 +155,9 @@ struct BookEditor: View {
                     .frame(maxWidth: .infinity)
                     .background(.secondary.opacity(0.15))
             }
+            if !document.missingFonts.isEmpty { MissingFontsBanner(fonts: document.missingFonts) }
+            FormatBar(formatting: document.formatting)
+            Divider()
             if let error = document.lastSaveError {
                 Label("Couldn't save changes: \(StoreErrorText.message(for: error))", systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)

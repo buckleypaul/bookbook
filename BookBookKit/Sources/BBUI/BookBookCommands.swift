@@ -7,12 +7,15 @@ import UniformTypeIdentifiers
 extension FocusedValues {
     /// The book in the key book window (drives File ▸ Export PDF…).
     @Entry public var focusedBook: BookDocument?
+    /// Presents the typography form in the key book window (Format ▸ Typography…).
+    @Entry var showTypography: Binding<Bool>?
 }
 
 /// App menu commands: File ▸ New Book… and File ▸ Export PDF….
 public struct BookBookCommands: Commands {
     private let app: AppModel
     @FocusedValue(\.focusedBook) private var book
+    @FocusedValue(\.showTypography) private var showTypography
     @Environment(\.openWindow) private var openWindow
 
     public init(app: AppModel) {
@@ -28,6 +31,24 @@ public struct BookBookCommands: Commands {
             .keyboardShortcut("n")
             Button("Library") { openWindow(id: SceneID.library) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+        }
+        CommandMenu("Format") {
+            let editing = book?.formatting.isEditing ?? false
+            let format = { (action: FormatAction) in book?.formatting.perform(action) }
+            Button("Bold") { format(.toggleBold) }.keyboardShortcut("b").disabled(!editing)
+            Button("Italic") { format(.toggleItalic) }.keyboardShortcut("i").disabled(!editing)
+            Button("Underline") { format(.toggleUnderline) }.keyboardShortcut("u").disabled(!editing)
+            Divider()
+            Button("Bigger") { format(.biggerText) }.keyboardShortcut("+").disabled(!editing)
+            Button("Smaller") { format(.smallerText) }.keyboardShortcut("-").disabled(!editing)
+            Divider()
+            Button("Align Left") { format(.setAlignment(.leading)) }.keyboardShortcut("{").disabled(!editing)
+            Button("Center") { format(.setAlignment(.center)) }.keyboardShortcut("|").disabled(!editing)
+            Button("Align Right") { format(.setAlignment(.trailing)) }.keyboardShortcut("}").disabled(!editing)
+            Button("Style Default Alignment") { format(.setAlignment(nil)) }.disabled(!editing)
+            Divider()
+            Button("Typography…") { showTypography?.wrappedValue = true }
+                .disabled(book?.isEditable != true)
         }
         CommandGroup(replacing: .importExport) {
             Button("Export PDF…") {

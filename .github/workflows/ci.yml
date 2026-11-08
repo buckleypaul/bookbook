@@ -2,14 +2,15 @@
 # so live provider tests always skip. The job name `test` is a required status check.
 name: CI
 
+# Push only: required status checks match by commit SHA, so a branch's push run also
+# satisfies its PR. A separate pull_request trigger would run every PR commit twice.
 on:
   push:
-  pull_request:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep every run on main; superseded runs on other branches are cancelled.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -26,9 +27,11 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_27.2.app
 
       - name: Show toolchain
+        id: toolchain
         run: |
           xcodebuild -version
           swift --version
+          echo "xcode=$(xcodebuild -version | tr -s ' \n' '-' | sed 's/-$//')" >> "$GITHUB_OUTPUT"
 
       - name: Install XcodeGen 2.46.0
         run: |
@@ -37,6 +40,7 @@ jobs:
           mkdir -p "$dir"
           curl -fsSL -o "$dir/xcodegen.zip" \
             "https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $dir/xcodegen.zip" | shasum -a 256 -c -
           unzip -q "$dir/xcodegen.zip" -d "$dir"
           mkdir -p "$HOME/.local/xcodegen"
           cp -R "$dir/xcodegen/." "$HOME/.local/xcodegen/"
@@ -48,8 +52,10 @@ jobs:
           path: |
             BookBookKit/.build
             Spikes/.build
-          key: spm-${{ runner.os }}-${{ hashFiles('BookBookKit/Package.resolved', 'BookBookKit/Package.swift', 'Spikes/Package.swift') }}
-          restore-keys: spm-${{ runner.os }}-
+          key: spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('BookBookKit/Package.resolved', 'BookBookKit/Package.swift', 'Spikes/Package.swift') }}-${{ github.sha }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-${{ hashFiles('BookBookKit/Package.resolved', 'BookBookKit/Package.swift', 'Spikes/Package.swift') }}-
+            spm-${{ runner.os }}-${{ steps.toolchain.outputs.xcode }}-
 
       - name: Secret scan
         run: scripts/test.sh secrets

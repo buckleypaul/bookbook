@@ -34,7 +34,7 @@ step_xcodeproj() {
   command -v xcodegen >/dev/null 2>&1 || { echo "xcodegen $XCODEGEN_VERSION is required (brew install xcodegen)" >&2; return 1; }
   local have; have="$(xcodegen --version | sed -n 's/^Version: *//p')"
   [ "$have" = "$XCODEGEN_VERSION" ] || { echo "xcodegen must be exactly $XCODEGEN_VERSION, found '$have'" >&2; return 1; }
-  xcodegen generate --spec project.yml
+  xcodegen generate --spec project.yml || { echo "xcodegen generate failed" >&2; return 1; }
   if ! git diff --exit-code -- BookBook.xcodeproj; then
     echo "BookBook.xcodeproj differs from project.yml: run 'xcodegen generate' and commit" >&2; return 1
   fi
@@ -56,7 +56,10 @@ if [ "$step" = all ]; then steps=(secrets bootstrap kit spikes xcodeproj app rel
 results=(); failed=0
 for s in "${steps[@]}"; do
   echo "==> test: $s"
-  if "step_$s"; then results+=("ok    $s"); else results+=("FAIL  $s"); failed=1; break; fi
+  # Run each step in a subshell with errexit on. (Calling it from an `if` would turn
+  # errexit off inside the step, so a failing command mid-step could still report ok.)
+  set +e; ( set -e; "step_$s" ); rc=$?; set -e
+  if [ "$rc" -eq 0 ]; then results+=("ok    $s"); else results+=("FAIL  $s"); failed=1; break; fi
 done
 
 echo "==> summary"

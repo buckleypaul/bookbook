@@ -31,9 +31,7 @@ final class PageThumbnailRenderer {
     /// The trim size a page is drawn at: double width for a spread (its boxes are normalized
     /// over both pages, A §4.1).
     static func drawSize(for page: Page, in content: BookContent) -> CGSize {
-        let trim = content.style.pageSetup.trimSize
-        let spread = content.template(for: page)?.kind == .spread
-        return CGSize(width: trim.width * (spread ? 2 : 1), height: trim.height)
+        PageGeometry(setup: content.style.pageSetup, kind: content.template(for: page)?.kind).trimSize
     }
 
     /// The whole page (both halves for a spread), `pixelHeight` tall.

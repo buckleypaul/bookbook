@@ -13,6 +13,10 @@ import SwiftUI
 final class CanvasView: NSView {
     private(set) var content: BookContent?
     private(set) var pageID: PageID?
+    /// `content` with a spread's double-width trim, for `PageRenderer` (A §8.2).
+    private var renderContent: BookContent?
+    /// The page's numbers, drawn on screen as in the PDF (PD §8.2).
+    private(set) var pageNumberMarks: [PageNumberMark] = []
     private var selectedImageBox: BoxID?
     private var imageSource: (any PageImageSource)?
     private var editor: InlineTextEditor?
@@ -25,6 +29,8 @@ final class CanvasView: NSView {
     var onTextChange: (PageID, BoxID, RichText, Bool) -> Void = { _, _, _, _ in }
     /// Ends the document's typing undo step (formatting with no text change, editor closing).
     var onEndTypingStep: () -> Void = {}
+    /// Double-click on a title/author box (bound to the book, PD §8.7).
+    var onOpenBookSettings: () -> Void = {}
     var undoManagerProvider: () -> UndoManager? = { nil }
     /// The window's format bar / Format menu controller; the editor drives it.
     weak var formatting: TextFormatController?
@@ -58,6 +64,9 @@ final class CanvasView: NSView {
         }
         self.content = content
         self.pageID = pageID
+        let page = pageID.flatMap { content.pages[$0] }
+        renderContent = page.map { PageGeometry.drawContent(for: $0, in: content) } ?? content
+        pageNumberMarks = pageID.map { PageNumberMarks(content: content).marks(for: $0) } ?? []
         self.selectedImageBox = selectedImageBox
         self.imageSource = imageSource
 
@@ -83,7 +92,8 @@ final class CanvasView: NSView {
 
     private var page: Page? { pageID.flatMap { content?.pages[$0] } }
 
-    private var geometry: PageGeometry? { content.map { PageGeometry(setup: $0.style.pageSetup) } }
+    /// The page's geometry: double width with a fold for a spread template.
+    var geometry: PageGeometry? { renderContent.map { PageGeometry(setup: $0.style.pageSetup) } }
 
     private var transform: CanvasTransform? {
         guard let geometry else { return nil }
@@ -91,7 +101,7 @@ final class CanvasView: NSView {
     }
 
     /// Every box on the page with its render rect, in layer order.
-    private var boxRects: [(box: Box, rect: CGRect)] {
+    var boxRects: [(box: Box, rect: CGRect)] {
         guard let content, let page, let template = content.template(for: page), let geometry else { return [] }
         return template.boxes.map { ($0, geometry.renderRect(for: $0)) }
     }
@@ -109,7 +119,9 @@ final class CanvasView: NSView {
     func overflowingTextBoxes() -> [(box: Box, rect: CGRect)] {
         guard let content, let page else { return [] }
         return boxRects.filter { box, rect in
-            guard case let .text(style) = box.content, let text = page.text[box.id], !text.paragraphs.isEmpty
+            guard case let .text(style) = box.content,
+                  let text = CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id],
+                  !text.paragraphs.isEmpty
             else { return false }
             let inner = rect.insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
             let size = CGSize(width: max(0, inner.width), height: max(0, inner.height))
@@ -124,7 +136,7 @@ final class CanvasView: NSView {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         ctx.setFillColor(NSColor.underPageBackgroundColor.cgColor)
         ctx.fill(bounds)
-        guard let content, let page, let imageSource, let transform, let geometry else { return }
+        guard let content = renderContent, let page, let imageSource, let transform, let geometry else { return }
         let trim = CGRect(origin: .zero, size: geometry.trimSize)
 
         ctx.saveGState()
@@ -141,10 +153,23 @@ final class CanvasView: NSView {
         ctx.clip(to: trim)
         var options = RenderOptions.screen
         if let editing = editor?.boxID { options.hiddenTextBoxes = [editing] }
+        options.pageNumbers = pageNumberMarks
         var renderer = PageRenderer(images: imageSource)
         renderer.layouts = layoutCache
         renderer.draw(page: page, in: content, into: ctx, options: options)
         ctx.restoreGState()
+
+        if content.template(for: page)?.kind == .spread {
+            // The fold, on screen only.
+            ctx.saveGState()
+            ctx.setStrokeColor(NSColor.separatorColor.cgColor)
+            ctx.setLineWidth(1 / transform.scale)
+            ctx.setLineDash(phase: 0, lengths: [4 / transform.scale, 3 / transform.scale])
+            ctx.move(to: CGPoint(x: geometry.foldX, y: 0))
+            ctx.addLine(to: CGPoint(x: geometry.foldX, y: geometry.trimSize.height))
+            ctx.strokePath()
+            ctx.restoreGState()
+        }
 
         for (box, rect) in overflowingTextBoxes() {
             drawOverflowBadge(box: box, rect: rect, scale: transform.scale, ctx: ctx)
@@ -188,17 +213,21 @@ final class CanvasView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let transform else { return }
         let point = transform.toPage(convert(event.locationInWindow, from: nil))
-        guard let hit = CanvasHitTest.box(at: point, in: boxRects) else {
+        let hit = CanvasHitTest.box(at: point, in: boxRects)
+        switch CanvasHitTest.click(on: hit, clickCount: event.clickCount) {
+        case .deselect:
             endEditing()
             onSelectImageBox(nil)
-            return
-        }
-        switch hit.content {
-        case .image:
+        case let .selectImage(id):
             endEditing()
-            onSelectImageBox(hit.id)
-        case .text:
-            if editor?.boxID != hit.id { beginEditing(hit.id) }
+            onSelectImageBox(id)
+        case let .editText(id):
+            if editor?.boxID != id { beginEditing(id) }
+        case .openBookSettings:
+            endEditing()
+            onOpenBookSettings()
+        case .ignore:
+            endEditing()
         }
     }
 
@@ -206,7 +235,8 @@ final class CanvasView: NSView {
 
     private func beginEditing(_ boxID: BoxID) {
         endEditing()
-        guard let content, let pageID, let (box, _) = textBox(boxID) else { return }
+        // Title/author boxes show the book's fields; they're edited in Book Settings.
+        guard let content, let pageID, let (box, _) = textBox(boxID), !CoverText.isBound(box.role) else { return }
         let editor = InlineTextEditor(
             pageID: pageID, boxID: boxID, text: content.pages[pageID]?.text[boxID] ?? .empty,
             typography: typography(for: box, in: content), formatting: formatting,
@@ -245,6 +275,8 @@ struct PageCanvas: NSViewRepresentable {
     let pageID: PageID?
     let imageSource: ImageCache
     @Binding var selectedImageBox: BoxID?
+    /// Double-click on a title/author box.
+    var onOpenBookSettings: () -> Void = {}
 
     func makeNSView(context: Context) -> CanvasView {
         CanvasView(frame: .zero)
@@ -258,6 +290,7 @@ struct PageCanvas: NSViewRepresentable {
             document.perform(.setRichText(page: page, box: box, text: text, coalescing: coalescing))
         }
         view.onEndTypingStep = { document.endTypingStep() }
+        view.onOpenBookSettings = onOpenBookSettings
         view.formatting = document.formatting
         view.undoManagerProvider = { [weak undoManager] in undoManager }
         view.update(content: content, pageID: pageID, selectedImageBox: selectedImageBox, imageSource: imageSource,

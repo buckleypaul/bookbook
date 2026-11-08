@@ -20,7 +20,8 @@ struct NewBookFromStoryTests {
         let app = AppModel(providers: [:], libraryRoot: dir.appending(path: "Library", directoryHint: .isDirectory),
                            keychainService: "app.bookbook.tests-\(UUID())",
                            indexCacheURL: dir.appending(path: "library-index.json"), userDefaults: defaults,
-                           thumbnails: ThumbnailCache(root: dir.appending(path: "Caches")))
+                           thumbnails: ThumbnailCache(root: dir.appending(path: "Caches")),
+                           appSupport: AppSupportFiles(folderURL: dir.appending(path: "AppSupport")))
         await app.start()
 
         let plain = try await app.createBook(title: "Plain")

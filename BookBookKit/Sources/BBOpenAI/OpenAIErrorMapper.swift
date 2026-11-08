@@ -16,6 +16,9 @@ enum OpenAIErrorMapper {
         let message = (error?["message"] as? String)?.lowercased() ?? ""
         let raw = raw(response, code: code, key: key)
 
+        // Billing codes win over the status: OpenAI sends `billing_hard_limit_reached` as a 400.
+        if response.status != 401, response.status != 403, let code, isBillingCode(code) { return .billing(raw) }
+
         switch response.status {
         case 401:
             return .invalidKey(raw)
@@ -27,6 +30,9 @@ enum OpenAIErrorMapper {
             if haystack.contains("verif") || haystack.contains("organization") {
                 return .verificationRequired(raw)
             }
+            // An unclassified 403 stays `.unknown(raw)`: guessing `.invalidKey` or
+            // `.verificationRequired` would send the user to the wrong fix, and the raw status and
+            // body are kept for Details. Follow-up: classify further 403 codes as they are seen.
             return .unknown(raw)
         case 404:
             return .modelUnavailable(raw)
@@ -55,6 +61,17 @@ enum OpenAIErrorMapper {
             return .transient(raw)
         default:
             return code == "server_is_overloaded" ? .transient(raw) : .unknown(raw)
+        }
+    }
+
+    /// Transport failures. `.transport` (connection dropped mid-flight, unknown URLError) is
+    /// `.transient(nil)`: retryable, and the queue treats it as a possibly-billed estimate.
+    static func map(_ error: HTTPClientError) -> ProviderError {
+        switch error {
+        case .offline: .offline
+        case .timedOut: .timeout
+        case .cancelled: .cancelled
+        case .transport: .transient(nil)
         }
     }
 

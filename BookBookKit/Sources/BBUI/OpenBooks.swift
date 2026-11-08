@@ -35,6 +35,8 @@ public final class OpenBooks {
     @ObservationIgnored public var resolveURL: @MainActor (BookID) async -> URL?
     /// Called when a finished picture couldn't be written into its book.
     @ObservationIgnored public var onDeliveryProblem: (MessageID, String) -> Void = { _, _ in }
+    /// Called when a delivery was written (clears an earlier problem reported for the message).
+    @ObservationIgnored public var onDelivered: (MessageID) -> Void = { _ in }
 
     private static let log = Logger(subsystem: "app.bookbook", category: "OpenBooks")
 
@@ -214,56 +216,116 @@ public final class OpenBooks {
 
     /// Writes a finished generation into its book, open or closed. The image file is always
     /// written before the session JSON that refers to it (A §5.2).
-    public func deliver(_ delivery: GenerationDelivery, now: @escaping @Sendable () -> Date) async {
+    ///
+    /// - `.bookUnavailable`: locked by another process, open read-only here, or the image or
+    ///   session couldn't be written. Nothing was applied; the queue keeps it and retries.
+    /// - `.bookGone`: deleted, in the Trash, or unreadable for good (corrupt, newer schema).
+    @discardableResult
+    public func deliver(_ delivery: GenerationDelivery, now: @escaping @Sendable () -> Date) async -> DeliveryResult {
         let id = delivery.item.bookID
-        await serialized(id) { [self] in
+        let result: DeliveryResult = await serialized(id) { [self] in
             if let open = documents[id], !open.isClosed {
+                guard open.isEditable else {
+                    report(delivery, StoreErrorText.message(for: StoreError.readOnly))
+                    return .bookUnavailable
+                }
                 let ref = await storeImage(of: delivery, in: open.store)
+                if case .success = delivery.outcome, ref == nil { return .bookUnavailable }
                 // Re-resolve by ID after the await (the close is serialized behind us, but be safe).
                 if let document = documents[id], !document.isClosed {
                     document.performIrreversible { content in
                         BookMutations.applyDelivery(delivery, storedImage: ref, to: &content, now: now())
                     }
-                    return
+                    return .delivered
                 }
             }
-            await deliverToClosedBook(delivery, now: now)
+            return await deliverToClosedBook(delivery, now: now)
         }
+        if result == .delivered { onDelivered(delivery.item.messageID) }
+        return result
     }
 
-    private func deliverToClosedBook(_ delivery: GenerationDelivery, now: @Sendable () -> Date) async {
+    private func deliverToClosedBook(_ delivery: GenerationDelivery, now: @Sendable () -> Date) async -> DeliveryResult {
         guard let url = await packageURL(for: delivery.item.bookID) else {
             Self.log.notice("Dropped a delivery: the book is no longer in the library")
             report(delivery, "the book is no longer in the library.")
-            return
+            return .bookGone
         }
         let store = BookStore(packageURL: url)
         // Take the lock before `load()`, which may recover the journal, migrate and sweep. If
-        // another process has the book, nothing is written here and the delivery is reported.
+        // another process has the book, nothing is written here; the queue retries later.
         do {
             if case let .heldByOther(owner) = try await store.acquireLock() { throw StoreError.locked(owner) }
         } catch {
             Self.log.error("Couldn't lock a closed book for a delivery: \(String(describing: error), privacy: .public)")
             report(delivery, StoreErrorText.message(for: error))
-            return
+            return Self.result(for: error)
         }
-        await writeDelivery(delivery, to: store, now: now)
+        let result = await writeDelivery(delivery, to: store, now: now)
         await store.releaseLock()
+        return result
     }
 
-    private func writeDelivery(_ delivery: GenerationDelivery, to store: BookStore, now: @Sendable () -> Date) async {
+    private func writeDelivery(_ delivery: GenerationDelivery, to store: BookStore,
+                               now: @Sendable () -> Date) async -> DeliveryResult {
         do {
             var content = try await store.load()
             let ref = await storeImage(of: delivery, in: store)
+            if case .success = delivery.outcome, ref == nil { return .bookUnavailable }
             var dirty = BookMutations.applyDelivery(delivery, storedImage: ref, to: &content, now: now())
-            guard !dirty.isEmpty else { return }
+            guard !dirty.isEmpty else { return .delivered }
             content.book.modifiedAt = now()
             dirty.book = true
             try await store.save(content, dirty: dirty)
+            return .delivered
         } catch {
             Self.log.error("Couldn't write a delivery to a closed book: \(String(describing: error), privacy: .public)")
             report(delivery, StoreErrorText.message(for: error))
+            return Self.result(for: error)
         }
+    }
+
+    /// Locks, read-only and I/O problems may clear up (retry); a missing, corrupt or newer
+    /// book won't (drop).
+    private static func result(for error: any Error) -> DeliveryResult {
+        switch error as? StoreError {
+        case .notFound, .corrupt, .schemaTooNew: .bookGone
+        case .locked, .readOnly, .io, .keychain, nil: .bookUnavailable
+        }
+    }
+
+    // MARK: Cost ledger (A §7.10)
+
+    /// Appends one line to the book's `costs.jsonl`, open or closed, one at a time with the
+    /// book's other operations. The append is a single `O_APPEND` write, so it doesn't take the
+    /// book lock: a book open in another process still gets its line. Dropped (logged) if the
+    /// book is gone.
+    public func recordCost(_ record: CostRecord, in id: BookID) async {
+        await serialized(id) { [self] in
+            guard let url = await packageURL(for: id) else {
+                Self.log.notice("Dropped a ledger line: the book is no longer in the library")
+                return
+            }
+            let ledger = CostLedger(packageURL: url)
+            let failure: StoreError? = await Task.detached {
+                do throws(StoreError) {
+                    try ledger.append(record)
+                    return nil
+                } catch {
+                    return error
+                }
+            }.value
+            if let failure {
+                Self.log.error("Couldn't append to the cost ledger: \(String(describing: failure), privacy: .public)")
+            }
+        }
+    }
+
+    /// Every ledger line of a book, read off the main actor. Empty if the book or file is gone.
+    public func costRecords(for id: BookID) async -> [CostRecord] {
+        guard let url = await packageURL(for: id) else { return [] }
+        let ledger = CostLedger(packageURL: url)
+        return await Task.detached { (try? ledger.records(CostRecord.self)) ?? [] }.value
     }
 
     /// Stores the image of a successful delivery; nil for failures or if the write failed (the

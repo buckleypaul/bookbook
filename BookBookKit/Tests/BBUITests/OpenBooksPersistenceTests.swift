@@ -109,10 +109,12 @@ struct OpenBooksPersistenceTests {
         defer { s.tearDown() }
         let cache = s.root.deletingLastPathComponent().appending(path: "bbui-index-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: cache) }
+        defer { try? FileManager.default.removeItem(at: cache.deletingPathExtension()) }
         s.defaults.set([s.entries[1].id, BookID(), s.entries[0].id].map(\.rawValue.uuidString),
                        forKey: OpenBooks.openBookIDsKey)
         let app = AppModel(providers: [:], libraryRoot: s.root, keychainService: "app.bookbook.tests-\(UUID())",
-                           indexCacheURL: cache, userDefaults: s.defaults)
+                           indexCacheURL: cache, userDefaults: s.defaults,
+                           appSupport: AppSupportFiles(folderURL: cache.deletingPathExtension()))
         var opened: [BookID] = []
         await app.reopenBooks { opened.append($0) }
         #expect(opened == s.ids(1, 0))

@@ -50,23 +50,98 @@ actor FakeProvider: ImageProvider {
 actor FakeHost: GenerationHost {
     var content: BookContent?
     private(set) var deliveries: [GenerationDelivery] = []
+    private(set) var costs: [CostRecord] = []
+    /// "content", "cost:<status>", "deliver:<success|failure>", in call order.
+    private(set) var events: [String] = []
+    /// Scripted results for successive `deliver` calls (then `.delivered`).
+    private var deliveryResults: [DeliveryResult] = []
+    private(set) var deliveryAttempts = 0
 
     var images: [ImageRef: Data] = [:]
     private(set) var imageReads: [ImageRef] = []
 
-    init(content: BookContent?, images: [ImageRef: Data] = [:]) {
+    init(content: BookContent?, images: [ImageRef: Data] = [:], deliveryResults: [DeliveryResult] = []) {
         self.content = content
         self.images = images
+        self.deliveryResults = deliveryResults
     }
 
-    func content(for bookID: BookID) async -> BookContent? { content }
+    func content(for bookID: BookID) async -> BookContent? {
+        events.append("content")
+        return content
+    }
+    func setContent(_ content: BookContent?) { self.content = content }
     func imageData(for ref: ImageRef, in bookID: BookID) async -> Data? {
         imageReads.append(ref)
         return images[ref]
     }
     func reads() -> [ImageRef] { imageReads }
-    func deliver(_ delivery: GenerationDelivery) async { deliveries.append(delivery) }
+    func deliver(_ delivery: GenerationDelivery) async -> DeliveryResult {
+        deliveryAttempts += 1
+        let result = deliveryResults.isEmpty ? .delivered : deliveryResults.removeFirst()
+        if result == .delivered {
+            deliveries.append(delivery)
+            if case .success = delivery.outcome { events.append("deliver:success") } else { events.append("deliver:failure") }
+        }
+        return result
+    }
+    func recordCost(_ record: CostRecord, in bookID: BookID) async {
+        costs.append(record)
+        events.append("cost:\(record.status.rawValue)")
+    }
     func delivered() -> [GenerationDelivery] { deliveries }
+    func recorded() -> [CostRecord] { costs }
+    func log() -> [String] { events }
+    func attempts() -> Int { deliveryAttempts }
+}
+
+/// Prices by pricing model ID; models not listed are unpriced.
+struct FakePricing: CostPricing {
+    var prices: [String: Decimal] = ["gpt-image-2.5-sunburst": Decimal(string: "0.012")!]
+    var priceListAsOf: String? = "2026-11-07"
+    func actualCost(of usage: TokenUsage, provider: ProviderID, model: String) -> Decimal? { prices[model] }
+}
+
+actor FakePersistence: QueuePersistence {
+    private let initial: PersistedQueue?
+    private(set) var saves: [PersistedQueue] = []
+    init(initial: PersistedQueue? = nil) { self.initial = initial }
+    func load() async -> PersistedQueue? { initial }
+    func save(_ queue: PersistedQueue) async { saves.append(queue) }
+    func last() -> PersistedQueue? { saves.last }
+}
+
+/// Injected `sleep`: records every duration. Durations at or above `holdFrom` wait for
+/// `releaseAll()` (or cancellation); shorter ones return at once.
+actor FakeSleep {
+    private(set) var durations: [Duration] = []
+    private let holdFrom: Duration?
+    private var waiters: [UUID: CheckedContinuation<Void, any Error>] = [:]
+
+    init(holdFrom: Duration? = nil) { self.holdFrom = holdFrom }
+
+    func sleep(_ duration: Duration) async throws {
+        durations.append(duration)
+        guard let holdFrom, duration >= holdFrom else { return }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                if Task.isCancelled { continuation.resume(throwing: CancellationError()) } else { waiters[id] = continuation }
+            }
+        } onCancel: {
+            Task { await self.cancel(id) }
+        }
+    }
+
+    private func cancel(_ id: UUID) { waiters.removeValue(forKey: id)?.resume(throwing: CancellationError()) }
+    func releaseAll() {
+        for continuation in waiters.values { continuation.resume() }
+        waiters = [:]
+    }
+    func heldCount() -> Int { waiters.count }
+    func recorded() -> [Duration] { durations }
+
+    nonisolated var closure: @Sendable (Duration) async throws -> Void { { try await self.sleep($0) } }
 }
 
 func okResult() -> ImageResult {
@@ -94,7 +169,7 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
     func makeQueue(_ provider: FakeProvider, host: FakeHost? = nil) throws -> (GenerationQueue, FakeHost) {
         let host = host ?? FakeHost(content: book.content)
         let queue = GenerationQueue(providers: [.openai: provider], catalog: try ModelCatalog.bundled(), host: host,
-                                    now: { Date(timeIntervalSince1970: 100) })
+                                    pricing: FakePricing(), now: { Date(timeIntervalSince1970: 100) })
         return (queue, host)
     }
 
@@ -141,7 +216,7 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
         }
         await eventually("settled") { await queue.snapshot().entries.count == 1 }
         let snapshot = await queue.snapshot()
-        #expect(snapshot.entry(for: first.id)?.state == .failed(.refused(stage: .input, categories: ["x"], nil)))
+        #expect(snapshot.entry(for: first.id)?.failure?.error == .refused(stage: .input, categories: ["x"], nil))
         #expect(snapshot.entry(for: second.id) == nil)
         // Failed entries can be removed.
         await queue.remove(first.id)
@@ -158,8 +233,8 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
         try await Task.sleep(for: .milliseconds(50))
         #expect(await provider.startedPrompts().count == 1)
         let running = await queue.snapshot()
-        #expect(running.entry(for: first.id)?.state == .running(startedAt: Date(timeIntervalSince1970: 100), progress: nil)
-                || running.entry(for: first.id)?.state == .running(startedAt: Date(timeIntervalSince1970: 100), progress: .sent))
+        #expect(running.entry(for: first.id)?.state == .running(startedAt: Date(timeIntervalSince1970: 100), progress: nil, attempt: 1)
+                || running.entry(for: first.id)?.state == .running(startedAt: Date(timeIntervalSince1970: 100), progress: .sent, attempt: 1))
         #expect(running.entry(for: second.id)?.state == .waiting)
         await queue.remove(first.id)
         #expect(await queue.snapshot().entries.count == 2)
@@ -203,7 +278,7 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
             Issue.record("expected unknown")
             return
         }
-        #expect(await queue.snapshot().entry(for: item.id)?.state == .failed(.unknown(nil)))
+        #expect(await queue.snapshot().entry(for: item.id)?.failure?.error == .unknown(nil))
 
         var badModel = makeItem()
         badModel.intent.model = "nope"
@@ -250,7 +325,8 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
         images[style] = Data("style".utf8)
         let host = FakeHost(content: content, images: images)
         let provider = FakeProvider(outcomes: [.success(okResult())], gated: false)
-        let queue = GenerationQueue(providers: [.openai: provider], catalog: try ModelCatalog.bundled(), host: host)
+        let queue = GenerationQueue(providers: [.openai: provider], catalog: try ModelCatalog.bundled(), host: host,
+                                    pricing: FakePricing())
         // The slot's box ID has moved; the message still finds the session.
         let item = QueueItem(bookID: content.book.id, target: .pageBox(walk.book.pageID, walk.book.imageBox),
                              messageID: walk.pendingMessage, intent: walk.refine(1))
@@ -276,7 +352,8 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
         let walk = RefinementBook.make()
         let host = FakeHost(content: walk.book.content, images: [:])
         let provider = FakeProvider(outcomes: [.success(okResult())], gated: false)
-        let queue = GenerationQueue(providers: [.openai: provider], catalog: try ModelCatalog.bundled(), host: host)
+        let queue = GenerationQueue(providers: [.openai: provider], catalog: try ModelCatalog.bundled(), host: host,
+                                    pricing: FakePricing())
         let item = QueueItem(bookID: walk.book.content.book.id, target: walk.book.target,
                              messageID: walk.pendingMessage, intent: walk.refine(0))
         await queue.enqueue(item)
@@ -286,5 +363,12 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
             return
         }
         #expect(await provider.receivedRequests().isEmpty)
+    }
+}
+
+extension QueueEntry {
+    /// The failure, if this entry has failed.
+    var failure: QueueFailure? {
+        if case let .failed(failure) = state { failure } else { nil }
     }
 }

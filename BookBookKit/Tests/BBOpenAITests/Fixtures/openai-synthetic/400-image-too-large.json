@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "image_too_large",
+    "message": "Image is too large.",
+    "param": "image[]",
+    "type": "image_generation_user_error"
+  }
+}

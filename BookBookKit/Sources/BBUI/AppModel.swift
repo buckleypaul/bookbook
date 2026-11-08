@@ -18,12 +18,33 @@ public final class AppModel {
     @ObservationIgnored public private(set) var library: Library
     @ObservationIgnored public private(set) var index: LibraryIndex
     @ObservationIgnored public let keychain: KeychainStore
-    @ObservationIgnored public let catalog: ModelCatalog
+    /// The effective catalog: the bundled one plus the custom model IDs in `preferences`
+    /// (A §7.1 item 3). Pushed to the queue whenever it changes.
+    public private(set) var catalog: ModelCatalog
+    /// The catalog as shipped (custom models copy a family from here).
+    @ObservationIgnored public let bundledCatalog: ModelCatalog
     @ObservationIgnored public let queue: GenerationQueue
     @ObservationIgnored public let writer: BookWriter
     @ObservationIgnored public let thumbnails: ThumbnailCache
     public let openBooks: OpenBooks
-    public let defaults: GenerationDefaults
+    /// What a Generate press uses: the Settings default model and quality (`preferences`).
+    public var defaults: GenerationDefaults {
+        GenerationDefaults(provider: .openai, model: preferences.defaultImageModelID,
+                           quality: preferences.defaultQuality)
+    }
+    /// Phase 9: default model/quality, threshold and custom models (Settings).
+    public let preferences: AppPreferences
+    /// Phase 9: the effective price list (bundled or the user's copy).
+    public let prices: PriceBook
+    /// Phase 9: app-level files (`queue.json`, `pricelist.json`). Tests pass a temp folder.
+    @ObservationIgnored public let appSupport: AppSupportFiles
+    /// Phase 9: list-models availability per model ID, after Test connection or opening Settings.
+    public internal(set) var modelAvailability: [String: ModelAvailability] = [:]
+    /// Phase 9: false while `NWPathMonitor` reports no network ("Offline").
+    public internal(set) var isOnline = true
+    /// Phase 9: the chosen default model disappeared from the provider's list; Settings and the
+    /// session panel offer to switch (to the catalog successor when there is one).
+    public internal(set) var missingDefaultModel: ModelAvailability?
 
     /// The library folder in use (Settings ▸ General shows it).
     public private(set) var libraryRoot: URL
@@ -46,8 +67,16 @@ public final class AppModel {
     public private(set) var windowCloseRequests: Set<BookID> = []
 
     @ObservationIgnored private var pendingThisLaunch: Set<QueueItemID> = []
-    @ObservationIgnored private var enqueueChain: Task<Void, Never>?
+    /// Every call into the queue that can change it, in order. Starts with `restore()`, so
+    /// nothing is enqueued (and no save can overwrite `queue.json`) before the restore is done.
+    @ObservationIgnored private var queueChain: Task<Void, Never>?
     @ObservationIgnored private var subscription: Task<Void, Never>?
+    @ObservationIgnored private var networkTask: Task<Void, Never>?
+    @ObservationIgnored let listers: [ProviderID: any ModelLister]
+    /// Model IDs from the last successful list-models call, per provider.
+    @ObservationIgnored var listedModels: [ProviderID: Set<String>] = [:]
+    /// A list-models call in flight, shared by concurrent callers (startup check and Settings).
+    @ObservationIgnored var connectionTests: [ProviderID: Task<ConnectionTestResult, Never>] = [:]
     @ObservationIgnored private var startTask: Task<Void, Never>?
     @ObservationIgnored private var watchTask: Task<Void, Never>?
     @ObservationIgnored private var reopenDone = false
@@ -60,14 +89,25 @@ public final class AppModel {
     ///   - catalog: nil loads the bundled catalog.
     ///   - indexCacheURL: where `LibraryIndex` caches the library (tests pass a temp file).
     ///   - userDefaults: holds `openBookIDs` and `libraryPath` (tests pass a suite).
+    ///   - appSupport: where `queue.json` and `pricelist.json` live (tests pass a temp folder).
+    ///   - listers: list-models clients for Test connection and model availability.
+    ///   - network: online/offline updates (the app passes `NetworkMonitor`); nil = always online.
+    ///   - priceList: nil uses the bundled price list (or the user's copy in `appSupport`).
     public init(providers: [ProviderID: any ImageProvider], catalog: ModelCatalog? = nil,
                 libraryRoot: URL = Library.defaultRoot, keychainService: String = KeychainStore.appService,
                 indexCacheURL: URL = LibraryIndex.defaultCacheURL, userDefaults: UserDefaults = .standard,
-                thumbnails: ThumbnailCache = ThumbnailCache(), now: @escaping @Sendable () -> Date = { Date() }) {
+                thumbnails: ThumbnailCache = ThumbnailCache(), appSupport: AppSupportFiles = AppSupportFiles(),
+                listers: [ProviderID: any ModelLister] = [:], network: (any NetworkStatusSource)? = nil,
+                priceList: PriceList? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
         let library = Library(root: libraryRoot)
-        let catalog = catalog ?? ((try? ModelCatalog.bundled()) ?? ModelCatalog(asOf: "", imageModels: []))
+        let bundledCatalog = catalog ?? ((try? ModelCatalog.bundled()) ?? ModelCatalog(asOf: "", imageModels: []))
         let openBooks = OpenBooks(library: library, defaults: userDefaults)
         let writer = BookWriter(openBooks: openBooks, now: now)
+        let preferences = AppPreferences(
+            defaults: userDefaults,
+            fallbackModelID: bundledCatalog.defaultImageModel(for: .openai)?.id ?? GenerationDefaults.fallbackModel)
+        let prices = PriceBook(files: appSupport, bundled: priceList)
+        let effective = bundledCatalog.adding(preferences.customModels)
         self.library = library
         self.index = LibraryIndex(root: libraryRoot, cacheURL: indexCacheURL)
         self.libraryRoot = libraryRoot
@@ -75,16 +115,27 @@ public final class AppModel {
         self.userDefaults = userDefaults
         self.thumbnails = thumbnails
         self.keychain = KeychainStore(service: keychainService)
-        self.catalog = catalog
+        self.bundledCatalog = bundledCatalog
+        self.catalog = effective
         self.openBooks = openBooks
         self.writer = writer
-        self.queue = GenerationQueue(providers: providers, catalog: catalog, host: writer, now: now)
-        self.defaults = GenerationDefaults(
-            model: catalog.defaultImageModel(for: .openai)?.id ?? GenerationDefaults.fallbackModel)
+        self.queue = GenerationQueue(providers: providers, catalog: effective, host: writer, pricing: prices.calculator,
+                                     persistence: QueueFileStore(files: appSupport), now: now)
+        self.appSupport = appSupport
+        self.preferences = preferences
+        self.prices = prices
+        self.listers = listers
         self.now = now
         refreshKeyStatus()
         openBooks.onDeliveryProblem = { [weak self] messageID, text in self?.deliveryFailures[messageID] = text }
+        openBooks.onDelivered = { [weak self] messageID in self?.deliveryFailures[messageID] = nil }
         openBooks.resolveURL = { [weak self] id in await self?.resolveURL(id) }
+        preferences.onCustomModelsChange = { [weak self] in self?.rebuildCatalog() }
+        preferences.onDefaultModelChange = { [weak self] in self?.refreshAvailability() }
+        prices.onChange = { [weak self] list in
+            let pricing = CostCalculator(priceList: list)
+            self?.queueOperation { await $0.setPricing(pricing) }
+        }
 
         let queue = queue
         subscription = Task { [weak self] in
@@ -93,6 +144,55 @@ public final class AppModel {
                 self.queueSnapshot = snapshot
             }
         }
+        // The restore heads the chain: enqueues, pauses and online changes all wait for it.
+        queueChain = Task { await queue.restore() }
+        if let network {
+            networkTask = Task { [weak self] in
+                for await online in network.statusUpdates() {
+                    guard let self else { return }
+                    self.setOnline(online)
+                }
+            }
+        }
+        checkModelsQuietly()
+    }
+
+    // MARK: Queue plumbing
+
+    /// Runs `operation` on the queue after every earlier queue operation (the first is the
+    /// restore), so calls arrive in order and never before `queue.json` is loaded.
+    func queueOperation(_ operation: @escaping @Sendable (GenerationQueue) async -> Void) {
+        let previous = queueChain, queue = queue
+        queueChain = Task {
+            await previous?.value
+            await operation(queue)
+        }
+    }
+
+    /// Waits for every queue operation issued so far (tests, and callers that need the
+    /// restored queue).
+    public func queueOperationsSettled() async {
+        await queueChain?.value
+    }
+
+    private func setOnline(_ online: Bool) {
+        if isOnline != online { isOnline = online }
+        queueOperation { await $0.setOnline(online) }
+    }
+
+    /// Bundled plus custom models; pushed to the queue (used from the next item that starts).
+    private func rebuildCatalog() {
+        catalog = bundledCatalog.adding(preferences.customModels)
+        let catalog = catalog
+        queueOperation { await $0.setCatalog(catalog) }
+        refreshAvailability()
+    }
+
+    /// Lists models in the background when a key exists, so availability is known when
+    /// Settings opens. Failures are silent (Settings' Test connection shows them).
+    private func checkModelsQuietly() {
+        guard hasOpenAIKey, listers[.openai] != nil else { return }
+        Task { [weak self] in _ = await self?.testConnection(.openai) }
     }
 
     // MARK: Library index (A §5.4)
@@ -307,12 +407,18 @@ public final class AppModel {
         guard let key = APIKey(text) else { return false }
         defer { refreshKeyStatus() }
         try keychain.save(key, for: .openai)
+        refreshKeyStatus()
+        listedModels[.openai] = nil
+        refreshAvailability()
+        checkModelsQuietly()
         return true
     }
 
     public func removeOpenAIKey() throws(StoreError) {
         defer { refreshKeyStatus() }
         try keychain.delete(.openai)
+        listedModels[.openai] = nil
+        refreshAvailability()
     }
 
     // MARK: Generation
@@ -330,7 +436,7 @@ public final class AppModel {
         settings.includeStoryText = includeStoryText
         let (message, item) = BookMutations.makeGeneration(prompt: text, refines: refines, defaults: settings,
                                                            bookID: document.id, page: page, box: box, now: now())
-        return enqueue(message, item, page: page, box: box, in: document)
+        return enqueue(message, prepared(item, content: document.content), page: page, box: box, in: document)
     }
 
     /// "Regenerate with same settings": a new pending message and queue item built from the
@@ -341,7 +447,40 @@ public final class AppModel {
         guard let intent = version.provenance?.intent else { return false }
         let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, page: page, box: box,
                                                            now: now())
-        return enqueue(message, item, page: page, box: box, in: document)
+        return enqueue(message, prepared(item, content: document.content), page: page, box: box, in: document)
+    }
+
+    /// Fills in the item's estimate, display labels and enqueue time (A §7.9, §7.10).
+    func prepared(_ item: QueueItem, content: BookContent) -> QueueItem {
+        var item = item
+        item.estimate = estimate(item.intent, target: item.target, content: content)
+        if case let .pageBox(page, box) = item.target {
+            item.display = DraftAllPlanner.display(page: page, box: box, in: content)
+        }
+        item.enqueuedAt = now()
+        return item
+    }
+
+    /// `CostEstimator` on the effective catalog and the current price list; `.unknown` if the
+    /// model or target can't be resolved or the model has no price entry.
+    func estimate(_ intent: GenerationIntent, target: GenerationTarget, content: BookContent) -> CostEstimate {
+        guard let input = CostEstimator.estimateInput(intent: intent, target: target, content: content,
+                                                      catalog: catalog) else { return .unknown }
+        return CostEstimator.estimate(input, priceList: prices.current)
+    }
+
+    /// Whether a session message still has a live request (waiting, running or retrying).
+    func isPending(_ message: Message) -> Bool {
+        guard let id = message.queueItemID else { return false }
+        if let entry = queueSnapshot.entry(for: id) {
+            if case .failed = entry.state { return false }
+            return true
+        }
+        return pendingThisLaunch.contains(id)
+    }
+
+    func notePending(_ ids: some Sequence<QueueItemID>) {
+        pendingThisLaunch.formUnion(ids)
     }
 
     private func enqueue(_ message: Message, _ item: QueueItem, page: PageID, box: BoxID,
@@ -354,12 +493,8 @@ public final class AppModel {
         }
         guard appended else { return false }
         pendingThisLaunch.insert(item.id)
-        let previous = enqueueChain, queue = queue
-        // Chained so presses reach the queue in order.
-        enqueueChain = Task {
-            await previous?.value
-            await queue.enqueue(item)
-        }
+        // Chained (after the restore) so presses reach the queue in order.
+        queueOperation { await $0.enqueue([item], position: .end) }
         return true
     }
 

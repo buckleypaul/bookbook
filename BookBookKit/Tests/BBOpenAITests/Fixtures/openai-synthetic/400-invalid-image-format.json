@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_image_format",
+    "message": "Invalid file 'image[]': unsupported image format.",
+    "param": "image[]",
+    "type": "image_generation_user_error"
+  }
+}

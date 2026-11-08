@@ -56,4 +56,59 @@ import Testing
         """
         #expect(throws: ModelCatalog.CatalogError.self) { try ModelCatalog(data: Data(broken.utf8)) }
     }
+
+    // MARK: Phase 9 additions
+
+    private func model(_ id: String, status: ModelStatus = .current, successor: String? = nil) throws -> CatalogModel {
+        var m = try #require(ModelCatalog.bundled().imageModels.first)
+        m.id = id
+        m.status = status
+        m.successor = successor
+        return m
+    }
+
+    @Test func customModelsCopyTheFamily() throws {
+        let base = try ModelCatalog.bundled()
+        let family = try #require(base.imageModels.first)
+        let good = CustomModelSpec(provider: .openai, id: "gpt-image-9", copiesFrom: family.id)
+        let bad = CustomModelSpec(provider: .openai, id: "x", copiesFrom: "nope")
+        let (catalog, skipped) = base.addingReporting([good, bad])
+        #expect(skipped == [bad])
+        let custom = try #require(catalog.imageModel(provider: .openai, id: "gpt-image-9"))
+        #expect(custom.displayName == "gpt-image-9 (custom)")
+        #expect(custom.copiesFrom == family.id && custom.pricingModelID == family.id)
+        #expect(custom.image == family.image)
+        #expect(base.adding([good, bad]).imageModels.count == base.imageModels.count + 1)
+        // A custom model can't be a family for another.
+        let chained = catalog.adding([CustomModelSpec(provider: .openai, id: "y", copiesFrom: "gpt-image-9")])
+        #expect(chained.imageModel(provider: .openai, id: "y") == nil)
+    }
+
+    @Test func resolveFollowsSuccessorsAndGuardsLoops() throws {
+        let a = try model("a", status: .retired, successor: "b")
+        let b = try model("b", status: .retired, successor: "c")
+        let c = try model("c")
+        let loopX = try model("x", status: .retired, successor: "y")
+        let loopY = try model("y", status: .retired, successor: "x")
+        let catalog = ModelCatalog(asOf: "t", imageModels: [a, b, c, loopX, loopY])
+        #expect(catalog.resolve(provider: .openai, id: "a")?.id == "c")
+        #expect(catalog.resolve(provider: .openai, id: "c")?.id == "c")
+        #expect(catalog.resolve(provider: .openai, id: "nope") == nil)
+        #expect(catalog.resolve(provider: .openai, id: "x") != nil)
+        #expect(catalog.resolve(provider: .gemini, id: "a") == nil)
+    }
+
+    @Test func availabilityAndProviderFilter() throws {
+        let m = try model("a", successor: "b")
+        let catalog = ModelCatalog(asOf: "t", imageModels: [m])
+        #expect(catalog.imageModels(for: .openai).count == 1 && catalog.imageModels(for: .gemini).isEmpty)
+        #expect(catalog.availability(of: m, listed: nil) == .unknown)
+        #expect(catalog.availability(of: m, listed: ["a"]) == .available)
+        #expect(catalog.availability(of: m, listed: ["z"]) == .unavailable(successor: "b"))
+        var custom = m
+        custom.id = "mine"
+        custom.copiesFrom = "a"
+        #expect(catalog.availability(of: custom, listed: ["a"]) == .unavailable(successor: "b"))
+        #expect(catalog.availability(of: custom, listed: ["mine"]) == .available)
+    }
 }

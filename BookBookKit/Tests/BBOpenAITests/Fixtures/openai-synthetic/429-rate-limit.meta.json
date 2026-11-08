@@ -1,0 +1,8 @@
+{
+  "durationMs": 100,
+  "headers": {
+    "content-type": "application/json",
+    "retry-after": "7"
+  },
+  "status": 429
+}

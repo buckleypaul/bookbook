@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": null,
+    "message": "Gateway timeout",
+    "param": null,
+    "type": "server_error"
+  }
+}

@@ -19,8 +19,15 @@ public struct BookWriter: GenerationHost {
         await openBooks.content(for: bookID)
     }
 
-    public func deliver(_ delivery: GenerationDelivery) async {
+    /// `.bookUnavailable` when the book is locked by another process or read-only here (the
+    /// queue retries), `.bookGone` when it's deleted or in the Trash.
+    public func deliver(_ delivery: GenerationDelivery) async -> DeliveryResult {
         await openBooks.deliver(delivery, now: now)
+    }
+
+    /// Appends to the book's `costs.jsonl`, open or closed (A §7.10).
+    public func recordCost(_ record: CostRecord, in bookID: BookID) async {
+        await openBooks.recordCost(record, in: bookID)
     }
 
     /// Image files are immutable and content-addressed, so they're read without the book lock.

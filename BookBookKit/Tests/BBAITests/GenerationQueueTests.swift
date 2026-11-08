@@ -20,8 +20,12 @@ actor FakeProvider: ImageProvider {
     func release(_ count: Int = 1) { released += count }
     func startedPrompts() -> [String] { started }
 
-    private func begin(_ prompt: String) -> Result<ImageResult, ProviderError> {
-        started.append(prompt)
+    private(set) var requests: [ImageRequest] = []
+    func receivedRequests() -> [ImageRequest] { requests }
+
+    private func begin(_ request: ImageRequest) -> Result<ImageResult, ProviderError> {
+        requests.append(request)
+        started.append(request.instruction.rendered)
         return outcomes.isEmpty ? .failure(.unknown(nil)) : outcomes.removeFirst()
     }
 
@@ -29,7 +33,7 @@ actor FakeProvider: ImageProvider {
 
     nonisolated func generate(_ request: ImageRequest, progress: @escaping @Sendable (GenerationProgress) -> Void)
         async throws(ProviderError) -> ImageResult {
-        let outcome = await begin(request.instruction.rendered)
+        let outcome = await begin(request)
         let index = await started.count - 1
         progress(.sent)
         if gated {
@@ -47,9 +51,20 @@ actor FakeHost: GenerationHost {
     var content: BookContent?
     private(set) var deliveries: [GenerationDelivery] = []
 
-    init(content: BookContent?) { self.content = content }
+    var images: [ImageRef: Data] = [:]
+    private(set) var imageReads: [ImageRef] = []
+
+    init(content: BookContent?, images: [ImageRef: Data] = [:]) {
+        self.content = content
+        self.images = images
+    }
 
     func content(for bookID: BookID) async -> BookContent? { content }
+    func imageData(for ref: ImageRef, in bookID: BookID) async -> Data? {
+        imageReads.append(ref)
+        return images[ref]
+    }
+    func reads() -> [ImageRef] { imageReads }
     func deliver(_ delivery: GenerationDelivery) async { deliveries.append(delivery) }
     func delivered() -> [GenerationDelivery] { deliveries }
 }
@@ -224,5 +239,52 @@ func eventually(_ message: Comment = "condition", _ condition: @Sendable () asyn
         // A second subscriber gets its own stream starting from the current (empty) snapshot.
         var other = await queue.subscribe().makeAsyncIterator()
         #expect(try #require(await other.next()).entries.isEmpty)
+    }
+
+    @Test func refinementLoadsBaseImageViaHostAndSendsItFirst() async throws {
+        let walk = RefinementBook.make()
+        let style = ImageRef(sha256: "style1", contentType: "public.png")
+        var content = walk.book.content
+        content.style.styleReferences = [style]
+        var images = walk.imageData
+        images[style] = Data("style".utf8)
+        let host = FakeHost(content: content, images: images)
+        let provider = FakeProvider(outcomes: [.success(okResult())], gated: false)
+        let queue = GenerationQueue(providers: [.openai: provider], catalog: try ModelCatalog.bundled(), host: host)
+        // The slot's box ID has moved; the message still finds the session.
+        let item = QueueItem(bookID: content.book.id, target: .pageBox(walk.book.pageID, walk.book.imageBox),
+                             messageID: walk.pendingMessage, intent: walk.refine(1))
+        await queue.enqueue(item)
+        await eventually("delivery") { await host.delivered().count == 1 }
+        let request = try #require(await provider.receivedRequests().first)
+        #expect(request.baseImage?.ref == walk.versions[1].image)
+        #expect(request.baseImage?.data == images[walk.versions[1].image])
+        #expect(request.output.exactSize == PixelSize(width: 1024, height: 672))
+        #expect(request.references.map(\.payload.ref) == [style])
+        #expect(await host.reads() == [walk.versions[1].image, style])
+        guard case let .success(_, provenance) = try #require(await host.delivered().first).outcome else {
+            Issue.record("expected success")
+            return
+        }
+        #expect(provenance.referencesSent.map(\.role) == ["base", "style"])
+        #expect(provenance.referencesOmitted.isEmpty)
+        #expect(provenance.promptSent.contains("1) A fox in the rain; 2) make the sky blue"))
+        #expect(provenance.intent == item.intent)
+    }
+
+    @Test func missingBaseImageFailsTheItemWithoutCallingTheProvider() async throws {
+        let walk = RefinementBook.make()
+        let host = FakeHost(content: walk.book.content, images: [:])
+        let provider = FakeProvider(outcomes: [.success(okResult())], gated: false)
+        let queue = GenerationQueue(providers: [.openai: provider], catalog: try ModelCatalog.bundled(), host: host)
+        let item = QueueItem(bookID: walk.book.content.book.id, target: walk.book.target,
+                             messageID: walk.pendingMessage, intent: walk.refine(0))
+        await queue.enqueue(item)
+        await eventually("delivery") { await host.delivered().count == 1 }
+        guard case .failure(.invalidRequest) = try #require(await host.delivered().first).outcome else {
+            Issue.record("expected invalidRequest")
+            return
+        }
+        #expect(await provider.receivedRequests().isEmpty)
     }
 }

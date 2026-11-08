@@ -24,6 +24,19 @@ public final class AppModel {
     @ObservationIgnored public let thumbnails: ThumbnailCache
     public let openBooks: OpenBooks
     public let defaults: GenerationDefaults
+    /// Phase 9: default model/quality, threshold and custom models (Settings).
+    public let preferences: AppPreferences
+    /// Phase 9: the effective price list (bundled or the user's copy).
+    public let prices: PriceBook
+    /// Phase 9: app-level files (`queue.json`, `pricelist.json`). Tests pass a temp folder.
+    @ObservationIgnored public let appSupport: AppSupportFiles
+    /// Phase 9: list-models availability per model ID, after Test connection or opening Settings.
+    public internal(set) var modelAvailability: [String: ModelAvailability] = [:]
+    /// Phase 9: false while `NWPathMonitor` reports no network ("Offline").
+    public internal(set) var isOnline = true
+    /// Phase 9: the chosen default model disappeared from the provider's list; Settings and the
+    /// session panel offer to switch (to the catalog successor when there is one).
+    public internal(set) var missingDefaultModel: ModelAvailability?
 
     /// The library folder in use (Settings ▸ General shows it).
     public private(set) var libraryRoot: URL
@@ -63,7 +76,8 @@ public final class AppModel {
     public init(providers: [ProviderID: any ImageProvider], catalog: ModelCatalog? = nil,
                 libraryRoot: URL = Library.defaultRoot, keychainService: String = KeychainStore.appService,
                 indexCacheURL: URL = LibraryIndex.defaultCacheURL, userDefaults: UserDefaults = .standard,
-                thumbnails: ThumbnailCache = ThumbnailCache(), now: @escaping @Sendable () -> Date = { Date() }) {
+                thumbnails: ThumbnailCache = ThumbnailCache(), appSupport: AppSupportFiles = AppSupportFiles(),
+                now: @escaping @Sendable () -> Date = { Date() }) {
         let library = Library(root: libraryRoot)
         let catalog = catalog ?? ((try? ModelCatalog.bundled()) ?? ModelCatalog(asOf: "", imageModels: []))
         let openBooks = OpenBooks(library: library, defaults: userDefaults)
@@ -81,6 +95,10 @@ public final class AppModel {
         self.queue = GenerationQueue(providers: providers, catalog: catalog, host: writer, now: now)
         self.defaults = GenerationDefaults(
             model: catalog.defaultImageModel(for: .openai)?.id ?? GenerationDefaults.fallbackModel)
+        self.appSupport = appSupport
+        self.preferences = AppPreferences(defaults: userDefaults,
+                                          fallbackModelID: catalog.defaultImageModel(for: .openai)?.id ?? GenerationDefaults.fallbackModel)
+        self.prices = PriceBook(files: appSupport)
         self.now = now
         refreshKeyStatus()
         openBooks.onDeliveryProblem = { [weak self] messageID, text in self?.deliveryFailures[messageID] = text }

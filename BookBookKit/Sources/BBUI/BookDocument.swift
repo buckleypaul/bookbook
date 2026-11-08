@@ -338,6 +338,19 @@ public final class BookDocument {
         return true
     }
 
+    /// Phase 9: the optional per-book budget (PD §5, §8.12). Not undoable, like the author.
+    /// Negative values are refused; nil clears it.
+    @discardableResult
+    public func setBudget(_ budget: Decimal?) -> Bool {
+        guard isEditable, (budget ?? 0) >= 0 else { return false }
+        performIrreversible { content in
+            guard content.book.budget != budget else { return DirtySet() }
+            content.book.budget = budget
+            return DirtySet(book: true)
+        }
+        return true
+    }
+
     /// Renames the book (`Book.title`; the package folder keeps its name). Not undoable
     /// (PD §8.10). Returns false if the title is empty or the book can't be edited.
     @discardableResult

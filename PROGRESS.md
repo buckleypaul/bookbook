@@ -13,7 +13,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 1b | Project setup and CI | done | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27`. [Log](progress/phase-1b-setup-ci.md) |
 | 2 | Thin vertical slice (M1) | done | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | [Log](progress/phase-2-thin-slice.md) |
 | 3 | Storage and library | done | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks. [Log](progress/phase-3-storage-library.md) |
-| 4 | Text and typography | awaiting hand checks | `phase-4-text-typography` | PRLINK | $0.00 | No live checks. |
+| 4 | Text and typography | awaiting hand checks | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. |
 | 5 | Pages tab, ordering and cover | not started | | | | |
 | 6 | Template editor | not started | | | | |
 | 7 | Style guide and page setup | not started | | | | |

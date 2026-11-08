@@ -9,13 +9,18 @@ extension FocusedValues {
     @Entry public var focusedBook: BookDocument?
     /// Presents the typography form in the key book window (Format ▸ Typography…).
     @Entry var showTypography: Binding<Bool>?
+    /// The Pages tab's controller in the key book window (Page menu, Import Story Text…,
+    /// Book Settings…, Page Numbers…).
+    @Entry var pagesController: PagesController?
 }
 
-/// App menu commands: File ▸ New Book… and File ▸ Export PDF….
+/// App menu commands: File ▸ New Book…, Import Story Text…, Export PDF… and Book Settings…;
+/// the Page menu; Format ▸ Typography… and Page Numbers….
 public struct BookBookCommands: Commands {
     private let app: AppModel
     @FocusedValue(\.focusedBook) private var book
     @FocusedValue(\.showTypography) private var showTypography
+    @FocusedValue(\.pagesController) private var pages
     @Environment(\.openWindow) private var openWindow
 
     public init(app: AppModel) {
@@ -49,14 +54,60 @@ public struct BookBookCommands: Commands {
             Divider()
             Button("Typography…") { showTypography?.wrappedValue = true }
                 .disabled(book?.isEditable != true)
+            Button("Page Numbers…") { pages?.sheet = .pageNumbers }
+                .disabled(pages?.isEditable != true)
+        }
+        CommandMenu("Page") { pageMenu }
+        CommandGroup(after: .saveItem) {
+            Button("Book Settings…") { pages?.sheet = .bookSettings }
+                .keyboardShortcut(",", modifiers: [.command, .option])
+                .disabled(pages?.isEditable != true)
         }
         CommandGroup(replacing: .importExport) {
+            Button("Import Story Text…") { pages?.sheet = .importStory }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+                .disabled(pages?.isEditable != true)
             Button("Export PDF…") {
                 if let book { PDFExportAction.run(book) }
             }
             .keyboardShortcut("e", modifiers: [.command, .shift])
             .disabled(book == nil)
         }
+    }
+
+    @ViewBuilder
+    private var pageMenu: some View {
+        let editable = pages?.isEditable == true
+        let selected = pages?.selectedPage
+        let story = pages?.isStoryPage(selected) == true
+        Button("Show Overview") { pages?.mode = .overview }
+            .keyboardShortcut("1", modifiers: [.command, .option])
+            .disabled(pages == nil || pages?.mode == .overview)
+        Button("Open in Editor") { if let selected { pages?.open(selected) } }
+            .keyboardShortcut("2", modifiers: [.command, .option])
+            .disabled(selected == nil || pages?.mode == .editor)
+        Divider()
+        Button("Add Page…") {
+            if let pages { pages.sheet = .addPage(index: pages.insertionIndex) }
+        }
+        .keyboardShortcut("n", modifiers: [.command, .option])
+        .disabled(!editable)
+        Button("Duplicate Page") { if let selected { pages?.duplicate(selected) } }
+            .keyboardShortcut("d")
+            .disabled(!editable || !story)
+        Button("Delete Page") { if let selected { pages?.delete(selected) } }
+            .disabled(!editable || !story)
+        Divider()
+        Button(selected.map { pages?.isDone($0) == true } == true ? "Mark as Not Done" : "Mark as Done") {
+            if let selected { pages?.toggleDone(selected) }
+        }
+        .disabled(!editable || selected == nil)
+        Button("Change Layout…") { if let selected { pages?.sheet = .changeLayout(selected) } }
+            .disabled(!editable || selected == nil)
+        Button(selected.map { pages?.isNumberSkipped($0) == true } == true ? "Show Page Number" : "Skip Page Number") {
+            if let selected { pages?.toggleSkipNumber(selected) }
+        }
+        .disabled(!editable || !story)
     }
 }
 

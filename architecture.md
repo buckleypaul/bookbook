@@ -324,7 +324,7 @@ MyBook.bookbook/                 UTType app.bookbook.book, conforms to com.apple
 └── .journal/                    present only while a save is in flight
 ```
 
-- The JSON is written with `.sortedKeys` and `.prettyPrinted`, with dates in ISO 8601. That makes it diffable and easy to read for debugging.
+- The JSON is written with `.sortedKeys` and `.prettyPrinted`, with dates in ISO 8601. That makes it diffable and easy to read for debugging. **As built (Phase 2):** dates are ISO 8601 UTC with nine fractional digits, so any `Date` round-trips exactly; decoding also accepts dates without a fraction.
 - `book.json` carries a `schemaVersion`. `BBStore.Migrator` runs ordered, pure `(old JSON) → (new JSON)` steps when a book is opened. It copies the book to `<name>.bookbook.backup-v<N>` in the Trash first, so the pre-migration book can be recovered.
 - Imported images keep their original bytes, apart from EXIF orientation being normalized and HEIC being converted to PNG. Generated images are stored exactly as the provider returned them.
 - Thumbnails and downsampled renditions are **not** stored in the package. They go to `~/Library/Caches/BookBook/<bookID>/` and are rebuilt from scratch when missing.
@@ -341,6 +341,8 @@ The in-memory model tracks dirty entities. Each save is one **transaction**:
 5. Remove `.journal/<txid>/`.
 
 **When a book is opened:** a transaction with a `COMMIT` file is replayed (roll forward). One without it is discarded. The book on disk therefore always reflects either the state before a save or the state after it.
+
+**As built (Phase 2):** the journal is `.journal/<txid>/{staged/<relative path>, manifest.json, COMMIT}`, with `manifest.json` = `{targets, deletions}`. Because a book can come from someone else, roll-forward validates the transaction first: the txid must be a UUID, every path must be exactly `book.json`, `style.json` or `(templates|pages|sessions)/<uuid>.json`, and every source and destination must stay inside the package after resolving symlinks. If any entry fails, the whole transaction is discarded and the book opens as it was. `create` stages the whole package in a sibling folder and renames it into place.
 
 Image files that no JSON refers to are swept only when the book is opened, and only if they are more than 24 hours old, so a generation that is still being delivered never loses its file. Ledger lines are appended with `O_APPEND`. A truncated last line is ignored and repaired.
 
@@ -786,7 +788,7 @@ If the other provider is configured, every non-auth failure gets **"Retry with <
 
 Provider wording isn't parsed for advice. It's shown only under Details.
 
-The OpenAI mapper switches on `error.code` (and `param`), not `error.type`: many 400s carry the newer `type: image_generation_user_error` (SP-5). A 401 body echoes a masked form of the key with some characters visible, so that fragment is redacted before `raw` is stored or shown.
+The OpenAI mapper switches on `error.code` (and `param`), not `error.type`: many 400s carry the newer `type: image_generation_user_error` (SP-5). A 401 body echoes a masked form of the key with some characters visible, so that fragment is redacted before `raw` is stored or shown. **As built (Phase 2):** SP-5's echo had no `sk-` prefix (`bookbook****…-key`), so `Redaction.redactMaskedKeys` replaces any key-like token containing four or more asterisks.
 
 ### 7.12 Networking (BBNet)
 
@@ -828,6 +830,7 @@ Page numbers come from physical positions, the style's starting number, and its 
 - **Overflow:** the box overflows if `usageBoundsForTextContainer` is taller than the container, or if the last layout fragment doesn't reach the end of the document. The canvas shows a red "+" badge, and preflight lists the box.
 - **Rendering:** each `NSTextLayoutFragment` is drawn with `draw(at:in:)` into the target `CGContext`, wrapped in an `NSGraphicsContext`. In a PDF context, glyphs stay real text and fonts are embedded as subsets by Core Graphics.
 - **The TextKit 1 trap:** code must never touch `NSTextView.layoutManager`, because doing so permanently switches that view to TextKit 1 and breaks the shared layout path. A debug assertion watches for the switch notification.
+- **As built (Phase 2):** `RichTextBridge` uses a family's real bold/italic faces when they exist and otherwise fakes them (stroke width for bold, obliqueness for italic), so the flags survive a round trip. A missing font falls back to the system font, and the requested PostScript name is kept in a private attribute so it round-trips. When text overflows, lines that don't fully fit aren't drawn (no half-cut lines).
 - **Fonts:**
   - Installed fonts are referenced by PostScript name.
   - Imported fonts are copied into `fonts/` and registered with `CTFontManagerRegisterFontURLs(…, .process, …)` when the book opens.

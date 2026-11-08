@@ -2,7 +2,7 @@ import BBModel
 import CoreGraphics
 import Foundation
 
-/// Page geometry from `PageSetup` (A §8.2). Phase 2: single pages, no bleed in practice.
+/// Page geometry from `PageSetup` (A §8.2): trim, bleed, safe areas, render rects and the fold.
 ///
 /// All rects are in points in trim space: origin at the trim's top-left, y down. "Leading" is
 /// the left edge and "trailing" the right edge (pages are laid out left-to-right).
@@ -46,21 +46,51 @@ public struct PageGeometry: Hashable, Sendable {
                       height: max(0, size.height - top - bottom))
     }
 
+    /// The trim grown by the bleed on every side (the trim itself when bleed is off): the
+    /// sheet the canvas shows and the area a bleed PDF covers.
+    public var bleedRect: CGRect { trimRect.insetBy(dx: -bleed, dy: -bleed) }
+
+    /// The edges of `box` that `renderRect(for:)` pushes out: its `bleedEdges` while bleed is
+    /// on, except, on a spread, an edge lying on the fold (the fold is not a trim edge, so a
+    /// half-spread full-bleed box must not spill onto the facing page).
+    public func pushedBleedEdges(for box: Box) -> EdgeSet {
+        guard bleed > 0, !box.bleedEdges.isEmpty else { return [] }
+        var edges = box.bleedEdges
+        if isSpread {
+            let fold = foldX
+            let tolerance: CGFloat = 0.5
+            if abs(CGFloat(box.frame.x) * trimSize.width - fold) <= tolerance { edges.remove(.leading) }
+            if abs(CGFloat(box.frame.maxX) * trimSize.width - fold) <= tolerance { edges.remove(.trailing) }
+        }
+        return edges
+    }
+
     /// The box's normalized frame times the trim size, with each edge in `bleedEdges` pushed
-    /// out by the bleed. Top-left origin, y down.
+    /// out by the bleed (not at a spread's fold, see `pushedBleedEdges(for:)`). Top-left origin,
+    /// y down. Rotation (A §8.2) is about THIS rect's centre everywhere: `PageRenderer`, the
+    /// page canvas and the template editor all rotate, outline and hit-test about the render
+    /// rect's centre, so with bleed on a rotated full-bleed box pivots about the bleed-extended
+    /// rect's centre (and with bleed off, about the trim frame's centre).
     public func renderRect(for box: Box) -> CGRect {
         let size = trimSize
-        var minX = CGFloat(box.frame.x) * size.width
-        var minY = CGFloat(box.frame.y) * size.height
-        var maxX = CGFloat(box.frame.maxX) * size.width
-        var maxY = CGFloat(box.frame.maxY) * size.height
-        let b = bleed
-        if b > 0 {
-            if box.bleedEdges.contains(.top) { minY -= b }
-            if box.bleedEdges.contains(.leading) { minX -= b }
-            if box.bleedEdges.contains(.bottom) { maxY += b }
-            if box.bleedEdges.contains(.trailing) { maxX += b }
-        }
+        let trim = CGRect(x: CGFloat(box.frame.x) * size.width, y: CGFloat(box.frame.y) * size.height,
+                          width: CGFloat(box.frame.width) * size.width, height: CGFloat(box.frame.height) * size.height)
+        return Self.expand(trim, edges: pushedBleedEdges(for: box), by: bleed)
+    }
+
+    /// Inverse of the bleed expansion: the trim rect whose render rect is `rect`, given the
+    /// edges that were pushed out (`pushedBleedEdges(for:)` of the box before the edit).
+    public func trimRect(fromRender rect: CGRect, pushedEdges: EdgeSet) -> CGRect {
+        Self.expand(rect, edges: pushedEdges, by: -bleed)
+    }
+
+    private static func expand(_ rect: CGRect, edges: EdgeSet, by amount: CGFloat) -> CGRect {
+        guard amount != 0, !edges.isEmpty else { return rect }
+        var minX = rect.minX, minY = rect.minY, maxX = rect.maxX, maxY = rect.maxY
+        if edges.contains(.top) { minY -= amount }
+        if edges.contains(.leading) { minX -= amount }
+        if edges.contains(.bottom) { maxY += amount }
+        if edges.contains(.trailing) { maxX += amount }
         return CGRect(x: minX, y: minY, width: max(0, maxX - minX), height: max(0, maxY - minY))
     }
 
@@ -102,6 +132,19 @@ extension PageGeometry {
         }
         self.init(setup: setup)
         isSpread = kind == .spread
+    }
+
+    /// A geometry for a setup that is already the draw trim (double width for a spread, as
+    /// `drawContent(for:in:)` makes it): `PageRenderer` and the canvas use this so a spread's
+    /// fold and per-page safe areas are known.
+    public init(drawSetup: PageSetup, isSpread: Bool) {
+        self.init(setup: drawSetup)
+        self.isSpread = isSpread
+    }
+
+    /// The draw geometry of `page` in `drawContent` (the result of `drawContent(for:in:)`).
+    public static func drawGeometry(for page: Page, in drawContent: BookContent) -> PageGeometry {
+        PageGeometry(drawSetup: drawContent.style.pageSetup, isSpread: drawContent.template(for: page)?.kind == .spread)
     }
 
     /// The fold of a spread geometry: the middle of the trim.

@@ -155,7 +155,7 @@ extension BookCommand {
         case let .importStoryText(texts, templateID, index, _):
             .importStoryText(texts, templateID: templateID, index: index, fixSplits: fix)
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate: self
+             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK: self
         }
     }
 
@@ -164,7 +164,7 @@ extension BookCommand {
         switch self {
         case .addPage, .duplicatePage, .deletePage, .reorderPages, .setPageTemplate, .importStoryText: true
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate: false
+             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK: false
         }
     }
 }

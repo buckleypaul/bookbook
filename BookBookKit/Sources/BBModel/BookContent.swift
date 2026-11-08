@@ -42,8 +42,10 @@ public struct BookContent: Hashable, Sendable {
         return sessions[slot.sessionID]?.version(placement.versionID)
     }
 
-    /// A box's aspect (width / height) on the trim, ignoring bleed. Bleed comes in Phase 7;
-    /// `BBLayout.PageGeometry` is the authority for render rects.
+    /// A box's aspect (width / height) as rendered: its frame on the trim, with each edge in
+    /// `bleedEdges` pushed out by the bleed when bleed is on (matches
+    /// `BBLayout.PageGeometry.renderRect`, the authority). Spread templates use the doubled
+    /// width. Phase 7 lane: add bleed and spread width.
     public func boxAspect(_ box: Box) -> Double {
         let trim = style.pageSetup.trimSize
         return (box.frame.width * trim.width) / (box.frame.height * trim.height)
@@ -95,4 +97,31 @@ public struct BookContent: Hashable, Sendable {
 
 public enum PageStatus: String, Sendable {
     case empty, inProgress, done
+}
+
+/// Out-of-date flags on a placed image (A §4.4, PD §8.5). Asset changed (Phase 10) and
+/// consistency warning (Phase 12) are reserved and never set in Phase 7.
+public struct ImageFlags: OptionSet, Hashable, Sendable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let styleChanged = ImageFlags(rawValue: 1 << 0)
+    public static let assetChanged = ImageFlags(rawValue: 1 << 1)
+    public static let layoutChanged = ImageFlags(rawValue: 1 << 2)
+    public static let consistencyWarning = ImageFlags(rawValue: 1 << 3)
+}
+
+extension BookContent {
+    /// Flags for one image box (A §4.4, Phase 7 rules):
+    /// - style changed: the placed version has provenance and
+    ///   `max(provenance.styleRevision, acknowledged.styleRevision) < style.visualRevision`;
+    ///   imported versions (no provenance) never get it;
+    /// - layout changed: `abs(log(boxAspect(box) / (acknowledged.boxAspect ?? placement.boxAspectWhenPlaced))) > 0.05`.
+    /// Empty for an empty box. Phase 7 lane: implement.
+    public func imageFlags(page pageID: PageID, box boxID: BoxID) -> ImageFlags { [] }
+
+    /// Union of `imageFlags(page:box:)` over the page's image boxes.
+    public func imageFlags(of page: Page) -> ImageFlags {
+        guard let template = template(for: page) else { return [] }
+        return template.imageBoxes.reduce(into: ImageFlags()) { $0.formUnion(imageFlags(page: page.id, box: $1.id)) }
+    }
 }

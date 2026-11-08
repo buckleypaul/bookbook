@@ -50,3 +50,30 @@ public enum Presets {
         return t
     }
 }
+
+// MARK: - Style presets (Phase 7)
+
+/// A built-in style preset (PD §8.2). Text-only in Phase 7; sample images come in Phase 16.
+/// Choosing one fills the Style tab's visual fields (`StyleVisual`), which stay editable.
+/// `StylePresets.json` is `{"schemaVersion": 1, "presets": [StylePreset]}`.
+public struct StylePreset: Hashable, Codable, Sendable, Identifiable {
+    /// Stable ID stored in `StyleGuide.presetID` (e.g. "watercolour").
+    public var id: String
+    public var name: String
+    public var visualDescription: String
+    /// nil = keep `StyleGuide.defaultNegativeGuidance`.
+    public var negativeGuidance: String?
+
+    public init(id: String, name: String, visualDescription: String, negativeGuidance: String? = nil) {
+        self.id = id
+        self.name = name
+        self.visualDescription = visualDescription
+        self.negativeGuidance = negativeGuidance
+    }
+}
+
+extension Presets {
+    /// The bundled style presets, in menu order. Phase 7 lane: implement (decode
+    /// `Presets/StylePresets.json`).
+    public static func stylePresets() throws(StoreError) -> [StylePreset] { [] }
+}

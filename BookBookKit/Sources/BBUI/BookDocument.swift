@@ -314,7 +314,7 @@ public final class BookDocument {
         case let .importStoryText(texts, templateID, index, _):
             unfixed = .importStoryText(texts, templateID: templateID, index: index)
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate:
+             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK:
             return false
         }
         guard let prepared = prepare(unfixed) else { return false }
@@ -466,6 +466,9 @@ public final class BookDocument {
         let edit: Edit
 
         switch command {
+        case .setStyleVisual, .setPageSetup, .markFlagsOK:
+            return nil  // Phase 7 lane: implement.
+
         case let .setRichText(pageID, boxID, text, _):
             guard let page = content.pages[pageID], let template = content.template(for: page),
                   let box = template.box(boxID), case .text = box.content else { return nil }

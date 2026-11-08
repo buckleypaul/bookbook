@@ -19,16 +19,28 @@ public final class AppPreferences {
     }
 
     /// The default image model ID for OpenAI (the only image provider until Phase 13).
-    public var defaultImageModelID: String { didSet { defaults.set(defaultImageModelID, forKey: Key.defaultImageModel) } }
+    public var defaultImageModelID: String {
+        didSet {
+            defaults.set(defaultImageModelID, forKey: Key.defaultImageModel)
+            onDefaultModelChange()
+        }
+    }
     public var defaultQuality: QualityLevel { didSet { defaults.set(defaultQuality.rawValue, forKey: Key.defaultQuality) } }
     /// Ask before enqueueing when a request or batch estimate is above this (USD).
     public var confirmThreshold: Decimal {
         didSet { defaults.set(NSDecimalNumber(decimal: confirmThreshold).stringValue, forKey: Key.confirmThreshold) }
     }
     public var customModels: [CustomModelSpec] {
-        didSet { defaults.set(try? JSONEncoder().encode(customModels), forKey: Key.customModels) }
+        didSet {
+            defaults.set(try? JSONEncoder().encode(customModels), forKey: Key.customModels)
+            onCustomModelsChange()
+        }
     }
 
+    /// `AppModel` rebuilds the effective catalog and pushes it to the queue.
+    @ObservationIgnored var onCustomModelsChange: () -> Void = {}
+    /// `AppModel` re-checks `missingDefaultModel`.
+    @ObservationIgnored var onDefaultModelChange: () -> Void = {}
     @ObservationIgnored private let defaults: UserDefaults
 
     public init(defaults: UserDefaults, fallbackModelID: String) {
@@ -53,6 +65,8 @@ public final class PriceBook {
     /// Why the user's copy was ignored (unreadable or malformed), if it was.
     public private(set) var userCopyError: String?
 
+    /// `AppModel` pushes the new prices to the queue (`setPricing`).
+    @ObservationIgnored var onChange: (PriceList) -> Void = { _ in }
     @ObservationIgnored private let files: AppSupportFiles
 
     public init(files: AppSupportFiles, bundled: PriceList? = nil) {
@@ -74,6 +88,7 @@ public final class PriceBook {
         current = list
         isUserCopy = true
         userCopyError = nil
+        onChange(list)
     }
 
     /// "Reset to built-in": removes the user's copy.
@@ -82,5 +97,6 @@ public final class PriceBook {
         current = bundled
         isUserCopy = false
         userCopyError = nil
+        onChange(bundled)
     }
 }

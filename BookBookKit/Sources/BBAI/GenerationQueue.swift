@@ -76,13 +76,6 @@ public actor GenerationQueue {
         self.requestTimeout = requestTimeout
     }
 
-    /// Phase 2 initializer, kept so existing callers compile until they pass a `CostPricing`.
-    /// Without prices every ledger line is the item's estimate.
-    public init(providers: [ProviderID: any ImageProvider], catalog: ModelCatalog, host: any GenerationHost,
-                now: @escaping @Sendable () -> Date = { Date() }) {
-        self.init(providers: providers, catalog: catalog, host: host, pricing: UnpricedCostPricing(), now: now)
-    }
-
     // MARK: - Public API
 
     /// Loads `queue.json`. Waiting and failed items come back (the queue is then paused with

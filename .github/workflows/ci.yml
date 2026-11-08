@@ -1,0 +1,67 @@
+# Runs scripts/test.sh step by step. No secrets are used and BOOKBOOK_LIVE_TESTS is never set,
+# so live provider tests always skip. The job name `test` is a required status check.
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: xcode-27 # macOS 27, Apple Silicon (runner-images: xcode-27-arm64-Readme.md)
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Select Xcode 27.2
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen 2.46.0
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/xcodegen-dl"
+          mkdir -p "$dir"
+          curl -fsSL -o "$dir/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip"
+          unzip -q "$dir/xcodegen.zip" -d "$dir"
+          mkdir -p "$HOME/.local/xcodegen"
+          cp -R "$dir/xcodegen/." "$HOME/.local/xcodegen/"
+          echo "$HOME/.local/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Cache SwiftPM builds
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+        with:
+          path: |
+            BookBookKit/.build
+            Spikes/.build
+          key: spm-${{ runner.os }}-${{ hashFiles('BookBookKit/Package.resolved', 'BookBookKit/Package.swift', 'Spikes/Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Secret scan
+        run: scripts/test.sh secrets
+      - name: Bootstrap self-test
+        run: scripts/test.sh bootstrap
+      - name: BookBookKit tests
+        run: scripts/test.sh kit
+      - name: Spikes tests
+        run: scripts/test.sh spikes
+      - name: Xcode project is up to date
+        run: scripts/test.sh xcodeproj
+      - name: App build and test (Debug)
+        run: scripts/test.sh app
+      - name: App build (Release, unsigned)
+        run: scripts/test.sh release

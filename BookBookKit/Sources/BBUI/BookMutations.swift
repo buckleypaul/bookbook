@@ -30,11 +30,19 @@ public enum BookMutations {
     public static func makeGeneration(prompt: String, refines: VersionID?, defaults: GenerationDefaults,
                                       bookID: BookID, page: PageID, box: BoxID,
                                       now: Date) -> (message: Message, item: QueueItem) {
-        let itemID = QueueItemID()
-        let message = Message(role: .user, text: prompt, refines: refines, queueItemID: itemID, createdAt: now)
         let intent = GenerationIntent(messageText: prompt, refines: refines, provider: defaults.provider,
                                       model: defaults.model, quality: defaults.quality,
                                       includeStoryText: defaults.includeStoryText)
+        return makeGeneration(intent: intent, bookID: bookID, page: page, box: box, now: now)
+    }
+
+    /// Builds the pending user message and queue item for a stored intent unchanged
+    /// ("Regenerate with same settings": same text, same `refines`, same references).
+    public static func makeGeneration(intent: GenerationIntent, bookID: BookID, page: PageID, box: BoxID,
+                                      now: Date) -> (message: Message, item: QueueItem) {
+        let itemID = QueueItemID()
+        let message = Message(role: .user, text: intent.messageText, refines: intent.refines,
+                              attachedReferences: intent.attachedReferences, queueItemID: itemID, createdAt: now)
         let item = QueueItem(id: itemID, bookID: bookID, target: .pageBox(page, box), messageID: message.id,
                              intent: intent)
         return (message, item)
@@ -73,7 +81,9 @@ public enum BookMutations {
         let page = content.pages[pageID]
         let slot = page?.images[boxID]
         let owner = SessionOwner.pageBox(pageID, boxID)
-        guard let sessionID = slot?.sessionID ?? content.sessions.first(where: { $0.value.owner == owner })?.key,
+        // By message first: box IDs can move, the message can't (Phase 5 follow-up).
+        guard let sessionID = content.session(containing: delivery.item.messageID)?.id
+                ?? slot?.sessionID ?? content.sessions.first(where: { $0.value.owner == owner })?.key,
               var session = content.sessions[sessionID] else { return DirtySet() }
 
         var dirty = DirtySet()
@@ -90,16 +100,107 @@ public enum BookMutations {
             if let messageIndex { session.messages[messageIndex].producedVersion = version.id }
             dirty.sessions.insert(session.id)
 
-            if let page, let slot, slot.placement == nil, let template = content.template(for: page),
-               let box = template.box(boxID) {
-                let placement = ImagePlacement(versionID: version.id, boxAspectWhenPlaced: content.boxAspect(box, in: template))
-                content.pages[pageID]?.images[boxID]?.placement = placement
-                content.pages[pageID]?.images[boxID]?.acknowledged.boxAspect = nil
-                dirty.pages.insert(pageID)
+            // The box may have moved since the request: place into whichever box holds the session.
+            var home: (PageID, BoxID)? = slot?.sessionID == session.id ? (pageID, boxID) : nil
+            if home == nil {
+                outer: for (id, page) in content.pages {
+                    for (box, candidate) in page.images where candidate.sessionID == session.id {
+                        home = (id, box)
+                        break outer
+                    }
+                }
+            }
+            if let home, placeIfEmpty(version.id, session: session.id, page: home.0, box: home.1, in: &content) {
+                dirty.pages.insert(home.0)
             }
         }
 
         content.sessions[session.id] = session
         return dirty
+    }
+
+    /// Places `version` (zoom 1, centred) if the box exists, belongs to `session` and is empty.
+    private static func placeIfEmpty(_ version: VersionID, session: SessionID, page pageID: PageID, box boxID: BoxID,
+                                     in content: inout BookContent) -> Bool {
+        guard let page = content.pages[pageID], let slot = page.images[boxID], slot.sessionID == session,
+              slot.placement == nil, let template = content.template(for: page), let box = template.box(boxID)
+        else { return false }
+        let placement = ImagePlacement(versionID: version, boxAspectWhenPlaced: content.boxAspect(box, in: template))
+        content.pages[pageID]?.images[boxID]?.placement = placement
+        content.pages[pageID]?.images[boxID]?.acknowledged.boxAspect = nil
+        return true
+    }
+
+    // MARK: Phase 8 session mutations (not undoable)
+
+    /// Stars or unstars a version.
+    public static func setStarred(_ starred: Bool, version: VersionID, in sessionID: SessionID,
+                                  to content: inout BookContent) -> DirtySet {
+        guard var session = content.sessions[sessionID],
+              let index = session.versions.firstIndex(where: { $0.id == version }),
+              session.versions[index].starred != starred else { return DirtySet() }
+        session.versions[index].starred = starred
+        content.sessions[sessionID] = session
+        return DirtySet(sessions: [sessionID])
+    }
+
+    /// Removes a version and empties every box (on any page) that had it placed. Messages that
+    /// produced it forget it; later versions keep their `parent` (lineage stops at the gap).
+    public static func deleteVersion(_ version: VersionID, in sessionID: SessionID,
+                                     to content: inout BookContent) -> DirtySet {
+        guard var session = content.sessions[sessionID], session.version(version) != nil else { return DirtySet() }
+        session.versions.removeAll { $0.id == version }
+        for index in session.messages.indices where session.messages[index].producedVersion == version {
+            session.messages[index].producedVersion = nil
+        }
+        content.sessions[sessionID] = session
+        var dirty = DirtySet(sessions: [sessionID])
+        dirty.pages = clearPlacements(of: [version], in: &content)
+        return dirty
+    }
+
+    /// Hides the thread (bumps `resetEpoch`). With `keepVersions: false` the versions go too, and
+    /// the boxes showing them are emptied.
+    public static func resetSession(_ sessionID: SessionID, keepVersions: Bool,
+                                    to content: inout BookContent) -> DirtySet {
+        guard var session = content.sessions[sessionID] else { return DirtySet() }
+        session.resetEpoch += 1
+        var dirty = DirtySet(sessions: [sessionID])
+        if !keepVersions {
+            let removed = Set(session.versions.map(\.id))
+            session.versions = []
+            dirty.pages = clearPlacements(of: removed, in: &content)
+        }
+        content.sessions[sessionID] = session
+        return dirty
+    }
+
+    /// Adds an imported picture (no provenance) to the box's session; places it only if the box
+    /// is empty, like a delivery. Empty result if the box or session is gone.
+    public static func appendImportedVersion(image: ImageRef, pixelSize: PixelSize, page: PageID, box: BoxID,
+                                             to content: inout BookContent, versionID: VersionID = VersionID(),
+                                             now: Date) -> DirtySet {
+        guard let slot = content.pages[page]?.images[box], var session = content.sessions[slot.sessionID]
+        else { return DirtySet() }
+        session.versions.append(Version(id: versionID, image: image, pixelSize: pixelSize, source: .imported,
+                                        createdAt: now))
+        content.sessions[session.id] = session
+        var dirty = DirtySet(sessions: [session.id])
+        if placeIfEmpty(versionID, session: session.id, page: page, box: box, in: &content) {
+            dirty.pages.insert(page)
+        }
+        return dirty
+    }
+
+    private static func clearPlacements(of versions: Set<VersionID>, in content: inout BookContent) -> Set<PageID> {
+        var changed: Set<PageID> = []
+        for (pageID, page) in content.pages {
+            for (boxID, slot) in page.images {
+                guard let placement = slot.placement, versions.contains(placement.versionID) else { continue }
+                content.pages[pageID]?.images[boxID]?.placement = nil
+                changed.insert(pageID)
+            }
+        }
+        return changed
     }
 }

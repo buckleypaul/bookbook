@@ -120,7 +120,7 @@ struct BookEditor: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 0) {
                         Divider()
-                        BookSwitcher(document: document)
+                        BookSwitcher(document: document) { pages.sheet = .bookSettings }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                     }
@@ -275,7 +275,7 @@ struct BookEditor: View {
             case .editor:
                 if let page = pages.selectedPage, content.pages[page] != nil {
                     PageCanvas(document: document, content: content, pageID: page, imageSource: images,
-                               selectedImageBox: $selectedImageBox)
+                               selectedImageBox: $selectedImageBox) { [pages] in pages.sheet = .bookSettings }
                         // Read-only: no text editing or box selection (the canvas is AppKit).
                         .allowsHitTesting(document.isEditable)
                 } else {

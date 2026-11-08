@@ -85,3 +85,30 @@ public struct PageGeometry: Hashable, Sendable {
         return CGRect(x: x, y: y, width: width, height: height)
     }
 }
+
+// MARK: Spreads
+
+extension PageGeometry {
+    /// The geometry a page is drawn and hit-tested with: the book's trim for a single page or
+    /// the cover, double width for a spread (its boxes are normalized over both halves, A §4.1),
+    /// with the fold at `foldX`.
+    public init(setup: PageSetup, kind: TemplateKind?) {
+        var setup = setup
+        if kind == .spread {
+            setup.trimSize = PointSize(width: setup.trimSize.width * 2, height: setup.trimSize.height)
+        }
+        self.init(setup: setup)
+    }
+
+    /// The fold of a spread geometry: the middle of the trim.
+    public var foldX: CGFloat { trimSize.width / 2 }
+
+    /// `content` with its page setup replaced by `page`'s draw setup, for `PageRenderer`, which
+    /// draws in `content.style.pageSetup`'s trim.
+    public static func drawContent(for page: Page, in content: BookContent) -> BookContent {
+        guard content.template(for: page)?.kind == .spread else { return content }
+        var copy = content
+        copy.style.pageSetup = PageGeometry(setup: content.style.pageSetup, kind: .spread).setup
+        return copy
+    }
+}

@@ -49,13 +49,16 @@ struct LayoutsToolbar: View {
             } label: { Label("Align", systemImage: "align.horizontal.left") }
                 .disabled(count == 0)
                 .help("Align (one box aligns to its page's safe area) and distribute (three or more)")
+            let orderMatters = model.layerOrderHasVisibleEffect
             ControlGroup {
                 Button { model.moveSelection(.toFront) } label: { Label("Bring to Front", systemImage: "square.3.layers.3d.top.filled") }
                 Button { model.moveSelection(.forward) } label: { Label("Bring Forward", systemImage: "square.2.layers.3d.top.filled") }
                 Button { model.moveSelection(.backward) } label: { Label("Send Backward", systemImage: "square.2.layers.3d.bottom.filled") }
                 Button { model.moveSelection(.toBack) } label: { Label("Send to Back", systemImage: "square.3.layers.3d.bottom.filled") }
             }
-            .disabled(count == 0)
+            .disabled(count == 0 || !orderMatters)
+            .help(orderMatters ? "Change the layer order of the selected boxes"
+                  : "Layer order only matters between boxes of the same kind: text always draws above images")
             Button(role: .destructive) { model.deleteSelection() } label: { Label("Delete Box", systemImage: "trash") }
                 .disabled(count == 0)
                 .help("Delete the selected boxes")

@@ -38,6 +38,7 @@ public final class TemplateEditorModel {
     private func dropOpenInteraction(_ id: Int) {
         guard openInteraction == id else { return }
         openInteraction = nil
+        removeUndoObserver()
         continuousTask?.cancel()
         continuousTask = nil
         activeGuides = []
@@ -69,6 +70,15 @@ public final class TemplateEditorModel {
     @ObservationIgnored private var nextInteraction = 0
     private var continuousTask: Task<Void, Never>?
     private var continuousName = ""
+    @ObservationIgnored private var continuousToken: Int?
+    /// True once `update` has edited inside the open interaction (so its group has registered).
+    @ObservationIgnored private var interactionEdited = false
+    @ObservationIgnored private var undoObservers: [any NSObjectProtocol] = []
+
+    private func removeUndoObserver() {
+        undoObservers.forEach(NotificationCenter.default.removeObserver)
+        undoObservers = []
+    }
 
     // MARK: Opening and the template list
 
@@ -125,10 +135,17 @@ public final class TemplateEditorModel {
     /// Applies `change` to a copy of the open template and performs `.updateTemplate`.
     /// No-op without an open template or when nothing changed.
     public func update(actionName: String, _ change: (inout Template) -> Void) {
+        // A one-shot edit never joins a pending continuous burst: close the burst first.
+        finishContinuousEdit()
+        applyUpdate(actionName: actionName, change)
+    }
+
+    private func applyUpdate(actionName: String, _ change: (inout Template) -> Void) {
         guard let current = template else { return }
         var edited = current
         change(&edited)
         guard edited != current else { return }
+        if openInteraction != nil { interactionEdited = true }
         if isUncopiedPreset {
             // First edit of a preset: copy it into the book and edit it as one undo step.
             document.beginUndoGroup(actionName: actionName)
@@ -147,11 +164,35 @@ public final class TemplateEditorModel {
     /// `actionName` names the undo step when it registers (pass the name `endInteraction` will use).
     @discardableResult
     public func beginInteraction(actionName: String? = nil) -> Int {
+        // A pending continuous burst (stepper, colour well) is its own undo step.
+        finishContinuousEdit()
+        return openOrJoinInteraction(actionName: actionName)
+    }
+
+    private func openOrJoinInteraction(actionName: String?) -> Int {
         if let openInteraction { return openInteraction }
         nextInteraction += 1
         let id = nextInteraction
         openInteraction = id
+        interactionEdited = false
         document.beginUndoGroup(actionName: actionName, onClosedByReplay: { [weak self] in self?.dropOpenInteraction(id) })
+        // An undo/redo before the first edit finds nothing registered to close the group, so
+        // end the interaction here (nothing registers; the group is empty).
+        if let manager = document.undoManager {
+            let handler: @Sendable (Notification) -> Void = { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.openInteraction == id, !self.interactionEdited else { return }
+                    self.dropOpenInteraction(id)
+                    self.document.endUndoGroup(actionName: actionName ?? "")
+                }
+            }
+            undoObservers = [
+                NotificationCenter.default.addObserver(forName: .NSUndoManagerWillUndoChange, object: manager,
+                                                       queue: .main, using: handler),
+                NotificationCenter.default.addObserver(forName: .NSUndoManagerWillRedoChange, object: manager,
+                                                       queue: .main, using: handler),
+            ]
+        }
         return id
     }
 
@@ -166,7 +207,15 @@ public final class TemplateEditorModel {
         activeGuides = []
         guard openInteraction != nil else { return }
         openInteraction = nil
+        removeUndoObserver()
         document.endUndoGroup(actionName: actionName)
+    }
+
+    /// Mouse-up of the interaction `token` came from: closes it only if it is still the open
+    /// one, so a stale caller can't close someone else's group.
+    public func endInteraction(_ token: Int, actionName: String) {
+        guard openInteraction == token else { return }
+        endInteraction(actionName: actionName)
     }
 
     /// For controls without begin/end events (colour wells, steppers held down): applies the
@@ -175,9 +224,9 @@ public final class TemplateEditorModel {
     public func updateContinuously(actionName: String, _ change: (inout Template) -> Void) {
         if continuousTask != nil, continuousName != actionName { finishContinuousEdit() }
         continuousTask?.cancel()
-        beginInteraction(actionName: actionName)
+        continuousToken = openOrJoinInteraction(actionName: actionName)
         continuousName = actionName
-        update(actionName: actionName, change)
+        applyUpdate(actionName: actionName, change)
         continuousTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
             guard !Task.isCancelled else { return }
@@ -190,7 +239,8 @@ public final class TemplateEditorModel {
         guard let task = continuousTask else { return }
         task.cancel()
         continuousTask = nil
-        endInteraction(actionName: continuousName)
+        if let token = continuousToken { endInteraction(token, actionName: continuousName) }
+        continuousToken = nil
     }
 
     /// Adds an image or text box (centred in the first page's safe area, a third of its size),
@@ -211,6 +261,17 @@ public final class TemplateEditorModel {
         guard let template, template.boxes.contains(where: { ids.contains($0.id) }) else { return }
         update(actionName: ids.count == 1 ? "Delete Box" : "Delete Boxes") { $0.boxes.removeAll { ids.contains($0.id) } }
         selection = []
+    }
+
+    /// False when reordering the selection would change nothing you can see: text always draws
+    /// above images (A §8), so order only matters among boxes of the same kind. True needs a
+    /// selected box with another box of its kind in the template.
+    public var layerOrderHasVisibleEffect: Bool {
+        guard let template else { return false }
+        func isText(_ box: Box) -> Bool { if case .text = box.content { true } else { false } }
+        return selectedBoxes.contains { box in
+            template.boxes.contains { $0.id != box.id && isText($0) == isText(box) }
+        }
     }
 
     public enum LayerMove: Sendable { case forward, backward, toFront, toBack }

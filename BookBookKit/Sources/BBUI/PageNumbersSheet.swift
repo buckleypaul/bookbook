@@ -47,15 +47,34 @@ struct PageNumbersSheet: View {
     /// Family chosen in the picker; nil is the body font. Stored as a PostScript name on Done.
     @State private var family: String?
 
+    /// The book when the sheet opened, for counting skipped pages (front matter needs each
+    /// page's template role). Without it only individually skipped pages are counted.
+    let content: BookContent?
+    /// The family the picker showed on open; unchanged means the stored face stays as it was.
+    private let initialFamily: String?
+
     static let sizeRange: ClosedRange<Double> = 6...72
 
-    init(pages: PagesController, style: PageNumberStyle) {
+    init(pages: PagesController, style: PageNumberStyle, content: BookContent? = nil) {
         self.pages = pages
+        self.content = content
+        initialFamily = style.fontFamily.map { PageNumberFontNames.family(forPostScriptName: $0) ?? $0 }
         _draft = State(initialValue: style)
         _family = State(initialValue: style.fontFamily.map { PageNumberFontNames.family(forPostScriptName: $0) ?? $0 })
     }
 
+    /// Pages without a number: individually skipped ones that still exist, plus front matter
+    /// when that rule is on. The cover and deleted pages never count.
+    static func skippedCount(style: PageNumberStyle, content: BookContent?, isStoryPage: (PageID) -> Bool) -> Int {
+        guard let content else { return style.skippedPages.filter(isStoryPage).count }
+        return content.storyPages.filter { page in
+            style.skippedPages.contains(page.id)
+                || (style.skipFrontMatter && content.template(for: page)?.pageRole?.isFrontMatter == true)
+        }.count
+    }
+
     var body: some View {
+        let skipped = Self.skippedCount(style: draft, content: content, isStoryPage: { pages.isStoryPage($0) })
         VStack(alignment: .leading, spacing: 12) {
             Text("Page Numbers").font(.headline)
             Form {
@@ -88,7 +107,7 @@ struct PageNumbersSheet: View {
                     }
                     Toggle("Skip front-matter pages (title, dedication, belongs to)", isOn: $draft.skipFrontMatter)
                     LabeledContent("Pages skipped") {
-                        Text(draft.skippedPages.isEmpty ? "None" : "\(draft.skippedPages.count)")
+                        Text(skipped == 0 ? "None" : "\(skipped)")
                     }
                 }
                 .disabled(!draft.enabled)
@@ -107,8 +126,10 @@ struct PageNumbersSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Done") {
                     var style = draft
-                    if let family {
-                        // Keep the stored name when the font is missing and untouched.
+                    if family == initialFamily {
+                        // Untouched: keep the stored face (e.g. a bold one) as it was.
+                        style.fontFamily = draft.fontFamily
+                    } else if let family {
                         style.fontFamily = PageNumberFontNames.postScriptName(forFamily: family)
                             ?? (family == draft.fontFamily ? draft.fontFamily : nil)
                     } else {

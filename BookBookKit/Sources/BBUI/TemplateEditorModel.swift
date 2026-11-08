@@ -26,15 +26,18 @@ public final class TemplateEditorModel {
     /// Snapping on/off (the canvas also disables it while ⌘ is held).
     public var snappingEnabled: Bool = true
 
+    /// No side effects on the document: SwiftUI may build (and throw away) several models for
+    /// one window; only the one that opens an interaction hooks into the document's group.
     public init(document: BookDocument) {
         self.document = document
-        document.undoGroupWasClosedByReplay = { [weak self] in self?.dropOpenInteraction() }
     }
 
     /// An undo/redo closed the document's open group under us: forget the interaction and
-    /// cancel the pending continuous-edit timer, so nothing registers after the undo.
-    private func dropOpenInteraction() {
-        interactionOpen = false
+    /// cancel the pending continuous-edit timer, so nothing registers after the undo. The
+    /// in-flight drag sees `isInteractionOpen(_:)` turn false and stops editing.
+    private func dropOpenInteraction(_ id: Int) {
+        guard openInteraction == id else { return }
+        openInteraction = nil
         continuousTask?.cancel()
         continuousTask = nil
         activeGuides = []
@@ -61,7 +64,9 @@ public final class TemplateEditorModel {
         template?.boxes.filter { selection.contains($0.id) } ?? []
     }
 
-    private var interactionOpen = false
+    /// The open interaction's token (nil when none is open).
+    @ObservationIgnored private var openInteraction: Int?
+    @ObservationIgnored private var nextInteraction = 0
     private var continuousTask: Task<Void, Never>?
     private var continuousName = ""
 
@@ -126,7 +131,7 @@ public final class TemplateEditorModel {
         guard edited != current else { return }
         if isUncopiedPreset {
             // First edit of a preset: copy it into the book and edit it as one undo step.
-            document.beginUndoGroup()
+            document.beginUndoGroup(actionName: actionName)
             if document.perform(.addTemplate(current)) {
                 document.perform(.updateTemplate(edited, actionName: actionName))
             }
@@ -136,18 +141,31 @@ public final class TemplateEditorModel {
         document.perform(.updateTemplate(edited, actionName: actionName))
     }
 
-    /// Mouse-down of a drag/resize/rotate: opens an undo group (`beginUndoGroup`).
-    public func beginInteraction() {
-        guard !interactionOpen else { return }
-        interactionOpen = true
-        document.beginUndoGroup()
+    /// Mouse-down of a drag/resize/rotate: opens an undo group (`beginUndoGroup`). Returns the
+    /// interaction's token (the already-open one's, if an interaction is open); an undo or redo
+    /// that closes the group ends it, after which `isInteractionOpen(token)` is false.
+    /// `actionName` names the undo step when it registers (pass the name `endInteraction` will use).
+    @discardableResult
+    public func beginInteraction(actionName: String? = nil) -> Int {
+        if let openInteraction { return openInteraction }
+        nextInteraction += 1
+        let id = nextInteraction
+        openInteraction = id
+        document.beginUndoGroup(actionName: actionName, onClosedByReplay: { [weak self] in self?.dropOpenInteraction(id) })
+        return id
+    }
+
+    /// True while the interaction `token` (from `beginInteraction`) is still open: not ended,
+    /// and not closed by an undo or redo.
+    public func isInteractionOpen(_ token: Int) -> Bool {
+        openInteraction == token
     }
 
     /// Mouse-up: closes the group as one undo step named `actionName`, and clears `activeGuides`.
     public func endInteraction(actionName: String) {
         activeGuides = []
-        guard interactionOpen else { return }
-        interactionOpen = false
+        guard openInteraction != nil else { return }
+        openInteraction = nil
         document.endUndoGroup(actionName: actionName)
     }
 
@@ -157,7 +175,7 @@ public final class TemplateEditorModel {
     public func updateContinuously(actionName: String, _ change: (inout Template) -> Void) {
         if continuousTask != nil, continuousName != actionName { finishContinuousEdit() }
         continuousTask?.cancel()
-        beginInteraction()
+        beginInteraction(actionName: actionName)
         continuousName = actionName
         update(actionName: actionName, change)
         continuousTask = Task { [weak self] in

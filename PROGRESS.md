@@ -4,7 +4,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 **Statuses:** `not started` · `in progress` · `awaiting hand checks` · `done` · `blocked` · `skipped (floating)`
 
-**Live API spend so far:** $0.45 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
+**Live API spend so far:** $0.47 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
@@ -17,7 +17,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 5 | Pages tab, ordering and cover | done | `phase-5-pages-cover` | — | $0.00 | No live checks. [Log](progress/phase-5-pages-cover.md) |
 | 6 | Template editor | done | `phase-6-template-editor` | — | $0.00 | No live checks. [Log](progress/phase-6-template-editor.md) |
 | 7 | Style guide and page setup | done | `phase-7-style-page-setup` | — | $0.00 | No live checks. [Log](progress/phase-7-style-page-setup.md) |
-| 8 | Sessions and versions | in progress | `phase-8-sessions-versions` | — | | |
+| 8 | Sessions and versions | awaiting hand checks | `phase-8-sessions-versions` | — | $0.02 | Live check `SP8_refinementLowQuality` passed. |
 | 9 | Queue, cost, errors and settings (M2) | not started | | | | |
 | 10 | Assets and character sheets | not started | | | | |
 | 11 | Region editing | not started | | | | |
@@ -72,6 +72,17 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Later
+- Version numbers are strip positions (`versionNumber`), so deleting a version renumbers later ones; "refined version N" tags and "Refined from" then point at the wrong version. Consider a stable per-session number (from Phase 8 review).
+- Undoing `chooseVersion` leaves the panel's selected version on one that's no longer placed, so the next prompt refines a picture not on the page (from Phase 8 review).
+- After Reset Session → Keep Versions the next prompt still refines the placed version; confirm against PD §8.6 "starts fresh" (from Phase 8 review).
+- `SessionPanel.swift` drop handler returns true even when no file URLs survive the filter (from Phase 8 review).
+- `baseImageTooLarge` / a refine on a deleted base (`baseVersionGone`) only fail at request time; the panel could warn or disable Refine (from Phase 8 review and lanes).
+- `AspectFitter.snap` returns nil for fixed-ratio models (no snapping; matters once Gemini lands) and ignores its `quality` parameter (from Phase 8 fixes; Phase 13).
+- `ContextAssembler.resolve`: if no slot holds the session and the target box ID now belongs to another session's box, that box's shape is used (from Phase 8 re-review).
+- The safe area uses `box.bleedEdges` without checking that the box reaches the trim; deleting a mid-lineage version leaves children's `parent` dangling, so their lineage stops at the gap (from Phase 8 lanes).
+- No two-image-box template preset; new image boxes in the template editor stack on top of each other (from Phase 8 hand checks).
+- Overview: double-clicking a page thumbnail may not open it (seen with synthesized clicks only) (from Phase 8 hand checks).
+- A project run skill (launch, `-BookBookLibraryRoot`, accessibility driving) would speed up automated hand checks (from Phase 8 hand checks).
 - Style tab: does SwiftUI `TextEditor` typing log to the window undo manager, so a second ⌘Z while focused undoes typing into the draft, which leaving the field commits as a new edit and clears redo? Picking a preset while Description has uncommitted typing now drops the typing (from Phase 7 review).
 - Flags: an image generated at revision N+1, followed by an undo of the style edit back to N, isn't flagged "style changed" (documented decision; revisit now that revisions are never reused). No tests for undo → redo → different edit, or for decoding a high-water mark below `visualRevision` (from Phase 7 review).
 - Choosing a different version keeps the old image's `acknowledged.styleRevision`, so an older version can hide "style changed"; A §4.4 needs a decision (from Phase 7 review).
@@ -130,7 +141,7 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 8 — Sessions and versions
 
-**Stage:** B
+**Stage:** B (done; awaiting hand checks)
 
 **Decisions (2026-11-08, asked):** clicking a version places it (undoable `chooseVersion`) and makes it the panel's selected version, which is the base for Details and refining; this closes the Phase 2 "separate inspect from place" follow-up as "keep combined" (PD §8.6 as written). Starring and deleting a version are not undoable; delete asks for confirmation, and deleting the placed version empties the box.
 
@@ -147,3 +158,4 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 **For Session B:** run the live check `scripts/live-tests.sh openai SP8_refinementLowQuality` (budget about $0.02). Hand checks need a two-image-box template and a spread. Check the trackpad feel (two-finger scroll over the selected placed image zooms rather than pans) and the canvas drop by hand. Lane notes for the review: the safe area uses `box.bleedEdges` without checking that the box reaches the trim; refining a version whose base was deleted fails with `baseVersionGone` (the UI could prevent this); deleting a mid-lineage version leaves its children's `parent` dangling, so their lineage stops at the gap; the selected version is panel `@State`, reset by `.id(box)`.
 
+**Session B (2026-11-08):** `scripts/test.sh all` green before and after fixes; secret scan clean; no compiler warnings. Live check `SP8_refinementLowQuality` passed ($0.020: generate $0.006 + edit $0.014; confirms `/images/edits` accepts `moderation: auto`). Review must-fixes fixed (merged from `phase-8-fixes`, re-review clean): refinement edit `size` is now snapped to the model's catalog limits via new `AspectFitter.snap` (imported scans/photos sent raw sizes → 400); `ContextAssembler.resolve` now finds the page/box through the slot holding the message's session (a slot moved to a new box ID while queued failed as `.unknown`); duplicate Cost row removed. Should-fix items went to Open follow-ups → Later. Automated hand checks (no in-app key, local PNGs): two boxes have independent sessions/strips; Reset → Keep Versions keeps versions (epoch bumps); crop pan/zoom, undo and PDF crop match; star, Export Image…, delete with confirmation work. Not checked automatically: generate/refine and the v1 lineage in Details, refining a dropped drawing (Finder drag, HEIC/EXIF), the fold instruction in Details, trackpad feel.

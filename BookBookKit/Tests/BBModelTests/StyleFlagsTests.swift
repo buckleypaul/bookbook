@@ -88,15 +88,15 @@ struct StyleFlagsTests {
     @Test func bleedChangesAspect() {
         var content = BookContent.makeNew(title: "T", storyTemplate: Self.story, coverTemplate: Self.cover, now: Self.now)
         let full = Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 1), bleedEdges: .all, content: .image)
-        #expect(content.boxAspect(full) == 612.0 / 792.0)
+        #expect(content.boxAspect(full, in: Self.story) == 612.0 / 792.0)
         content.style.pageSetup.bleedEnabled = true
         content.style.pageSetup.bleedAmount = 9
-        #expect(abs(content.boxAspect(full) - 630.0 / 810.0) < 1e-12)
+        #expect(abs(content.boxAspect(full, in: Self.story) - 630.0 / 810.0) < 1e-12)
         // Only leading edge bleeds.
         let leading = Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 1), bleedEdges: .leading, content: .image)
-        #expect(abs(content.boxAspect(leading) - 621.0 / 792.0) < 1e-12)
+        #expect(abs(content.boxAspect(leading, in: Self.story) - 621.0 / 792.0) < 1e-12)
         // No bleed edges: unchanged.
-        #expect(abs(content.boxAspect(Self.imageBox) - (0.8 * 612) / (0.5 * 792)) < 1e-9)
+        #expect(abs(content.boxAspect(Self.imageBox, in: Self.story) - (0.8 * 612) / (0.5 * 792)) < 1e-9)
     }
 
     @Test func spreadTemplateUsesDoubleWidth() {

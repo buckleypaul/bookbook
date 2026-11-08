@@ -44,11 +44,8 @@ public struct BookContent: Hashable, Sendable {
 
     /// A box's aspect (width / height) as rendered: its frame on the trim, with each edge in
     /// `bleedEdges` pushed out by the bleed when bleed is on (matches
-    /// `BBLayout.PageGeometry.renderRect`, the authority). This overload uses a single-page
-    /// trim; use `boxAspect(_:in:)` for spread templates (doubled width).
-    public func boxAspect(_ box: Box) -> Double { boxAspect(box, spread: false) }
-
-    /// `boxAspect(_:)` for a box of `template` (a spread template uses the doubled width).
+    /// `BBLayout.PageGeometry.renderRect`, the authority). A spread template uses the doubled
+    /// width.
     public func boxAspect(_ box: Box, in template: Template) -> Double {
         boxAspect(box, spread: template.kind == .spread)
     }
@@ -136,7 +133,7 @@ extension BookContent {
     /// - style changed: the placed version has provenance and
     ///   `max(provenance.styleRevision, acknowledged.styleRevision) < style.visualRevision`;
     ///   imported versions (no provenance) never get it;
-    /// - layout changed: `abs(log(boxAspect(box) / (acknowledged.boxAspect ?? placement.boxAspectWhenPlaced))) > 0.05`.
+    /// - layout changed: `abs(log(boxAspect(box, in: template) / (acknowledged.boxAspect ?? placement.boxAspectWhenPlaced))) > 0.05`.
     /// Empty for an empty box.
     public func imageFlags(page pageID: PageID, box boxID: BoxID) -> ImageFlags {
         guard let page = pages[pageID], let template = template(for: page), let box = template.box(boxID),

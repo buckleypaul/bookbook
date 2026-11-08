@@ -96,4 +96,12 @@ public protocol GenerationHost: Sendable {
     /// A snapshot of the book, or nil if it's gone (the item then fails as `.unknown`).
     func content(for bookID: BookID) async -> BookContent?
     func deliver(_ delivery: GenerationDelivery) async
+    /// Phase 8: the bytes of an image in the book's image store (base image, style references,
+    /// attached references), or nil if it's missing. Read when the item starts (A §7.9).
+    func imageData(for ref: ImageRef, in bookID: BookID) async -> Data?
+}
+
+extension GenerationHost {
+    /// Default for hosts that never upload images (test fakes).
+    public func imageData(for ref: ImageRef, in bookID: BookID) async -> Data? { nil }
 }

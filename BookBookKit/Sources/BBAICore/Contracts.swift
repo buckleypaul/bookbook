@@ -118,16 +118,20 @@ public struct OutputShape: Hashable, Codable, Sendable {
     }
 }
 
-/// An image to upload (base image or reference). Unused by Phase 2's generations-only path.
+/// An image to upload (base image or reference).
 public struct ImagePayload: Hashable, Sendable {
     public var data: Data
     /// UTType identifier.
     public var contentType: String
     public var ref: ImageRef?
-    public init(data: Data, contentType: String, ref: ImageRef? = nil) {
+    /// The image's pixel size when known (Phase 8). For a base image, the OpenAI adapter sends it
+    /// as the explicit `size` of an edit (A §7.6: `size: auto` misbehaves on `/images/edits`).
+    public var pixelSize: PixelSize?
+    public init(data: Data, contentType: String, ref: ImageRef? = nil, pixelSize: PixelSize? = nil) {
         self.data = data
         self.contentType = contentType
         self.ref = ref
+        self.pixelSize = pixelSize
     }
 }
 

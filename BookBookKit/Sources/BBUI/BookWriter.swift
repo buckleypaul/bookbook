@@ -1,6 +1,7 @@
 import BBAI
 import BBAICore
 import BBModel
+import BBStore
 import Foundation
 
 /// The queue's host (A §6.4). Every delivery goes through `OpenBooks` on the main actor, which
@@ -20,5 +21,12 @@ public struct BookWriter: GenerationHost {
 
     public func deliver(_ delivery: GenerationDelivery) async {
         await openBooks.deliver(delivery, now: now)
+    }
+
+    /// Image files are immutable and content-addressed, so they're read without the book lock.
+    public func imageData(for ref: ImageRef, in bookID: BookID) async -> Data? {
+        guard let url = await openBooks.packageURL(for: bookID) else { return nil }
+        let fileURL = BookStore(packageURL: url).imageURL(for: ref)
+        return try? Data(contentsOf: fileURL, options: .mappedIfSafe)
     }
 }

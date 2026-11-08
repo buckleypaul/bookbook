@@ -352,6 +352,9 @@ Image files that no JSON refers to are swept only when the book is opened, and o
 - A save is triggered 1 s after the last edit (debounced), and also when the window closes, the app quits or the app is hidden.
 - Encoding happens on the actor from a value snapshot, so the UI never blocks.
 - **Single writer:** an open book holds `.lock`, which records the process ID and host. If another live lock is found (for example a library on a shared drive), the app warns and offers to open the book read-only.
+  - `.lock` is created atomically with `link(2)`. A stale lock (dead PID on this host, or unreadable) is taken over only while holding `flock(2)` on the package folder, re-reading the lock through one file descriptor first; a lock that vanished counts as missing, never stale. Release takes the same `flock`.
+  - Within one process the lock is re-entrant and counted per book across `BookStore`s; only the last release removes `.lock`.
+  - Headless opens (closed-book deliveries, snapshots, renames) run in `OpenBooks`' per-book queue and take the lock; if another process holds it, deliveries write nothing and report the book as locked, and snapshots load read-only (no recovery, migration, ledger repair or sweep). (Phase 3)
 
 ### 5.4 Library
 

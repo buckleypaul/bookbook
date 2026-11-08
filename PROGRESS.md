@@ -13,7 +13,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 1b | Project setup and CI | done | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27`. [Log](progress/phase-1b-setup-ci.md) |
 | 2 | Thin vertical slice (M1) | done | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | [Log](progress/phase-2-thin-slice.md) |
 | 3 | Storage and library | done | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks. [Log](progress/phase-3-storage-library.md) |
-| 4 | Text and typography | in progress | `phase-4-text-typography` | | | |
+| 4 | Text and typography | awaiting hand checks | `phase-4-text-typography` | PRLINK | $0.00 | No live checks. |
 | 5 | Pages tab, ordering and cover | not started | | | | |
 | 6 | Template editor | not started | | | | |
 | 7 | Style guide and page setup | not started | | | | |
@@ -44,15 +44,12 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
-### Phase 4
-- Coalesce typing undo (today each keystroke is one undo step) (from Phase 2).
-- The overflow badge (from Phase 2).
-- Title-role typography (from Phase 2).
-- A missing-font warning (from Phase 2).
-- Cache `TextBoxLayout` (it's rebuilt every draw) (from Phase 2).
-
 ### Phase 5
 - Cover editing/export and page numbers (from Phase 2).
+- Hand-check the title-box bold state once cover/title boxes are editable: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4).
+
+### Phase 7
+- Typography form: the body-font menu is stale after Import Font… until the sheet reopens; the "Alignment" label wraps; Escape loses a typed size that wasn't committed; a pending colour commit can fire after the sheet closes (from Phase 4).
 
 ### Phase 8
 - Edits/references/masks in the OpenAI adapter (from Phase 2).
@@ -85,6 +82,14 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Later
+- Format bar: the colour picker adds one undo step per colour-panel change (debounce it like the Typography form); there's no typed size field, only ±1 pt steps (from Phase 4 review).
+- Importing a font clears only that window's layout cache and missing-font list; other open books keep stale fallback layouts and banners (from Phase 4 review).
+- Pasted rich text keeps attributes the model drops (kerning, paragraph spacing, links) in the editor until reload; pasted text with no requested font still uses the family match (from Phase 4).
+- `refreshMissingFonts()` walks every page on each undoable edit, but isn't refreshed on coalesced typing, so a paste that brings in a missing font shows no banner (from Phase 4).
+- The `fsType` embedding check runs only on import: a restricted system font picked from the menus isn't flagged, and bitmap-only embedding (bit 9) isn't checked (from Phase 4 review).
+- A trailing empty paragraph loses its alignment and formatting on a round trip; a family with only a bold face stores `bold: true` but can't draw it (consider disabling B) (from Phase 4).
+- `BookEditorLayoutTests` opens a real `NSWindow` (it needs a GUI session) and depends on the measured 830 pt SwiftUI minimum; it doesn't test widened sidebar or inspector panels with a narrow window (from Phase 4 review).
+- The export save panel's default folder carries over from the font-import panel (from Phase 4 hand checks).
 - The canvas loads images synchronously on the main thread (move to an actor `ThumbnailCache`) (from Phase 2).
 - Calm-area guidance only for overlapping text boxes, not adjacent ones (from Phase 2).
 - A test that every prompt template key exists (from Phase 2).
@@ -114,7 +119,7 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 4 — Text and typography
 
-**Stage:** B
+**Stage:** B (done; awaiting hand checks)
 
 **Session A (2026-11-08):** contracts on the branch (`TextFormatting.swift`, `Fonts.swift`, `BookStore+Fonts.swift`, `TextBoxLayoutCache`, `Typography.resolved(for:)`, `BookCommand.setRichText(…, coalescing:)` and `.setTypography`). Four lanes merged:
 - A (opus): `TypingCoalescer`, coalesced undo in `BookDocument.perform`, `.setTypography`, font registration on open, `importFont`, `missingFonts`, `InlineTextEditor` as `TextFormatTarget`, layout cache and red "+" overflow badge in `CanvasView`, title-role typography.
@@ -131,3 +136,20 @@ At the end of Session A, `swift test` (all targets) is green and the app builds 
 - A trailing empty paragraph loses its alignment and formatting on a round trip.
 - Undo tests spin the run loop once per keystroke (`TestRunLoop`), so watch them for flakiness in CI.
 - No live checks this phase.
+
+**Session B (2026-11-08):**
+- **CI locally:** `scripts/test.sh all` is green with no Swift warnings, before and after the fixes.
+- **Review must-fixes (two rounds, all fixed):**
+  - Title runs saved as bold because the title face (`AvenirNext-Bold`) is bold. Bold and italic are now relative to the run's base face, and the format bar shows the drawn traits (`RichTextBridge.drawnTraits`).
+  - A title run set to a sibling face of the title family lost its font override on read-back. The family match now applies only to runs with no requested font.
+- **Hand-check blocker, fixed:** opening any book crashed the app (SIGABRT, a split-view constraint loop).
+  - Cause: the format bar's rigid width (~615 pt) left the detail column no room, and the 760 pt window minimum was below the editor's real 830 pt.
+  - Fix: the format bar is in a horizontal scroll view, the window minimum is 840, and new book windows open at 1200×780.
+  - `BookEditorLayoutTests` hosts the editor in a real window so CI catches this.
+- **Also fixed:** fake italic. TextKit 2 ignores `.obliqueness`, so italic now uses a slanted font.
+- **Automated hand checks (sonnet, System Events):**
+  - Passed: 1 (BOOM! 48 pt red bold American Typewriter; the PDF matches the screen, has selectable text and embedded fonts), 2, 4, 5, plus ⌘B/I/U, the format bar and spell-check.
+  - Check 3: the imported Atkinson font is embedded in the PDF, but it was never installed system-wide, so the "remove it from the system" step wasn't exercised.
+  - The title-box bold state couldn't be reached (no cover editing until Phase 5).
+- **Docs changed:** architecture.md §4.2 and §8.3 (relative bold/italic, drawn-trait button state).
+- **Live spend:** $0.00.

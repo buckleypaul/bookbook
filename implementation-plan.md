@@ -200,7 +200,7 @@ Phase 15 only *needs* Phase 1 and a working app. It's placed after Phase 14 so t
 
 ## 4–8. Moved to `plan/`
 
-Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve through this table. Phase 0 and Phases 1–2 are done and live in `plan/done/`.
+Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve through this table. Phase 0 and Phases 1–3 are done and live in `plan/done/`.
 
 | Old reference | Now in |
 |---|---|
@@ -208,7 +208,7 @@ Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve 
 | §4.2 (Gemini spikes, SG-n) | `plan/phase-13-gemini.md` |
 | §5 Phase 1 | `plan/done/phase-01-setup-ci.md` |
 | §5 Phase 2 | `plan/done/phase-02-thin-slice.md` |
-| §5 Phase 3 | `plan/phase-03-storage-library.md` |
+| §5 Phase 3 | `plan/done/phase-03-storage-library.md` |
 | §5 Phase 4 | `plan/phase-04-text-typography.md` |
 | §5 Phase 5 | `plan/phase-05-pages-cover.md` |
 | §5 Phase 6 | `plan/phase-06-template-editor.md` |

@@ -12,7 +12,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 0 | Live-API spikes and fixtures | done | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13. [Log](progress/phase-0-spikes.md) |
 | 1b | Project setup and CI | done | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27`. [Log](progress/phase-1b-setup-ci.md) |
 | 2 | Thin vertical slice (M1) | done | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | [Log](progress/phase-2-thin-slice.md) |
-| 3 | Storage and library | awaiting hand checks | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks |
+| 3 | Storage and library | done | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks. [Log](progress/phase-3-storage-library.md) |
 | 4 | Text and typography | not started | | | | |
 | 5 | Pages tab, ordering and cover | not started | | | | |
 | 6 | Template editor | not started | | | | |
@@ -43,13 +43,6 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 ## Open follow-ups
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
-
-### Phase 3
-- Reopen books at relaunch (from Phase 2).
-- `.lock` (from Phase 2).
-- Image sweep (from Phase 2).
-- Thumbnails (from Phase 2).
-- The library index (from Phase 2).
 
 ### Phase 4
 - Coalesce typing undo (today each keystroke is one undo step) (from Phase 2).
@@ -92,7 +85,6 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Later
-- **CI flake:** `ReviewFixTests` (`autosaveHandlerReportsSuccessAndFailureAndKeepsPending`, `scheduledSaveCompletesAfterStoreReferenceIsDropped`) failed once on the CI runner, then passed on a re-run and 5/5 locally. They're timing-sensitive; wait on a condition instead of a fixed delay. (from Phase 2 merge, 2026-11-08)
 - The canvas loads images synchronously on the main thread (move to an actor `ThumbnailCache`) (from Phase 2).
 - Calm-area guidance only for overlapping text boxes, not adjacent ones (from Phase 2).
 - A test that every prompt template key exists (from Phase 2).
@@ -103,10 +95,6 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - App icon and `UTTypeIcons` for `.bookbook` documents are placeholders (Finder shows a generic package icon) (from Phase 1b).
 - The `xcode-27` runner image is "preview", and Xcode 27.2 is an RC there; the `xcode-select` path may change (from Phase 1b).
 - `actions/checkout` v4.2.2 / `actions/cache` v4.2.0 are Node 20 actions; bump them when GitHub retires Node 20 (from Phase 1b).
-
-## Current phase log
-
-The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 - Library actions have no menu-bar items (`BookBookCommands.swift`) (from Phase 3).
 - A restored window for a deleted book may flash briefly after ⌥⌘Q (from Phase 3).
 - `LibraryIndex` FSEvents context uses `passUnretained` with no retain/release; an in-flight callback during `stop()` could touch a freed box (from Phase 3 review).
@@ -120,42 +108,8 @@ The running phase writes its log here; when it is marked done, move the entry to
 - `BookLock.acquireHold` holds the process-wide `Mutex` across file I/O and a blocking `flock`; the lock refcount key uses `standardizedFileURL` (no symlink resolution); a `BookStore` dropped without `releaseLock()` leaks its count so `.lock` stays until exit (from Phase 3 review).
 - Library grid thumbnails are blank white for empty books (check once books have content) (from Phase 3 hand checks).
 
-### Phase 3 — Storage and library
+## Current phase log
 
-**Stage:** B
+The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-Started 2026-11-08.
-
-**Contracts (main thread, committed before the lanes):** `StoreError.locked/.readOnly`, `LockOwner`, `LockAcquisition`, `LibraryEntry.thumbnailURL` (+ Codable); stubs for the `BookStore` lock / read-only / thumbnail / sweep API, `Migrator`, `CostLedger`, `LibraryIndex`, the `Library` ops (duplicate, trash, rename, moveBooks), `ThumbnailCache` and `BookThumbnail`. BBStoreTests gets a `Fixtures/` resource folder.
-
-**Assumptions (plan defaults):**
-- Rename changes `Book.title` only; the package folder keeps its name. A closed book is renamed through a headless `BookStore`, an open one through its `BookDocument` (not undoable: it isn't in PD §8.10's list).
-- The library location is saved in `UserDefaults` key `libraryPath` (A §5.5). The `-BookBookLibraryRoot` launch argument still wins. Moving the books needs every book window closed first (the app closes them after flushing).
-- A book held by another live process opens read-only: editing is disabled and nothing is written (no journal replay, migration, sweep or ledger repair).
-- The library thumbnail is the first story page while the cover is hidden (until Phase 5).
-
-**Session A (2026-11-08): all lanes merged, the package builds and every package test passes (5 runs in a row).**
-- **L1 store durability (opus):**
-  - Fault injection at each of the 5 save steps × 3 entity mixes.
-  - `.lock` (`BookLock.swift`: `link(2)` create, stale-PID takeover, re-entrant in-process) and read-only mode.
-  - Orphan image sweep (`ImageSweep.swift`), `writeThumbnail`, and `load()` wiring (recover → migrate → ledger repair → decode → sweep).
-  - **Fixed a Phase 2 bug:** a committed transaction that crashed partway through its renames was discarded on reopen.
-  - The empty `.journal` folder is now removed after saves. That opened a race; it's fixed by making `recover()` tolerate a missing folder and skip this process's in-flight transactions.
-  - ReviewFixTests' fixed sleeps became polling (the "CI flake" follow-up).
-  - A test-only `PackageCoding.fullSync` task-local swaps `F_FULLFSYNC` for `fsync` in the crash suites.
-- **L2 Migrator + CostLedger (sonnet):** `Fixtures/SchemaV1.bookbook`.
-- **L3 LibraryIndex + Library ops (sonnet):** FSEvents uses `realpath` because FSEvents reports `/private/var/...`. `Library.rename` is `async` (contract change, main thread).
-- **L4 app/UI (opus):**
-  - Library grid, rename/duplicate/trash/Show in Finder.
-  - `OpenBooks` keeps `openBookIDs` and reopens them at launch.
-  - Lock alert with read-only banner; sidebar `BookSwitcher`; Settings ▸ General library location with a move offer (`LibraryLocation.resolve`).
-  - Thumbnails written at most every 3 s and on close.
-- **L5 ThumbnailCache + BookThumbnail (sonnet).**
-
-**Session B (2026-11-08):**
-- CI-equivalent run green on the merged branch (secret scan, bootstrap, kit tests, spikes, xcodegen check, app Debug build+test, Release build); no concurrency warnings.
-- Review (opus) found 2 must-fix, fixed in two rounds (opus), each re-reviewed: background deliveries/snapshots/closed-book renames now take `.lock` inside `OpenBooks`' per-book queue (deliveries to a foreign-locked book write nothing and report "locked"; snapshots load read-only); stale-lock takeover serialized with `flock(2)` on the package folder, `.lock` read through one fd, release under the same `flock`, in-process lock refcounted per book. New `LockTakeoverTests` + `OpenBooksDeliveryTests` cases. `architecture.md` §5.3 updated.
-- Contract change: `OpenBooks.rename` (AppModel routes renames through it); `BookLock.acquire(as:)` for tests.
-- Hand checks driven by an agent (pre-fix build): 3 books, duplicate, trash, folder copy appears live, double-open → one window, ⌘Q/⌥⌘Q reopen without duplicates, deleted-while-closed book dropped, lock alert + read-only banner — all pass. Not driven: rename, Put Back, edit-then-force-quit (typing didn't reach the page), library-location move.
-- Should-fix items from the review are filed under Open follow-ups (Phase 9, 16, Later).
-- No live spend.
+_No phase in progress._

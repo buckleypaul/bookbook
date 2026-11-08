@@ -104,6 +104,7 @@ Parents and hobbyists making personal books to read at home, give as gifts, or p
 - The library location defaults to a standard app folder; the user can choose another location.
 - Each book is self-contained, so it can be backed up or moved by copying it.
 - Changes save automatically, and a crash never corrupts a book.
+- **Reopen at relaunch:** the books that were open when BookBook quit open again when it relaunches, whatever the macOS "Close windows when quitting an application" setting. A book that has since been moved out of the library or deleted is skipped without an error.
 - **Import from another book:** choose a source book, then pick assets, templates and/or the style guide to copy in. Imports are **independent copies**: editing one doesn't change the other. Name clashes are resolved with a rename prompt.
 
 ### 8.2 Style tab

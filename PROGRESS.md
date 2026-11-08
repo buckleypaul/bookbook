@@ -107,7 +107,7 @@ Also fixed from the nice-to-haves: `dump()`/reflection redaction for `APIKey` an
 - [x] Optional: the SL-3 by-hand steps in `Spikes/notes/local-spikes.md`.
 
 **Follow-ups:**
-- **Product decision:** should BookBook always reopen the last-open books at relaunch, given macOS's default doesn't (SL-3)? Options are in `Spikes/REPORT.md`.
+- ~~**Product decision:** should BookBook always reopen the last-open books at relaunch?~~ Decided 2026-11-07: yes, always (option b). PD §8.1, A §6.1 and the Phase 3 deliverables and hand checks are updated.
 - **Phase 11 (blocking):** re-check OpenAI masked edits on a real illustration, and choose the region-edit approach (masked edit / unmasked edit plus composite / black-fill detection plus fallback).
 - **Phase 2 / BBNet:**
   - redact provider-masked key echoes (`sk-…****…`) from error `raw`;
@@ -155,4 +155,5 @@ Also fixed from the nice-to-haves: `dump()`/reflection redaction for `APIKey` an
 - `BookWindow` shows the book UUID as placeholder text (Phase 2 replaces it).
 - The `xcode-27` runner image is "preview", and Xcode 27.2 is an RC there; the `xcode-select` path may change.
 - `actions/checkout` v4.2.2 / `actions/cache` v4.2.0 are Node 20 actions; bump them when GitHub retires Node 20.
+- Product decision recorded on this branch (2026-11-07): BookBook always reopens the books that were open at quit. PD §8.1, A §6.1, plan Phase 3, `Spikes/REPORT.md`.
 - From 1a, still open: `live-tests.sh` exits 0 when no test matches (SwiftPM prints a warning); fine for this phase's check.

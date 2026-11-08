@@ -50,6 +50,7 @@ struct FormatBar: View {
             alignmentPicker(state?.alignment)
             Spacer(minLength: 0)
         }
+        .buttonStyle(.borderless)
         .focusable(false)
         .disabled(!formatting.isEditing)
         .padding(.horizontal, 10)

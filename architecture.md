@@ -868,6 +868,8 @@ Each page is drawn in this order:
 4. The page number.
 5. Overlays, on screen only: trim line, safe area, fold and guides.
 
+Hit-testing follows this draw order: text boxes (topmost last in layer order) are hit before any image box, then image boxes in reverse layer order (`BoxHitTesting.box`).
+
 For export, the renderer fetches pre-processed bitmaps from `ExportImagePreparer` (§9.2), so the renderer itself never resamples.
 
 ---

@@ -140,3 +140,9 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 **Stage:** A
 
+**Decisions (2026-11-08, asked):** clicking a version places it (undoable `chooseVersion`) and makes it the panel's selected version, which is the base for Details and refining; this closes the Phase 2 "separate inspect from place" follow-up as "keep combined" (PD §8.6 as written). Starring and deleting a version are not undoable; delete asks for confirmation, and deleting the placed version empties the box.
+
+**Contracts (main thread):** `BBModel/Session+Lineage.swift` (`visibleMessages`, `lineage(of:)`, `lineageInstructions(of:)`, `versionNumber`, `BookContent.session(containing:)`); `ImagePayload.pixelSize`; `GenerationHost.imageData(for:in:)` (implemented by `BookWriter`, with a nil default for fakes).
+
+**Lanes:** L1 BBAI assembly and queue (sonnet); L2 OpenAI `/images/edits` (sonnet); L3 session panel, strip, details, import, normalizer (sonnet); L4 crop command and canvas, canvas drop, BookDocument follow-ups (opus).
+

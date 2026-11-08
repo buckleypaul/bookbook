@@ -105,6 +105,7 @@ struct BookEditor: View {
     @State private var showSession = true
     @State private var showTypography = false
     @State private var showNumbers = true
+    @State private var draftAllRequested = false
     @State private var images: ImageCache
     @State private var thumbnails: PageThumbnailRenderer
 
@@ -136,6 +137,9 @@ struct BookEditor: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 0) {
                         Divider()
+                        QueueBadge()
+                            .padding(.horizontal, 10)
+                            .padding(.top, 6)
                         BookSwitcher(document: document) { pages.sheet = .bookSettings }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
@@ -144,12 +148,16 @@ struct BookEditor: View {
                 .navigationSplitViewColumnWidth(min: 160, ideal: 190, max: 260)
         } detail: {
             detail(content)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if case .restored = app.queueSnapshot.pause { QueueResumeBanner(pause: app.queueSnapshot.pause) }
+                }
         }
         .inspector(isPresented: $showSession) {
             sessionPanel(content)
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
         }
         .toolbar { toolbar }
+        .draftAllFlow(document: document, trigger: $draftAllRequested)
         .navigationTitle(content.book.title)
         .focusedSceneValue(\.focusedBook, document)
         .focusedSceneValue(\.showTypography, $showTypography)
@@ -225,12 +233,22 @@ struct BookEditor: View {
                 Button("Book Settings…") { pages.sheet = .bookSettings }
                 Button("Page Numbers…") { pages.sheet = .pageNumbers }
                 Divider()
+                Button("Draft All Empty Boxes…") { draftAllRequested = true }
+                    .disabled(!app.hasOpenAIKey || !app.isOnline)
+                Divider()
                 Toggle("Show Page Numbers in Overview", isOn: $showNumbers)
             } label: {
                 Label("Book", systemImage: "book.closed")
             }
             .help("Book settings, page numbers and typography")
             .disabled(!document.isEditable)
+        }
+        if !app.isOnline {
+            ToolbarItem {
+                Label("Offline", systemImage: "wifi.slash")
+                    .foregroundStyle(.secondary)
+                    .help("Offline: queued requests will run when the network returns")
+            }
         }
         ToolbarItem {
             Button { showTypography = true } label: { Label("Typography", systemImage: "textformat") }

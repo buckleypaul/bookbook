@@ -32,6 +32,9 @@ public struct LibraryView: View {
             }
         }
         .frame(minWidth: 520, minHeight: 360)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if case .restored = app.queueSnapshot.pause { QueueResumeBanner(pause: app.queueSnapshot.pause) }
+        }
         .toolbar {
             ToolbarItemGroup {
                 Button { app.newBookRequested = true } label: { Label("New Book…", systemImage: "plus") }

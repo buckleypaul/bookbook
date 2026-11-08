@@ -15,6 +15,7 @@ public struct DetailRow: Hashable, Sendable {
 /// Everything sent for a version, as rows (A §11, plan §2.1: Version details shows it all).
 public enum VersionDetailsContent {
     public static func rows(for version: Version, in session: Session? = nil,
+                            cost: CostRecord? = nil,
                             dateFormatter: (Date) -> String = defaultDate) -> [DetailRow] {
         var rows: [DetailRow] = []
         if let session, let number = session.versionNumber(version.id) {
@@ -44,7 +45,7 @@ public enum VersionDetailsContent {
             rows.append(DetailRow(label: "References left out", value: references(p.referencesOmitted)))
         }
         rows.append(DetailRow(label: "Story text included", value: p.storyTextIncluded ? "Yes" : "No"))
-        rows.append(DetailRow(label: "Cost", value: "—"))
+        rows.append(DetailRow(label: "Cost", value: cost.map(CostText.record) ?? "—"))
         rows.append(DetailRow(label: "Style revision", value: String(p.styleRevision)))
         rows.append(DetailRow(label: "Usage", value: p.usage.map(usageText) ?? "Not reported"))
         if let revised = p.revisedPrompt, !revised.isEmpty {

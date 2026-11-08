@@ -1,3 +1,4 @@
+import BBAI
 import BBModel
 import BBStore
 import SwiftUI
@@ -16,8 +17,14 @@ public struct SettingsView: View {
 
             APIKeysSettings()
                 .tabItem { Label("API Keys", systemImage: "key") }
+
+            ModelSettings()
+                .tabItem { Label("Models", systemImage: "cpu") }
+
+            CostSettings()
+                .tabItem { Label("Cost", systemImage: "dollarsign.circle") }
         }
-        .frame(width: 520, height: 300)
+        .frame(width: 580, height: 480)
     }
 }
 
@@ -27,6 +34,8 @@ struct APIKeysSettings: View {
     @Environment(AppModel.self) private var app
     @State private var draft = ""
     @State private var error: String?
+    @State private var testing = false
+    @State private var testResult: ConnectionTestResult?
 
     var body: some View {
         Form {
@@ -51,6 +60,7 @@ struct APIKeysSettings: View {
                 if let error {
                     Text(error).foregroundStyle(.red).font(.callout)
                 }
+                connectionTest
             } header: {
                 Text("OpenAI")
             } footer: {
@@ -60,7 +70,35 @@ struct APIKeysSettings: View {
         }
         .formStyle(.grouped)
         .onAppear { app.refreshKeyStatus() }
-        .onDisappear { draft = "" }
+        .onDisappear { draft = ""; testResult = nil }
+    }
+
+    @ViewBuilder
+    private var connectionTest: some View {
+        HStack {
+            Button("Test Connection") { runTest() }
+                .disabled(!app.hasOpenAIKey || testing)
+            if testing { ProgressView().controlSize(.small) }
+            Spacer()
+        }
+        switch testResult {
+        case let .success(count):
+            Label("Connected — \(count) models available", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green).font(.callout)
+        case let .failure(advice):
+            FailureAdviceView(advice: advice)
+        case nil:
+            EmptyView()
+        }
+    }
+
+    private func runTest() {
+        testing = true
+        testResult = nil
+        Task {
+            testResult = await app.testConnection(.openai)
+            testing = false
+        }
     }
 
     private func save() {

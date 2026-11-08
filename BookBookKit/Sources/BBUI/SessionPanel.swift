@@ -1,3 +1,4 @@
+import BBAI
 import AppKit
 import BBAICore
 import BBModel
@@ -25,6 +26,9 @@ struct SessionPanel: View {
     @State private var showImporter = false
     @State private var dropTargeted = false
     @State private var problem: String?
+    @State private var estimate = CostEstimate.unknown
+    @State private var costAlert: String?
+    @State private var pendingRefine: VersionID??
 
     private var slot: ImageSlot? { content.pages[pageID]?.images[boxID] }
     private var session: Session? { slot.flatMap { content.sessions[$0.sessionID] } }
@@ -94,6 +98,16 @@ struct SessionPanel: View {
         } message: {
             Text("The chat clears. Discarding versions also empties this box. This can't be undone.")
         }
+        .alert("Confirm Cost", isPresented: Binding(get: { costAlert != nil }, set: { if !$0 { costAlert = nil } })) {
+            Button("Generate") {
+                if let pending = pendingRefine { performGenerate(refining: pending) }
+                pendingRefine = nil
+            }
+            .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) { pendingRefine = nil }
+        } message: {
+            Text(costAlert ?? "")
+        }
         .alert("Couldn't Complete That", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -145,13 +159,13 @@ struct SessionPanel: View {
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                statusLine(app.status(of: message), session: session)
+                statusLine(app.status(of: message), message: message, session: session)
             }
         }
     }
 
     @ViewBuilder
-    private func statusLine(_ status: MessageStatus, session: Session) -> some View {
+    private func statusLine(_ status: MessageStatus, message: Message, session: Session) -> some View {
         switch status {
         case .none:
             EmptyView()
@@ -172,9 +186,13 @@ struct SessionPanel: View {
             }
             .font(.caption).foregroundStyle(.secondary)
         case let .failed(error):
-            Label(ProviderErrorText.message(for: error), systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
+            if let advice = failedEntry(for: message).flatMap({ app.advice(for: $0) }) {
+                FailureAdviceView(advice: advice)
+            } else {
+                Label(ProviderErrorText.message(for: error), systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
         case let .notSaved(text):
             Label(text, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
@@ -188,6 +206,12 @@ struct SessionPanel: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func failedEntry(for message: Message) -> QueueEntry? {
+        let snapshot = app.queueSnapshot
+        if let id = message.queueItemID, let entry = snapshot.entry(for: id) { return entry }
+        return snapshot.entries.first { $0.item.messageID == message.id }
     }
 
     // MARK: Versions
@@ -256,16 +280,7 @@ struct SessionPanel: View {
     private func details(_ session: Session) -> some View {
         if let id = baseID(session) ?? session.versions.last?.id, let version = session.version(id) {
             DisclosureGroup("Version details", isExpanded: $detailsExpanded) {
-                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
-                    ForEach(VersionDetailsContent.rows(for: version, in: session), id: \.self) { row in
-                        GridRow {
-                            Text(row.label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
-                            Text(row.value).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .font(.caption)
-                .padding(.top, 6)
+                VersionDetailsGrid(version: version, session: session, bookID: document.id)
                 if version.provenance != nil {
                     Button("Regenerate with Same Settings") {
                         app.regenerate(version, page: pageID, box: boxID, in: document)
@@ -289,6 +304,12 @@ struct SessionPanel: View {
                 .lineLimit(2...6)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { generate(refining: base) }
+                .onChange(of: EstimateKey(prompt: prompt, quality: quality ?? app.defaults.quality,
+                                          story: includeStoryText ?? app.defaults.includeStoryText, base: base,
+                                          model: app.defaults.model), initial: true) { _, key in
+                    estimate = app.estimate(prompt: key.prompt, quality: key.quality, includeStoryText: key.story,
+                                            refines: key.base, page: pageID, box: boxID, in: document)
+                }
             HStack {
                 Picker("Quality", selection: Binding(get: { quality ?? app.defaults.quality },
                                                      set: { quality = $0 })) {
@@ -307,9 +328,23 @@ struct SessionPanel: View {
             HStack {
                 Text(app.defaultModelName).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button(number.map { "Refine Version \($0)" } ?? "Generate") { generate(refining: base) }
+                if app.isOnline {
+                    Text(CostText.estimate(estimate)).font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel("Estimated cost: \(CostText.estimate(estimate))")
+                }
+                Button(!app.isOnline ? "Offline" : (number.map { "Refine Version \($0)" } ?? "Generate")) {
+                    generate(refining: base)
+                }
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!app.hasOpenAIKey || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!app.isOnline || !app.hasOpenAIKey
+                              || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if app.missingDefaultModel != nil {
+                HStack(spacing: 4) {
+                    Text("The default model isn't available to your account.")
+                    SettingsLink { Text("Pick another in Settings…") }.buttonStyle(.link)
+                }
+                .font(.caption).foregroundStyle(.orange)
             }
             if !app.hasOpenAIKey {
                 HStack(spacing: 4) {
@@ -321,12 +356,71 @@ struct SessionPanel: View {
         }
     }
 
+    private struct EstimateKey: Equatable {
+        var prompt: String
+        var quality: QualityLevel
+        var story: Bool
+        var base: VersionID?
+        var model: String
+    }
+
+    /// Asks `costDecision` first; a confirmation or budget warning is shown but never blocks (A §7.10).
     private func generate(refining base: VersionID?) {
+        guard app.hasOpenAIKey, app.isOnline,
+              !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let q = quality ?? app.defaults.quality
+        let story = includeStoryText ?? app.defaults.includeStoryText
+        let current = app.estimate(prompt: prompt, quality: q, includeStoryText: story, refines: base,
+                                   page: pageID, box: boxID, in: document)
+        Task {
+            let decision = await app.costDecision(for: current, in: document)
+            guard decision.needsConfirmation || decision.overBudget else {
+                performGenerate(refining: base)
+                return
+            }
+            let spent = decision.overBudget ? await app.ledgerSummary(for: document.id).total : 0
+            if let text = CostText.requestAlert(estimate: current, decision: decision, spent: spent,
+                                                budget: document.content.book.budget) {
+                pendingRefine = .some(base)
+                costAlert = text
+            } else {
+                performGenerate(refining: base)
+            }
+        }
+    }
+
+    private func performGenerate(refining base: VersionID?) {
         guard app.hasOpenAIKey else { return }
         if app.generate(prompt: prompt, quality: quality ?? app.defaults.quality,
                         includeStoryText: includeStoryText ?? app.defaults.includeStoryText, refines: base,
                         page: pageID, box: boxID, in: document) {
             prompt = ""
+        }
+    }
+}
+
+
+/// Version details rows, with the Cost row loaded from the book's ledger (`Provenance.cost`).
+private struct VersionDetailsGrid: View {
+    @Environment(AppModel.self) private var app
+    let version: Version
+    let session: Session
+    let bookID: BookID
+    @State private var cost: CostRecord?
+
+    var body: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
+            ForEach(VersionDetailsContent.rows(for: version, in: session, cost: cost), id: \.self) { row in
+                GridRow {
+                    Text(row.label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+                    Text(row.value).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .font(.caption)
+        .padding(.top, 6)
+        .task(id: version.provenance?.cost) {
+            if let id = version.provenance?.cost { cost = await app.costRecord(id, in: bookID) } else { cost = nil }
         }
     }
 }

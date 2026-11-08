@@ -86,6 +86,7 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - Export off the main actor (from Phase 2).
 
 ### Later
+- **CI flake:** `ReviewFixTests` (`autosaveHandlerReportsSuccessAndFailureAndKeepsPending`, `scheduledSaveCompletesAfterStoreReferenceIsDropped`) failed once on the CI runner, then passed on a re-run and 5/5 locally. They're timing-sensitive; wait on a condition instead of a fixed delay. (from Phase 2 merge, 2026-11-08)
 - The canvas loads images synchronously on the main thread (move to an actor `ThumbnailCache`) (from Phase 2).
 - Calm-area guidance only for overlapping text boxes, not adjacent ones (from Phase 2).
 - A test that every prompt template key exists (from Phase 2).

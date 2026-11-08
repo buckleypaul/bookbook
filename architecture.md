@@ -232,6 +232,8 @@ struct Run {
 }
 ```
 
+`TextBoxStyle` (Phase 6) also carries optional `fontSize`, `alignment` and `color` overrides. Precedence is run/paragraph override > box style > style guide, applied by `Typography.applying(_:)` before layout.
+
 Converting between this model and `NSAttributedString` is done in one place (`BBLayout.RichTextBridge`). The style guide's defaults are resolved there, so "layered on the style guide defaults" (§8.6) falls out naturally: a run with no override follows the style guide when it changes.
 
 `bold` and `italic` are relative to the run's base face (its `fontFamily`, else the role's style font from `Typography.resolved(for:)`): `true` means "the opposite of the base face". With a regular base face that's ordinary bold/italic. With a bold base face (the default title font, `AvenirNext-Bold`) an unformatted run is drawn bold but stored as `bold: false`, so it follows a later change of the title font, and `bold: true` draws the family's regular weight. The format bar and the B/I toggles work on what is drawn, not on the stored flags: B is on over unformatted title text, and pressing it sets each run's flag so the run draws the other weight (fix round 1, Phase 4).
@@ -426,6 +428,8 @@ struct BookBookApp: App {
 
 The canvas draws downsampled images from the cache; export uses the full-resolution files.
 
+**As built (Phase 6):** `CanvasView` only draws, fits to the view and forwards events to a mode controller: `PlacementController` (page canvas: selection, clicks, overflow badges; owns a `TextEditingController` for the in-place editor) or `LayoutEditingController` (template editor, hosted by `TemplateCanvas`). Drag maths lives in pure functions (`LayoutEditingMath`); hit-testing, handles, snapping and align/distribute are in `BBLayout/TemplateEditing.swift`. The editor manipulates *trim* rects (normalized frame × trim, no bleed push-out). The Layouts tab's state is `TemplateEditorModel` (one per window); editing a bundled preset copies it into the book first, under its own ID.
+
 ### 6.3 Commands and undo/redo (§8.10)
 
 - Every undoable mutation is a `BookCommand`, a value describing the edit, such as `MoveBox`, `SetRichText`, `ChooseVersion`, `ReorderPages` or `ImportStoryText`. It is applied through `BookDocument.perform(_:)`. `perform` captures a **before snapshot** of the affected entities (cheap, because they are value types), applies the edit, marks the entities dirty, and registers the inverse with the window's `UndoManager` (`@Environment(\.undoManager)`, passed into `BookDocument`).
@@ -435,6 +439,7 @@ The canvas draws downsampled images from the cache; export uses the full-resolut
 - **Edits that aren't undoable** (§8.10) go through `BookDocument.performIrreversible(_:)`, which never registers undo. That covers AI results arriving, session reset, asset deletion, version deletion, clean-up and book deletion. Each UI entry point shows its own confirmation.
 - AI results write only to sessions and the ledger. Undo never touches those, except for `ChooseVersion`. That keeps the undo history consistent while results come in.
 - Undo history lasts until the window closes (§8.10). It isn't persisted.
+- **Undo groups (Phase 6):** `BookDocument.beginUndoGroup()` / `endUndoGroup(actionName:)` bracket a drag: edits inside apply and save live, their inverses are collected, and one compound undo step is registered at the end (nothing if no edit happened). Template edits are `addTemplate`, `updateTemplate(_, actionName:)` (whole-template replace; new image boxes get empty sessions on using pages, irreversibly) and `deleteTemplate` (refused while any page uses it); `DirtySet.deletedTemplates` removes the file in the same journal transaction.
 - **As built (Phase 2):** `perform` translates each `BookCommand` into primitive edits (set a box's text, set a box's placement, insert a page, remove a page), each of which returns its own inverse; undo and redo replay those inverses by ID and do nothing if the target is gone. Page commands never touch sessions: deleting a page keeps its session files, and undoing an add leaves the new page's empty sessions behind (swept by clean-up, Phase 16).
 
 ### 6.4 Writing to books from the background

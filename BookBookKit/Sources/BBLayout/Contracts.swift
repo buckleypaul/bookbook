@@ -38,8 +38,14 @@ public struct RenderOptions: Hashable, Sendable {
     /// template's `.pageNumberSlot` box if it has one, else at `PageNumberStyle.position`.
     public var pageNumbers: [PageNumberMark]
 
+    /// Template-editor preview (Phase 6): sample text in text boxes without text and
+    /// placeholder art in image boxes without a placement.
+    public var previewSampleContent: Bool
+
     public init(target: Target, showGuides: Bool = false, hiddenTextBoxes: Set<BoxID> = [],
-                showEmptyImagePlaceholders: Bool = false, pageNumbers: [PageNumberMark] = []) {
+                showEmptyImagePlaceholders: Bool = false, pageNumbers: [PageNumberMark] = [],
+                previewSampleContent: Bool = false) {
+        self.previewSampleContent = previewSampleContent
         self.target = target
         self.showGuides = showGuides
         self.hiddenTextBoxes = hiddenTextBoxes

@@ -11,6 +11,9 @@ public struct PageGeometry: Hashable, Sendable {
     public static let minimumSafeInsetWithBleed: CGFloat = 9
 
     public var setup: PageSetup
+    /// True for a spread geometry (made by `init(setup:kind: .spread)`): `setup.trimSize` is the
+    /// double-width spread and the fold is at `foldX`.
+    public private(set) var isSpread: Bool = false
 
     public init(setup: PageSetup) {
         self.setup = setup
@@ -98,6 +101,7 @@ extension PageGeometry {
             setup.trimSize = PointSize(width: setup.trimSize.width * 2, height: setup.trimSize.height)
         }
         self.init(setup: setup)
+        isSpread = kind == .spread
     }
 
     /// The fold of a spread geometry: the middle of the trim.

@@ -154,7 +154,8 @@ extension BookCommand {
         case let .setPageTemplate(page, templateID, _): .setPageTemplate(page: page, templateID: templateID, fixSplits: fix)
         case let .importStoryText(texts, templateID, index, _):
             .importStoryText(texts, templateID: templateID, index: index, fixSplits: fix)
-        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle: self
+        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
+             .addTemplate, .updateTemplate, .deleteTemplate: self
         }
     }
 
@@ -162,7 +163,8 @@ extension BookCommand {
     public var isStructural: Bool {
         switch self {
         case .addPage, .duplicatePage, .deletePage, .reorderPages, .setPageTemplate, .importStoryText: true
-        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle: false
+        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
+             .addTemplate, .updateTemplate, .deleteTemplate: false
         }
     }
 }

@@ -15,7 +15,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 3 | Storage and library | done | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks. [Log](progress/phase-3-storage-library.md) |
 | 4 | Text and typography | done | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. From Phase 5 on, no PRs: merge into main and push directly. [Log](progress/phase-4-text-typography.md) |
 | 5 | Pages tab, ordering and cover | done | `phase-5-pages-cover` | — | $0.00 | No live checks. [Log](progress/phase-5-pages-cover.md) |
-| 6 | Template editor | not started | | | | |
+| 6 | Template editor | in progress | `phase-6-template-editor` | — | | |
 | 7 | Style guide and page setup | not started | | | | |
 | 8 | Sessions and versions | not started | | | | |
 | 9 | Queue, cost, errors and settings (M2) | not started | | | | |
@@ -127,4 +127,15 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-_No phase running._
+### Phase 6 — Template editor
+
+**Stage:** B
+
+- Contracts (main thread): `TextBoxStyle` overrides (`fontSize`, `alignment`, `color`); `BookCommand.addTemplate/updateTemplate(_, actionName:)/deleteTemplate`; `BookDocument.beginUndoGroup()/endUndoGroup(actionName:)`; `BookContent.pages(using:)`; `BBLayout/TemplateEditing.swift` (trim/normalized conversion, per-page safe areas, rotated hit-testing and handles, snapping, align/distribute).
+- Wave 1 (parallel): L1 model/commands/store (sonnet); L2 BBLayout geometry + renderer overrides + sample preview (sonnet).
+- Wave 2 (parallel, after wave 1): L3 canvas split + layout editing controller (opus); L4 Layouts tab UI (sonnet).
+- **Session A done (2026-11-08):** all four lanes merged (L1 `e8ea78c`, L2 `7e4a23a`, L3 `879ec5d`, L4 `fbc5b66`); `scripts/test.sh all` green. architecture.md §4.2, §6.2, §6.3 updated (as built).
+- **For Session B:** nothing has been run in the GUI yet: the Layouts tab, `TemplateCanvas` and box inspector need a full hand-check pass. Watch: L4 assumed the undo manager's `groupsByEvent = false` in tests; check that one drag is one undo step in the real app (where `groupsByEvent` is true). Selecting a bundled preset in the list copies it into the book as an "Add Layout" undo step (consider copying on first edit instead). Colour wells/steppers group edits with a 0.6 s timer (`updateContinuously`).
+- **Lane open issues (candidates for follow-ups):** no snapping during ⇧ aspect-locked corner resize; handles only for a single selection (no multi-box resize); `PageRenderer`'s built-in guides draw one safe area across a spread (the editor overdraws per-page areas; the page canvas still shows the single one); the in-place text editor isn't rotated for rotated text boxes; a page restored by undoing its deletion lacks slots for image boxes added to its template since (Phase 8 should create slots lazily); `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` failed once (flaky).
+- Assumptions: snap "guides" are fixed guides (margins, trim edges, page centres, fold) plus other boxes; no user-placed guides. A template's kind can't change after creation. Editing a bundled preset copies it into the book first (same ID).
+

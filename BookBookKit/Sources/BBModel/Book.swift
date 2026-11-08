@@ -259,10 +259,21 @@ public struct TextBoxStyle: Hashable, Codable, Sendable {
     public var padding: Double
     /// Background panel colour, or nil for none.
     public var background: RGBA?
+    /// Font size override in points (Phase 6). Layered between the style guide (below) and a
+    /// run's own `size` (above). nil = the style guide's size for the box's role.
+    public var fontSize: Double?
+    /// Alignment override (Phase 6). A paragraph's own `alignment` still wins.
+    public var alignment: TextAlignment?
+    /// Text colour override (Phase 6). A run's own `color` still wins.
+    public var color: RGBA?
 
-    public init(padding: Double = 0, background: RGBA? = nil) {
+    public init(padding: Double = 0, background: RGBA? = nil, fontSize: Double? = nil,
+                alignment: TextAlignment? = nil, color: RGBA? = nil) {
         self.padding = padding
         self.background = background
+        self.fontSize = fontSize
+        self.alignment = alignment
+        self.color = color
     }
 }
 

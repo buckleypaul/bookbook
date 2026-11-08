@@ -200,7 +200,7 @@ Phase 15 only *needs* Phase 1 and a working app. It's placed after Phase 14 so t
 
 ## 4–8. Moved to `plan/`
 
-Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve through this table. Phase 0 and Phases 1–8 are done and live in `plan/done/`.
+Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve through this table. Phase 0 and Phases 1–9 are done and live in `plan/done/`.
 
 | Old reference | Now in |
 |---|---|
@@ -214,7 +214,7 @@ Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve 
 | §5 Phase 6 | `plan/done/phase-06-template-editor.md` |
 | §5 Phase 7 | `plan/done/phase-07-style-guide.md` |
 | §5 Phase 8 | `plan/done/phase-08-sessions-versions.md` |
-| §5 Phase 9 | `plan/phase-09-queue-cost-settings.md` |
+| §5 Phase 9 | `plan/done/phase-09-queue-cost-settings.md` |
 | §5 Phase 10 | `plan/phase-10-assets-characters.md` |
 | §5 Phase 11 | `plan/phase-11-region-editing.md` |
 | §5 Phase 12 | `plan/phase-12-consistency-ai-templates.md` |

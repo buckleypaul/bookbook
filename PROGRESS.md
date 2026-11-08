@@ -15,7 +15,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 3 | Storage and library | done | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks. [Log](progress/phase-3-storage-library.md) |
 | 4 | Text and typography | done | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. From Phase 5 on, no PRs: merge into main and push directly. [Log](progress/phase-4-text-typography.md) |
 | 5 | Pages tab, ordering and cover | done | `phase-5-pages-cover` | — | $0.00 | No live checks. [Log](progress/phase-5-pages-cover.md) |
-| 6 | Template editor | not started | | | | |
+| 6 | Template editor | in progress | `phase-6-template-editor` | — | | |
 | 7 | Style guide and page setup | not started | | | | |
 | 8 | Sessions and versions | not started | | | | |
 | 9 | Queue, cost, errors and settings (M2) | not started | | | | |
@@ -127,4 +127,12 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-_No phase running._
+### Phase 6 — Template editor
+
+**Stage:** A
+
+- Contracts (main thread): `TextBoxStyle` overrides (`fontSize`, `alignment`, `color`); `BookCommand.addTemplate/updateTemplate(_, actionName:)/deleteTemplate`; `BookDocument.beginUndoGroup()/endUndoGroup(actionName:)`; `BookContent.pages(using:)`; `BBLayout/TemplateEditing.swift` (trim/normalized conversion, per-page safe areas, rotated hit-testing and handles, snapping, align/distribute).
+- Wave 1 (parallel): L1 model/commands/store (sonnet); L2 BBLayout geometry + renderer overrides + sample preview (sonnet).
+- Wave 2 (parallel, after wave 1): L3 canvas split + layout editing controller (opus); L4 Layouts tab UI (sonnet).
+- Assumptions: snap "guides" are fixed guides (margins, trim edges, page centres, fold) plus other boxes; no user-placed guides. A template's kind can't change after creation. Editing a bundled preset copies it into the book first (same ID).
+

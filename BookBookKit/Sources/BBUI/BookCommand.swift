@@ -16,7 +16,7 @@ import Foundation
 /// A command whose `templateID` names a bundled preset the book doesn't have yet copies
 /// that preset into the book (as does blank insertion for the text-only preset). Like new
 /// sessions, the copy is made irreversibly: undo removes the pages but leaves the unused
-/// template in the book, because a package can't delete a template file (`DirtySet`).
+/// template in the book. (`deleteTemplate`, Phase 6, is the only way to remove one.)
 public enum BookCommand: Hashable, Sendable {
     /// Replace a text box's rich text. Consecutive edits to the same box coalesce into one
     /// undo step until a 1 s pause, a box switch or a formatting change (A §6.3, Phase 4).
@@ -47,6 +47,17 @@ public enum BookCommand: Hashable, Sendable {
     case setPageDone(PageID, Bool)
     /// Replace the style guide's page-number style.
     case setPageNumberStyle(PageNumberStyle)
+    /// Add a template to the book (Layouts tab: New, Duplicate, or editing a bundled preset,
+    /// which first copies it in under its own ID). Ignored if the ID already exists (Phase 6).
+    case addTemplate(Template)
+    /// Replace a book template wholesale (every template-editor edit, Phase 6). Pages using it
+    /// update live. Image boxes new to the template get empty sessions on the pages that use
+    /// it (irreversibly, like `setPageTemplate`). `actionName` is the undo title ("Move Box",
+    /// "Resize Box", "Rotate Box", …). Kind and ID can't change: mismatches are ignored.
+    case updateTemplate(Template, actionName: String)
+    /// Delete a book template. Ignored while any page uses it (`BookContent.pages(using:)`).
+    /// Undo restores it.
+    case deleteTemplate(TemplateID)
 
     /// The undo menu title ("Undo Typing", …).
     public var actionName: String {
@@ -62,6 +73,9 @@ public enum BookCommand: Hashable, Sendable {
         case .importStoryText: "Import Story Text"
         case let .setPageDone(_, done): done ? "Mark as Done" : "Mark as Not Done"
         case .setPageNumberStyle: "Change Page Numbers"
+        case .addTemplate: "Add Layout"
+        case let .updateTemplate(_, name): name
+        case .deleteTemplate: "Delete Layout"
         }
     }
 }

@@ -179,6 +179,23 @@ public final class BookDocument {
         return true
     }
 
+    // MARK: Undo groups (Phase 6: one undo step per drag, A §6.3)
+
+    /// Opens an undo group (mouse-down of a drag, resize or rotation). Until
+    /// `endUndoGroup(actionName:)`, every successful `perform` applies its edit and saves as
+    /// usual (pages update live) but registers no undo; the group's inverses are collected.
+    /// Closes any open typing step. Nested calls are ignored (the outer group wins).
+    public func beginUndoGroup() {
+        fatalError("Phase 6 lane L1")
+    }
+
+    /// Closes the open group (mouse-up) and registers one undo step named `actionName` that
+    /// restores everything from before `beginUndoGroup()`. Registers nothing if no edit was
+    /// performed in the group. No-op without an open group.
+    public func endUndoGroup(actionName: String) {
+        fatalError("Phase 6 lane L1")
+    }
+
     /// For non-undoable writes (A §6.3): AI results, session changes, renaming the book. Never
     /// registers undo. `body` returns what it changed. Does nothing if read-only or closed.
     public func performIrreversible(_ body: (inout BookContent) -> DirtySet) {
@@ -206,7 +223,8 @@ public final class BookDocument {
         case let .setPageTemplate(page, templateID, _): unfixed = .setPageTemplate(page: page, templateID: templateID)
         case let .importStoryText(texts, templateID, index, _):
             unfixed = .importStoryText(texts, templateID: templateID, index: index)
-        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle:
+        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
+             .addTemplate, .updateTemplate, .deleteTemplate:
             return false
         }
         guard let prepared = prepare(unfixed) else { return false }
@@ -424,6 +442,9 @@ public final class BookDocument {
         case let .setPageNumberStyle(style):
             guard style != content.style.pageNumbers else { return nil }
             edit = .setPageNumberStyle(style)
+
+        case .addTemplate, .updateTemplate, .deleteTemplate:
+            return nil // Phase 6 lane L1
         }
 
         created.edit = edit

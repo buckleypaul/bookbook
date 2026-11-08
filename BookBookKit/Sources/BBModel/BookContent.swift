@@ -27,6 +27,12 @@ public struct BookContent: Hashable, Sendable {
 
     public func template(for page: Page) -> Template? { templates[page.templateID] }
 
+    /// Where a template is used (Phase 6): the cover first if it uses it, then story pages in
+    /// reading order.
+    public func pages(using templateID: TemplateID) -> [PageID] {
+        fatalError("Phase 6 lane L1")
+    }
+
     /// The version placed in a box, if any.
     public func placedVersion(page pageID: PageID, box boxID: BoxID) -> Version? {
         guard let slot = pages[pageID]?.images[boxID], let placement = slot.placement else { return nil }

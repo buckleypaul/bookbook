@@ -66,7 +66,7 @@ let package = Package(
         ),
         .testTarget(name: "BBGeminiTests", dependencies: ["BBGemini", "BBTestSupport"], swiftSettings: settings),
         .testTarget(name: "BBExportTests", dependencies: ["BBExport", "BBTestSupport", snapshots], swiftSettings: settings),
-        .testTarget(name: "BBUITests", dependencies: ["BBUI", "BBAICore", "BBTestSupport", snapshots], swiftSettings: settings),
+        .testTarget(name: "BBUITests", dependencies: ["BBUI", "BBAI", "BBAICore", "BBTestSupport", snapshots], swiftSettings: settings),
         .testTarget(name: "BBTestSupportTests", dependencies: ["BBTestSupport"], swiftSettings: settings),
     ]
 )

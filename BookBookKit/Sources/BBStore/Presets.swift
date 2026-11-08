@@ -37,7 +37,13 @@ public enum Presets {
         try template(coverTemplateID)
     }
 
-    private static func template(_ id: TemplateID) throws(StoreError) -> Template {
+    /// Text only (also the blank page for fixing a split spread).
+    public static func textOnlyTemplate() throws(StoreError) -> Template {
+        try template(textOnlyTemplateID)
+    }
+
+    /// A bundled template by ID.
+    public static func template(_ id: TemplateID) throws(StoreError) -> Template {
         guard let t = try templates().first(where: { $0.id == id }) else {
             throw StoreError.notFound("template \(id)")
         }

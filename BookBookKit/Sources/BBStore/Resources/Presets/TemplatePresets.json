@@ -80,10 +80,326 @@
         "id" : "A1B2C3D4-0002-4000-8000-0000000000B2",
         "role" : "title",
         "rotationDegrees" : 0
+      },
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "padding" : 0
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.1,
+          "width" : 0.8333,
+          "x" : 0.0833,
+          "y" : 0.82
+        },
+        "id" : "A1B2C3D4-0002-4000-8000-0000000000B3",
+        "role" : "author",
+        "rotationDegrees" : 0
       }
     ],
     "id" : "A1B2C3D4-0002-4000-8000-000000000001",
     "kind" : "cover",
     "name" : "Cover"
+  },
+  {
+    "boxes" : [
+      {
+        "bleedEdges" : 15,
+        "content" : {
+          "image" : {
+
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 1,
+          "width" : 1,
+          "x" : 0,
+          "y" : 0
+        },
+        "id" : "A1B2C3D4-0003-4000-8000-0000000000B1",
+        "rotationDegrees" : 0
+      },
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "background" : {
+                "alpha" : 0.85,
+                "blue" : 0.88,
+                "green" : 0.96,
+                "red" : 0.99
+              },
+              "padding" : 12
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.22,
+          "width" : 0.84,
+          "x" : 0.08,
+          "y" : 0.7
+        },
+        "id" : "A1B2C3D4-0003-4000-8000-0000000000B2",
+        "rotationDegrees" : 0
+      }
+    ],
+    "id" : "A1B2C3D4-0003-4000-8000-000000000001",
+    "kind" : "single",
+    "name" : "Full-bleed image with text overlay"
+  },
+  {
+    "boxes" : [
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "padding" : 0
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.6,
+          "width" : 0.4,
+          "x" : 0.06,
+          "y" : 0.2
+        },
+        "id" : "A1B2C3D4-0004-4000-8000-0000000000B1",
+        "rotationDegrees" : 0
+      },
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "image" : {
+
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.8,
+          "width" : 0.44,
+          "x" : 0.5,
+          "y" : 0.1
+        },
+        "id" : "A1B2C3D4-0004-4000-8000-0000000000B2",
+        "rotationDegrees" : 0
+      }
+    ],
+    "id" : "A1B2C3D4-0004-4000-8000-000000000001",
+    "kind" : "single",
+    "name" : "Text left, image right"
+  },
+  {
+    "boxes" : [
+      {
+        "bleedEdges" : 15,
+        "content" : {
+          "image" : {
+
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 1,
+          "width" : 1,
+          "x" : 0,
+          "y" : 0
+        },
+        "id" : "A1B2C3D4-0005-4000-8000-0000000000B1",
+        "rotationDegrees" : 0
+      },
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "background" : {
+                "alpha" : 0.85,
+                "blue" : 0.88,
+                "green" : 0.96,
+                "red" : 0.99
+              },
+              "padding" : 12
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.22,
+          "width" : 0.34,
+          "x" : 0.58,
+          "y" : 0.7
+        },
+        "id" : "A1B2C3D4-0005-4000-8000-0000000000B2",
+        "rotationDegrees" : 0
+      }
+    ],
+    "id" : "A1B2C3D4-0005-4000-8000-000000000001",
+    "kind" : "spread",
+    "name" : "Spread: image across both pages"
+  },
+  {
+    "boxes" : [
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "padding" : 0
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.8,
+          "width" : 0.8,
+          "x" : 0.1,
+          "y" : 0.1
+        },
+        "id" : "A1B2C3D4-0006-4000-8000-0000000000B1",
+        "rotationDegrees" : 0
+      }
+    ],
+    "id" : "A1B2C3D4-0006-4000-8000-000000000001",
+    "kind" : "single",
+    "name" : "Text only"
+  },
+  {
+    "boxes" : [
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "padding" : 0
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.2,
+          "width" : 0.8,
+          "x" : 0.1,
+          "y" : 0.3
+        },
+        "id" : "A1B2C3D4-0007-4000-8000-0000000000B1",
+        "role" : "title",
+        "rotationDegrees" : 0
+      },
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "padding" : 0
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.1,
+          "width" : 0.8,
+          "x" : 0.1,
+          "y" : 0.55
+        },
+        "id" : "A1B2C3D4-0007-4000-8000-0000000000B2",
+        "role" : "author",
+        "rotationDegrees" : 0
+      }
+    ],
+    "id" : "A1B2C3D4-0007-4000-8000-000000000001",
+    "kind" : "single",
+    "name" : "Title page",
+    "pageRole" : "titlePage"
+  },
+  {
+    "boxes" : [
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "padding" : 0
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.3,
+          "width" : 0.7,
+          "x" : 0.15,
+          "y" : 0.35
+        },
+        "id" : "A1B2C3D4-0008-4000-8000-0000000000B1",
+        "rotationDegrees" : 0
+      }
+    ],
+    "id" : "A1B2C3D4-0008-4000-8000-000000000001",
+    "kind" : "single",
+    "name" : "Dedication",
+    "pageRole" : "dedication"
+  },
+  {
+    "boxes" : [
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "padding" : 0
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.3,
+          "width" : 0.7,
+          "x" : 0.15,
+          "y" : 0.35
+        },
+        "id" : "A1B2C3D4-0009-4000-8000-0000000000B1",
+        "rotationDegrees" : 0
+      }
+    ],
+    "id" : "A1B2C3D4-0009-4000-8000-000000000001",
+    "kind" : "single",
+    "name" : "This book belongs to…",
+    "pageRole" : "belongsTo"
+  },
+  {
+    "boxes" : [
+      {
+        "bleedEdges" : 0,
+        "content" : {
+          "text" : {
+            "_0" : {
+              "padding" : 0
+            }
+          }
+        },
+        "cornerRadius" : 0,
+        "frame" : {
+          "height" : 0.2,
+          "width" : 0.7,
+          "x" : 0.15,
+          "y" : 0.4
+        },
+        "id" : "A1B2C3D4-000A-4000-8000-0000000000B1",
+        "rotationDegrees" : 0
+      }
+    ],
+    "id" : "A1B2C3D4-000A-4000-8000-000000000001",
+    "kind" : "single",
+    "name" : "The End",
+    "pageRole" : "theEnd"
   }
 ]

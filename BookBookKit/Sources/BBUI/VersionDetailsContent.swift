@@ -45,7 +45,6 @@ public enum VersionDetailsContent {
         }
         rows.append(DetailRow(label: "Story text included", value: p.storyTextIncluded ? "Yes" : "No"))
         rows.append(DetailRow(label: "Cost", value: "—"))
-        rows.append(DetailRow(label: "Cost", value: "—"))
         rows.append(DetailRow(label: "Style revision", value: String(p.styleRevision)))
         rows.append(DetailRow(label: "Usage", value: p.usage.map(usageText) ?? "Not reported"))
         if let revised = p.revisedPrompt, !revised.isEmpty {

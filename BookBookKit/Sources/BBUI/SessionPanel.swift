@@ -89,6 +89,10 @@ struct SessionPanel: View {
             Label(ProviderErrorText.message(for: error), systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
                 .foregroundStyle(.red)
+        case let .notSaved(text):
+            Label(text, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.red)
         case .interrupted:
             Label("Not finished: BookBook quit before the picture arrived.", systemImage: "clock.badge.xmark")
                 .font(.caption).foregroundStyle(.secondary)

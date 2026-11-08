@@ -73,9 +73,21 @@ struct MessageStatusTests {
                 queueItemID: queued ? item.id : nil, createdAt: Fixtures.date)
     }
 
-    private func resolve(_ message: Message, _ state: QueueItemState?, pending: Set<QueueItemID> = []) -> MessageStatus {
+    private func resolve(_ message: Message, _ state: QueueItemState?, pending: Set<QueueItemID> = [],
+                         failures: [MessageID: String] = [:]) -> MessageStatus {
         let snapshot = QueueSnapshot(entries: state.map { [QueueEntry(item: item, state: $0)] } ?? [])
-        return MessageStatus.resolve(message, snapshot: snapshot, pendingThisLaunch: pending) { _ in 14 }
+        return MessageStatus.resolve(message, snapshot: snapshot, pendingThisLaunch: pending,
+                                     deliveryFailures: failures) { _ in 14 }
+    }
+
+    @Test func pictureThatCouldNotBeSaved_isShown() {
+        let failures = [item.messageID: "Couldn't save the picture to the book: disk full"]
+        #expect(resolve(message(queued: false), nil, failures: failures)
+            == .notSaved("Couldn't save the picture to the book: disk full"))
+        // Still pending wins; a produced version wins.
+        #expect(resolve(message(queued: true), .waiting, failures: failures) == .waiting)
+        let version = VersionID()
+        #expect(resolve(message(queued: false, produced: version), nil, failures: failures) == .produced(version))
     }
 
     @Test func pendingStates() {

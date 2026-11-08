@@ -29,6 +29,8 @@ public final class AppModel {
     public private(set) var hasOpenAIKey = false
     /// Set by File ▸ New Book…; the Library window shows its sheet.
     public var newBookRequested = false
+    /// Pictures that arrived but couldn't be written into their book, by message (shown in the thread).
+    public private(set) var deliveryFailures: [MessageID: String] = [:]
 
     @ObservationIgnored private var pendingThisLaunch: Set<QueueItemID> = []
     @ObservationIgnored private var enqueueChain: Task<Void, Never>?
@@ -55,6 +57,7 @@ public final class AppModel {
             model: catalog.defaultImageModel(for: .openai)?.id ?? GenerationDefaults.fallbackModel)
         self.now = now
         refreshKeyStatus()
+        openBooks.onDeliveryProblem = { [weak self] messageID, text in self?.deliveryFailures[messageID] = text }
 
         let queue = queue
         subscription = Task { [weak self] in
@@ -140,7 +143,8 @@ public final class AppModel {
     }
 
     public func status(of message: Message) -> MessageStatus {
-        MessageStatus.resolve(message, snapshot: queueSnapshot, pendingThisLaunch: pendingThisLaunch) { [catalog] intent in
+        MessageStatus.resolve(message, snapshot: queueSnapshot, pendingThisLaunch: pendingThisLaunch,
+                              deliveryFailures: deliveryFailures) { [catalog] intent in
             catalog.imageModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds[intent.quality]
         }
     }

@@ -124,9 +124,35 @@ struct BookMutationsTests {
         #expect(session.messages.allSatisfy { $0.queueItemID == nil })
     }
 
-    @Test func delivery_forDeletedPage_changesNothing() {
-        var (content, _, item, page, _) = pendingBook()
+    @Test func delivery_forDeletedPage_stillReachesTheSession_withoutPlacing() throws {
+        var (content, message, item, page, sessionID) = pendingBook()
+        let deleted = try #require(content.pages[page])
         content.pages[page] = nil
+        content.book.pageOrder.removeAll { $0 == page }
+        let versionID = VersionID()
+        let delivery = GenerationDelivery(item: item, outcome: .success(result: Fixtures.result(),
+                                                                         provenance: Fixtures.provenance()))
+        let dirty = BookMutations.applyDelivery(delivery, storedImage: Fixtures.ref, to: &content,
+                                                versionID: versionID, now: Fixtures.date)
+        let session = try #require(content.sessions[sessionID])
+        #expect(session.version(versionID) != nil)
+        let updated = try #require(session.messages.first { $0.id == message.id })
+        #expect(updated.producedVersion == versionID)
+        #expect(updated.queueItemID == nil)
+        #expect(content.pages[page] == nil)
+        #expect(dirty.sessions == [sessionID])
+        #expect(dirty.pages.isEmpty)
+
+        // Undo restores the page as it was: the version is in its strip, the box stays empty.
+        content.pages[page] = deleted
+        #expect(content.placedVersion(page: page, box: Fixtures.imageBox.id) == nil)
+        #expect(content.sessions[deleted.images[Fixtures.imageBox.id]!.sessionID]?.versions.map(\.id) == [versionID])
+    }
+
+    @Test func delivery_forDeletedSession_changesNothing() {
+        var (content, _, item, page, sessionID) = pendingBook()
+        content.pages[page] = nil
+        content.sessions[sessionID] = nil
         let before = content
         let dirty = BookMutations.applyDelivery(GenerationDelivery(item: item, outcome: .failure(.timeout)),
                                                 storedImage: nil, to: &content, now: Fixtures.date)

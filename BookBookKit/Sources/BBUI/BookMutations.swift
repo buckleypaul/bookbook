@@ -61,13 +61,20 @@ public enum BookMutations {
     ///   its `queueItemID`, and places the version (zoom 1, centred) only if the box is empty.
     /// - Failure, or success without a stored image: clears the message's `queueItemID` only.
     ///
-    /// Returns what changed; empty if the target is gone.
+    /// The session is found through the target even if its page is gone: page commands never
+    /// delete sessions, so a page deleted while the request ran (and later restored by undo)
+    /// keeps the result in its strip. Placement needs the page and slot to exist.
+    ///
+    /// Returns what changed; empty if the session is gone.
     public static func applyDelivery(_ delivery: GenerationDelivery, storedImage: ImageRef?,
                                      to content: inout BookContent, versionID: VersionID = VersionID(),
                                      now: Date) -> DirtySet {
-        guard case let .pageBox(pageID, boxID) = delivery.item.target,
-              let page = content.pages[pageID], let slot = page.images[boxID],
-              var session = content.sessions[slot.sessionID] else { return DirtySet() }
+        guard case let .pageBox(pageID, boxID) = delivery.item.target else { return DirtySet() }
+        let page = content.pages[pageID]
+        let slot = page?.images[boxID]
+        let owner = SessionOwner.pageBox(pageID, boxID)
+        guard let sessionID = slot?.sessionID ?? content.sessions.first(where: { $0.value.owner == owner })?.key,
+              var session = content.sessions[sessionID] else { return DirtySet() }
 
         var dirty = DirtySet()
         let messageIndex = session.messages.firstIndex { $0.id == delivery.item.messageID }
@@ -83,7 +90,8 @@ public enum BookMutations {
             if let messageIndex { session.messages[messageIndex].producedVersion = version.id }
             dirty.sessions.insert(session.id)
 
-            if slot.placement == nil, let template = content.template(for: page), let box = template.box(boxID) {
+            if let page, let slot, slot.placement == nil, let template = content.template(for: page),
+               let box = template.box(boxID) {
                 let placement = ImagePlacement(versionID: version.id, boxAspectWhenPlaced: content.boxAspect(box))
                 content.pages[pageID]?.images[boxID]?.placement = placement
                 dirty.pages.insert(pageID)

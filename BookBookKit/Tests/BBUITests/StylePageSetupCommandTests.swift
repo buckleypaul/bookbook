@@ -53,7 +53,10 @@ struct StylePageSetupCommandTests {
         #expect(undo.undoActionName == "Change Style")
 
         undo.undo()
-        #expect(doc.content.style == original)
+        var restored = doc.content.style
+        #expect(restored.visualRevisionHighWater == original.visualRevision + 1)
+        restored.visualRevisionHighWater = original.visualRevisionHighWater
+        #expect(restored == original)
         undo.redo()
         #expect(doc.content.style.visualRevision == original.visualRevision + 1)
     }
@@ -171,5 +174,44 @@ struct StylePageSetupCommandTests {
         _ = BookMutations.applyDelivery(delivery, storedImage: Fixtures.ref, to: &content, now: Fixtures.date)
         #expect(content.pages[page]?.images[box]?.placement != nil)
         #expect(content.pages[page]?.images[box]?.acknowledged.boxAspect == nil)
+    }
+
+    @Test func visualRevision_neverReusedAfterUndo() throws {
+        let (doc, undo) = try makeDocument()
+        var visual = doc.content.style.visual
+        visual.visualDescription = "One"
+        // The irreversible placement comes first (it clears undo history); its provenance
+        // records revision 1, the revision the edit below will create.
+        let (page, _) = place(doc, undo, styleRevision: 1)
+        let box = Fixtures.imageBox.id
+        group(undo) { doc.perform(.setStyleVisual(visual)) }
+        #expect(doc.content.style.visualRevision == 1)
+        #expect(doc.content.imageFlags(page: page, box: box).isEmpty)
+
+        undo.undo()
+        #expect(doc.content.style.visualRevision == 0)
+        #expect(doc.content.style.visualRevisionHighWater == 1)
+
+        visual.visualDescription = "Two"
+        group(undo) { doc.perform(.setStyleVisual(visual)) }
+        #expect(doc.content.style.visualRevision == 2)
+        #expect(doc.content.style.visualRevisionHighWater == 2)
+        #expect(doc.content.imageFlags(page: page, box: box) == .styleChanged)
+    }
+
+    @Test func chooseVersion_alreadyPlaced_isNoOp() throws {
+        let (doc, undo) = try makeDocument()
+        let (page, version) = place(doc, undo)
+        let box = Fixtures.imageBox.id
+        group(undo) { doc.perform(.markFlagsOK(page: page, box: box)) }
+        let before = try #require(doc.content.pages[page]?.images[box])
+        #expect(before.acknowledged.boxAspect != nil)
+        let steps = undo.undoActionName
+
+        #expect(!doc.perform(.chooseVersion(page: page, box: box, version: version)))
+        #expect(doc.content.pages[page]?.images[box] == before)
+        #expect(undo.undoActionName == steps)
+        undo.undo()  // undoes the Mark as OK, not a phantom placement
+        #expect(doc.content.pages[page]?.images[box]?.acknowledged.boxAspect == nil)
     }
 }

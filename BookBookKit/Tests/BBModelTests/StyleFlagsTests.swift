@@ -197,3 +197,25 @@ struct StyleFlagsTests {
         #expect(abs(content.boxAspect(left, in: spread) - (612.0 + 9) / 810.0) < 1e-9)
     }
 }
+
+struct StyleHighWaterTests {
+    @Test func decodesWithoutHighWaterKey() throws {
+        let style = StyleGuide(visualDescription: "x", visualRevision: 4)
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(style)) as? [String: Any]
+        var dict = try #require(object)
+        #expect(dict["visualRevisionHighWater"] as? Int == 4)
+        dict.removeValue(forKey: "visualRevisionHighWater")
+        let decoded = try JSONDecoder().decode(StyleGuide.self, from: JSONSerialization.data(withJSONObject: dict))
+        #expect(decoded.visualRevisionHighWater == 4)
+        #expect(decoded == style)
+    }
+
+    @Test func applyingBumpsFromHighWater() {
+        var style = StyleGuide(visualRevision: 1, visualRevisionHighWater: 3)
+        var visual = style.visual
+        visual.visualDescription = "new"
+        style = style.applying(visual)
+        #expect(style.visualRevision == 4)
+        #expect(style.visualRevisionHighWater == 4)
+    }
+}

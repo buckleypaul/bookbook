@@ -1,0 +1,43 @@
+{
+  "negativeGuidance" : "no text, letters or words in the image",
+  "pageNumbers" : {
+    "enabled" : false
+  },
+  "pageSetup" : {
+    "bleedAmount" : 9,
+    "bleedEnabled" : false,
+    "margins" : {
+      "bottom" : 36,
+      "leading" : 36,
+      "top" : 36,
+      "trailing" : 36
+    },
+    "orientation" : "portrait",
+    "trimSize" : {
+      "height" : 792,
+      "width" : 612
+    }
+  },
+  "styleReferences" : [
+
+  ],
+  "typography" : {
+    "alignment" : "leading",
+    "bodyFont" : {
+      "postScriptName" : "AvenirNext-Regular"
+    },
+    "bodySize" : 20,
+    "color" : {
+      "alpha" : 1,
+      "blue" : 0,
+      "green" : 0,
+      "red" : 0
+    },
+    "lineSpacing" : 1.2,
+    "titleFont" : {
+      "postScriptName" : "AvenirNext-Bold"
+    }
+  },
+  "visualDescription" : "",
+  "visualRevision" : 0
+}

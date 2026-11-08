@@ -225,8 +225,9 @@ final class LayoutEditingController: CanvasController {
     func mouseUp(with event: NSEvent, at point: CGPoint) {
         guard let drag else { return }
         self.drag = nil
-        if let interaction = drag.interaction, model.isInteractionOpen(interaction) {
-            model.endInteraction(actionName: drag.kind.actionName)
+        // Closes only this drag's group (a no-op if an undo or redo already ended it).
+        if let interaction = drag.interaction {
+            model.endInteraction(interaction, actionName: drag.kind.actionName)
         }
     }
 

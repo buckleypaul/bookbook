@@ -59,8 +59,12 @@ public struct PageRenderer {
         for box in template.boxes {
             guard case .text(let style) = box.content, !options.hiddenTextBoxes.contains(box.id), isVisible(box)
             else { continue }
-            drawTextBox(box, style: style, text: CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id],
-                        typography: typography.resolved(for: box.role),
+            var text = CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id]
+            if options.previewSampleContent, text?.paragraphs.isEmpty ?? true {
+                text = Self.sampleText
+            }
+            drawTextBox(box, style: style, text: text,
+                        typography: typography.resolved(for: box.role).applying(style),
                         geometry: geometry, ctx: ctx)
         }
 
@@ -86,7 +90,7 @@ public struct PageRenderer {
                   !text.paragraphs.isEmpty
             else { continue }
             let rect = geometry.renderRect(for: box).insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
-            let typography = content.style.typography.resolved(for: box.role)
+            let typography = content.style.typography.resolved(for: box.role).applying(style)
             let size = CGSize(width: max(0, rect.width), height: max(0, rect.height))
             let layout = layouts?.layout(text: text, typography: typography, containerSize: size)
                 ?? TextBoxLayout(text: text, typography: typography, containerSize: size)
@@ -118,6 +122,10 @@ public struct PageRenderer {
             ctx.scaleBy(x: 1, y: -1)
             ctx.interpolationQuality = .high
             ctx.draw(image, in: CGRect(origin: .zero, size: target.size))
+        } else if options.previewSampleContent, page.images[box.id]?.placement == nil {
+            ctx.addPath(path)
+            ctx.clip()
+            Self.drawSampleArt(in: rect, ctx: ctx)
         } else if options.showEmptyImagePlaceholders {
             ctx.addPath(path)
             ctx.setFillColor(Self.placeholderFill)
@@ -167,6 +175,37 @@ public struct PageRenderer {
             ctx.strokePath()
             ctx.restoreGState()
         }
+    }
+
+    // MARK: Template-editor preview
+
+    /// Sample text drawn in empty text boxes when `previewSampleContent` is on.
+    static let sampleText = RichText(plain: "Once upon a time, in a small house at the edge of a quiet wood, a curious fox found a red scarf and set off to see the world.")
+
+    /// A soft gradient with a simple landscape glyph, filling `rect` (the caller has clipped).
+    static func drawSampleArt(in rect: CGRect, ctx: CGContext) {
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let colors = [CGColor(srgbRed: 0.80, green: 0.89, blue: 0.96, alpha: 1),
+                      CGColor(srgbRed: 0.97, green: 0.92, blue: 0.84, alpha: 1)] as CFArray
+        if let gradient = CGGradient(colorsSpace: space, colors: colors, locations: [0, 1]) {
+            ctx.drawLinearGradient(gradient, start: CGPoint(x: rect.minX, y: rect.minY),
+                                   end: CGPoint(x: rect.minX, y: rect.maxY), options: [])
+        }
+        let side = min(rect.width, rect.height)
+        guard side > 8 else { return }
+        let glyph = CGRect(x: rect.midX - side * 0.3, y: rect.midY - side * 0.2, width: side * 0.6, height: side * 0.4)
+        ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.7))
+        let sun = side * 0.07
+        ctx.fillEllipse(in: CGRect(x: glyph.maxX - sun * 3, y: glyph.minY, width: sun * 2, height: sun * 2))
+        let mountains = CGMutablePath()
+        mountains.move(to: CGPoint(x: glyph.minX, y: glyph.maxY))
+        mountains.addLine(to: CGPoint(x: glyph.minX + glyph.width * 0.32, y: glyph.minY + glyph.height * 0.3))
+        mountains.addLine(to: CGPoint(x: glyph.minX + glyph.width * 0.55, y: glyph.minY + glyph.height * 0.65))
+        mountains.addLine(to: CGPoint(x: glyph.minX + glyph.width * 0.7, y: glyph.minY + glyph.height * 0.45))
+        mountains.addLine(to: CGPoint(x: glyph.maxX, y: glyph.maxY))
+        mountains.closeSubpath()
+        ctx.addPath(mountains)
+        ctx.fillPath()
     }
 
     // MARK: Helpers

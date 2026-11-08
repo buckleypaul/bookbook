@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "rate_limit_exceeded",
+    "message": "Rate limit reached for gpt-image in organization on images per minute.",
+    "param": null,
+    "type": "requests"
+  }
+}

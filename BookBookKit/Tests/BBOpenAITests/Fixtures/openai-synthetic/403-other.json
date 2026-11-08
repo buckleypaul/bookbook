@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "forbidden",
+    "message": "You do not have access to this resource.",
+    "param": null,
+    "type": "invalid_request_error"
+  }
+}

@@ -78,12 +78,7 @@ public struct OpenAIImageProvider: ImageProvider {
         do {
             response = try await http.send(httpRequest)
         } catch {
-            switch error {
-            case .offline: throw .offline
-            case .timedOut: throw .timeout
-            case .cancelled: throw .cancelled
-            case .transport: throw .transient(nil)
-            }
+            throw OpenAIErrorMapper.map(error)
         }
         progress(.receiving)
 

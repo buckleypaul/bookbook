@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "monthly_spend_limit_exceeded",
+    "message": "Monthly spend limit exceeded.",
+    "param": null,
+    "type": "invalid_request_error"
+  }
+}

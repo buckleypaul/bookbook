@@ -12,7 +12,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 0 | Live-API spikes and fixtures | done | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13. [Log](progress/phase-0-spikes.md) |
 | 1b | Project setup and CI | done | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27`. [Log](progress/phase-1b-setup-ci.md) |
 | 2 | Thin vertical slice (M1) | done | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | [Log](progress/phase-2-thin-slice.md) |
-| 3 | Storage and library | in progress | `phase-3-storage-library` | | | |
+| 3 | Storage and library | awaiting hand checks | `phase-3-storage-library` | PR_TBD | $0.00 | No live checks |
 | 4 | Text and typography | not started | | | | |
 | 5 | Pages tab, ordering and cover | not started | | | | |
 | 6 | Template editor | not started | | | | |
@@ -117,6 +117,7 @@ The running phase writes its log here; when it is marked done, move the entry to
 - Rename racing a closing window falls back to a background rename outside OpenBooks' per-book ordering; the closing flush can overwrite the new title (from Phase 3 review).
 - `Library.trash`/`duplicate`/`moveBooks` ignore a foreign `.lock`; duplicate can copy mid-save and drops `.journal` (from Phase 3 review).
 - Moving the library closes only books already in `documents`; a book mid-open reopens at the old URL (from Phase 3 review).
+- `BookLock.acquireHold` holds the process-wide `Mutex` across file I/O and a blocking `flock`; the lock refcount key uses `standardizedFileURL` (no symlink resolution); a `BookStore` dropped without `releaseLock()` leaks its count so `.lock` stays until exit (from Phase 3 review).
 - Library grid thumbnails are blank white for empty books (check once books have content) (from Phase 3 hand checks).
 
 ### Phase 3 — Storage and library
@@ -151,12 +152,10 @@ Started 2026-11-08.
   - Thumbnails written at most every 3 s and on close.
 - **L5 ThumbnailCache + BookThumbnail (sonnet).**
 
-**For Session B:**
-- The xcodebuild app build/test passed in L4's worktree, but not yet on the merged branch.
-- The lock/read-only UI was written against the stub. It's only truly exercised now that L1 has landed, so check it by hand: open the same library from a second app instance with `-BookBookLibraryRoot`, or plant a `.lock` with a live foreign PID/host.
-- The worktrees `.claude/worktrees/agent-*` and branches `worktree-agent-*` / `worktree-l5-thumbnails` are merged; remove them when the phase is done.
-- Candidate follow-ups from the lanes, to file in Session B:
-  - Library actions have no menu-bar items (`BookBookCommands.swift`).
-  - A Finder copy of a package keeps the same `Book.id`, so give one of them a new ID on detection (Phase 16 import?).
-  - A read-only open of an older-schema book has no in-memory migration (Phase 16/17).
-  - A restored window for a deleted book may flash briefly after ⌥⌘Q.
+**Session B (2026-11-08):**
+- CI-equivalent run green on the merged branch (secret scan, bootstrap, kit tests, spikes, xcodegen check, app Debug build+test, Release build); no concurrency warnings.
+- Review (opus) found 2 must-fix, fixed in two rounds (opus), each re-reviewed: background deliveries/snapshots/closed-book renames now take `.lock` inside `OpenBooks`' per-book queue (deliveries to a foreign-locked book write nothing and report "locked"; snapshots load read-only); stale-lock takeover serialized with `flock(2)` on the package folder, `.lock` read through one fd, release under the same `flock`, in-process lock refcounted per book. New `LockTakeoverTests` + `OpenBooksDeliveryTests` cases. `architecture.md` §5.3 updated.
+- Contract change: `OpenBooks.rename` (AppModel routes renames through it); `BookLock.acquire(as:)` for tests.
+- Hand checks driven by an agent (pre-fix build): 3 books, duplicate, trash, folder copy appears live, double-open → one window, ⌘Q/⌥⌘Q reopen without duplicates, deleted-while-closed book dropped, lock alert + read-only banner — all pass. Not driven: rename, Put Back, edit-then-force-quit (typing didn't reach the page), library-location move.
+- Should-fix items from the review are filed under Open follow-ups (Phase 9, 16, Later).
+- No live spend.

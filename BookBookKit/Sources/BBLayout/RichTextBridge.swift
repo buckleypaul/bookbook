@@ -166,7 +166,8 @@ public enum RichTextBridge {
         // Which PostScript name does this run use? Prefer the requested name when it still
         // resolves to this font (keeps missing-font names); otherwise the font's own base face.
         var family = baseName
-        if let requested = attributes[requestedFontKey] as? String {
+        let requestedName = attributes[requestedFontKey] as? String
+        if let requested = requestedName {
             let requestedBase = baseFontName(of: baseFace(postScriptName: requested, size: size))
             // A missing font is drawn with the system font (whose bold/italic faces can have
             // differently named bases), so accept the requested name when the run uses that fallback.
@@ -175,9 +176,13 @@ public enum RichTextBridge {
                 family = requested
             }
         }
+        // The style font only if the run really names it. Another face of the style font's family
+        // (AvenirNext-Regular under an AvenirNext-Bold title) is an override. Only text without a
+        // requested name (pasted, not written by this bridge) falls back to matching the family's
+        // base face, since nothing else says which face it meant.
         let bodyName = typography.bodyFont.postScriptName
         let isDefaultFamily = family == bodyName
-            || (family == baseName
+            || (requestedName == nil && family == baseName
                 && baseFontName(of: baseFace(postScriptName: bodyName, size: size)) == baseName)
 
         // Flags are relative to the base face the run will be written with (A §4.2).

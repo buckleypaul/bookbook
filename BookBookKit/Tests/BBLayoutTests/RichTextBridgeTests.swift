@@ -171,4 +171,17 @@ struct RichTextBridgeTests {
         #expect(ink(stroked) > ink(plain))
         #expect(RichTextBridge.richText(from: stroked, typography: typography).paragraphs[0].runs[0].bold)
     }
+
+    @Test func boldBaseFace_regularFaceOfSameFamilyStaysAnOverride() throws {
+        // The format bar's font menu sets a family's regular face (FontFamilies.regularFace).
+        let title = avenirTitle
+        let text = RichText(paragraphs: [Paragraph(runs: [
+            Run(text: "The "), Run(text: "Fox", fontFamily: "AvenirNext-Regular"),
+        ])])
+        let s = RichTextBridge.attributedString(from: text, typography: title)
+        let font = try #require(s.attribute(.font, at: 4, effectiveRange: nil) as? NSFont)
+        #expect(font.fontName == "AvenirNext-Regular")
+        #expect(RichTextBridge.richText(from: s, typography: title) == text)
+    }
 }
+

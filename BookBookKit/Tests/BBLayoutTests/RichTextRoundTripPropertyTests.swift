@@ -24,7 +24,11 @@ struct RichTextRoundTripPropertyTests {
     init() { LayoutFixtures.registerFonts() }
 
     static let words = ["fox", "a", " ", "castle ", "BOOM!", "x y", "  ", "é", "Tuesday,", "42"]
-    static let fonts: [String?] = [nil, nil, "Georgia", "Helvetica", "No-Such-Font"]
+    /// Includes other faces of the style fonts' families (the test font's regular face is the
+    /// title font's sibling; AvenirNext-Regular is the default title font's), which must stay
+    /// overrides rather than read back as the style font.
+    static let fonts: [String?] = [nil, nil, "Georgia", "Helvetica", "No-Such-Font",
+                                   TestFonts.Face.regular.rawValue, "AvenirNext-Regular"]
     static let sizes: [Double?] = [nil, nil, 11, 30, 48]
     static let colors: [RGBA?] = [nil, nil, RGBA(red: 1, green: 0, blue: 0), RGBA(red: 0.2, green: 0.4, blue: 0.6)]
     static let alignments: [TextAlignment?] = [nil, nil, .center, .trailing, .justified]
@@ -46,9 +50,12 @@ struct RichTextRoundTripPropertyTests {
     /// Drops empty runs, merges adjacent runs with equal formatting, and applies the bridge's
     /// documented limits: an empty paragraph keeps one empty run, an empty last paragraph carries
     /// no formatting, and the whole text collapses to `.empty` when it has no characters.
-    static func normalised(_ text: RichText) -> RichText {
+    /// A run naming the style font itself is the same as no override.
+    static func normalised(_ text: RichText, styleFont: String) -> RichText {
         var paragraphs: [Paragraph] = []
-        for (index, p) in text.paragraphs.enumerated() {
+        for (index, original) in text.paragraphs.enumerated() {
+            var p = original
+            for i in p.runs.indices where p.runs[i].fontFamily == styleFont { p.runs[i].fontFamily = nil }
             var runs: [Run] = []
             for run in p.runs where !run.text.isEmpty {
                 if var last = runs.last, sameFormatting(last, run) {
@@ -85,7 +92,7 @@ struct RichTextRoundTripPropertyTests {
             let text = Self.randomText(&generator)
             let attributed = RichTextBridge.attributedString(from: text, typography: typography)
             let back = RichTextBridge.richText(from: attributed, typography: typography)
-            let expected = Self.normalised(text)
+            let expected = Self.normalised(text, styleFont: typography.bodyFont.postScriptName)
             if back != expected, failures.count < 3 { failures.append("case \(caseIndex): \(text)\n -> \(back)\n != \(expected)") }
             #expect(attributed.string == text.plainText)
         }

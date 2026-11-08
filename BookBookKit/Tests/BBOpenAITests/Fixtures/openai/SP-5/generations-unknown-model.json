@@ -1,0 +1,8 @@
+{
+  "error" : {
+    "code" : "invalid_value",
+    "message" : "The model 'gpt-image-does-not-exist' does not exist.",
+    "param" : "model",
+    "type" : "image_generation_user_error"
+  }
+}

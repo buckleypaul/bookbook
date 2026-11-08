@@ -1,4 +1,5 @@
 import BBLayout
+import AppKit
 import BBModel
 import SwiftUI
 
@@ -27,8 +28,8 @@ struct CommitField: View {
             // it, unless the user has half-typed a number (it's kept until commit). After this
             // field's own commit `text == shown` again (Return keeps focus), so it follows.
             .onChange(of: value) { _, new in if !focused || text == shown { show(new) } }
-            .onSubmit(finish)
-            .onKeyPress(.return) { finish(); return .handled }
+            .onSubmit(submit)
+            .onKeyPress(.return) { submit(); return .handled }
             .onChange(of: focused) { _, now in if !now { finish() } }
     }
 
@@ -37,13 +38,25 @@ struct CommitField: View {
         shown = text
     }
 
+    /// Return: commit, then end editing so the window's undo manager (not the field editor's
+    /// empty one) drives Edit > Undo.
+    private func submit() {
+        finish()
+        focused = false
+        NSApp.keyWindow?.makeFirstResponder(nil)
+    }
+
     private func finish() {
         // Commit only what the user typed: an untouched field never writes its (maybe stale) text.
         if text != shown, let parsed = Double(text.trimmingCharacters(in: .whitespaces)), parsed.isFinite,
            abs(parsed - value) > 1e-9 {
             commit(parsed)
+            // `value` hasn't arrived yet: show what was committed; `onChange(of: value)` then
+            // follows any clamping by the model.
+            show(parsed)
+        } else {
+            show(value)
         }
-        show(value)
     }
 
     private func format(_ v: Double) -> String {

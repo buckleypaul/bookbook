@@ -98,6 +98,7 @@ struct BookEditor: View {
     @Environment(AppModel.self) private var app
     @State private var pages: PagesController
     @State private var layouts: TemplateEditorModel
+    @State private var styleModel: StyleTabModel
     @State private var sidebarTab: SidebarTab = .pages
     @State private var selectedImageBox: BoxID?
     @State private var showSession = true
@@ -114,6 +115,7 @@ struct BookEditor: View {
                                                                                    maxPixelSize: 512)))
         _pages = State(initialValue: PagesController(document: document))
         _layouts = State(initialValue: TemplateEditorModel(document: document))
+        _styleModel = State(initialValue: StyleTabModel(document: document))
     }
 
     var body: some View {
@@ -123,9 +125,10 @@ struct BookEditor: View {
             sidebar(content)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     Picker("Sidebar", selection: $sidebarTab) {
-                        ForEach(SidebarTab.allCases) { tab in Label(tab.title, systemImage: tab.symbol).tag(tab) }
+                        ForEach(SidebarTab.allCases) { tab in Label(tab.title, systemImage: tab.symbol).help(tab.title).tag(tab) }
                     }
                     .pickerStyle(.segmented)
+                    .labelStyle(.iconOnly)
                     .labelsHidden()
                     .padding(8)
                 }
@@ -185,7 +188,7 @@ struct BookEditor: View {
     @ViewBuilder
     private func sidebar(_ content: BookContent) -> some View {
         switch sidebarTab {
-        case .pages: PageList(document: document, content: content, pages: pages)
+        case .pages, .style: PageList(document: document, content: content, pages: pages)
         case .layouts: TemplateList(document: document, content: content, model: layouts)
         }
     }
@@ -294,6 +297,8 @@ struct BookEditor: View {
             }
             if sidebarTab == .layouts {
                 LayoutsDetail(document: document, model: layouts, images: images)
+            } else if sidebarTab == .style {
+                StyleTab(document: document, model: styleModel)
             } else {
             switch pages.mode {
             case .overview:
@@ -320,9 +325,14 @@ struct BookEditor: View {
                 .disabled(!document.isEditable)
         } else if pages.mode == .editor, let page = pages.selectedPage, let box = selectedImageBox,
            content.pages[page]?.images[box] != nil {
-            SessionPanel(document: document, content: content, pageID: page, boxID: box, images: images)
-                .id(box)
-                .disabled(!document.isEditable)
+            VStack(spacing: 0) {
+                ImageFlagsRow(flags: content.imageFlags(page: page, box: box), editable: document.isEditable) {
+                    styleModel.markOK(page: page, box: box)
+                }
+                SessionPanel(document: document, content: content, pageID: page, boxID: box, images: images)
+                    .id(box)
+            }
+            .disabled(!document.isEditable)
         } else {
             ContentUnavailableView("No Image Box Selected", systemImage: "photo",
                                    description: Text(pages.mode == .editor
@@ -345,14 +355,19 @@ struct PageList: View {
         let cover = content.coverPage
         List(selection: $pages.selectedPage) {
             if let cover {
-                row("Cover", status: content.status(of: cover)).tag(cover.id)
+                row("Cover", status: content.status(of: cover), flags: content.imageFlags(of: cover)).tag(cover.id)
             }
             ForEach(PageListing.items(content)) { item in
-                row(item.title, status: item.status).tag(item.id)
+                row(item.title, status: item.status, flags: item.flags).tag(item.id)
             }
         }
         .contextMenu(forSelectionType: PageID.self) { ids in
-            if let page = ids.first { PageContextMenu(pages: pages, page: page) }
+            if let page = ids.first {
+                PageContextMenu(pages: pages, page: page,
+                                flags: content.pages[page].map { content.imageFlags(of: $0) } ?? []) {
+                    _ = document.perform(.markFlagsOK(page: page, box: nil))
+                }
+            }
         } primaryAction: { ids in
             if let page = ids.first { pages.open(page) }
         }
@@ -376,10 +391,11 @@ struct PageList: View {
         }
     }
 
-    private func row(_ title: String, status: PageStatus) -> some View {
+    private func row(_ title: String, status: PageStatus, flags: ImageFlags) -> some View {
         HStack {
             Text(title)
             Spacer()
+            ImageFlagIcons(flags: flags).font(.caption)
             StatusBadge(status: status).font(.caption)
         }
     }

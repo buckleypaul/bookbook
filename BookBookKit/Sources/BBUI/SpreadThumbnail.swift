@@ -79,6 +79,7 @@ struct PageThumbnailView: View {
     /// 1 for a single page or half, 2 for a spread filling both sides.
     let sides: Int
     let status: PageStatus?
+    var flags: ImageFlags = []
     let label: String?
     let isSelected: Bool
     let isDropTarget: Bool
@@ -98,6 +99,13 @@ struct PageThumbnailView: View {
                     }
                     .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
                 if let status { StatusBadge(status: status).padding(4) }
+                if !flags.isEmpty {
+                    ImageFlagIcons(flags: flags)
+                        .padding(2)
+                        .background(.regularMaterial, in: Capsule())
+                        .padding(4)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
                 if part != .single {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -154,5 +162,21 @@ struct StatusBadge: View {
             .background(.regularMaterial, in: Circle())
             .help(text)
             .accessibilityLabel(text)
+    }
+}
+
+/// Compact "Style changed" / "Layout changed" icons with tooltips (A §4.4).
+struct ImageFlagIcons: View {
+    let flags: ImageFlags
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(FlagText.entries(flags), id: \.title) { entry in
+                Image(systemName: entry.symbol)
+                    .foregroundStyle(entry.color)
+                    .help("\(entry.title): \(entry.help)")
+                    .accessibilityLabel(entry.title)
+            }
+        }
     }
 }

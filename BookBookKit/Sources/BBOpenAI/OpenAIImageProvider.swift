@@ -33,13 +33,11 @@ public struct OpenAIImageProvider: ImageProvider {
     ) async throws(ProviderError) -> ImageResult {
         let images = [request.baseImage].compactMap { $0 } + request.references.map(\.payload)
         let isEdit = !images.isEmpty
-        var parameters = try Self.parameters(for: request)
+        let parameters = try Self.parameters(for: request)
         if isEdit {
             try Self.validate(images, limit: request.model.image.maxImageBytes)
-            // Edits always send an explicit size: the base image's, else the request's.
-            if let base = request.baseImage?.pixelSize {
-                parameters["size"] = "\(base.width)x\(base.height)"
-            }
+            // Edits send the request's size (`exactSize`, snapped to the model's rules by the assembler),
+            // never the raw base image size, which may be invalid for the model.
         }
 
         guard let key = await apiKey() else { throw .missingKey }

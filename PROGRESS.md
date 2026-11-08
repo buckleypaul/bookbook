@@ -10,7 +10,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 |---|---|---|---|---|---|---|
 | 1a | Bootstrap (gitignore, hooks, key scripts) | done | `phase-1a-bootstrap` | [#1](https://github.com/buckleypaul/bookbook/pull/1) | $0.00 | Repo and remote were created on 2026-11-07 |
 | 0 | Live-API spikes and fixtures | done | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13 |
-| 1b | Project setup and CI | awaiting hand checks | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27` |
+| 1b | Project setup and CI | done | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27` |
 | 2 | Thin vertical slice (M1) | not started | | | | |
 | 3 | Storage and library | not started | | | | |
 | 4 | Text and typography | not started | | | | |
@@ -124,7 +124,7 @@ Also fixed from the nice-to-haves: `dump()`/reflection redaction for `APIKey` an
 
 ### Phase 1b — Project setup and CI (2026-11-07)
 
-**Status:** awaiting hand checks · branch `phase-1b-setup-ci` · PR [#3](https://github.com/buckleypaul/bookbook/pull/3) · live spend **$0.00** (`scripts/live-tests.sh openai` with no live tests: exit 0, "No matching test cases were run", nothing key-shaped printed).
+**Status:** done (hand checks passed, PR #3 squash-merged 2026-11-08) · branch `phase-1b-setup-ci` · PR [#3](https://github.com/buckleypaul/bookbook/pull/3) · live spend **$0.00** (`scripts/live-tests.sh openai` with no live tests: exit 0, "No matching test cases were run", nothing key-shaped printed).
 
 **Built:**
 - `BookBookKit/Package.swift` (P-1): `BBModel`, `BBStore`, `BBLayout`, `BBNet`, `BBAICore`, `BBAI`, `BBOpenAI`, `BBGemini`, `BBExport`, `BBUI`, each with a test target and a smoke test. Swift 6 mode, `ExistentialAny`, warnings as errors. Pinned `swift-collections` 1.7.5 and `swift-snapshot-testing` 1.19.7 (tests only); `Package.resolved` committed.
@@ -145,10 +145,10 @@ Also fixed from the nice-to-haves: `dump()`/reflection redaction for `APIKey` an
 **Review:** fresh opus review, no code must-fixes. Fixed: branch protection (was pending), `test.sh` steps could pass despite a failing command (errexit off inside `if`), unverified XcodeGen download, stale-prone cache key, A §3 graph mismatch, test target Release config including Debug settings, duplicate push/PR runs and cancelled runs on main, no test for the Info.plist type, stale `Spikes/Seeds` references here.
 
 **Hand checks:**
-- [ ] Clone fresh, open `BookBook.xcodeproj` in Xcode 27, run: the app launches to an empty "Library" window, and ⌘, opens Settings. *(Confirmed by me from a command-line build: Library shows "No Books Yet"; ⌘, opened the General settings window. Xcode-from-fresh-clone is yours.)*
-- [ ] Push a branch and CI goes green. *(Confirmed: CI green on this branch.)*
-- [ ] On a scratch branch, commit a fake `sk-…` string: the pre-commit hook blocks it, and CI or push protection would too. *(The hook path is covered offline by `scripts/tests/test-bootstrap.sh`; the by-hand try is yours.)*
-- [ ] `scripts/live-tests.sh openai` with no live tests runs, reports zero tests and prints nothing secret. *(Confirmed: see above.)*
+- [x] Clone fresh, build and run: the app launches to an empty "Library" window, and ⌘, opens Settings. *(2026-11-08: fresh clone of the branch built with `xcodebuild` (same build as Xcode), launched from that build: "No Books Yet" in Library, ⌘, opened General. You waived the Xcode GUI run.)*
+- [x] Push a branch and CI goes green. *(Confirmed: CI green on this branch.)*
+- [x] On a scratch branch, commit a fake `sk-…` string: the pre-commit hook blocks it, and CI or push protection would too. *(Covered offline by `scripts/tests/test-bootstrap.sh`; you waived the by-hand try, trusting push protection.)*
+- [x] `scripts/live-tests.sh openai` with no live tests runs, reports zero tests and prints nothing secret. *(Confirmed: see above.)*
 
 **Follow-ups:**
 - App icon and `UTTypeIcons` for `.bookbook` documents are placeholders (Finder shows a generic package icon).

@@ -6,14 +6,51 @@ enum PackageCoding {
     static func encoder() -> JSONEncoder {
         let e = JSONEncoder()
         e.outputFormatting = [.sortedKeys, .prettyPrinted]
-        e.dateEncodingStrategy = .iso8601
+        e.dateEncodingStrategy = .custom(encodeDate)
         return e
     }
 
     static func decoder() -> JSONDecoder {
         let d = JSONDecoder()
-        d.dateDecodingStrategy = .iso8601
+        d.dateDecodingStrategy = .custom(decodeDate)
         return d
+    }
+
+    // MARK: Dates
+    //
+    // ISO 8601 UTC with nine fractional digits ("2026-11-08T12:34:56.123456789Z"), diffable and
+    // exact: the whole second comes from the ISO formatter and the fraction is written to 1 ns,
+    // far finer than a Date's Double resolution (~1e-7 s), so `Date` round-trips unchanged.
+    // Decoding also accepts dates without a fraction.
+
+    @Sendable static func encodeDate(_ date: Date, _ encoder: any Encoder) throws {
+        var whole = date.timeIntervalSinceReferenceDate.rounded(.down)
+        var nanos = Int(((date.timeIntervalSinceReferenceDate - whole) * 1e9).rounded())
+        if nanos >= 1_000_000_000 { whole += 1; nanos = 0 }
+        let base = Date(timeIntervalSinceReferenceDate: whole).formatted(Date.ISO8601FormatStyle())
+        let digits = String(nanos)
+        let string = base.dropLast() + "." + String(repeating: "0", count: 9 - digits.count) + digits + "Z"
+        var container = encoder.singleValueContainer()
+        try container.encode(String(string))
+    }
+
+    @Sendable static func decodeDate(_ decoder: any Decoder) throws -> Date {
+        let string = try decoder.singleValueContainer().decode(String.self)
+        var main = Substring(string)
+        var fraction = 0.0
+        if let dot = string.firstIndex(of: ".") {
+            let after = string.index(after: dot)
+            let digitsEnd = string[after...].firstIndex { !$0.isNumber } ?? string.endIndex
+            guard let n = Double("0." + string[after..<digitsEnd]) else {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "bad date \(string)"))
+            }
+            fraction = n
+            main = string[..<dot] + string[digitsEnd...]
+        }
+        guard let whole = try? Date.ISO8601FormatStyle().parse(String(main)) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "bad date \(string)"))
+        }
+        return Date(timeIntervalSinceReferenceDate: whole.timeIntervalSinceReferenceDate + fraction)
     }
 
     static func encode<T: Encodable>(_ value: T) throws(StoreError) -> Data {

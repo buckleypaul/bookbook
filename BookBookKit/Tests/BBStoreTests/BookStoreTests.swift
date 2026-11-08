@@ -103,6 +103,65 @@ func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.pat
         #expect(try FileManager.default.contentsOfDirectory(atPath: url.appending(path: ".journal").path(percentEncoded: false)).isEmpty)
     }
 
+    /// Writes a committed hand-made transaction with the given manifest paths.
+    private func craftJournal(at url: URL, targets: [String], deletions: [String], txid: String = UUID().uuidString) throws {
+        let tx = url.appending(path: ".journal/\(txid)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: tx.appending(path: "staged"), withIntermediateDirectories: true)
+        for t in targets {
+            let staged = tx.appending(path: "staged").appending(path: t)
+            try FileManager.default.createDirectory(at: staged.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("evil".utf8).write(to: staged)
+        }
+        try PackageCoding.encoder().encode(Journal.Manifest(targets: targets, deletions: deletions))
+            .write(to: tx.appending(path: "manifest.json"))
+        try Data().write(to: tx.appending(path: "COMMIT"))
+    }
+
+    @Test(arguments: [
+        (["../outside.json"], [String]()),
+        ([String](), ["../victim"]),
+        (["/tmp/abs.json"], [String]()),
+        (["pages/../../outside.json"], [String]()),
+        ([String](), ["images/x.png"]),
+        (["book.json", "../outside.json"], [String]()),
+    ])
+    func craftedJournalIsDiscardedWithoutTouchingOutside(targets: [String], deletions: [String]) async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "B.bookbook")
+        let content = try sampleContent()
+        try BookStore.create(content, at: url)
+        let victim = dir.appending(path: "victim")
+        try Data("keep".utf8).write(to: victim)
+        try craftJournal(at: url, targets: targets, deletions: deletions)
+
+        let loaded = try await BookStore(packageURL: url).load()
+        #expect(loaded == content) // nothing partly applied, not even the valid book.json entry
+        #expect(try Data(contentsOf: victim) == Data("keep".utf8))
+        #expect(!exists(dir.appending(path: "outside.json")))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: url.appending(path: ".journal").path(percentEncoded: false)).isEmpty)
+    }
+
+    @Test func journalWithBadTxidOrSymlinkedDirIsDiscarded() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "B.bookbook")
+        let content = try sampleContent()
+        try BookStore.create(content, at: url)
+        let pageFile = "pages/\(UUID().uuidString).json"
+        try craftJournal(at: url, targets: [pageFile], deletions: [], txid: "not-a-uuid")
+        // pages/ replaced by a symlink to an outside folder.
+        let outside = dir.appending(path: "outside", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.removeItem(at: url.appending(path: "pages"))
+        try FileManager.default.createSymbolicLink(at: url.appending(path: "pages"), withDestinationURL: outside)
+        try craftJournal(at: url, targets: [pageFile], deletions: [])
+
+        _ = try? await BookStore(packageURL: url).load() // pages symlink may read as empty
+        #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path(percentEncoded: false)).isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: url.appending(path: ".journal").path(percentEncoded: false)).isEmpty)
+    }
+
     @Test func uncommittedJournalIsDiscarded() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -179,6 +238,23 @@ func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.pat
         #expect(try await store.load() == gen3)
         try await store.flush() // nothing pending: no-op
         #expect(try await store.load() == gen3)
+    }
+
+    @Test func datesRoundTripExactly() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "B.bookbook")
+        var content = try sampleContent()
+        try BookStore.create(content, at: url)
+        let store = BookStore(packageURL: url)
+        for _ in 0..<50 {
+            content.book.modifiedAt = Date()
+            try await store.save(content, dirty: DirtySet(book: true))
+            #expect(try await store.load() == content)
+        }
+        // Dates without a fraction (older files) still decode.
+        let d = try PackageCoding.decoder().decode(Date.self, from: Data(#""2023-11-14T22:13:20Z""#.utf8))
+        #expect(d == Date(timeIntervalSince1970: 1_700_000_000))
     }
 
     @Test func flushWritesImmediately() async throws {

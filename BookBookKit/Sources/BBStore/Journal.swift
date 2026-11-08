@@ -62,6 +62,39 @@ struct Journal {
         try fm.removeItem(at: tx)
     }
 
+    private static var pathPattern: Regex<(Substring, Substring, Substring?)> {
+        /^(book\.json|style\.json|(templates|pages|sessions)\/[0-9A-Fa-f-]{36}\.json)$/
+    }
+
+    /// Symlink-resolved path without a trailing slash.
+    private static func resolved(_ url: URL) -> String {
+        var p = url.resolvingSymlinksInPath().path(percentEncoded: false)
+        while p.count > 1, p.hasSuffix("/") { p.removeLast() }
+        return p
+    }
+
+    /// True if the txid folder name, every manifest path and every resolved source and
+    /// destination parent stay inside the journal / package.
+    func isSafe(_ tx: URL) -> Bool {
+        guard UUID(uuidString: tx.lastPathComponent) != nil,
+              let data = try? Data(contentsOf: tx.appending(path: Self.manifestName)),
+              let manifest = try? PackageCoding.decoder().decode(Manifest.self, from: data) else { return false }
+        let package = Self.resolved(packageURL)
+        let staged = Self.resolved(tx.appending(path: "staged"))
+        let journal = Self.resolved(root)
+        guard staged.hasPrefix(journal + "/") else { return false }
+        for path in manifest.targets + manifest.deletions {
+            guard path.wholeMatch(of: Self.pathPattern) != nil else { return false }
+            let dest = Self.resolved(packageURL.appending(path: path).deletingLastPathComponent())
+            guard dest == package || dest.hasPrefix(package + "/") else { return false }
+        }
+        for path in manifest.targets {
+            let src = Self.resolved(tx.appending(path: "staged").appending(path: path))
+            guard src.hasPrefix(staged + "/") else { return false }
+        }
+        return true
+    }
+
     /// On open: roll committed transactions forward, discard the rest.
     func recover() throws {
         let fm = FileManager.default
@@ -69,7 +102,9 @@ struct Journal {
         let txs = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
         for tx in txs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let committed = fm.fileExists(atPath: tx.appending(path: Self.commitName).path(percentEncoded: false))
-            if committed {
+            // A journal may come from a shared book, so it is untrusted: anything that is not
+            // exactly what this store writes is discarded whole, never partly applied.
+            if committed, isSafe(tx) {
                 try apply(tx)
             } else {
                 try fm.removeItem(at: tx)

@@ -52,7 +52,10 @@ let package = Package(
 
         .testTarget(name: "BBModelTests", dependencies: ["BBModel", "BBTestSupport"], swiftSettings: settings),
         .testTarget(name: "BBStoreTests", dependencies: ["BBStore", "BBTestSupport"], swiftSettings: settings),
-        .testTarget(name: "BBLayoutTests", dependencies: ["BBLayout", "BBTestSupport", snapshots], swiftSettings: settings),
+        .testTarget(
+            name: "BBLayoutTests", dependencies: ["BBLayout", "BBTestSupport", snapshots],
+            exclude: ["__Snapshots__"], swiftSettings: settings
+        ),
         .testTarget(name: "BBNetTests", dependencies: ["BBNet", "BBTestSupport"], swiftSettings: settings),
         .testTarget(name: "BBAICoreTests", dependencies: ["BBAICore", "BBTestSupport"], swiftSettings: settings),
         .testTarget(name: "BBAITests", dependencies: ["BBAI", "BBTestSupport", snapshots], swiftSettings: settings),

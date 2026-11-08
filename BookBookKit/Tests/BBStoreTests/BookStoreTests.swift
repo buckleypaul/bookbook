@@ -100,7 +100,7 @@ func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.pat
         let loaded = try await BookStore(packageURL: url).load()
         #expect(loaded.pages[pageID]?.text[boxID]?.plainText == "staged")
         #expect(loaded.pages[removedID] == nil)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: url.appending(path: ".journal").path(percentEncoded: false)).isEmpty)
+        #expect(!exists(url.appending(path: ".journal")))
     }
 
     /// Writes a committed hand-made transaction with the given manifest paths.
@@ -139,7 +139,7 @@ func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.pat
         #expect(loaded == content) // nothing partly applied, not even the valid book.json entry
         #expect(try Data(contentsOf: victim) == Data("keep".utf8))
         #expect(!exists(dir.appending(path: "outside.json")))
-        #expect(try FileManager.default.contentsOfDirectory(atPath: url.appending(path: ".journal").path(percentEncoded: false)).isEmpty)
+        #expect(!exists(url.appending(path: ".journal")))
     }
 
     @Test func journalWithBadTxidOrSymlinkedDirIsDiscarded() async throws {
@@ -159,7 +159,7 @@ func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.pat
 
         _ = try? await BookStore(packageURL: url).load() // pages symlink may read as empty
         #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path(percentEncoded: false)).isEmpty)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: url.appending(path: ".journal").path(percentEncoded: false)).isEmpty)
+        #expect(!exists(url.appending(path: ".journal")))
     }
 
     @Test func uncommittedJournalIsDiscarded() async throws {
@@ -177,7 +177,7 @@ func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.pat
 
         let loaded = try await BookStore(packageURL: url).load()
         #expect(loaded == original)
-        #expect(try FileManager.default.contentsOfDirectory(atPath: url.appending(path: ".journal").path(percentEncoded: false)).isEmpty)
+        #expect(!exists(url.appending(path: ".journal")))
     }
 
     @Test func storeImageIsContentAddressedAndIdempotent() async throws {

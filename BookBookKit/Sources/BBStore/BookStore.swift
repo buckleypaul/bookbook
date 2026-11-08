@@ -11,6 +11,13 @@ public actor BookStore {
     private var timer: Task<Void, Never>?
     private var timerToken = 0
     private var autosaveResultHandler: (@Sendable (StoreError?) -> Void)?
+    private var readOnly = false
+    /// Set while this store holds `.lock` (wrote it, or found this process's own lock).
+    private var holdsLock = false
+    /// The owner this store wrote to `.lock`, if it wrote it (nil for a re-entrant hold).
+    private var writtenLock: LockOwner?
+    /// Test hook (fault injection): see `SaveStep`.
+    private var saveFaultHook: SaveFaultHook?
 
     public init(packageURL: URL) {
         self.init(packageURL: packageURL, debounce: .seconds(1))
@@ -46,13 +53,29 @@ public actor BookStore {
         }
     }
 
-    /// Rolls a committed journal forward (or discards an uncommitted one), then reads the book.
+    /// Rolls a committed journal forward (or discards an uncommitted one), migrates an older
+    /// schema, repairs the cost ledger, reads the book, then sweeps orphan images. Read-only:
+    /// only reads (a committed journal is left for the writer to replay).
     public func load() throws(StoreError) -> BookContent {
-        try PackageCoding.io("recover journal") { try Journal(packageURL: packageURL).recover() }
         let fm = FileManager.default
+        if !readOnly {
+            try PackageCoding.io("recover journal") { try Journal(packageURL: packageURL).recover() }
+        }
         guard fm.fileExists(atPath: packageURL.appending(path: PackageCoding.bookPath).path(percentEncoded: false)) else {
             throw StoreError.notFound(packageURL.lastPathComponent)
         }
+        if !readOnly {
+            try Migrator.standard.migrateIfNeeded(packageURL: packageURL)
+            try CostLedger(packageURL: packageURL).repair()
+        }
+        let content = try readContent()
+        // Housekeeping only: a failed sweep (e.g. a symlinked `images/`) never blocks the open.
+        if !readOnly { _ = try? sweepOrphanImages(referencedBy: content) }
+        return content
+    }
+
+    private func readContent() throws(StoreError) -> BookContent {
+        // Also guards a migrator that leaves a newer book untouched, and read-only opens (no migration).
         struct SchemaProbe: Decodable { var schemaVersion: Int }
         let bookData = try readFile(PackageCoding.bookPath)
         let probe = try PackageCoding.decode(SchemaProbe.self, from: bookData, what: "book.json")
@@ -71,17 +94,31 @@ public actor BookStore {
 
     /// Saves the dirty entities of `content` as one journaled transaction (A §5.2).
     public func save(_ content: BookContent, dirty: DirtySet) throws(StoreError) {
+        guard !readOnly else { throw StoreError.readOnly }
         let files = try PackageCoding.files(for: content, dirty: dirty)
         let deletions = dirty.deletedPages.map { PackageCoding.pagePath($0) }
         guard !files.isEmpty || !deletions.isEmpty else { return }
+        let fault = saveFaultHook
         try PackageCoding.io("save") {
-            try Journal(packageURL: packageURL).run(files: files, deletions: deletions)
+            // Step 1 (image files) happened in `storeImage` before this call.
+            try fault?(.imagesWritten, 0)
+            try Journal(packageURL: packageURL).run(files: files, deletions: deletions, fault: fault)
         }
+    }
+
+    /// Test hook: called after each save step; throwing `SimulatedCrash` stops the save there.
+    func setSaveFaultHook(_ hook: SaveFaultHook?) {
+        saveFaultHook = hook
     }
 
     /// Debounced autosave (1 s after the last call). Dirty sets accumulate; the content with the
     /// highest `generation` wins, so an out-of-order older snapshot is ignored.
+    /// Read-only: nothing is scheduled and the result handler gets `.readOnly`.
     public func scheduleSave(_ content: BookContent, dirty: DirtySet, generation: Int) {
+        guard !readOnly else {
+            autosaveResultHandler?(.readOnly)
+            return
+        }
         if var p = pending {
             p.dirty.formUnion(dirty)
             if generation >= p.generation {
@@ -146,6 +183,7 @@ public actor BookStore {
     /// Writes image bytes to `images/<sha256>.<ext>` (temp file + rename; idempotent) and
     /// returns the ref. Called before the JSON that refers to it is saved.
     public func storeImage(_ data: Data, contentType: String) throws(StoreError) -> ImageRef {
+        guard !readOnly else { throw StoreError.readOnly }
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let ref = ImageRef(sha256: hash, contentType: contentType)
         guard ref.isValid else { throw StoreError.io("unsupported image content type: \(contentType)") }
@@ -203,25 +241,49 @@ public actor BookStore {
         }
         return out
     }
-}
 
-// MARK: Phase 3 contract (stubs; the store-durability lane implements these and may move them into the actor body)
+    // MARK: Phase 3 contract: lock, read-only, thumbnail, sweep
 
-extension BookStore {
     /// Takes `<package>/.lock` (A §5.3). A lock held by this process, or by a dead PID on this host, is taken over.
     /// Call before `load()`. A lock from another host is treated as live.
     public func acquireLock() throws(StoreError) -> LockAcquisition {
-        .acquired
+        if holdsLock { return .acquired }
+        let outcome = try PackageCoding.io("acquire lock") { try BookLock(packageURL: packageURL).acquire() }
+        switch outcome {
+        case .wrote(let owner):
+            holdsLock = true
+            writtenLock = owner
+            return .acquired
+        case .reentrant:
+            holdsLock = true
+            return .acquired
+        case .heldByOther(let owner):
+            return .heldByOther(owner)
+        }
     }
 
     /// Removes `.lock` if this store holds it. Safe to call more than once.
-    public func releaseLock() {}
+    /// A re-entrant hold (another store in this process wrote the file) leaves the file for that store.
+    public func releaseLock() {
+        defer {
+            holdsLock = false
+            writtenLock = nil
+        }
+        guard holdsLock, let owner = writtenLock else { return }
+        BookLock(packageURL: packageURL).release(owner)
+    }
 
     /// After this, `load()` never writes (no journal replay, migration, sweep or ledger repair) and
     /// `save`, `scheduleSave`, `storeImage` and `writeThumbnail` refuse with `.readOnly`.
-    public func setReadOnly() {}
+    public func setReadOnly() {
+        readOnly = true
+        timer?.cancel()
+        timer = nil
+        timerToken += 1
+        pending = nil
+    }
 
-    public var isReadOnly: Bool { false }
+    public var isReadOnly: Bool { readOnly }
 
     /// `<package>/thumbnail.png` (A §5.1).
     public nonisolated var thumbnailURL: URL {
@@ -229,13 +291,30 @@ extension BookStore {
     }
 
     /// Writes `thumbnail.png` atomically (temp file + rename). Not journaled: it's a rebuildable cache.
-    public func writeThumbnail(_ png: Data) throws(StoreError) {}
+    public func writeThumbnail(_ png: Data) throws(StoreError) {
+        guard !readOnly else { throw StoreError.readOnly }
+        let dest = thumbnailURL
+        let tmp = packageURL.appending(path: ".thumbnail.png.tmp-\(UUID().uuidString)")
+        try PackageCoding.io("writeThumbnail") {
+            do {
+                try PackageCoding.writeSynced(png, to: tmp)
+                try PackageCoding.rename(tmp, to: dest)
+            } catch {
+                try? FileManager.default.removeItem(at: tmp)
+                throw error
+            }
+        }
+    }
 
     /// Deletes `images/` files that no JSON in `content` refers to and that are older than `minimumAge` (A §5.2).
     /// `load()` calls this at open; public for tests and Phase 16 clean-up. Returns the number removed.
     @discardableResult
     public func sweepOrphanImages(referencedBy content: BookContent, minimumAge: TimeInterval = 86_400,
                                   now: Date = Date()) throws(StoreError) -> Int {
-        0
+        guard !readOnly else { return 0 }
+        let referenced = ImageSweep.referencedFileNames(in: content)
+        return try PackageCoding.io("sweep images") {
+            try ImageSweep.sweep(packageURL: packageURL, referenced: referenced, minimumAge: minimumAge, now: now)
+        }
     }
 }

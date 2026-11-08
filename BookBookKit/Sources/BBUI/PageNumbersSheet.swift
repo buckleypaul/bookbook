@@ -15,6 +15,27 @@ extension PageNumberPosition {
     }
 }
 
+/// Maps between the family names the picker shows and the PostScript names
+/// `PageNumberStyle.fontFamily` stores (drawing resolves fonts by PostScript name).
+enum PageNumberFontNames {
+    /// PostScript name of the family's regular face (else its first face); nil if unavailable.
+    static func postScriptName(forFamily family: String) -> String? {
+        let members = NSFontManager.shared.availableMembers(ofFontFamily: family) ?? []
+        // Each member is [postScriptName, styleName, weight, traits].
+        let faces = members.compactMap { m -> (ps: String, style: String)? in
+            guard m.count >= 2, let ps = m[0] as? String, let style = m[1] as? String else { return nil }
+            return (ps, style)
+        }
+        let regular = faces.first { ["Regular", "Roman", "Book", "Normal", "Medium"].contains($0.style) }
+        return (regular ?? faces.first)?.ps
+    }
+
+    /// Display family for a stored PostScript name; nil when the font isn't installed.
+    static func family(forPostScriptName name: String) -> String? {
+        NSFont(name: name, size: 12)?.familyName
+    }
+}
+
 /// Format ▸ Page Numbers… (PD §8.2): on/off, position, font and size, start number and the
 /// skip rules. Edits a draft; Done applies it as one `setPageNumberStyle` (one undo step).
 /// Specific pages are skipped from the page's context menu ("Skip Page Number").
@@ -23,12 +44,15 @@ struct PageNumbersSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var draft: PageNumberStyle
     @State private var families: [String] = []
+    /// Family chosen in the picker; nil is the body font. Stored as a PostScript name on Done.
+    @State private var family: String?
 
     static let sizeRange: ClosedRange<Double> = 6...72
 
     init(pages: PagesController, style: PageNumberStyle) {
         self.pages = pages
         _draft = State(initialValue: style)
+        _family = State(initialValue: style.fontFamily.map { PageNumberFontNames.family(forPostScriptName: $0) ?? $0 })
     }
 
     var body: some View {
@@ -40,7 +64,7 @@ struct PageNumbersSheet: View {
                     Picker("Position", selection: $draft.position) {
                         ForEach(PageNumberPosition.allCases, id: \.self) { Text($0.title).tag($0) }
                     }
-                    Picker("Font", selection: $draft.fontFamily) {
+                    Picker("Font", selection: $family) {
                         Text("Body font").tag(String?.none)
                         Divider()
                         ForEach(families, id: \.self) { Text($0).tag(String?.some($0)) }
@@ -83,6 +107,13 @@ struct PageNumbersSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Done") {
                     var style = draft
+                    if let family {
+                        // Keep the stored name when the font is missing and untouched.
+                        style.fontFamily = PageNumberFontNames.postScriptName(forFamily: family)
+                            ?? (family == draft.fontFamily ? draft.fontFamily : nil)
+                    } else {
+                        style.fontFamily = nil
+                    }
                     style.size = min(max(style.size, Self.sizeRange.lowerBound), Self.sizeRange.upperBound)
                     style.startNumber = max(0, style.startNumber)
                     pages.setPageNumberStyle(style)
@@ -97,7 +128,7 @@ struct PageNumbersSheet: View {
         .onAppear {
             var list = NSFontManager.shared.availableFontFamilies
             // Keep a family the style names even if it isn't installed.
-            if let family = draft.fontFamily, !list.contains(family) { list.insert(family, at: 0) }
+            if let family, !list.contains(family) { list.insert(family, at: 0) }
             families = list
         }
     }

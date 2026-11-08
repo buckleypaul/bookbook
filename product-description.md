@@ -1,10 +1,10 @@
 # BookBook — Product Description
 
-**Status:** Draft v4, in review (v3 adds findings from the architecture research, `architecture.md` §15; v4 raises the minimum to macOS 27, 2026-11-07)
+**Status:** Draft v4, in review (v3 adds findings from the architecture research, `architecture-decisions.md` §15; v4 raises the minimum to macOS 27, 2026-11-07)
 
 > **Scope of this document:** *what* BookBook does and for whom. It deliberately leaves out *how* it's built.
 > Documents to follow, each written in its own session:
-> 1. `architecture.md`: technical design, based on this document (inputs: `architecture-notes.md`)
+> 1. `architecture.md`: technical design, based on this document (inputs: `architecture-notes.md`, since removed)
 > 2. `implementation-plan.md`: phased build plan, based on the architecture
 > 3. Execution of the plan
 

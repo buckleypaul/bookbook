@@ -120,7 +120,7 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 5 — Pages tab, ordering and cover
 
-**Stage:** A
+**Stage:** B
 
 **Contracts** (commit `feat(phase-5): contracts`): `PageNumberStyle` (position, font, size, colour, start, skip front matter, skipped pages; tolerant decoding), `PageNumberPosition`, `PageRole` + `Template.pageRole`, `TemplateReassignment` (BBModel); `PageSequencer`/`SequenceLayout`/`Opening`, `PageNumbering`, `StoryTextImporter`, `RenderOptions.pageNumbers`/`PageNumberMark` (BBLayout); `Presets` IDs 0003–000A; new `BookCommand` cases (`duplicatePage`, `reorderPages`, `setPageTemplate`, `importStoryText`, `setPageDone`, `setPageNumberStyle`, `fixSplits` on structural commands); `BookDocument.wouldSplitSpread(_:)`, `setAuthor(_:)`.
 
@@ -133,4 +133,17 @@ The running phase writes its log here; when it is marked done, move the entry to
 - Presets missing from an older book are copied in when a command first uses them.
 - Book Settings title uses the existing `rename(to:)`; author is set the same way (not undoable; PD §8.10 doesn't list them).
 - Page-number settings live in a sheet from the Pages overview until the Style tab (Phase 7).
+
+**Session A result (all lanes merged, package + app build warning-free, `swift test` green):**
+- L1 `PageSequencer` (cover is opening 0, on the right), `PageNumbering`, `StoryTextImporter`, `TemplateReassignment` (only boxes that have content take part) + exhaustive n ≤ 8 tests.
+- L2 presets 0003–000A, an author box on the Cover, `Presets.template(_:)` public, `textOnlyTemplate()`.
+- L3 page commands as single undo steps (`compound` edit); `wouldSplitSpread` simulates on a copy. **Deviation:** copying a preset into an older book is irreversible (DirtySet can't delete template files); undo removes the pages, the unused template stays.
+- L4 renderer page numbers (slot box or margin band) and bound title/author; the cover is the first PDF page; the library thumbnail uses the cover.
+- L5 Overview/Editor modes (toolbar segmented control, ⌥⌘1/⌥⌘2), Cover row in the sidebar, Page menu, drag-drop reorder (SwiftUI, no AppKit fallback), split-warning alert, story import, Book Settings, Page Numbers sheets.
+- Integration: `PageNumberMarks` helper drives PDF and on-screen numbers (positional: the dedication keeps its number, so story pages after it start at 2); the canvas draws spreads at double width with a fold; title/author boxes aren't text-editable (double-click opens Book Settings).
+
+**For Session B:**
+- **Fix first:** PDF export draws a spread-template page squashed into one page box; export it as two PDF pages (one per half).
+- Nothing is hand-checked yet: drag-drop vs double-click on thumbnails, the split alert, story import from `.rtf`, Book Settings.
+- Commit `bbec99e` doesn't build on its own (the next commit fixes it); harmless.
 

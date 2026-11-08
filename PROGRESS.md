@@ -225,13 +225,13 @@ The main thread wrote the BBModel types, `BookCommand` and `BookDocument` (undo 
 - close flushes.
 
 **Hand checks:**
-- [ ] 1. New Book "Test" opens in its own window with page 1.
-- [ ] 2. Typing; misspellings underlined; ⌘Z undoes typing.
-- [ ] 3. Settings ▸ API Keys: save your OpenAI key; it's in Keychain Access, not in the book.
-- [ ] 4. Generate "a fox in a red scarf at a castle gate, watercolour": the image fills the box within ~2 min (aspect-fill).
-- [ ] 5. Export PDF: image + selectable text; Preview ▸ Inspector shows embedded fonts.
-- [ ] 6. Quit/relaunch/reopen: text, image, placement persist; package contents; no `sk-` anywhere.
-- [ ] 7. Wi-Fi off → Generate shows "Offline"; editing still works.
+- [x] 1. New Book "Test" opens in its own window with page 1.
+- [x] 2. Typing; misspellings underlined; ⌘Z undoes typing.
+- [x] 3. Settings ▸ API Keys: save your OpenAI key; it's in Keychain Access, not in the book.
+- [x] 4. Generate "a fox in a red scarf at a castle gate, watercolour": the image fills the box within ~2 min (aspect-fill).
+- [x] 5. Export PDF: image + selectable text; Preview ▸ Inspector shows embedded fonts.
+- [x] 6. Quit/relaunch/reopen: text, image, placement persist; package contents; no `sk-` anywhere.
+- [x] 7. Wi-Fi off → Generate shows "Offline"; editing still works.
 
 **Follow-ups:**
 - **Phase 3:**

@@ -30,7 +30,8 @@ struct LibraryActionsTests {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         let app = AppModel(providers: [:], libraryRoot: root, keychainService: "app.bookbook.tests-\(UUID())",
                            indexCacheURL: dir.appending(path: "library-index.json"), userDefaults: defaults,
-                           thumbnails: ThumbnailCache(root: dir.appending(path: "Caches")))
+                           thumbnails: ThumbnailCache(root: dir.appending(path: "Caches")),
+                           appSupport: AppSupportFiles(folderURL: dir.appending(path: "AppSupport")))
         await app.start()
         return Setup(dir: dir, app: app, defaults: defaults, suiteName: suiteName)
     }

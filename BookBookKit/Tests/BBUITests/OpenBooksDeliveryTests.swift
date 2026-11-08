@@ -69,7 +69,7 @@ struct OpenBooksDeliveryTests {
         let books = s.books, delivery = s.delivery
         let delivering = Task { await books.deliver(delivery, now: { Fixtures.date }) }
         let document = try await books.open(s.entry.id)
-        await delivering.value
+        _ = await delivering.value
         expectDelivered(document.content, s)
         await books.close(s.entry.id)
         expectDelivered(try await onDisk(s), s)
@@ -83,7 +83,7 @@ struct OpenBooksDeliveryTests {
         let closing = Task { await books.close(id) }
         let delivering = Task { await books.deliver(delivery, now: { Fixtures.date }) }
         await closing.value
-        await delivering.value
+        _ = await delivering.value
         #expect(books.document(for: id) == nil)
         expectDelivered(try await onDisk(s), s)
     }
@@ -158,7 +158,7 @@ struct OpenBooksDeliveryTests {
             for _ in 0..<5 { _ = await books.content(for: entry.id) }
         }
         try await renaming.value
-        await delivering.value
+        _ = await delivering.value
         await snapshots.value
         let content = try await onDisk(s)
         #expect(content.book.title == "Renamed")

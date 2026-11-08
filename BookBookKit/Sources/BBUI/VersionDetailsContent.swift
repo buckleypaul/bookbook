@@ -14,8 +14,16 @@ public struct DetailRow: Hashable, Sendable {
 
 /// Everything sent for a version, as rows (A §11, plan §2.1: Version details shows it all).
 public enum VersionDetailsContent {
-    public static func rows(for version: Version, dateFormatter: (Date) -> String = defaultDate) -> [DetailRow] {
+    public static func rows(for version: Version, in session: Session? = nil,
+                            dateFormatter: (Date) -> String = defaultDate) -> [DetailRow] {
         var rows: [DetailRow] = []
+        if let session, let number = session.versionNumber(version.id) {
+            rows.append(DetailRow(label: "Version", value: "v\(number)"))
+        }
+        if let parent = version.parent, let session {
+            let text = session.versionNumber(parent).map { "version \($0)" } ?? "a version that was deleted"
+            rows.append(DetailRow(label: "Refined from", value: text))
+        }
         guard let p = version.provenance else {
             rows.append(DetailRow(label: "Source", value: sourceName(version.source)))
             rows.append(DetailRow(label: "Size", value: version.pixelSize.description))
@@ -36,6 +44,8 @@ public enum VersionDetailsContent {
             rows.append(DetailRow(label: "References left out", value: references(p.referencesOmitted)))
         }
         rows.append(DetailRow(label: "Story text included", value: p.storyTextIncluded ? "Yes" : "No"))
+        rows.append(DetailRow(label: "Cost", value: "—"))
+        rows.append(DetailRow(label: "Cost", value: "—"))
         rows.append(DetailRow(label: "Style revision", value: String(p.styleRevision)))
         rows.append(DetailRow(label: "Usage", value: p.usage.map(usageText) ?? "Not reported"))
         if let revised = p.revisedPrompt, !revised.isEmpty {

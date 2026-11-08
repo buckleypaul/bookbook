@@ -12,6 +12,11 @@ import Testing
 /// the editor's minimum), AppKit raises "more Update Constraints in Window passes than there are
 /// views in the window", which aborts this test process, so CI catches it (Phase 4 crash on
 /// opening a book).
+///
+/// Needs a GUI (window server) session: it opens real windows. The 830 pt editor minimum it
+/// checks against `BookWindow.minimumWidth` (840) is a measured SwiftUI value on macOS 27
+/// (sidebar ideal + 2 × inspector ideal), not a documented rule; this test is what flags a
+/// SwiftUI change to it.
 @MainActor
 struct BookEditorLayoutTests {
     @Test func bookEditorSettlesInAWindow() throws {
@@ -31,8 +36,9 @@ struct BookEditorLayoutTests {
         try BookStore.create(content, at: url)
         let document = BookDocument(content: content, store: BookStore(packageURL: url))
 
-        // The size a new book window opens at, and the smallest the window allows.
-        for width in [900, BookWindow.minimumWidth] {
+        // The default book window width (`.defaultSize` in BookBookApp), a narrower window where
+        // the format bar has to scroll, and the smallest width the window allows.
+        for width in [1200, 900, BookWindow.minimumWidth] {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 572),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                                   backing: .buffered, defer: false)

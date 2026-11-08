@@ -378,7 +378,7 @@ Image files that no JSON refers to are swept only when the book is opened, and o
 
 | Data | Location |
 |---|---|
-| Preferences | `UserDefaults` (providers, models, quality, threshold, consistency switch, library path) |
+| Preferences | `UserDefaults` (providers, models, quality, threshold, custom model IDs, consistency switch, library path). **As built (Phase 9):** custom model IDs live here (`customModels`), not in `pricelist.json`. |
 | API keys | Keychain, service `app.bookbook.api-key`, account `openai` or `gemini`; `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`; not synchronizable |
 | Model catalog overrides and the user's price list | `~/Library/Application Support/BookBook/pricelist.json` (when missing, the bundled defaults are used) |
 | Queue | `~/Library/Application Support/BookBook/queue.json` |
@@ -735,6 +735,13 @@ struct QueueItem {
 - **Batch actions** ("Generate whole sheet", "Draft all empty boxes") build all their items, show the combined estimate (§7.10), and enqueue them in one call.
 - **Offline:** when `NWPathMonitor` reports no network, the queue pauses and AI actions show "Offline". Everything else keeps working (§3).
 
+**As built (Phase 9):**
+- Automatic retries cover `.rateLimited`, `.transient` and `.offline`: up to 3 retries, base 2 s doubling plus jitter, or `Retry-After` capped at 120 s. `.noImage` retries once. While waiting, the item is `.retrying(attempt:resumesAt:lastError:)`. `.timeout` isn't retried, since the request may have been billed.
+- Pause reasons rank offline, then restored, then user. Restore pauses only if at least one waiting item came back, so there's never a "Resume 0" banner. An item interrupted before its request was sent comes back as waiting.
+- `remove` on a waiting or retrying item delivers `.failure(.cancelled)` so the host clears the pending message. A failed item's message was already cleared when it failed.
+- `GenerationHost.deliver` returns a `DeliveryResult`. When a book is locked by another process, the result is kept in memory and redelivered every 30 s and on every queue change. It's lost if the app quits first.
+- The app calls `restore()` before any enqueue, so the first save can't overwrite the previous `queue.json`.
+
 ### 7.10 Cost estimation and tracking (§5, §8.12)
 
 **Price list** (`PriceList.json` is bundled; a user-edited copy takes precedence). Each entry is keyed by provider and model:
@@ -762,6 +769,8 @@ Gemini image entries carry `perImage` prices (e.g. `{ "1K": 0.0336, "2K": 0.0504
 ```
 
 The book's running total, the breakdown by type and the list of recent requests (§8.12) are all computed from it.
+
+**As built (Phase 9):** there's one ledger line per provider request, including automatic retries. HTTP-mapped failures (a raw 4xx or 5xx, refusals, key and billing errors) are $0 with basis `actual`. Cancels, timeouts, transport errors (`.transient(nil)`), `.offline` and unmapped errors without a status are recorded at the estimate, since they may be billed. A failure before any request is sent, such as a missing key, writes no line. Amounts are USD `Decimal`. `CostRecord` and `LedgerSummary` live in BBModel.
 
 **Policies:** `CostPolicy` decides, before enqueueing, whether the app asks for confirmation (the estimate is above the Settings threshold, for a single request or a batch total) and whether it warns (the book's total is above its budget; it warns and never blocks).
 

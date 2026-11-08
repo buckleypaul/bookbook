@@ -10,6 +10,8 @@ import Foundation
 /// 3. Text left over (more old text boxes than new ones) is appended, as extra paragraphs,
 ///    to the last mapped new text box, so no words are lost. With no new text box at all the
 ///    text is dropped (undo brings it back).
+///    Bound `.title`/`.author` boxes are never a target of rules 2 and 3 (only of rule 1), so
+///    body text never lands in them; a template with no free text box drops the text.
 /// 4. Image slots left over are dropped from the page (their sessions stay in the book).
 /// 5. New image boxes that received no slot are listed in `unassignedImageBoxes`; the caller
 ///    creates their empty sessions.
@@ -23,6 +25,8 @@ public enum TemplateReassignment {
             self.unassignedImageBoxes = unassignedImageBoxes
         }
     }
+
+    private static func isBound(_ box: Box) -> Bool { box.role == .title || box.role == .author }
 
     public static func reassign(_ page: Page, from old: Template, to new: Template) -> Result {
         var result = page
@@ -53,12 +57,13 @@ public enum TemplateReassignment {
             usedNewText.insert(target.id)
         }
         let restOldText = readingOrder(oldText.filter { !usedOldText.contains($0.id) })
-        let restNewText = readingOrder(newText.filter { !usedNewText.contains($0.id) })
+        // Bound title/author boxes never receive body text (Phase 5); with no free box the text is dropped.
+        let restNewText = readingOrder(newText.filter { !usedNewText.contains($0.id) && !Self.isBound($0) })
         for (from, to) in zip(restOldText, restNewText) {
             result.text[to.id] = page.text[from.id]
         }
         let leftover = restOldText.dropFirst(restNewText.count)
-        if !leftover.isEmpty, let last = readingOrder(newText.filter { result.text[$0.id] != nil }).last {
+        if !leftover.isEmpty, let last = readingOrder(newText.filter { result.text[$0.id] != nil && !Self.isBound($0) }).last {
             var target = result.text[last.id] ?? RichText()
             for box in leftover {
                 target.paragraphs.append(contentsOf: page.text[box.id]?.paragraphs ?? [])

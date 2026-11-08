@@ -14,7 +14,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 2 | Thin vertical slice (M1) | done | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | [Log](progress/phase-2-thin-slice.md) |
 | 3 | Storage and library | done | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks. [Log](progress/phase-3-storage-library.md) |
 | 4 | Text and typography | done | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. From Phase 5 on, no PRs: merge into main and push directly. [Log](progress/phase-4-text-typography.md) |
-| 5 | Pages tab, ordering and cover | in progress | `phase-5-pages-cover` | — | $0.00 | No live checks. |
+| 5 | Pages tab, ordering and cover | awaiting hand checks | `phase-5-pages-cover` | — | $0.00 | No live checks. |
 | 6 | Template editor | not started | | | | |
 | 7 | Style guide and page setup | not started | | | | |
 | 8 | Sessions and versions | not started | | | | |
@@ -44,11 +44,10 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
-### Phase 5
-- Cover editing/export and page numbers (from Phase 2).
-- Hand-check the title-box bold state once cover/title boxes are editable: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4).
-
 ### Phase 7
+- Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phase 5).
+- The Page Numbers sheet's "Pages skipped" label shows "None" while "Skip front matter" is on; it counts only explicitly skipped pages, and IDs of deleted pages stay in `skippedPages` (from Phase 5).
+- Page Numbers sheet: pressing Done without touching the font swaps a stored non-regular face (e.g. `Helvetica-Bold`) for the family's regular face (`PageNumbersSheet.swift:110`) (from Phase 5 review).
 - Typography form: the body-font menu is stale after Import Font… until the sheet reopens; the "Alignment" label wraps; Escape loses a typed size that wasn't committed; a pending colour commit can fire after the sheet closes (from Phase 4).
 
 ### Phase 8
@@ -81,7 +80,20 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A Finder copy of a package keeps the same `Book.id`; give one a new ID on detection (from Phase 3).
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
+### Phase 8
+- Moved image slots keep their session's old `owner` `.pageBox(page, oldBox)`, so in-flight requests resolve by the old box and never place; `ContextAssembler` also looks up the old box ID (from Phase 5 review).
+- `setPageDone`/`setPageTemplate` undo restores a whole-page snapshot, wiping a later non-undoable change such as an AI delivery auto-placing a version (from Phase 5 review).
+
 ### Later
+- Drag-and-drop reorder in the overview isn't machine-verified (synthetic drags never land); the split alert was checked via Change Layout. Hand-check it (from Phase 5).
+- After a split is accepted ("Continue Anyway"), every later structural command shows the split warning again; compare against the split state before the command (`BookDocument.wouldSplitSpread`) (from Phase 5 review).
+- An old bound title/author box whose text has no same-role target in the new template falls through to the generic mapping and lands in a body box; `pageNumberSlot` isn't excluded from body text (from Phase 5).
+- Story import picks the file type by extension only (`txt`/`rtf`); `.text`, `.md`, `.rtfd` give "unsupported type". Imported RTF keeps its own font (e.g. Helvetica-Light), not the body font (from Phase 5).
+- New Book from Story: cancelling leaves an empty book; the pending-import flag isn't cleared if the book opens read-only or its editor never opens (`BookWindow.swift:162`, `AppModel.swift:158`); two `.sheet(isPresented:)` on `LibraryView` can collide (from Phase 5 review).
+- The toolbar Book menu's `.disabled(!isEditable)` also disables the view-only "Show Page Numbers in Overview" toggle (from Phase 5 review).
+- Overview thumbnails hash whole `Page`/`Template`/`StyleGuide` per cell per redraw; key on IDs plus a revision (from Phase 5 review).
+- `PageRenderer` half culling uses `CGRect.intersects`, inconsistent for an edge exactly on the gutter (content stream only; output is clipped) (from Phase 5 review).
+- Spreads export as two PDF pages; a double-width spread export option isn't built (from Phase 5; Phase 14).
 - Format bar: the colour picker adds one undo step per colour-panel change (debounce it like the Typography form); there's no typed size field, only ±1 pt steps (from Phase 4 review).
 - Importing a font clears only that window's layout cache and missing-font list; other open books keep stale fallback layouts and banners (from Phase 4 review).
 - Pasted rich text keeps attributes the model drops (kerning, paragraph spacing, links) in the editor until reload; pasted text with no requested font still uses the family match (from Phase 4).
@@ -120,7 +132,7 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 5 — Pages tab, ordering and cover
 
-**Stage:** B
+**Stage:** B — done 2026-11-08, awaiting hand checks.
 
 **Contracts** (commit `feat(phase-5): contracts`): `PageNumberStyle` (position, font, size, colour, start, skip front matter, skipped pages; tolerant decoding), `PageNumberPosition`, `PageRole` + `Template.pageRole`, `TemplateReassignment` (BBModel); `PageSequencer`/`SequenceLayout`/`Opening`, `PageNumbering`, `StoryTextImporter`, `RenderOptions.pageNumbers`/`PageNumberMark` (BBLayout); `Presets` IDs 0003–000A; new `BookCommand` cases (`duplicatePage`, `reorderPages`, `setPageTemplate`, `importStoryText`, `setPageDone`, `setPageNumberStyle`, `fixSplits` on structural commands); `BookDocument.wouldSplitSpread(_:)`, `setAuthor(_:)`.
 
@@ -146,4 +158,11 @@ The running phase writes its log here; when it is marked done, move the entry to
 - **Fix first:** PDF export draws a spread-template page squashed into one page box; export it as two PDF pages (one per half).
 - Nothing is hand-checked yet: drag-drop vs double-click on thumbnails, the split alert, story import from `.rtf`, Book Settings.
 - Commit `bbec99e` doesn't build on its own (the next commit fixes it); harmless.
+
+**Session B result:**
+- Gate: `scripts/test.sh all` green (all stages), no Swift warnings; secret scan clean. No live checks, $0.00.
+- Fixes merged: spread pages export as two trim-size PDF pages with their own numbers (`PDFExporter`, new `PageRenderer.draw(…visibleRect:)` overload); the Page Numbers sheet stores PostScript names (family picker); body text never goes into bound `.title`/`.author` boxes; **New Book from Story…** (library toolbar, empty library, File menu): creates a book and opens the story-import sheet. The first review flagged the last one as a missing spec deliverable ("into a new or existing book").
+- Re-review of the fixes: no must-fix. Should-fix items are in Open follow-ups.
+- Agent-driven hand checks: story import (12 pages, one ⌘Z), Book Settings → cover, PDF numbers (cover and dedication unnumbered, spreads as two pages), double-click opens the editor, New Book from Story, page-number font all passed. Not machine-verifiable: drag-drop reorder (synthetic drags never land; the split alert and Insert Blank Page were checked via Change Layout), image moving on a template change (no image placed). The title-box bold check moved to Phase 7 (bound boxes aren't editable).
+- Docs: no architecture changes (A already describes spread halves as clip + offset).
 

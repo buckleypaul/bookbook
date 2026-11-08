@@ -89,4 +89,23 @@ import Testing
         #expect(r.page.assetChecklist == page.assetChecklist)
         #expect(r.page.isDone)
     }
+
+    @Test func boundTitleAndAuthorBoxesGetNoBodyText() {
+        let body = textBox(0, 0.5)
+        let old = template([body])
+        let nTitle = textBox(0, 0, role: .title), nAuthor = textBox(0, 0.1, role: .author)
+        let nBody = textBox(0, 0.6)
+        let page = Page(kind: .story, templateID: old.id, text: [body.id: RichText(plain: "Story")])
+        let r = TemplateReassignment.reassign(page, from: old, to: template([nTitle, nAuthor, nBody]))
+        #expect(r.page.text == [nBody.id: RichText(plain: "Story")])
+    }
+
+    @Test func noFreeTextBoxDropsTextRatherThanFillingBoundBoxes() {
+        let body = textBox(0, 0.5)
+        let old = template([body])
+        let nTitle = textBox(0, 0, role: .title), nAuthor = textBox(0, 0.5, role: .author)
+        let page = Page(kind: .story, templateID: old.id, text: [body.id: RichText(plain: "Story")])
+        let r = TemplateReassignment.reassign(page, from: old, to: template([nTitle, nAuthor]))
+        #expect(r.page.text.isEmpty)
+    }
 }

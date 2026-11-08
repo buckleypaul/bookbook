@@ -12,7 +12,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 0 | Live-API spikes and fixtures | done | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13. [Log](progress/phase-0-spikes.md) |
 | 1b | Project setup and CI | done | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27`. [Log](progress/phase-1b-setup-ci.md) |
 | 2 | Thin vertical slice (M1) | done | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | [Log](progress/phase-2-thin-slice.md) |
-| 3 | Storage and library | awaiting hand checks | `phase-3-storage-library` | PR_TBD | $0.00 | No live checks |
+| 3 | Storage and library | awaiting hand checks | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks |
 | 4 | Text and typography | not started | | | | |
 | 5 | Pages tab, ordering and cover | not started | | | | |
 | 6 | Template editor | not started | | | | |

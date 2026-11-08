@@ -53,22 +53,46 @@ public struct StyleGuide: Hashable, Codable, Sendable {
     public var styleReferences: [ImageRef]
     public var negativeGuidance: String
     public var visualRevision: Int
+    /// The highest `visualRevision` ever issued. Undo restores `visualRevision` but never lowers
+    /// this, and every bump is `visualRevisionHighWater + 1`, so a number is never reused (A §4.1).
+    public var visualRevisionHighWater: Int
     public var typography: Typography
     public var pageSetup: PageSetup
     public var pageNumbers: PageNumberStyle
 
     public init(presetID: String? = nil, visualDescription: String = "", styleReferences: [ImageRef] = [],
                 negativeGuidance: String = StyleGuide.defaultNegativeGuidance, visualRevision: Int = 0,
-                typography: Typography = .default, pageSetup: PageSetup = .letterPortrait,
+                visualRevisionHighWater: Int? = nil, typography: Typography = .default, pageSetup: PageSetup = .letterPortrait,
                 pageNumbers: PageNumberStyle = .init()) {
         self.presetID = presetID
         self.visualDescription = visualDescription
         self.styleReferences = styleReferences
         self.negativeGuidance = negativeGuidance
         self.visualRevision = visualRevision
+        self.visualRevisionHighWater = max(visualRevisionHighWater ?? visualRevision, visualRevision)
         self.typography = typography
         self.pageSetup = pageSetup
         self.pageNumbers = pageNumbers
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case presetID, visualDescription, styleReferences, negativeGuidance, visualRevision
+        case visualRevisionHighWater, typography, pageSetup, pageNumbers
+    }
+
+    /// Tolerant: a missing `visualRevisionHighWater` (older files) defaults to `visualRevision`.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        presetID = try c.decodeIfPresent(String.self, forKey: .presetID)
+        visualDescription = try c.decode(String.self, forKey: .visualDescription)
+        styleReferences = try c.decode([ImageRef].self, forKey: .styleReferences)
+        negativeGuidance = try c.decode(String.self, forKey: .negativeGuidance)
+        visualRevision = try c.decode(Int.self, forKey: .visualRevision)
+        visualRevisionHighWater = max(try c.decodeIfPresent(Int.self, forKey: .visualRevisionHighWater) ?? visualRevision,
+                                      visualRevision)
+        typography = try c.decode(Typography.self, forKey: .typography)
+        pageSetup = try c.decode(PageSetup.self, forKey: .pageSetup)
+        pageNumbers = try c.decode(PageNumberStyle.self, forKey: .pageNumbers)
     }
 }
 
@@ -179,7 +203,10 @@ extension StyleGuide {
         copy.visualDescription = visual.visualDescription
         copy.styleReferences = visual.styleReferences
         copy.negativeGuidance = visual.negativeGuidance
-        if changed { copy.visualRevision += 1 }
+        if changed {
+            copy.visualRevision = visualRevisionHighWater + 1
+            copy.visualRevisionHighWater = copy.visualRevision
+        }
         return copy
     }
 }

@@ -221,7 +221,7 @@ struct StyleTab: View {
 }
 
 /// A multi-line text field that commits when it loses focus (so typing isn't one undo step per
-/// keystroke), and follows outside changes (undo) while not being edited.
+/// keystroke), and follows model changes (undo) even while focused, and commits only a differing draft.
 struct CommitTextEditor: View {
     let text: String
     var minHeight: CGFloat = 60
@@ -239,7 +239,7 @@ struct CommitTextEditor: View {
             .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
             .onAppear { draft = text }
-            .onChange(of: text) { _, new in if !focused { draft = new } }
+            .onChange(of: text) { _, new in if draft != new { draft = new } }
             .onChange(of: focused) { _, now in if !now, draft != text { commit(draft) } }
             .onDisappear { if draft != text { commit(draft) } }
     }

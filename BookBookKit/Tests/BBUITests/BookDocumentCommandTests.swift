@@ -46,7 +46,11 @@ struct BookDocumentCommandTests {
     @Test func setRichText_undoRedo() throws {
         let (doc, undo) = try makeDocument()
         let page = firstPage(doc)
-        group(undo) { #expect(doc.perform(.setRichText(page: page, box: textBox.id, text: RichText(plain: "Once")))) }
+        // Non-coalescing first edit, so the second starts its own undo step (coalescing has its
+        // own tests in TypingCoalescingTests).
+        group(undo) {
+            #expect(doc.perform(.setRichText(page: page, box: textBox.id, text: RichText(plain: "Once"), coalescing: false)))
+        }
         group(undo) { doc.perform(.setRichText(page: page, box: textBox.id, text: RichText(plain: "Once upon"))) }
         #expect(doc.content.pages[page]?.text[textBox.id]?.plainText == "Once upon")
         #expect(undo.undoActionName == "Typing")

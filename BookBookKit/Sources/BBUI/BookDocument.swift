@@ -1,3 +1,4 @@
+import BBLayout
 import BBModel
 import BBStore
 import Foundation
@@ -21,6 +22,15 @@ public final class BookDocument {
     public let isReadOnly: Bool
     /// Set by `close()`; edits are ignored from then on.
     public private(set) var isClosed = false
+    /// Phase 4: the window's format bar / Format menu state, driven by the inline text editor.
+    public let formatting = TextFormatController()
+    /// Phase 4: PostScript names the book uses that don't resolve (book-level warning, A §8.3).
+    /// Refreshed when the book opens, after a font import and after every undoable edit except
+    /// coalesced typing (which reuses the formatting already there).
+    public private(set) var missingFonts: [String] = []
+    /// Bumped after a font import, so cached text layouts that resolved
+    /// a font before it was registered can be thrown away (the canvas watches this).
+    public private(set) var fontsRevision = 0
 
     @ObservationIgnored public let store: BookStore
     /// The window's undo manager (SwiftUI `@Environment(\.undoManager)`), set by the window.
@@ -29,6 +39,10 @@ public final class BookDocument {
     @ObservationIgnored private var autosaveResults: Task<Void, Never>?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private let now: () -> Date
+    /// Coalesces consecutive typing into one undo step (A §6.3).
+    @ObservationIgnored private var typing: TypingCoalescer
+    /// The undo manager the open typing step was registered with.
+    @ObservationIgnored private weak var typingUndoManager: UndoManager?
 
     // Library thumbnail (A §5.1): rewritten at most every `thumbnailInterval` after a change,
     // and on flush and close, never on the typing path.
@@ -48,6 +62,7 @@ public final class BookDocument {
         self.isReadOnly = readOnly
         self.thumbnailInterval = thumbnailInterval
         self.now = now
+        self.typing = TypingCoalescer(clock: now)
         // Report every autosave result (timer-fired or flushed) so the window's banner shows a
         // failure within about a second, not only at close. First link of the save chain, so
         // it's installed before any save is scheduled.
@@ -58,6 +73,9 @@ public final class BookDocument {
         autosaveResults = Task { [weak self] in
             for await error in results { self?.lastSaveError = error }
         }
+        // Imported fonts (A §8.3): every file in `fonts/` is registered for this process.
+        FontRegistry.register(store.fontFileURLs())
+        refreshMissingFonts()
     }
 
     isolated deinit {
@@ -93,14 +111,70 @@ public final class BookDocument {
     /// False while read-only or closed.
     public var isEditable: Bool { !isReadOnly && !isClosed }
 
+    /// Phase 4 contract: imports a font file into `fonts/`, registers it for this process and
+    /// refreshes `missingFonts`. Not undoable (PD §8.10). Returns the inspected info so the
+    /// caller can warn when `embeddingAllowed` is false. Throws for unreadable files.
+    public func importFont(from url: URL) async throws -> FontFileInfo {
+        guard isEditable else { throw StoreError.readOnly }
+        let info = try FontInspector.inspect(url)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw FontError.unreadable(url.lastPathComponent)
+        }
+        let stored = try await store.storeFont(data, fileExtension: url.pathExtension.lowercased())
+        // A failed registration only matters if the font still doesn't resolve (registering a
+        // copy of an installed font can fail as a duplicate, and the font is usable anyway).
+        if let failure = FontRegistry.register([stored])[stored],
+           !info.postScriptNames.contains(where: FontAvailability.isAvailable(postScriptName:)) {
+            throw failure
+        }
+        fontsRevision += 1
+        refreshMissingFonts()
+        return info
+    }
+
+    /// Recomputes `missingFonts` over every page's text and the style's typography.
+    private func refreshMissingFonts() {
+        let texts = content.book.pageOrder.flatMap { id in
+            (content.pages[id]?.text.values).map(Array.init) ?? []
+        }
+        let missing = FontAvailability.missingFonts(in: texts, typography: content.style.typography)
+        if missing != missingFonts { missingFonts = missing }
+    }
+
+    /// Ends the open typing undo step, so the next keystroke starts a new one (the editor
+    /// closing, for example).
+    public func endTypingStep() {
+        typing.close()
+    }
+
     // MARK: Undoable edits
 
     /// Applies an undoable command and registers its inverse. Returns false (and registers
     /// nothing) if the command's target doesn't exist, or the book is read-only or closed.
     @discardableResult
     public func perform(_ command: BookCommand) -> Bool {
-        guard isEditable, let edit = makeEdit(for: command) else { return false }
-        return apply(edit, actionName: command.actionName)
+        guard isEditable, let edit = makeEdit(for: command) else {
+            typing.close()
+            return false
+        }
+        // A typing edit that joins the open step changes the content but registers nothing: the
+        // step's undo entry still restores the text from before the step began (A §6.3).
+        let sameManager = typingUndoManager != nil && typingUndoManager === undoManager
+        if typing.shouldCoalesce(command), sameManager, var (_, dirty) = applyEdit(edit) {
+            content.book.modifiedAt = now()
+            dirty.book = true
+            scheduleSave(dirty)
+            return true
+        }
+        guard apply(edit, actionName: command.actionName) else {
+            typing.close()
+            return false
+        }
+        typingUndoManager = undoManager
+        return true
     }
 
     /// For non-undoable writes (A §6.3): AI results, session changes, renaming the book. Never
@@ -203,11 +277,12 @@ public final class BookDocument {
         case setPlacement(page: PageID, box: BoxID, placement: ImagePlacement?)
         case insertPage(Page, index: Int)
         case removePage(PageID)
+        case setTypography(Typography)
     }
 
     private func makeEdit(for command: BookCommand) -> Edit? {
         switch command {
-        case let .setRichText(pageID, boxID, text):
+        case let .setRichText(pageID, boxID, text, _):
             guard let page = content.pages[pageID], let template = content.template(for: page),
                   let box = template.box(boxID), case .text = box.content else { return nil }
             return .setText(page: pageID, box: boxID, text: text)
@@ -232,6 +307,9 @@ public final class BookDocument {
         case let .deletePage(pageID):
             guard content.book.pageOrder.contains(pageID) else { return nil }
             return .removePage(pageID)
+
+        case let .setTypography(typography):
+            return .setTypography(typography)
         }
     }
 
@@ -243,9 +321,14 @@ public final class BookDocument {
         var allDirty = dirty
         allDirty.book = true
         scheduleSave(allDirty)
+        refreshMissingFonts()
         if let undoManager {
             undoManager.registerUndo(withTarget: self) { doc in
-                MainActor.assumeIsolated { _ = doc.apply(inverse, actionName: actionName) }
+                MainActor.assumeIsolated {
+                    // Undo and redo end any typing step: the next keystroke is a new step.
+                    doc.typing.close()
+                    _ = doc.apply(inverse, actionName: actionName)
+                }
             }
             undoManager.setActionName(actionName)
         }
@@ -283,6 +366,11 @@ public final class BookDocument {
             content.book.pageOrder.remove(at: index)
             content.pages[pageID] = nil
             return (.insertPage(page, index: index), DirtySet(deletedPages: [pageID]))
+
+        case let .setTypography(typography):
+            let old = content.style.typography
+            content.style.typography = typography
+            return (.setTypography(old), DirtySet(style: true))
         }
     }
 }

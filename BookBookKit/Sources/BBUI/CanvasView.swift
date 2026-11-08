@@ -4,7 +4,9 @@ import BBModel
 import SwiftUI
 
 /// The page canvas (A §6.2): a layer-backed, flipped `NSView` that draws the selected page with
-/// `PageRenderer`, scaled to fit, and hosts the in-place text editor.
+/// `PageRenderer`, scaled to fit, and hosts the in-place text editor. Text layouts come from
+/// one `TextBoxLayoutCache`; a text box whose text doesn't fit gets a red "+" badge at its
+/// bottom-right corner (screen only, A §8.3).
 ///
 /// HOT SPOT (plan §2.5): one lane at a time.
 @MainActor
@@ -14,10 +16,21 @@ final class CanvasView: NSView {
     private var selectedImageBox: BoxID?
     private var imageSource: (any PageImageSource)?
     private var editor: InlineTextEditor?
+    /// Shared by the overflow badges (and, after the Phase 4 merge, the renderer).
+    let layoutCache = TextBoxLayoutCache()
+    private var fontsRevision: Int?
 
     var onSelectImageBox: (BoxID?) -> Void = { _ in }
-    var onTextChange: (PageID, BoxID, RichText) -> Void = { _, _, _ in }
+    /// A text change: page, box, text, and whether it may coalesce with the typing before it.
+    var onTextChange: (PageID, BoxID, RichText, Bool) -> Void = { _, _, _, _ in }
+    /// Ends the document's typing undo step (formatting with no text change, editor closing).
+    var onEndTypingStep: () -> Void = {}
     var undoManagerProvider: () -> UndoManager? = { nil }
+    /// The window's format bar / Format menu controller; the editor drives it.
+    weak var formatting: TextFormatController?
+
+    /// Diameter of the overflow badge, in view points.
+    static let overflowBadgeDiameter: CGFloat = 16
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -35,8 +48,14 @@ final class CanvasView: NSView {
 
     // MARK: Updates from SwiftUI
 
-    func update(content: BookContent, pageID: PageID?, selectedImageBox: BoxID?, imageSource: any PageImageSource) {
+    func update(content: BookContent, pageID: PageID?, selectedImageBox: BoxID?, imageSource: any PageImageSource,
+                fontsRevision: Int = 0) {
         let pageChanged = pageID != self.pageID
+        // Fonts were registered since the layouts were made: they may have used a fallback.
+        if fontsRevision != self.fontsRevision {
+            self.fontsRevision = fontsRevision
+            layoutCache.removeAll()
+        }
         self.content = content
         self.pageID = pageID
         self.selectedImageBox = selectedImageBox
@@ -45,9 +64,9 @@ final class CanvasView: NSView {
         if let editor {
             if pageChanged || textBox(editor.boxID) == nil {
                 endEditing()
-            } else if let pageID {
+            } else if let pageID, let (box, _) = textBox(editor.boxID) {
                 editor.reloadIfNeeded(modelText: content.pages[pageID]?.text[editor.boxID] ?? .empty,
-                                      typography: content.style.typography)
+                                      typography: typography(for: box, in: content))
                 positionEditor()
             }
         }
@@ -81,6 +100,24 @@ final class CanvasView: NSView {
         boxRects.first { $0.box.id == id && $0.box.content != .image }
     }
 
+    /// The typography a box lays out with (title-role boxes use the title font).
+    private func typography(for box: Box, in content: BookContent) -> Typography {
+        content.style.typography.resolved(for: box.role)
+    }
+
+    /// Text boxes on the page whose text doesn't fit (same container as `PageRenderer`).
+    func overflowingTextBoxes() -> [(box: Box, rect: CGRect)] {
+        guard let content, let page else { return [] }
+        return boxRects.filter { box, rect in
+            guard case let .text(style) = box.content, let text = page.text[box.id], !text.paragraphs.isEmpty
+            else { return false }
+            let inner = rect.insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
+            let size = CGSize(width: max(0, inner.width), height: max(0, inner.height))
+            return layoutCache.layout(text: text, typography: typography(for: box, in: content),
+                                      containerSize: size).isOverflowing
+        }
+    }
+
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -104,8 +141,14 @@ final class CanvasView: NSView {
         ctx.clip(to: trim)
         var options = RenderOptions.screen
         if let editing = editor?.boxID { options.hiddenTextBoxes = [editing] }
-        PageRenderer(images: imageSource).draw(page: page, in: content, into: ctx, options: options)
+        var renderer = PageRenderer(images: imageSource)
+        renderer.layouts = layoutCache
+        renderer.draw(page: page, in: content, into: ctx, options: options)
         ctx.restoreGState()
+
+        for (box, rect) in overflowingTextBoxes() {
+            drawOverflowBadge(box: box, rect: rect, scale: transform.scale, ctx: ctx)
+        }
 
         if let selectedImageBox, let selected = boxRects.first(where: { $0.box.id == selectedImageBox }) {
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
@@ -113,6 +156,31 @@ final class CanvasView: NSView {
             ctx.stroke(selected.rect.insetBy(dx: -1 / transform.scale, dy: -1 / transform.scale))
         }
         ctx.restoreGState()
+    }
+
+    /// A red circle with a white "+" centred on the box's bottom-right corner (rotated with
+    /// the box), constant size on screen.
+    private func drawOverflowBadge(box: Box, rect: CGRect, scale: CGFloat, ctx: CGContext) {
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+        if box.rotationDegrees != 0, box.rotationDegrees.isFinite {
+            ctx.translateBy(x: rect.midX, y: rect.midY)
+            ctx.rotate(by: CGFloat(box.rotationDegrees) * .pi / 180)
+            ctx.translateBy(x: -rect.midX, y: -rect.midY)
+        }
+        let diameter = Self.overflowBadgeDiameter / scale
+        let badge = CGRect(x: rect.maxX - diameter / 2, y: rect.maxY - diameter / 2, width: diameter, height: diameter)
+        ctx.setFillColor(NSColor.systemRed.cgColor)
+        ctx.fillEllipse(in: badge)
+        ctx.setStrokeColor(NSColor.white.cgColor)
+        ctx.setLineWidth(2 / scale)
+        ctx.setLineCap(.round)
+        let arm = diameter * 0.25
+        ctx.move(to: CGPoint(x: badge.midX - arm, y: badge.midY))
+        ctx.addLine(to: CGPoint(x: badge.midX + arm, y: badge.midY))
+        ctx.move(to: CGPoint(x: badge.midX, y: badge.midY - arm))
+        ctx.addLine(to: CGPoint(x: badge.midX, y: badge.midY + arm))
+        ctx.strokePath()
     }
 
     // MARK: Mouse
@@ -138,12 +206,14 @@ final class CanvasView: NSView {
 
     private func beginEditing(_ boxID: BoxID) {
         endEditing()
-        guard let content, let pageID, textBox(boxID) != nil else { return }
+        guard let content, let pageID, let (box, _) = textBox(boxID) else { return }
         let editor = InlineTextEditor(
             pageID: pageID, boxID: boxID, text: content.pages[pageID]?.text[boxID] ?? .empty,
-            typography: content.style.typography, undoManager: { [weak self] in self?.undoManagerProvider() },
-            onChange: { [weak self] text in self?.onTextChange(pageID, boxID, text) })
+            typography: typography(for: box, in: content), formatting: formatting,
+            undoManager: { [weak self] in self?.undoManagerProvider() },
+            onChange: { [weak self] text, coalescing in self?.onTextChange(pageID, boxID, text, coalescing) })
         editor.onCancel = { [weak self] in self?.endEditing() }
+        editor.onEndTypingStep = { [weak self] in self?.onEndTypingStep() }
         self.editor = editor
         addSubview(editor.host)
         positionEditor()
@@ -156,6 +226,7 @@ final class CanvasView: NSView {
         let wasFirstResponder = window?.firstResponder === editor.textView
         editor.tearDown()
         self.editor = nil
+        onEndTypingStep()
         if wasFirstResponder { window?.makeFirstResponder(self) }
         needsDisplay = true
     }
@@ -183,11 +254,14 @@ struct PageCanvas: NSViewRepresentable {
         let document = document, selection = $selectedImageBox
         let undoManager = context.environment.undoManager
         view.onSelectImageBox = { selection.wrappedValue = $0 }
-        view.onTextChange = { page, box, text in
-            document.perform(.setRichText(page: page, box: box, text: text))
+        view.onTextChange = { page, box, text, coalescing in
+            document.perform(.setRichText(page: page, box: box, text: text, coalescing: coalescing))
         }
+        view.onEndTypingStep = { document.endTypingStep() }
+        view.formatting = document.formatting
         view.undoManagerProvider = { [weak undoManager] in undoManager }
-        view.update(content: content, pageID: pageID, selectedImageBox: selectedImageBox, imageSource: imageSource)
+        view.update(content: content, pageID: pageID, selectedImageBox: selectedImageBox, imageSource: imageSource,
+                    fontsRevision: document.fontsRevision)
     }
 
     static func dismantleNSView(_ view: CanvasView, coordinator: ()) {

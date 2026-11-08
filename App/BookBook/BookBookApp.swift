@@ -22,6 +22,8 @@ struct BookBookApp: App {
                     .environment(model)
             }
         }
+        // Wide enough that the format bar fits beside the sidebar and session panel (~1130 pt).
+        .defaultSize(width: 1200, height: 780)
 
         Window("Queue", id: SceneID.queue) {
             QueueView()

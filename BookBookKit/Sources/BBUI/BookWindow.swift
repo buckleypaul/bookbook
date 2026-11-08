@@ -20,6 +20,13 @@ public struct BookWindow: View {
         self.bookID = bookID
     }
 
+    /// The window's minimum width. It must not be less than the editor's own minimum: an explicit
+    /// `frame(minWidth:)` replaces the content's minimum, so a smaller value lets the window shrink
+    /// below what `NavigationSplitView` + `.inspector` accept, and AppKit aborts in the window's
+    /// update-constraints pass. Measured on macOS 27 (`BookEditorLayoutTests`): with the session
+    /// panel shown the editor needs sidebar ideal + 2 × inspector ideal = 190 + 2 × 320 = 830 pt.
+    static let minimumWidth: CGFloat = 840
+
     public var body: some View {
         Group {
             if let document {
@@ -39,7 +46,7 @@ public struct BookWindow: View {
                 ProgressView("Opening…")
             }
         }
-        .frame(minWidth: 760, minHeight: 520)
+        .frame(minWidth: Self.minimumWidth, minHeight: 520)
         .task(id: bookID) { await load(readOnly: false) }
         .task { await app.reopenBooks { openWindow(value: $0) } }
         .alert(
@@ -89,6 +96,7 @@ struct BookEditor: View {
     @State private var selectedPage: PageID?
     @State private var selectedImageBox: BoxID?
     @State private var showSession = true
+    @State private var showTypography = false
     @State private var images: ImageCache
 
     init(document: BookDocument) {
@@ -118,12 +126,19 @@ struct BookEditor: View {
         }
         .toolbar {
             ToolbarItem {
+                Button { showTypography = true } label: { Label("Typography", systemImage: "textformat") }
+                    .help("Fonts, size, colour and spacing for the whole book")
+                    .disabled(!document.isEditable)
+            }
+            ToolbarItem {
                 Button { showSession.toggle() } label: { Label("Session", systemImage: "sidebar.trailing") }
                     .help("Show or hide the session panel")
             }
         }
         .navigationTitle(content.book.title)
         .focusedSceneValue(\.focusedBook, document)
+        .focusedSceneValue(\.showTypography, $showTypography)
+        .sheet(isPresented: $showTypography) { TypographyForm(document: document) }
         .onAppear {
             document.undoManager = undoManager
             if selectedPage == nil { selectedPage = content.book.pageOrder.first }
@@ -147,6 +162,9 @@ struct BookEditor: View {
                     .frame(maxWidth: .infinity)
                     .background(.secondary.opacity(0.15))
             }
+            if !document.missingFonts.isEmpty { MissingFontsBanner(fonts: document.missingFonts) }
+            FormatBar(formatting: document.formatting)
+            Divider()
             if let error = document.lastSaveError {
                 Label("Couldn't save changes: \(StoreErrorText.message(for: error))", systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)

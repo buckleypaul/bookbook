@@ -22,7 +22,7 @@ Targets are defined in `BookBookKit/Package.swift` (architecture.md §3). Depend
 | BBOpenAI | `BookBookKit/Sources/BBOpenAI` | OpenAI provider adapter | BBAICore, BBNet |
 | BBGemini | `BookBookKit/Sources/BBGemini` | Gemini provider adapter | BBAICore, BBNet |
 | BBExport | `BookBookKit/Sources/BBExport` | PDF, booklet, upscale, preflight | BBLayout, BBModel |
-| BBUI | `BookBookKit/Sources/BBUI` | SwiftUI features, AppKit canvas, view models | BBExport, BBAI, BBStore, BBLayout, BBModel |
+| BBUI | `BookBookKit/Sources/BBUI` | SwiftUI features, AppKit canvas, view models | BBExport, BBAI, BBAICore, BBStore, BBLayout, BBModel |
 | BBTestSupport | `BookBookKit/Sources/BBTestSupport` | live-test gate, bundled test font. Test-only, never linked into the app | nothing |
 | BookBook (app) | `App/BookBook` | thin: `@main`, scenes and wiring only | BBUI, BBOpenAI, BBGemini |
 | BookBookTests | `App/BookBookTests` | app-level tests | BookBook |

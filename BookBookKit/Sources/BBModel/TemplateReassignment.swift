@@ -25,6 +25,67 @@ public enum TemplateReassignment {
     }
 
     public static func reassign(_ page: Page, from old: Template, to new: Template) -> Result {
-        fatalError("Phase 5 lane L1")
+        var result = page
+        result.templateID = new.id
+        result.text = [:]
+        result.images = [:]
+
+        func readingOrder(_ boxes: [Box]) -> [Box] {
+            boxes.enumerated().sorted { a, b in
+                let (x, y) = (a.element.frame, b.element.frame)
+                if x.y != y.y { return x.y < y.y }
+                if x.x != y.x { return x.x < y.x }
+                return a.offset < b.offset
+            }.map(\.element)
+        }
+
+        // Text.
+        let oldText = old.textBoxes.filter { page.text[$0.id] != nil }
+        let newText = new.textBoxes
+        var usedOldText = Set<BoxID>()
+        var usedNewText = Set<BoxID>()
+        for box in oldText {
+            guard let role = box.role,
+                  let target = newText.first(where: { $0.role == role && !usedNewText.contains($0.id) })
+            else { continue }
+            result.text[target.id] = page.text[box.id]
+            usedOldText.insert(box.id)
+            usedNewText.insert(target.id)
+        }
+        let restOldText = readingOrder(oldText.filter { !usedOldText.contains($0.id) })
+        let restNewText = readingOrder(newText.filter { !usedNewText.contains($0.id) })
+        for (from, to) in zip(restOldText, restNewText) {
+            result.text[to.id] = page.text[from.id]
+        }
+        let leftover = restOldText.dropFirst(restNewText.count)
+        if !leftover.isEmpty, let last = readingOrder(newText.filter { result.text[$0.id] != nil }).last {
+            var target = result.text[last.id] ?? RichText()
+            for box in leftover {
+                target.paragraphs.append(contentsOf: page.text[box.id]?.paragraphs ?? [])
+            }
+            result.text[last.id] = target
+        }
+
+        // Images.
+        let oldImages = old.imageBoxes.filter { page.images[$0.id] != nil }
+        let newImages = new.imageBoxes
+        var usedOldImages = Set<BoxID>()
+        var usedNewImages = Set<BoxID>()
+        for box in oldImages {
+            guard let role = box.role,
+                  let target = newImages.first(where: { $0.role == role && !usedNewImages.contains($0.id) })
+            else { continue }
+            result.images[target.id] = page.images[box.id]
+            usedOldImages.insert(box.id)
+            usedNewImages.insert(target.id)
+        }
+        let restOldImages = readingOrder(oldImages.filter { !usedOldImages.contains($0.id) })
+        let restNewImages = readingOrder(newImages.filter { !usedNewImages.contains($0.id) })
+        for (from, to) in zip(restOldImages, restNewImages) {
+            result.images[to.id] = page.images[from.id]
+        }
+
+        let unassigned = newImages.filter { result.images[$0.id] == nil }.map(\.id)
+        return Result(page: result, unassignedImageBoxes: unassigned)
     }
 }

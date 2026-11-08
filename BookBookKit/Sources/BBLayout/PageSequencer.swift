@@ -57,7 +57,26 @@ public struct SequenceLayout: Hashable, Sendable {
 public enum PageSequencer {
     /// Lays out `order` (story pages only) after a cover with ID `cover`.
     public static func layout(_ order: [SequenceEntry], cover: PageID) -> SequenceLayout {
-        fatalError("Phase 5 lane L1")
+        var pages: [PagePosition] = []
+        var occupant: [Int: PageID] = [:]
+        var position = 1
+        for entry in order {
+            let span = entry.isSpread ? 2 : 1
+            pages.append(PagePosition(id: entry.id, position: position, span: span,
+                                      isSplit: entry.isSpread && position % 2 == 1))
+            for p in position..<(position + span) { occupant[p] = entry.id }
+            position += span
+        }
+        var openings = [Opening(left: nil, right: cover, isCover: true)]
+        if position > 1 {
+            openings.append(Opening(left: nil, right: occupant[1]))
+            var left = 2
+            while left < position {
+                openings.append(Opening(left: occupant[left], right: occupant[left + 1]))
+                left += 2
+            }
+        }
+        return SequenceLayout(pages: pages, openings: openings)
     }
 
     /// Indices at which to insert blank single pages so no spread is split. The indices are
@@ -65,6 +84,18 @@ public enum PageSequencer {
     /// `order.insert(blank, at: i)`. Empty when nothing is split. Strategy: for each split
     /// spread, insert one blank immediately before it.
     public static func blankInsertions(for order: [SequenceEntry]) -> [Int] {
-        fatalError("Phase 5 lane L1")
+        var insertions: [Int] = []
+        var position = 1
+        var grownCount = 0
+        for entry in order {
+            if entry.isSpread && position % 2 == 1 {
+                insertions.append(grownCount)
+                grownCount += 1
+                position += 1
+            }
+            grownCount += 1
+            position += entry.isSpread ? 2 : 1
+        }
+        return insertions
     }
 }

@@ -22,6 +22,21 @@ public enum AspectFitter {
         }
     }
 
+    /// The edit size for an existing image of `size`: its own size if the model accepts it, otherwise the
+    /// nearest valid size with the closest aspect ratio and a similar pixel count. Nil for fixed-ratio
+    /// models (they have no free sizes).
+    public static func snap(_ size: PixelSize, model: CatalogModel, quality: QualityLevel) -> PixelSize? {
+        guard case let .free(minRatio, maxRatio, multipleOf, minPixels, maxPixels, experimentalAbove) = model.image.aspect,
+              size.width > 0, size.height > 0 else { return nil }
+        let ceiling = min(maxPixels, experimentalAbove ?? maxPixels)
+        let ratio = Double(size.width) / Double(size.height)
+        let pixels = size.width * size.height
+        if size.width % multipleOf == 0, size.height % multipleOf == 0, pixels >= minPixels, pixels <= ceiling,
+           ratio >= minRatio, ratio <= maxRatio { return size }
+        return freeSize(boxAspect: ratio, targetPixels: pixels, minRatio: minRatio, maxRatio: maxRatio,
+                        multipleOf: multipleOf, minPixels: minPixels, maxPixels: ceiling)
+    }
+
     /// Free-size fit: clamp the ratio, solve `w·h ≈ target` with `w/h = r`, round to
     /// multiples, then keep the pixel count inside `[minPixels, maxPixels]`.
     public static func freeSize(boxAspect: Double, targetPixels: Int, minRatio: Double, maxRatio: Double,

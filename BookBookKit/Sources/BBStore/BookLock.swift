@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// `<package>/.lock`: JSON-encoded `LockOwner` naming the process that has the book open (A §5.3).
 /// Not content: never journaled, swept or read as part of the book.
@@ -35,10 +36,13 @@ struct BookLock {
     }
 
     /// The recorded owner; nil if there is no lock file. An unreadable or undecodable file reads
-    /// as a stale lock (owner nil, `exists` true).
+    /// as a stale lock (owner nil, `exists` true). The file is opened once and read through that
+    /// descriptor, so a lock removed meanwhile reads as missing (`ENOENT`), never as garbage.
     func read() -> (exists: Bool, owner: LockOwner?) {
-        guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else { return (false, nil) }
-        guard let data = try? Data(contentsOf: url) else { return (true, nil) }
+        let fd = open(url.path(percentEncoded: false), O_RDONLY | O_CLOEXEC)
+        if fd < 0 { return (errno != ENOENT, nil) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        guard let data = try? handle.readToEnd() else { return (true, nil) }
         return (true, try? PackageCoding.decoder().decode(LockOwner.self, from: data))
     }
 
@@ -58,8 +62,9 @@ struct BookLock {
     /// processes; the app always uses this process's.
     func acquire(as mine: LockOwner) throws -> Outcome {
         let isMine = { (owner: LockOwner) in owner.host == mine.host && owner.pid == mine.pid }
-        // A few rounds cover losing a create or takeover race and then re-checking.
-        for _ in 0..<5 {
+        // Another round runs only after losing a create or takeover race (the file was stale, or
+        // vanished between checks), so this bound is reached only under heavy churn.
+        for _ in 0..<100 {
             let current = read()
             if let owner = current.owner {
                 if isMine(owner) { return .reentrant }
@@ -80,9 +85,22 @@ struct BookLock {
     /// contenders that both saw the same stale lock can't both win: under the flock it re-reads
     /// the file and replaces it only if it still exists and is still stale (a contender that won
     /// first has left a live lock). Returns false if not, and the caller re-checks.
-    /// Only takeovers need the flock: `link(2)` can't succeed while any lock file exists, and
-    /// `release` removes only its own live lock, so neither can change a stale file under us.
+    /// `link(2)` can't succeed while any lock file exists, and releases take the same flock, so
+    /// nothing changes the file between the re-read and the replace.
     private func takeOverStale(with mine: LockOwner) throws -> Bool {
+        try withTakeoverLock {
+            let current = read()
+            guard current.exists else { return false }
+            if let owner = current.owner, Self.isLive(owner) || owner.host == mine.host && owner.pid == mine.pid {
+                return false
+            }
+            try write(mine, exclusive: false)
+            return true
+        }
+    }
+
+    /// Runs `body` holding `flock(2)` on the package folder (takeovers and releases).
+    private func withTakeoverLock<T>(_ body: () throws -> T) throws -> T {
         let dir = url.deletingLastPathComponent().path(percentEncoded: false)
         let fd = open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard fd >= 0 else { throw Self.posixError(errno) }
@@ -91,13 +109,7 @@ struct BookLock {
             guard errno == EINTR else { throw Self.posixError(errno) }
         }
         defer { flock(fd, LOCK_UN) }
-        let current = read()
-        guard current.exists else { return false }
-        if let owner = current.owner, Self.isLive(owner) || owner.host == mine.host && owner.pid == mine.pid {
-            return false
-        }
-        try write(mine, exclusive: false)
-        return true
+        return try body()
     }
 
     private static func posixError(_ code: Int32) -> NSError {
@@ -121,9 +133,43 @@ struct BookLock {
         return true
     }
 
-    /// Removes the lock file if it still records exactly `owner`.
+    /// Removes the lock file if it still names `owner`'s process (same host and PID), under the
+    /// takeover flock.
     func release(_ owner: LockOwner) {
-        guard read().owner == owner else { return }
-        try? FileManager.default.removeItem(at: url)
+        _ = try? withTakeoverLock {
+            guard let current = read().owner, current.host == owner.host, current.pid == owner.pid else { return }
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    // MARK: Holders in this process
+
+    /// How many `BookStore`s in this process hold each package's lock (by standardized path).
+    /// Acquire-and-count and uncount-and-remove run under this mutex, so the file is removed only
+    /// when the last holder in this process releases: a store that found the lock re-entrant
+    /// never loses it to another store's release, and never removes it for the others.
+    private static let holders = Mutex<[String: Int]>([:])
+
+    private var holderKey: String { url.standardizedFileURL.path(percentEncoded: false) }
+
+    /// `acquire()` for a `BookStore`: on `.wrote` or `.reentrant`, counts one more holder.
+    func acquireHold(now: Date = Date()) throws -> Outcome {
+        try Self.holders.withLock { holders throws -> Outcome in
+            let outcome = try acquire(now: now)
+            if case .heldByOther = outcome { return outcome }
+            holders[holderKey, default: 0] += 1
+            return outcome
+        }
+    }
+
+    /// Drops one holder; the last one removes the file if it still names this process.
+    func releaseHold() {
+        Self.holders.withLock { holders in
+            let count = (holders[holderKey] ?? 1) - 1
+            holders[holderKey] = count > 0 ? count : nil
+            if count <= 0 {
+                release(LockOwner(pid: Self.currentPID, host: Self.currentHost, acquiredAt: Date()))
+            }
+        }
     }
 }

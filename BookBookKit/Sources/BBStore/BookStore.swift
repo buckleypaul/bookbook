@@ -12,10 +12,9 @@ public actor BookStore {
     private var timerToken = 0
     private var autosaveResultHandler: (@Sendable (StoreError?) -> Void)?
     private var readOnly = false
-    /// Set while this store holds `.lock` (wrote it, or found this process's own lock).
+    /// Set while this store holds `.lock` (wrote it, or found this process's own lock); counted
+    /// in `BookLock`'s per-process holders.
     private var holdsLock = false
-    /// The owner this store wrote to `.lock`, if it wrote it (nil for a re-entrant hold).
-    private var writtenLock: LockOwner?
     /// Test hook (fault injection): see `SaveStep`.
     private var saveFaultHook: SaveFaultHook?
 
@@ -248,13 +247,9 @@ public actor BookStore {
     /// Call before `load()`. A lock from another host is treated as live.
     public func acquireLock() throws(StoreError) -> LockAcquisition {
         if holdsLock { return .acquired }
-        let outcome = try PackageCoding.io("acquire lock") { try BookLock(packageURL: packageURL).acquire() }
+        let outcome = try PackageCoding.io("acquire lock") { try BookLock(packageURL: packageURL).acquireHold() }
         switch outcome {
-        case .wrote(let owner):
-            holdsLock = true
-            writtenLock = owner
-            return .acquired
-        case .reentrant:
+        case .wrote, .reentrant:
             holdsLock = true
             return .acquired
         case .heldByOther(let owner):
@@ -262,15 +257,13 @@ public actor BookStore {
         }
     }
 
-    /// Removes `.lock` if this store holds it. Safe to call more than once.
-    /// A re-entrant hold (another store in this process wrote the file) leaves the file for that store.
+    /// Gives up this store's hold on `.lock`. Safe to call more than once. Holds are counted per
+    /// process: the file is removed only when the last store in this process holding it releases,
+    /// whichever store wrote it.
     public func releaseLock() {
-        defer {
-            holdsLock = false
-            writtenLock = nil
-        }
-        guard holdsLock, let owner = writtenLock else { return }
-        BookLock(packageURL: packageURL).release(owner)
+        guard holdsLock else { return }
+        holdsLock = false
+        BookLock(packageURL: packageURL).releaseHold()
     }
 
     /// After this, `load()` never writes (no journal replay, migration, sweep or ledger repair) and

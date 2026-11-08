@@ -75,6 +75,75 @@ import Testing
         }
     }
 
+    /// Contenders repeatedly acquire, hold briefly and release, while another thread keeps
+    /// planting a stale lock whenever the file is missing, so releases interleave with stale
+    /// takeovers and fresh `link` creates. At no time may two contenders hold the lock.
+    @Test func releaseInterleavedWithTakeover_neverTwoHolders() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "R.bookbook")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let stale = LockOwner(pid: try deadPID(), host: BookLock.currentHost, acquiredAt: testNow)
+        let lock = BookLock(packageURL: url)
+        let inside = Atomic<Int>(0)
+        let maxInside = Atomic<Int>(0)
+        let wins = Atomic<Int>(0)
+        let finished = Atomic<Int>(0)
+        let lostLock = Atomic<Int>(0)
+        let errors = Atomic<Int>(0)
+        DispatchQueue.concurrentPerform(iterations: 9) { i in
+            if i == 0 {
+                // Planter: puts a stale lock back whenever there is none.
+                while finished.load(ordering: .acquiring) < 8 {
+                    _ = try? lock.write(stale, exclusive: true)
+                }
+                return
+            }
+            let me = LockOwner(pid: getpid(), host: "contender-\(i)", acquiredAt: testNow)
+            for _ in 0..<150 {
+                do {
+                    if case .wrote = try lock.acquire(as: me) {
+                        let now = inside.wrappingAdd(1, ordering: .sequentiallyConsistent).newValue
+                        _ = maxInside.max(now, ordering: .sequentiallyConsistent)
+                        wins.wrappingAdd(1, ordering: .relaxed)
+                        usleep(20)
+                        // Nobody may have replaced a live lock under its holder.
+                        if lock.read().owner != me { lostLock.wrappingAdd(1, ordering: .relaxed) }
+                        inside.wrappingSubtract(1, ordering: .sequentiallyConsistent)
+                        lock.release(me)
+                    }
+                } catch {
+                    errors.wrappingAdd(1, ordering: .relaxed)
+                }
+            }
+            finished.wrappingAdd(1, ordering: .releasing)
+        }
+        #expect(maxInside.load(ordering: .relaxed) == 1)
+        #expect(lostLock.load(ordering: .relaxed) == 0)
+        #expect(wins.load(ordering: .relaxed) > 0)
+        #expect(errors.load(ordering: .relaxed) == 0)
+    }
+
+    /// Two stores in this process: the one that wrote `.lock` releasing first doesn't remove it
+    /// while the re-entrant one still holds it; the last release removes it.
+    @Test func reentrantHolderKeepsTheLockUntilTheLastRelease() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "H.bookbook")
+        try BookStore.create(try sampleContent(), at: url)
+        let lockURL = url.appending(path: BookLock.fileName)
+        let writer = BookStore(packageURL: url)
+        let reentrant = BookStore(packageURL: url)
+        #expect(try await writer.acquireLock() == .acquired)
+        #expect(try await reentrant.acquireLock() == .acquired)
+        await writer.releaseLock()
+        #expect(exists(lockURL))
+        await writer.releaseLock() // a second release doesn't drop the other store's hold
+        #expect(exists(lockURL))
+        await reentrant.releaseLock()
+        #expect(!exists(lockURL))
+    }
+
     /// An undecodable lock counts as stale; still exactly one contender takes it over.
     @Test func staleTakeover_garbageLock_exactlyOneWins() throws {
         let dir = try makeTempDir()

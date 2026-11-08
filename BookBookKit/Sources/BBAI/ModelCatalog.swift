@@ -67,6 +67,52 @@ public struct ModelCatalog: Sendable {
         if let id = preferred[provider], let model = imageModel(provider: provider, id: id) { return model }
         return imageModels.first { $0.provider == provider && $0.status == .current }
     }
+
+    // MARK: Phase 9 additions (A §7.1 items 1-3)
+
+    /// Appends custom models that copy a bundled family. Specs with an unknown family (or an
+    /// already-used id) are skipped; use `addingReporting` to see which.
+    public func adding(_ specs: [CustomModelSpec]) -> ModelCatalog {
+        addingReporting(specs).catalog
+    }
+
+    public func addingReporting(_ specs: [CustomModelSpec]) -> (catalog: ModelCatalog, skipped: [CustomModelSpec]) {
+        var result = self
+        var skipped: [CustomModelSpec] = []
+        for spec in specs {
+            guard let family = imageModel(provider: spec.provider, id: spec.copiesFrom), family.copiesFrom == nil,
+                  result.imageModel(provider: spec.provider, id: spec.id) == nil else {
+                skipped.append(spec)
+                continue
+            }
+            result.imageModels.append(CatalogModel(
+                provider: spec.provider, id: spec.id, displayName: "\(spec.id) (custom)", status: .current,
+                typicalDurationSeconds: family.typicalDurationSeconds, image: family.image, copiesFrom: family.id))
+        }
+        return (result, skipped)
+    }
+
+    /// The model, or (when retired) its successor. Follows `successor` links with a loop guard.
+    public func resolve(provider: ProviderID, id: String) -> CatalogModel? {
+        guard var model = imageModel(provider: provider, id: id) else { return nil }
+        var seen: Set<String> = [model.id]
+        while model.status == .retired, let next = model.successor,
+              let successor = imageModel(provider: provider, id: next), seen.insert(successor.id).inserted {
+            model = successor
+        }
+        return model
+    }
+
+    public func imageModels(for provider: ProviderID) -> [CatalogModel] {
+        imageModels.filter { $0.provider == provider }
+    }
+
+    /// `listed` is the set of model IDs from the provider's list-models call (nil: not checked).
+    public func availability(of model: CatalogModel, listed: Set<String>?) -> ModelAvailability {
+        guard let listed else { return .unknown }
+        if listed.contains(model.id) { return .available }
+        return .unavailable(successor: model.successor)
+    }
 }
 
 // MARK: - JSON shape

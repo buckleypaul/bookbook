@@ -4,7 +4,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 **Statuses:** `not started` · `in progress` · `awaiting hand checks` · `done` · `blocked` · `skipped (floating)`
 
-**Live API spend so far:** $0.44 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
+**Live API spend so far:** $0.45 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
@@ -169,4 +169,6 @@ Also fixed from the nice-to-haves: `dump()`/reflection redaction for `APIKey` an
 - A new result is placed automatically only when its box is empty; otherwise it joins the version strip and the user clicks it to place it (`ChooseVersion`, undoable).
 - Page commands never touch sessions. Deleting a page keeps its session files; undoing an add leaves the new page's empty sessions behind (clean-up is Phase 16).
 - TextKit 2 layout, `PageRenderer` and PDF export are `@MainActor` in the slice; Phase 14 revisits background export.
+
+**Live runs:** 2026-11-08 `scripts/live-tests.sh openai slice` → `LiveProviderTests.slice_generateLow` passed (Draft/low 1024×1024), **$0.006** (LiveSpendGuard).
 

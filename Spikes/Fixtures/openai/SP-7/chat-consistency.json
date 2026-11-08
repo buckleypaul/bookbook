@@ -1,0 +1,37 @@
+{
+  "choices" : [
+    {
+      "finish_reason" : "stop",
+      "index" : 0,
+      "message" : {
+        "annotations" : [
+
+        ],
+        "content" : "{\"consistent\":false,\"differences\":[{\"expected\":\"Solid red\",\"observed\":\"Solid blue\",\"aspect\":\"colour\",\"severity\":\"major\",\"asset\":\"Pip's scarf\"}]}",
+        "refusal" : null,
+        "role" : "assistant"
+      }
+    }
+  ],
+  "created" : 1794094802,
+  "id" : "chatcmpl-EhkIsmfFSnDyu8uuCt2b5x5UcBbCP",
+  "model" : "gpt-6.1-terra",
+  "object" : "chat.completion",
+  "service_tier" : "default",
+  "system_fingerprint" : null,
+  "usage" : {
+    "completion_tokens" : 71,
+    "completion_tokens_details" : {
+      "accepted_prediction_tokens" : 0,
+      "audio_tokens" : 0,
+      "reasoning_tokens" : 22,
+      "rejected_prediction_tokens" : 0
+    },
+    "prompt_tokens" : 306,
+    "prompt_tokens_details" : {
+      "audio_tokens" : 0,
+      "cached_tokens" : 0
+    },
+    "total_tokens" : 377
+  }
+}

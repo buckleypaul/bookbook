@@ -1,0 +1,17 @@
+{
+  "durationMs" : 1880,
+  "headers" : {
+    "content-type" : "application/json",
+    "x-ratelimit-limit-input-images" : "50000",
+    "x-ratelimit-limit-requests" : "5000",
+    "x-ratelimit-limit-tokens" : "1000000",
+    "x-ratelimit-remaining-input-images" : "49998",
+    "x-ratelimit-remaining-requests" : "4999",
+    "x-ratelimit-remaining-tokens" : "998399",
+    "x-ratelimit-reset-input-images" : "2ms",
+    "x-ratelimit-reset-requests" : "12ms",
+    "x-ratelimit-reset-tokens" : "96ms",
+    "x-request-id" : "req_673b16cd7650403886c5d4cfd518af74"
+  },
+  "status" : 200
+}

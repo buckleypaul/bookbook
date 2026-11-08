@@ -10,7 +10,7 @@ Implement the next BookBook phase. Work out which phase yourself; don't ask me. 
 1. Read CLAUDE.md (if present), PROGRESS.md, and implementation-plan.md §0–§3 plus the section for the phase. Read only the architecture.md / product-description.md sections that phase cites. For wide reading, send an Explore subagent (model: haiku) and keep only its conclusions.
 2. Find the current state: PROGRESS.md on main, plus `gh pr list --state open` and `git branch -a --list '*phase-*'`. An open phase PR means that phase is awaiting hand checks; read PROGRESS.md from its branch.
 3. If a phase is awaiting hand checks, ask me (AskUserQuestion) whether its hand checks passed, unless I've already said so below.
-   - Passed: `gh pr merge --squash --delete-branch`, pull main, mark it `done`, then carry on to the next phase.
+   - Passed: on the phase branch, mark it `done` in PROGRESS.md (status, merge date, ticked hand checks), commit and push, and wait for CI to go green. Then `gh pr merge --squash --delete-branch`, check out and pull main, and confirm main's PROGRESS.md shows the phase as `done`. (Marking it done before merging is what gets the status onto main; never record it only on the next phase's branch.) Then carry on to the next phase, branching from the updated main.
    - Failed: fix what I describe on that branch, verify again (step 4), and stop at `awaiting hand checks` again. Don't start a new phase.
 4. If a phase is `in progress` (an unmerged branch with no PR), resume it from its branch and its PROGRESS.md log.
 5. Otherwise pick the next phase using implementation-plan.md §2.6. If none is ready (dependencies not met, blocked, or Phase 13 without a Gemini key), say why and stop.

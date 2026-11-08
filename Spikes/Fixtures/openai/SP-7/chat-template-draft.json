@@ -1,0 +1,38 @@
+{
+  "choices" : [
+    {
+      "finish_reason" : "stop",
+      "index" : 0,
+      "message" : {
+        "annotations" : [
+
+        ],
+        "content" : "{\"boxes\":[{\"x\":0.059,\"kind\":\"image\",\"textAlignment\":null,\"cornerRadius\":null,\"height\":0.58,\"y\":0.059,\"width\":0.882},{\"x\":0.059,\"kind\":\"text\",\"textAlignment\":\"center\",\"cornerRadius\":null,\"height\":0.24,\"y\":0.69,\"width\":0.882}],\"name\":\"Picture Above\"}",
+        "refusal" : null,
+        "role" : "assistant"
+      }
+    }
+  ],
+  "created" : 1794094798,
+  "id" : "chatcmpl-EhkIo7UbSNroJXlBKFN4udAs5LHzf",
+  "model" : "gpt-6-luna",
+  "object" : "chat.completion",
+  "service_tier" : "default",
+  "system_fingerprint" : null,
+  "usage" : {
+    "completion_tokens" : 253,
+    "completion_tokens_details" : {
+      "accepted_prediction_tokens" : 0,
+      "audio_tokens" : 0,
+      "reasoning_tokens" : 154,
+      "rejected_prediction_tokens" : 0
+    },
+    "prompt_tokens" : 224,
+    "prompt_tokens_details" : {
+      "audio_tokens" : 0,
+      "cache_write_tokens" : 0,
+      "cached_tokens" : 0
+    },
+    "total_tokens" : 477
+  }
+}

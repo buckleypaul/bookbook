@@ -1,0 +1,78 @@
+{
+  "schemaNote": "Phase 0 seed for BookBookKit's bundled ModelCatalog.json (architecture.md §7.1). Phase 1b moves it into the resource folder; the field set may be adjusted there. OpenAI rows verified against the live API on 2026-11-07 (Spikes/REPORT.md). Gemini rows wait for SG-1…SG-8.",
+  "asOf": "2026-11-07",
+  "models": [
+    {
+      "provider": "openai",
+      "id": "gpt-image-2.5-sunburst",
+      "displayName": "GPT Image 2.5 Sunburst",
+      "kind": "image",
+      "status": "current",
+      "retiresOn": null,
+      "successor": null,
+      "verified": "SP-1, SP-2, SP-3, SP-4, SP-6",
+      "typicalDurationSeconds": { "draft": 10, "standard": 14, "high": 29 },
+      "image": {
+        "maxReferenceImages": 16,
+        "maxImageBytes": 50000000,
+        "maxRequestBytes": 20000000,
+        "supportsMask": true,
+        "maskEditAreaIsTransparent": true,
+        "maskEditReliability": "unreliable-on-synthetic-images (SP-4: masked area often returned black); re-check in Phase 11",
+        "nativeMultiTurn": false,
+        "editsSizeMustBeExplicit": true,
+        "aspect": { "mode": "free", "minRatio": 0.3333, "maxRatio": 3.0,
+                    "multipleOf": 16, "minPixels": 655360, "maxPixels": 8294400,
+                    "experimentalAbovePixels": 3686400 },
+        "quality": {
+          "draft":    { "param": "low",    "targetPixels": 1048576 },
+          "standard": { "param": "medium", "targetPixels": 1572864 },
+          "high":     { "param": "high",   "targetPixels": 3686400 }
+        }
+      }
+    },
+    {
+      "provider": "openai", "id": "gpt-image-2.6-sunburst", "displayName": "GPT Image 2.6 Sunburst",
+      "kind": "image", "status": "current", "retiresOn": null, "successor": null,
+      "verified": "SP-1 (listed only; capabilities copied from 2.5 Sunburst)",
+      "typicalDurationSeconds": { "draft": 10, "standard": 14, "high": 29 },
+      "image": { "copyCapabilitiesFrom": "gpt-image-2.5-sunburst" }
+    },
+    {
+      "provider": "openai", "id": "gpt-image-2.6-flare", "displayName": "GPT Image 2.6 Flare",
+      "kind": "image", "status": "current", "retiresOn": null, "successor": null,
+      "verified": "SP-1 (listed only; capabilities copied from 2.5 Sunburst)",
+      "typicalDurationSeconds": { "draft": 10, "standard": 14, "high": 29 },
+      "image": { "copyCapabilitiesFrom": "gpt-image-2.5-sunburst" }
+    },
+    {
+      "provider": "openai", "id": "gpt-image-2.5-flare", "displayName": "GPT Image 2.5 Flare",
+      "kind": "image", "status": "current", "retiresOn": null, "successor": null,
+      "verified": "SP-1 (listed only, not in the original seed; capabilities copied from 2.5 Sunburst)",
+      "typicalDurationSeconds": { "draft": 10, "standard": 14, "high": 29 },
+      "image": { "copyCapabilitiesFrom": "gpt-image-2.5-sunburst" }
+    },
+    {
+      "provider": "openai", "id": "gpt-image-2", "displayName": "GPT Image 2",
+      "kind": "image", "status": "current", "retiresOn": null, "successor": "gpt-image-2.5-sunburst",
+      "verified": "SP-1 (listed only; capabilities copied from 2.5 Sunburst)",
+      "typicalDurationSeconds": { "draft": 10, "standard": 14, "high": 29 },
+      "image": { "copyCapabilitiesFrom": "gpt-image-2.5-sunburst" }
+    },
+    {
+      "provider": "openai", "id": "gpt-6-luna", "displayName": "GPT-6 Luna",
+      "kind": "text", "status": "current", "retiresOn": null, "successor": null,
+      "verified": "SP-1, SP-7 (Chat Completions, store:false, strict json_schema)",
+      "typicalDurationSeconds": { "default": 5 },
+      "text": { "api": "chat.completions", "structuredOutput": "json_schema-strict", "reportsReasoningTokens": true }
+    },
+    {
+      "provider": "openai", "id": "gpt-6.1-terra", "displayName": "GPT-6.1 Terra",
+      "kind": "vision", "status": "current", "retiresOn": null, "successor": null,
+      "verified": "SP-1, SP-7 (Chat Completions, store:false, image_url data URLs, detail:low)",
+      "typicalDurationSeconds": { "default": 2 },
+      "vision": { "api": "chat.completions", "structuredOutput": "json_schema-strict", "detail": "low" },
+      "consistency": { "warnOnMajor": 1, "warnOnMinor": 3 }
+    }
+  ]
+}

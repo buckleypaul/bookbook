@@ -397,7 +397,7 @@ struct BookBookApp: App {
 }
 ```
 
-- `openWindow(value: bookID)` brings an existing window for that book to the front if there is one, so "one window per open book" is enforced by the system. SwiftUI also restores book windows when the app relaunches.
+- `openWindow(value: bookID)` brings an existing window for that book to the front if there is one, so "one window per open book" is enforced by the system. SwiftUI also restores book windows when the app relaunches, **but only when the user's macOS setting "Close windows when quitting an application" is off, or after Quit and Keep Windows (⌥⌘Q)**. With the macOS default, the app relaunches to the Library window only (SL-3, `Spikes/REPORT.md`). Whether BookBook should always reopen the last books is an open product question.
 - `AppModel` owns everything app-wide: `Settings`, `ModelCatalog`, `PriceList`, `KeychainStore`, `LibraryIndex`, `GenerationQueue`, and `OpenBooks`, a registry of `BookID → BookDocument`.
 - `BookDocument` is `@MainActor @Observable`, one per window. It holds the in-memory `BookState` (a value tree), its `BookStore` actor, the derived indexes, and the command layer (§6.3).
 
@@ -615,7 +615,8 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
 
 **OpenAI adapter (Images API):**
 - A new image with no references uses `POST /v1/images/generations`. Anything with references or a base image uses `POST /v1/images/edits` (multipart, `image[]` up to 16, base image first).
-- Parameters: `size` from §7.5, `quality` from the catalog, `output_format: png`, `n: 1`, `moderation: auto`.
+- Parameters: `size` from §7.5, `quality` from the catalog, `output_format: png`, `n: 1`, `moderation: auto`. **`size` is always explicit.** On `/images/edits`, `size: auto` returned 1254×1254 for a 1024² base (SP-3), so refinements and region edits send the base image's size.
+- Uploads are limited to 50 MB per image (`file_above_max_size`), which the adapter checks before sending (SP-5).
 - The response image is in `data[0].b64_json`. `usage` (input and output image and text tokens) feeds the actual cost.
 - **The Responses API isn't used in v1.** Server-side conversation state needs `store=true`, with at least 30 days of retention, and the app's own lineage model already gives the same refinement behaviour. Background mode (which supports server-side cancel) is noted as a future option (§7.9).
 
@@ -627,8 +628,8 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
 
 **Region editing (§8.6):**
 - Available only when `supportsMask` is true, which today means OpenAI's GPT Image models. Every current Gemini image model edits by prompt only, so the region tool is disabled for Gemini with the explanation the product requires.
-- The mask is sent as a PNG with alpha, the same size as the base image, with the edit area transparent. **The polarity must be checked against the live API during implementation**, because the docs don't state it.
-- OpenAI documents mask edits as "prompt-based, not pixel-exact". So BookBook **composites the result locally**: the provider's output is blended into the original through the user's mask, feathered by about 8 px, using Core Image. This guarantees "only that area is altered". The composited result is stored as a `.regionEdit` version, and the raw provider output is kept in provenance for Details.
+- The mask is sent as a PNG with alpha, the same size as the base image (a mismatch gives 400 `invalid_mask_image_format`), with the edit area transparent. **SP-4: the API replaces the transparent area**, so the encoding is right. But with flat test images the area often came back solid black, and the requested change landed outside the mask. The original pixels never survived under the mask, whatever RGB the mask held. **Open, and blocking for Phase 11:** re-check on a real illustration and choose between a masked edit, an unmasked edit plus the composite, or black-fill detection with a fallback (see `Spikes/REPORT.md` SP-4).
+- OpenAI documents mask edits as "prompt-based, not pixel-exact", and SP-4 saw the model repaint whole opaque (protected) quadrants. So BookBook **always composites the result locally**; this is mandatory, not a safeguard: the provider's output is blended into the original through the user's mask, feathered by about 8 px, using Core Image. This guarantees "only that area is altered". The composited result is stored as a `.regionEdit` version, and the raw provider output is kept in provenance for Details.
 - (Later, the same local composite could enable region edits for Gemini too, by sending an image with the region outlined. That's out of scope for v1, per §8.6.)
 
 **Importing your own image (§8.6):** the file is stored as a `.imported` version with no provenance. Refining it always uses stateless mode.
@@ -720,13 +721,13 @@ struct QueueItem {
   "perMillionTokens": { "textIn": 5.00, "imageIn": 8.00, "imageOut": 30.00, "cachedImageIn": 2.00 },
   "estimation": {
     "outputImageTokens": { "low@1024x1024": 200, "medium@1024x1024": 433, "high@1024x1024": 1767, "...": 0 },
-    "inputTokensPerReferenceImage": 765,
+    "inputImageTokens": { "1024x1024": 1024, "256x256": 256, "128x128": 64 },   // measured (SP-3); other sizes: see below
     "textTokensPerPromptChar": 0.27 } }
 ```
 
 Gemini image entries carry `perImage` prices (e.g. `{ "1K": 0.0336, "2K": 0.0504, "4K": 0.113 }` for Nano Banana 2.1), plus input and thinking token rates and a typical thinking-token count per thinking level. Thinking can't be turned off and is always billed.
 
-**Estimator:** `CostEstimator.estimate(_ request: ImageRequest | LayoutRequest | ConsistencyRequest) -> CostEstimate`. It's a pure function, so it can be unit-tested against the official calculator figures. For pixel sizes not in the table, it interpolates by pixel count. A generation's estimate includes its consistency follow-up when the switch is on.
+**Estimator:** `CostEstimator.estimate(_ request: ImageRequest | LayoutRequest | ConsistencyRequest) -> CostEstimate`. It's a pure function, so it can be unit-tested against the official calculator figures. Output tokens are **not** proportional to pixel count (SP-2: low 1024×1536 = 158 tokens, below low 1024² = 196), so the table holds measured entries per quality and size. For sizes not in the table, it uses the nearest measured entry of the same quality, rounded up, and labels the result an estimate. Input-image tokens use the measured per-size table; for other sizes the estimate assumes "downscale to ≤ 512 px a side, then 1 token per 16×16 patch", which fits SP-3 but is unconfirmed (Phase 9 measures a 1536×1024 reference). Text and vision estimates count reasoning tokens as output (SP-7). A generation's estimate includes its consistency follow-up when the switch is on.
 
 **Actual cost:** when a response has `usage` or `usageMetadata`, `CostCalculator` prices the reported tokens with the same price list, broken down by modality, and the ledger entry is marked `actual`. Otherwise the estimate is recorded and marked `estimated`. Requests that fail with a 4xx or 5xx are recorded at $0, since neither provider bills those.
 
@@ -754,12 +755,12 @@ Each provider's mapper turns HTTP status, error body and finish reasons into a s
 | `.regionUnsupported` | 403 unsupported country | 400 `FAILED_PRECONDITION` (region/billing) | no |
 | `.billing` | 429 `insufficient_quota`, `credit_balance_exhausted`, `*_spend_limit_exceeded` (switch on `error.code`) | 402, 429 `quota_exceeded` (daily) | no |
 | `.rateLimited(retryAfter)` | 429 `rate_limit_error` / `slow_down` | 429 `rate_limit_exceeded` | auto |
-| `.refused(stage, categories, raw)` | `moderation_blocked` (+ `moderation_details`), `image_content_policy_violation` | `blockReason` *, `finishReason` ∈ SAFETY, PROHIBITED_CONTENT, IMAGE_SAFETY, IMAGE_PROHIBITED_CONTENT, SPII, BLOCKLIST | no |
+| `.refused(stage, categories, raw)` | 400 `code: moderation_blocked` (+ `moderation_details.{categories, moderation_stage}`), `image_content_policy_violation` | `blockReason` *, `finishReason` ∈ SAFETY, PROHIBITED_CONTENT, IMAGE_SAFETY, IMAGE_PROHIBITED_CONTENT, SPII, BLOCKLIST | no |
 | `.recitation` | — | RECITATION, IMAGE_RECITATION | no |
 | `.noImage` | empty `data` | NO_IMAGE, IMAGE_OTHER, OTHER | once |
-| `.invalidRequest(param)` | 400 `invalid_request_error`, `invalid_image*`, `image_too_large` | 400 `INVALID_ARGUMENT` | no |
+| `.invalidRequest(param)` | 400 `invalid_value` (with `param`, e.g. `size`), `invalid_image*`, `invalid_mask_image_format`, `file_above_max_size`, `image_too_large` | 400 `INVALID_ARGUMENT` | no |
 | `.continuityLost` | — | MISSING_THOUGHT_SIGNATURE | once, stateless |
-| `.modelUnavailable` | 404, deprecated or shut-down model | 404 `model_not_found` | no |
+| `.modelUnavailable` | 404; 400 `invalid_value` with `param: model` (SP-5); deprecated or shut-down model | 404 `model_not_found` | no |
 | `.transient` | 500, 503 `server_is_overloaded` | 500, 503, 504 | auto |
 | `.offline`, `.timeout`, `.cancelled` | URLError | URLError, 499 | per case |
 
@@ -776,6 +777,8 @@ The raw status and body are kept in `raw`, with the API key never included, for 
 If the other provider is configured, every non-auth failure gets **"Retry with <other provider>"**. That rebuilds the request through `ContextAssembler` for the other model. The prompt is the same, but limits and sizes are recomputed.
 
 Provider wording isn't parsed for advice. It's shown only under Details.
+
+The OpenAI mapper switches on `error.code` (and `param`), not `error.type`: many 400s carry the newer `type: image_generation_user_error` (SP-5). A 401 body echoes a masked form of the key with some characters visible, so that fragment is redacted before `raw` is stored or shown.
 
 ### 7.12 Networking (BBNet)
 
@@ -822,7 +825,8 @@ Page numbers come from physical positions, the style's starting number, and its 
   - Imported fonts are copied into `fonts/` and registered with `CTFontManagerRegisterFontURLs(…, .process, …)` when the book opens.
   - A missing font falls back to the system font, with a book-level warning and a preflight issue.
   - Fonts whose OS/2 `fsType` forbids embedding are flagged when they're imported.
-- **Spelling and grammar:** `NSTextView`'s continuous checking covers live editing. Preflight runs `NSSpellChecker.check(_:range:types:options:…)` over every text box in the background (§8.8 "spelling").
+- **Editor and renderer share container settings:** the inline `NSTextView` uses the same `lineFragmentPadding` (0), `textContainerInset` (zero), width, and paragraph and hyphenation settings as `TextBoxLayout`. `NSTextView` defaults to a padding of 5, which would make the editor wrap differently from the page (SL-1).
+- **Spelling and grammar:** `NSTextView`'s continuous checking covers live editing. On TextKit 2 the markers are rendering attributes on the `NSTextLayoutManager` (`.spellingState`), not in the text storage. Continuous checking needs a running `NSApplication`, so tests of it are app-hosted (SL-2). Preflight runs `NSSpellChecker.check(_:range:types:options:…)` over every text box in the background (§8.8 "spelling").
 
 ### 8.4 PageRenderer
 
@@ -1015,15 +1019,15 @@ end
 
 | Risk | Mitigation |
 |---|---|
-| Model churn: OpenAI retired `gpt-image-1` on 2026-10-23 and removes 1.5/mini on 2026-12-01; Gemini deprecated two image models in 2026 | Data-driven catalog with successors, list-models availability checks, the custom-model escape hatch (§7.1) |
+| Model churn: OpenAI retired `gpt-image-1` on 2026-10-23 and removes 1.5/mini on 2026-12-01; Gemini deprecated two image models in 2026 | Data-driven catalog with successors, list-models availability checks, the custom-model escape hatch (§7.1). SP-1: all seed models are listed, and list-models returns `shutdown_date`, which the check can use to mark models deprecated early |
 | Prices drift | A dated price list the user can edit, actual-cost-from-usage where it's available, and "estimate" labels |
-| OpenAI mask polarity isn't documented | Live test before shipping region edits. Local compositing (§7.6) limits the damage either way |
+| OpenAI mask polarity isn't documented | **Partly resolved (SP-4):** the API replaces the transparent area, but the result is often black and edits land outside the mask. Local compositing (§7.6) is mandatory, and the approach is **open and blocking for Phase 11** |
 | Gemini thought-signature requirements are documented inconsistently | Always echo signatures; fall back once to stateless on `MISSING_THOUGHT_SIGNATURE` |
 | Gemini inline request limit: the docs say both 20 MB and 100 MB | Design for 20 MB |
-| Cancellation billing is undocumented for both providers | Assume it's billed (§7.9), as the product already tells the user |
+| Cancellation billing is undocumented for both providers | Assume it's billed (§7.9), as the product already tells the user. OpenAI: SP-6 cancelled a request at 2026-11-07 23:39 UTC, and the dashboard check is a Phase 0 hand check |
 | OpenAI organization verification can block GPT Image with a 403 | A dedicated `.verificationRequired` error with steps |
-| TextKit 2 silently falling back to TextKit 1 | Never touch `layoutManager`; debug assertion (§8.3) |
-| Brief differences between on-screen and PDF text layout | One TextKit 2 layout path; PDF snapshot tests |
+| TextKit 2 silently falling back to TextKit 1 | Never touch `layoutManager`; debug assertion (§8.3). SL-2: no fallback with continuous spelling and grammar, and the notification observer is proven to work |
+| Brief differences between on-screen and PDF text layout | One TextKit 2 layout path; PDF snapshot tests. SL-1: PDF positions are within 0.13 pt of TextKit's, and fonts are embedded as subsets. Tests use `PDFPage.selection(for:)`, not `characterBounds(at:)` |
 | `depends_on macos:` symbol for macOS 27 | Use the bare-symbol form; check the macOS 27 symbol against current Homebrew when the cask is written |
 | Long Gemini histories with 4K images exceed the budget | Native history caps (§7.6), with automatic stateless mode |
 

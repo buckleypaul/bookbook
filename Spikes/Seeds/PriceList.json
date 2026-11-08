@@ -1,0 +1,32 @@
+{
+  "schemaNote": "Phase 0 seed for BookBookKit's bundled PriceList.json (architecture.md §7.10). Image-model output-token counts are measured (SP-2, SP-6); per-token prices are the architecture's published figures, which the measured costs matched. Text/vision per-token prices are placeholders used only by LiveSpendGuard and must be checked against OpenAI's pricing page in Phase 9.",
+  "asOf": "2026-11-07",
+  "entries": [
+    {
+      "provider": "openai", "model": "gpt-image-2.5-sunburst", "currency": "USD", "asOf": "2026-11-07",
+      "perMillionTokens": { "textIn": 5.00, "imageIn": 8.00, "imageOut": 30.00, "cachedImageIn": 2.00 },
+      "estimation": {
+        "outputImageTokens": {
+          "low@1024x1024": 196, "low@1024x1536": 158, "low@1232x816": 133, "low@3840x2160": 371,
+          "medium@1024x1024": 439,
+          "high@1024x1024": 1756
+        },
+        "inputImageTokens": { "1024x1024": 1024, "256x256": 256, "128x128": 64 },
+        "textTokensPerPromptChar": 0.27,
+        "notes": "Output tokens are not proportional to pixel count (low 1024x1536 < low 1024x1024), so only interpolate within one quality and aspect class; prefer measured entries. Input-image tokens are measured at three sizes. They fit \"downscale to <= 512 px a side, then 1 token per 16x16 patch\" (hypothesis; Phase 9 measures a 1536x1024 reference)."
+      }
+    },
+    {
+      "provider": "openai", "model": "gpt-6-luna", "currency": "USD", "asOf": "2026-11-07",
+      "placeholder": true,
+      "perMillionTokens": { "textIn": 1.25, "imageIn": 1.25, "cachedTextIn": 0.125, "textOut": 10.00 },
+      "estimation": { "typicalTemplateRequest": { "inputTokens": 230, "outputTokens": 260, "reasoningTokensIncluded": true } }
+    },
+    {
+      "provider": "openai", "model": "gpt-6.1-terra", "currency": "USD", "asOf": "2026-11-07",
+      "placeholder": true,
+      "perMillionTokens": { "textIn": 2.50, "imageIn": 2.50, "cachedTextIn": 0.25, "textOut": 15.00 },
+      "estimation": { "typicalConsistencyRequest": { "inputTokensTwoLowDetailImages": 310, "outputTokens": 75 } }
+    }
+  ]
+}

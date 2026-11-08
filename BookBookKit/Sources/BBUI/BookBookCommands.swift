@@ -35,6 +35,10 @@ public struct BookBookCommands: Commands {
                 openWindow(id: SceneID.library)
             }
             .keyboardShortcut("n")
+            Button("New Book from Story…") {
+                app.newBookFromStoryRequested = true
+                openWindow(id: SceneID.library)
+            }
             Button("Library") { openWindow(id: SceneID.library) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
         }

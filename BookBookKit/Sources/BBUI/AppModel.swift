@@ -34,6 +34,11 @@ public final class AppModel {
     public private(set) var hasOpenAIKey = false
     /// Set by File ▸ New Book…; the Library window shows its sheet.
     public var newBookRequested = false
+    /// Set by File ▸ New Book from Story…; the Library window shows the title sheet, and the new
+    /// book opens with the Import Story Text sheet already up.
+    public var newBookFromStoryRequested = false
+    /// Books created by New Book from Story… whose window hasn't yet presented the import sheet.
+    @ObservationIgnored private var pendingStoryImports: Set<BookID> = []
     /// Pictures that arrived but couldn't be written into their book, by message (shown in the thread).
     public private(set) var deliveryFailures: [MessageID: String] = [:]
     /// Book windows the app wants closed (trash, library move). Each `BookWindow` watches for its
@@ -144,12 +149,20 @@ public final class AppModel {
     }
 
     /// Creates a book in the library folder and refreshes the list.
-    public func createBook(title: String) async throws -> LibraryEntry {
+    /// With `thenImportStory`, the book's window shows the story-import sheet when it opens
+    /// (`takePendingStoryImport`).
+    public func createBook(title: String, thenImportStory: Bool = false) async throws -> LibraryEntry {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let entry = try library.createBook(title: trimmed.isEmpty ? "Untitled" : trimmed, now: now())
         openBooks.remember([entry])
+        if thenImportStory { pendingStoryImports.insert(entry.id) }
         await refreshLibrary()
         return entry
+    }
+
+    /// True once for a book created by New Book from Story…: its window then presents the import sheet.
+    public func takePendingStoryImport(for id: BookID) -> Bool {
+        pendingStoryImports.remove(id) != nil
     }
 
     // MARK: Library actions (PD §8.1)

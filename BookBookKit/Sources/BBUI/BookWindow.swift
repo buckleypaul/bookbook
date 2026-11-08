@@ -95,6 +95,7 @@ public struct BookWindow: View {
 struct BookEditor: View {
     let document: BookDocument
     @Environment(\.undoManager) private var undoManager
+    @Environment(AppModel.self) private var app
     @State private var pages: PagesController
     @State private var selectedImageBox: BoxID?
     @State private var showSession = true
@@ -157,6 +158,8 @@ struct BookEditor: View {
         .onAppear {
             document.undoManager = undoManager
             if pages.selectedPage == nil { pages.selectedPage = content.book.pageOrder.first ?? content.book.coverPageID }
+            // New Book from Story…: open straight into the import sheet.
+            if document.isEditable, app.takePendingStoryImport(for: document.id) { pages.sheet = .importStory }
         }
         .onChange(of: undoManager) { _, manager in document.undoManager = manager }
         .onChange(of: content.book.pageOrder) {

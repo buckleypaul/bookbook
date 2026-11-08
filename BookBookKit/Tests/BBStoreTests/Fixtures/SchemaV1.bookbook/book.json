@@ -1,0 +1,17 @@
+{
+  "acknowledgements" : {
+    "realPersonPhotoNotice" : [
+
+    ]
+  },
+  "author" : "Test Author",
+  "coverPageID" : "D5EBB5D7-DC39-4D69-90BB-78827A78AF8C",
+  "createdAt" : "2027-01-15T08:00:00.000000000Z",
+  "id" : "C885EDE4-3E76-4884-806B-8EC85A3E8CD5",
+  "modifiedAt" : "2027-01-15T08:00:00.000000000Z",
+  "pageOrder" : [
+    "A122182C-F274-430A-A417-B16A548E804E"
+  ],
+  "schemaVersion" : 1,
+  "title" : "Fixture Book"
+}

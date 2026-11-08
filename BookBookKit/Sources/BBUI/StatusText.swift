@@ -53,6 +53,8 @@ public enum StoreErrorText {
         case .io: "The book couldn't be read or written. Check the disk has space."
         case .schemaTooNew: "This book was made with a newer version of BookBook."
         case .keychain: "The Keychain couldn't be updated."
+        case .locked(let owner): "This book is open in BookBook on \(owner.host)."
+        case .readOnly: "This book is open read-only, so changes can't be saved."
         }
     }
 

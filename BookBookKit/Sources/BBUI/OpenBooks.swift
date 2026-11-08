@@ -6,8 +6,9 @@ import Foundation
 import Observation
 import os
 
-/// The registry of open books, `BookID → BookDocument` (A §6.1), plus the library's
-/// `BookID → URL` lookup from the last `Library.scan()`.
+/// The registry of open books, `BookID → BookDocument` (A §6.1), the library's `BookID → URL`
+/// lookup (fed by `LibraryIndex`), and the ordered list of open books that BookBook reopens at
+/// relaunch (`openBookIDs` in `UserDefaults`, IDs only).
 ///
 /// It is also the one place queue results are written (A §6.4). Per book, opening, closing and
 /// delivering run one at a time, so:
@@ -16,34 +17,85 @@ import os
 /// - a delivery to an open book is applied before any later close flushes it.
 @MainActor @Observable
 public final class OpenBooks {
+    /// `UserDefaults` key for the ordered open-book list (A §6.1).
+    public static let openBookIDsKey = "openBookIDs"
+
     public private(set) var documents: [BookID: BookDocument] = [:]
+    /// Books with an open window, in the order they opened. Saved to `defaults` on every change.
+    public private(set) var openBookIDs: [BookID]
+    /// Set while the app quits (from `applicationShouldTerminate`): closing windows then keeps
+    /// their entries, so the books reopen at relaunch.
+    public var isTerminating = false
     @ObservationIgnored private var closing: Set<BookID> = []
     @ObservationIgnored private var tails: [BookID: Task<Void, Never>] = [:]
     @ObservationIgnored private var urls: [BookID: URL] = [:]
-    @ObservationIgnored public let library: Library
+    @ObservationIgnored private let defaults: UserDefaults
+    /// Resolves a book that isn't in the URL map, or whose package has gone. `AppModel` points it
+    /// at `LibraryIndex`; the default rescans `library`.
+    @ObservationIgnored public var resolveURL: @MainActor (BookID) async -> URL?
     /// Called when a finished picture couldn't be written into its book.
     @ObservationIgnored public var onDeliveryProblem: (MessageID, String) -> Void = { _, _ in }
 
     private static let log = Logger(subsystem: "app.bookbook", category: "OpenBooks")
 
-    public init(library: Library) {
-        self.library = library
+    /// - Parameter defaults: where `openBookIDs` is kept (tests pass a suite).
+    public init(library: Library, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        self.openBookIDs = Self.readList(defaults)
+        self.resolveURL = { id in
+            await Task.detached { library.scan() }.value.first { $0.id == id }?.url
+        }
     }
 
     public func document(for id: BookID) -> BookDocument? { documents[id] }
 
-    /// Records where books live (from a library scan).
+    /// Records where books live (from the library index or a scan).
     public func remember(_ entries: [LibraryEntry]) {
         for entry in entries { urls[entry.id] = entry.url }
     }
 
-    /// The package URL for a book, rescanning the library if it isn't known yet.
+    /// The package URL for a book. A remembered URL whose package has gone (trashed, moved) is
+    /// resolved again.
     public func packageURL(for id: BookID) async -> URL? {
-        if let url = urls[id] { return url }
-        let library = library
-        let entries = await Task.detached { library.scan() }.value
-        remember(entries)
-        return urls[id]
+        if let url = urls[id], FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) { return url }
+        let url = await resolveURL(id)
+        urls[id] = url
+        return url
+    }
+
+    // MARK: Open-books list (A §6.1)
+
+    /// The saved list in order, keeping only the books `resolves` still finds. The rest are
+    /// dropped from the saved list silently. Called once at launch, after the index is loaded.
+    public func booksToReopen(resolves: (BookID) -> Bool) -> [BookID] {
+        let kept = openBookIDs.filter(resolves)
+        if kept != openBookIDs { setList(kept) }
+        return kept
+    }
+
+    /// Removes a book from the list without closing anything (its window found no book).
+    public func forget(_ id: BookID) {
+        guard !isTerminating, openBookIDs.contains(id) else { return }
+        setList(openBookIDs.filter { $0 != id })
+    }
+
+    private func noteOpened(_ id: BookID) {
+        guard !openBookIDs.contains(id) else { return }
+        setList(openBookIDs + [id])
+    }
+
+    private func setList(_ ids: [BookID]) {
+        openBookIDs = ids
+        defaults.set(ids.map(\.rawValue.uuidString), forKey: Self.openBookIDsKey)
+    }
+
+    private static func readList(_ defaults: UserDefaults) -> [BookID] {
+        var seen: Set<BookID> = []
+        return (defaults.stringArray(forKey: openBookIDsKey) ?? []).compactMap { string in
+            guard let uuid = UUID(uuidString: string) else { return nil }
+            let id = BookID(rawValue: uuid)
+            return seen.insert(id).inserted ? id : nil
+        }
     }
 
     // MARK: Per-book serialization
@@ -64,49 +116,100 @@ public final class OpenBooks {
 
     // MARK: Open and close
 
-    /// Opens a book, or returns it if it's already open.
-    public func open(_ id: BookID) async throws -> BookDocument {
-        if let document = documents[id], !closing.contains(id) { return document }
+    /// Opens a book, or returns it if it's already open, and adds it to the open-books list.
+    /// Takes the book's lock first: if another process holds it, throws `StoreError.locked`,
+    /// unless `readOnly` is set (then it opens read-only).
+    public func open(_ id: BookID, readOnly: Bool = false) async throws -> BookDocument {
+        if let document = documents[id], !closing.contains(id) {
+            noteOpened(id)
+            return document
+        }
         let result: Result<BookDocument, any Error> = await serialized(id) { [self] in
             if let document = documents[id] { return .success(document) }
             guard let url = await packageURL(for: id) else { return .failure(StoreError.notFound("book \(id)")) }
             do {
-                let document = try await BookDocument.open(at: url)
+                let document = try await BookDocument.open(at: url, readOnly: readOnly)
                 documents[id] = document
                 return .success(document)
             } catch {
                 return .failure(error)
             }
         }
-        return try result.get()
+        let document = try result.get()
+        noteOpened(id)
+        return document
     }
 
-    /// Flushes and forgets a book (its window closed). Deliveries arriving meanwhile wait, then
-    /// go to the package on disk.
+    /// Flushes, releases the lock and forgets a book (its window closed). Deliveries arriving
+    /// meanwhile wait, then go to the package on disk. Removes the book from the open-books list
+    /// unless the app is quitting.
     public func close(_ id: BookID) async {
+        if !isTerminating, openBookIDs.contains(id) { setList(openBookIDs.filter { $0 != id }) }
         guard documents[id] != nil else { return }
         closing.insert(id)
         await serialized(id) { [self] in
             if let document = documents[id] {
-                await document.flush()
+                await document.close()
                 documents[id] = nil
             }
             closing.remove(id)
         }
     }
 
-    /// Writes every open book's pending autosave (quit, hide).
+    /// Sets a book's title, one at a time with its other operations: through its document if it's
+    /// open (flushed), otherwise through `Library.rename` (headless store under the lock), so a
+    /// delivery or snapshot of the same closed book can't run alongside it.
+    public func rename(_ entry: LibraryEntry, to title: String, in library: Library, now: Date) async throws {
+        let result: Result<Void, any Error> = await serialized(entry.id) { [self] in
+            if let document = documents[entry.id], !document.isClosed {
+                guard document.rename(to: title) else { return .failure(StoreError.readOnly) }
+                await document.flush()
+                return .success(())
+            }
+            do {
+                _ = try await library.rename(entry, to: title, now: now)
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }
+        try result.get()
+    }
+
+    /// Writes every open book's pending autosave (hide).
     public func flushAll() async {
         for document in documents.values { await document.flush() }
+    }
+
+    /// Quit: marks the app as terminating (so the list survives the windows closing), then
+    /// flushes and closes every book, releasing its lock.
+    public func closeAllForQuit() async {
+        isTerminating = true
+        for id in Array(documents.keys) { await close(id) }
     }
 
     // MARK: Deliveries (A §6.4)
 
     /// A snapshot of the book for context assembly: the open document, else the package on disk.
+    /// A closed book is read under its lock (serialized with this process's opens and
+    /// deliveries); if another process holds the lock, it's read read-only, so nothing in the
+    /// package is touched (no journal recovery, migration, ledger repair or sweep).
     public func content(for id: BookID) async -> BookContent? {
         if let document = documents[id] { return document.content }
-        guard let url = await packageURL(for: id) else { return nil }
-        return try? await BookStore(packageURL: url).load()
+        return await serialized(id) { [self] () async -> BookContent? in
+            if let document = documents[id] { return document.content }
+            guard let url = await packageURL(for: id) else { return nil }
+            let store = BookStore(packageURL: url)
+            switch try? await store.acquireLock() {
+            case .acquired:
+                let content = try? await store.load()
+                await store.releaseLock()
+                return content
+            case .heldByOther, nil:
+                await store.setReadOnly()
+                return try? await store.load()
+            }
+        }
     }
 
     /// Writes a finished generation into its book, open or closed. The image file is always
@@ -114,10 +217,10 @@ public final class OpenBooks {
     public func deliver(_ delivery: GenerationDelivery, now: @escaping @Sendable () -> Date) async {
         let id = delivery.item.bookID
         await serialized(id) { [self] in
-            if let store = documents[id]?.store {
-                let ref = await storeImage(of: delivery, in: store)
+            if let open = documents[id], !open.isClosed {
+                let ref = await storeImage(of: delivery, in: open.store)
                 // Re-resolve by ID after the await (the close is serialized behind us, but be safe).
-                if let document = documents[id] {
+                if let document = documents[id], !document.isClosed {
                     document.performIrreversible { content in
                         BookMutations.applyDelivery(delivery, storedImage: ref, to: &content, now: now())
                     }
@@ -135,6 +238,20 @@ public final class OpenBooks {
             return
         }
         let store = BookStore(packageURL: url)
+        // Take the lock before `load()`, which may recover the journal, migrate and sweep. If
+        // another process has the book, nothing is written here and the delivery is reported.
+        do {
+            if case let .heldByOther(owner) = try await store.acquireLock() { throw StoreError.locked(owner) }
+        } catch {
+            Self.log.error("Couldn't lock a closed book for a delivery: \(String(describing: error), privacy: .public)")
+            report(delivery, StoreErrorText.message(for: error))
+            return
+        }
+        await writeDelivery(delivery, to: store, now: now)
+        await store.releaseLock()
+    }
+
+    private func writeDelivery(_ delivery: GenerationDelivery, to store: BookStore, now: @Sendable () -> Date) async {
         do {
             var content = try await store.load()
             let ref = await storeImage(of: delivery, in: store)

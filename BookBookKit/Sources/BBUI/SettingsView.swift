@@ -9,7 +9,7 @@ public struct SettingsView: View {
     public var body: some View {
         TabView {
             Form {
-                Text("General settings will appear here.")
+                LibraryLocationSettings()
             }
             .formStyle(.grouped)
             .tabItem { Label("General", systemImage: "gearshape") }
@@ -17,7 +17,7 @@ public struct SettingsView: View {
             APIKeysSettings()
                 .tabItem { Label("API Keys", systemImage: "key") }
         }
-        .frame(width: 480, height: 280)
+        .frame(width: 520, height: 300)
     }
 }
 

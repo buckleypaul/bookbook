@@ -16,13 +16,12 @@ enum AppWiring {
                         keychainService: keychain.service)
     }
 
-    /// The default library, or a throwaway one for development runs: launch with
-    /// `-BookBookLibraryRoot /path` (argument domain only; nothing is persisted).
+    /// The library folder: the `-BookBookLibraryRoot /path` launch argument (argument domain
+    /// only; never saved), then the `libraryPath` setting, then the default.
     static func libraryRoot() -> URL {
-        guard let path = UserDefaults.standard.string(forKey: "BookBookLibraryRoot"), !path.isEmpty else {
-            return Library.defaultRoot
-        }
-        return URL(filePath: path, directoryHint: .isDirectory)
+        let defaults = UserDefaults.standard
+        return LibraryLocation.resolve(arguments: defaults.volatileDomain(forName: UserDefaults.argumentDomain),
+                                       defaults: defaults)
     }
 
     /// The provider reads the app's own Keychain item at request time (never the dev item).

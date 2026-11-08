@@ -1,0 +1,23 @@
+{
+  "assetChecklist" : [
+
+  ],
+  "id" : "A122182C-F274-430A-A417-B16A548E804E",
+  "images" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B1" : {
+      "acknowledged" : {
+        "assetRevisions" : {
+
+        },
+        "styleRevision" : 0
+      },
+      "sessionID" : "50013E35-2668-4355-9DB8-1DE19C5FD631"
+    }
+  },
+  "isDone" : false,
+  "kind" : "story",
+  "templateID" : "A1B2C3D4-0001-4000-8000-000000000001",
+  "text" : {
+
+  }
+}

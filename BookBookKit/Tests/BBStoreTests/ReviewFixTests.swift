@@ -23,16 +23,16 @@ private final class ResultLog: @unchecked Sendable {
 
         content.book.title = "One"
         await store.scheduleSave(content, dirty: DirtySet(book: true), generation: 1)
-        try await Task.sleep(for: .milliseconds(400))
+        try await waitUntil { log.all.count >= 1 }
         #expect(log.all == [nil])
 
-        // Make saves fail: a plain file where the journal folder must go.
-        try FileManager.default.removeItem(at: url.appending(path: ".journal"))
+        // Make saves fail: a plain file where the journal folder must go (it is gone after a save).
+        try? FileManager.default.removeItem(at: url.appending(path: ".journal"))
         try Data().write(to: url.appending(path: ".journal"))
         content.book.title = "Two"
         await store.scheduleSave(content, dirty: DirtySet(book: true), generation: 2)
-        try await Task.sleep(for: .milliseconds(400))
-        #expect(log.all.count == 2)
+        try await waitUntil { log.all.count >= 2 }
+        try #require(log.all.count == 2)
         #expect(log.all[1] != nil)
 
         // Pending snapshot is kept: flush fails too, then succeeds once the obstacle is gone.
@@ -55,7 +55,10 @@ private final class ResultLog: @unchecked Sendable {
             content.book.title = "Dropped"
             await store.scheduleSave(content, dirty: DirtySet(book: true), generation: 1)
         }
-        try await Task.sleep(for: .milliseconds(500))
+        // Poll book.json directly: opening the book while the save is in flight would race its journal.
+        try await waitUntil {
+            (try? PackageCoding.decoder().decode(Book.self, from: Data(contentsOf: url.appending(path: "book.json"))))?.title == "Dropped"
+        }
         #expect(try await BookStore(packageURL: url).load().book.title == "Dropped")
     }
 
@@ -141,5 +144,14 @@ private final class ResultLog: @unchecked Sendable {
     @Test func newTxidsSortByCreationOrder() {
         let ids = (0..<20).map { _ in Journal.newTxid() }
         #expect(ids == ids.sorted())
+    }
+}
+
+/// Polls `condition` every 20 ms for up to `timeout`. Debounced saves can run late when the
+/// whole test target runs in parallel, so fixed sleeps are flaky.
+private func waitUntil(timeout: Duration = .seconds(10), _ condition: () -> Bool) async throws {
+    let deadline = ContinuousClock.now + timeout
+    while !condition(), ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(20))
     }
 }

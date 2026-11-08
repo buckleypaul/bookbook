@@ -95,7 +95,7 @@ The Xcode app target stays thin, and the code lives in local Swift packages so t
 - `BBModel` imports Foundation only. It contains no I/O.
 - `BBOpenAI` and `BBGemini` depend on `BBAI`'s protocol and request types (shown in a separate small target, `BBAICore`, if the dependency graph needs it), not the other way round. The app wires up the concrete providers.
 - `BBLayout` depends on AppKit only for TextKit 2 and font types. It has no views.
-- **As-built dependencies (Phase 1b, `BookBookKit/Package.swift`; this list wins where the diagram is looser):** BBModel → swift-collections · BBStore → BBModel · BBLayout → BBModel · BBNet → nothing (it needs no model types) · BBAICore → BBModel · BBAI → BBAICore, BBModel · BBOpenAI and BBGemini → BBAICore, BBNet · BBExport → BBLayout, BBModel · BBUI → BBExport, BBAI, BBStore, BBLayout, BBModel · app → BBUI, BBOpenAI, BBGemini. BBAI does **not** depend on the provider adapters; the diagram's BBAI → BBOpenAI/BBGemini arrows mean "uses through BBAICore's protocols".
+- **As-built dependencies (Phase 1b, `BookBookKit/Package.swift`; this list wins where the diagram is looser):** BBModel → swift-collections · BBStore → BBModel · BBLayout → BBModel · BBNet → nothing (it needs no model types) · BBAICore → BBModel · BBAI → BBAICore, BBModel · BBOpenAI and BBGemini → BBAICore, BBNet · BBExport → BBLayout, BBModel · BBUI → BBExport, BBAI, BBAICore (added Phase 2: the UI shows `ProviderError`s), BBStore, BBLayout, BBModel · app → BBUI, BBOpenAI, BBGemini. BBAI does **not** depend on the provider adapters; the diagram's BBAI → BBOpenAI/BBGemini arrows mean "uses through BBAICore's protocols".
 - **As built (Phase 1b):** every module is a library target in one local package, `BookBookKit/` (plan P-1), and `BBAICore` exists as its own target from the start. A test-only target, `BBTestSupport` (the live-test gate and the bundled test font, Atkinson Hyperlegible, OFL), is depended on only by test targets and never linked into the app.
 - **Bundled resources:** `BBAI` holds `ModelCatalog.json`, `PriceList.json` and `Prompts/`. `BBStore` holds `Presets/StylePresets.json` and `Presets/TemplatePresets.json` (§10), because `BBModel` does no I/O and both the UI and the layout requests need the presets. The app passes presets to the providers; providers never load them.
 
@@ -107,7 +107,7 @@ The Xcode app target stays thin, and the code lives in local Swift packages so t
 
 - **IDs:** typed wrappers around `UUID` (`BookID`, `PageID`, `BoxID`, `AssetID`, `SessionID`, `VersionID`, `TemplateID`, …) for type safety.
 - **ImageRef:** the lowercase hex SHA-256 of an image file's bytes, plus its UTType. Files are content-addressed, so copying between books de-duplicates automatically.
-- **Geometry:** page setup is stored in **points** (1/72 in). Box frames are stored **normalized to the trim area of the template's coordinate space** (0…1 on each axis; a spread's x range covers both pages). That's what lets "boxes keep their position and size relative to the page" (§8.2) work when page setup changes.
+- **Geometry:** page setup is stored in **points** (1/72 in). Box frames are stored **normalized to the trim area of the template's coordinate space** (0…1 on each axis; a spread's x range covers both pages). That's what lets "boxes keep their position and size relative to the page" (§8.2) work when page setup changes. **Origin (Phase 2):** normalized rects and points have their origin at the trim's **top-left**, y increasing downward; BBLayout uses the same convention in points, and `PageRenderer` expects a context already set up that way (PDF contexts are flipped once by the caller).
 - **Money:** `Decimal` in USD.
 - **Revisions:** monotonic `Int` counters on things whose changes cause flags:
   - `StyleGuide.visualRevision` goes up when the visual description, style references or negative guidance change. Typography and page setup don't count.
@@ -284,6 +284,7 @@ struct Provenance {
 }
 ```
 
+- **As built (Phase 2):** IDs are one generic `TypedID<Tag>` (encoded as a bare UUID string, and as a string key in dictionaries, so `[BoxID: RichText]` is a JSON object). `ImageRef` stores the UTType identifier as `contentType`. `Version` also stores its `pixelSize`; `Message` has `createdAt`. `Provenance` adds `usage` (`TokenUsage`, when reported), `revisedPrompt`, and `parametersSent` (every wire parameter other than the prompt and images, e.g. `size`, `quality`, `output_format`, `moderation`, `n`), so Version details can show everything sent (§11). `cost` is optional until the ledger lands (Phase 9). The whole book in memory is `BookContent` (book, style, templates, pages, sessions).
 - **Mentions** are stored as asset-ID tokens, so renaming an asset updates every prompt automatically. When an asset is deleted, a single pass rewrites its tokens to the asset's name as plain text (§8.3).
 - **Reset** (§8.6) increments `resetEpoch`. Earlier messages are hidden and stop contributing context. Versions are either kept (the default) or deleted, as the user chooses.
 
@@ -427,6 +428,7 @@ The canvas draws downsampled images from the cache; export uses the full-resolut
 - **Edits that aren't undoable** (§8.10) go through `BookDocument.performIrreversible(_:)`, which never registers undo. That covers AI results arriving, session reset, asset deletion, version deletion, clean-up and book deletion. Each UI entry point shows its own confirmation.
 - AI results write only to sessions and the ledger. Undo never touches those, except for `ChooseVersion`. That keeps the undo history consistent while results come in.
 - Undo history lasts until the window closes (§8.10). It isn't persisted.
+- **As built (Phase 2):** `perform` translates each `BookCommand` into primitive edits (set a box's text, set a box's placement, insert a page, remove a page), each of which returns its own inverse; undo and redo replay those inverses by ID and do nothing if the target is gone. Page commands never touch sessions: deleting a page keeps its session files, and undoing an add leaves the new page's empty sessions behind (swept by clean-up, Phase 16).
 
 ### 6.4 Writing to books from the background
 
@@ -446,6 +448,8 @@ The image file is always written before the session JSON (§5.2).
 | `actor` | `BookStore` (per book), `GenerationQueue` (app-wide), `ThumbnailCache` |
 | `Sendable` value types and stateless clients | Model snapshots, `ImageRequest`, provider clients, `PageRenderer` inputs |
 | Detached tasks with progress | Export, preflight, story-text spelling scans, upscaling |
+
+**As built (Phase 2):** `TextBoxLayout`, `RichTextBridge`, `PageRenderer` and `PDFExporter` are `@MainActor` (TextKit 2 objects and `NSAttributedString` aren't `Sendable`); a slice-sized export on the main actor is acceptable. Phase 14 moves export and preflight off the main actor. `BookDocument` chains its autosave hand-offs to `BookStore` in one task chain so snapshots arrive in order, and `BookStore.scheduleSave` also keeps the highest generation number.
 
 ---
 

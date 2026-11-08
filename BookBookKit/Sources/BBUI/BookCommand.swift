@@ -69,6 +69,12 @@ public enum BookCommand: Hashable, Sendable {
     /// Phase 7 "Mark as OK": write the current revisions and box aspect into the slot's
     /// `acknowledged` (`box: nil` = every image box on the page). Undoable.
     case markFlagsOK(page: PageID, box: BoxID?)
+    /// Phase 8: pan/zoom the placed image's crop (A §7.5). `zoom` is clamped to
+    /// 1…`CropMath.maximumZoom` and `center` so the image still covers the box (the box's
+    /// current render rect, `CropMath.clamped`). Keeps `boxAspectWhenPlaced` and the slot's
+    /// `acknowledged`. Ignored with no placement, or when the clamped crop is unchanged.
+    /// One canvas drag or pinch is one undo step (an undo group).
+    case setCrop(page: PageID, box: BoxID, zoom: Double, center: NormalizedPoint)
 
     /// The undo menu title ("Undo Typing", …).
     public var actionName: String {
@@ -90,6 +96,10 @@ public enum BookCommand: Hashable, Sendable {
         case .setStyleVisual: "Change Style"
         case .setPageSetup: "Change Page Setup"
         case .markFlagsOK: "Mark as OK"
+        case .setCrop: Self.cropActionName
         }
     }
+
+    /// The undo title of a crop drag or gesture (one `setCrop` undo group).
+    public static let cropActionName = "Adjust Crop"
 }

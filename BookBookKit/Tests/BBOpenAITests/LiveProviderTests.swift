@@ -56,6 +56,43 @@ import Testing
         #expect(result.parametersSent["quality"] == "low")
     }
 
+    /// Phase 8: generate a tiny low-quality image, then refine it through `/images/edits` at low
+    /// quality and the smallest size. About $0.02. No fixture is recorded.
+    @Test(.enabled(if: LiveProviderTests.enabled, "needs BOOKBOOK_LIVE_TESTS=1, OPENAI_API_KEY and budget left"))
+    func SP8_refinementLowQuality() async throws {
+        let apiKey = try #require(ProcessInfo.processInfo.environment["OPENAI_API_KEY"].flatMap(APIKey.init))
+        let provider = OpenAIImageProvider(http: URLSessionHTTPClient(), apiKey: { apiKey })
+        let size = PixelSize(width: 1024, height: 1024)
+        func spend(_ result: ImageResult?, _ name: String) {
+            LiveSpendGuard.record(
+                test: name, provider: "openai", model: TestSupport.model.id,
+                usage: result?.usage.map {
+                    LiveSpendGuard.Usage(inputTextTokens: $0.inputTextTokens, inputImageTokens: $0.inputImageTokens,
+                                         outputTextTokens: $0.outputTextTokens, outputImageTokens: $0.outputImageTokens)
+                },
+                estimateUSD: 0.01)
+        }
+
+        let first = ImageRequest(
+            model: TestSupport.model, quality: .draft,
+            output: OutputShape(boxAspect: 1, exactSize: size),
+            instruction: ComposedPrompt(sections: [.init(key: "request", text: "A simple flat illustration of a red balloon.")]))
+        let generated = try await provider.generate(first, progress: { _ in })
+        spend(generated, "SP8_refinementLowQuality.generate")
+
+        var refine = first
+        refine.instruction = ComposedPrompt(sections: [.init(key: "request", text: "Make the balloon blue.")])
+        refine.baseImage = ImagePayload(data: generated.imageData, contentType: generated.contentType,
+                                        pixelSize: generated.pixelSize)
+        let refined = try await provider.generate(refine, progress: { _ in })
+        spend(refined, "SP8_refinementLowQuality.edit")
+
+        #expect(!refined.imageData.isEmpty)
+        #expect(refined.pixelSize == generated.pixelSize)
+        #expect(refined.parametersSent["quality"] == "low")
+        #expect(refined.parametersSent["size"] == "1024x1024")
+    }
+
     /// `Tests/BBOpenAITests/Fixtures/openai/slice/`, found from this file's path.
     private static func fixtureDirectory(file: String = #filePath) -> URL {
         URL(fileURLWithPath: file).deletingLastPathComponent()

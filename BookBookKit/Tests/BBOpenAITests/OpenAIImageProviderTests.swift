@@ -205,16 +205,6 @@ enum TestSupport {
         #expect(client.requests.isEmpty)
     }
 
-    @Test func referencesAreNotYetSupported() async {
-        var request = TestSupport.request()
-        request.baseImage = ImagePayload(data: Data([0]), contentType: "public.png")
-        let client = TestSupport.client(.fixture("SP-2/generations-low-1024x1024"))
-        let error = await TestSupport.error(from: TestSupport.provider(client), request)
-        guard case .invalidRequest(let param, nil) = error else { Issue.record("got \(String(describing: error))"); return }
-        #expect(param == "references")
-        #expect(client.requests.isEmpty)
-    }
-
     @Test func fixedRatioModelsCannotBeSentToOpenAI() async {
         var request = TestSupport.request()
         request.model.image.aspect = .fixed(ratios: ["1:1"])

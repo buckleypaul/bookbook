@@ -1,0 +1,1 @@
+Image {{n}}: style reference (match its look, not its content).

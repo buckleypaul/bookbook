@@ -317,15 +317,35 @@ public final class AppModel {
 
     // MARK: Generation
 
-    /// Appends the pending user message (non-undoable) and enqueues the request.
-    /// Returns false if the prompt is empty, the box is gone or the book is read-only.
+    /// Appends the pending user message (non-undoable) and enqueues the request. `refines` is
+    /// the panel's selected version (nil = a new image). Returns false if the prompt is empty,
+    /// the box is gone or the book is read-only.
     @discardableResult
-    public func generate(prompt: String, page: PageID, box: BoxID, in document: BookDocument) -> Bool {
+    public func generate(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID?,
+                         page: PageID, box: BoxID, in document: BookDocument) -> Bool {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return false }
-        let refines = document.content.placedVersion(page: page, box: box)?.id
-        let (message, item) = BookMutations.makeGeneration(prompt: text, refines: refines, defaults: defaults,
+        var settings = defaults
+        settings.quality = quality
+        settings.includeStoryText = includeStoryText
+        let (message, item) = BookMutations.makeGeneration(prompt: text, refines: refines, defaults: settings,
                                                            bookID: document.id, page: page, box: box, now: now())
+        return enqueue(message, item, page: page, box: box, in: document)
+    }
+
+    /// "Regenerate with same settings": a new pending message and queue item built from the
+    /// version's stored intent, unchanged (same text, same `refines`). False for versions with
+    /// no provenance (imported) or a box that's gone.
+    @discardableResult
+    public func regenerate(_ version: Version, page: PageID, box: BoxID, in document: BookDocument) -> Bool {
+        guard let intent = version.provenance?.intent else { return false }
+        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, page: page, box: box,
+                                                           now: now())
+        return enqueue(message, item, page: page, box: box, in: document)
+    }
+
+    private func enqueue(_ message: Message, _ item: QueueItem, page: PageID, box: BoxID,
+                         in document: BookDocument) -> Bool {
         var appended = false
         document.performIrreversible { content in
             let dirty = BookMutations.appendPendingMessage(message, page: page, box: box, to: &content)

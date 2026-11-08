@@ -3,9 +3,10 @@ import BBModel
 import BBNet
 import Foundation
 import ImageIO
+import UniformTypeIdentifiers
 
-/// OpenAI GPT Image adapter. Phase 2 implements `POST /v1/images/generations` only; edits
-/// (references, base image, masks) arrive in Phase 8 (architecture.md §7.6).
+/// OpenAI GPT Image adapter: `/images/generations`, or `/images/edits` (multipart) when a base
+/// image or references are present (architecture.md §7.6). Masks arrive in Phase 11.
 public struct OpenAIImageProvider: ImageProvider {
     public static let defaultBaseURL = URL(string: "https://api.openai.com/v1")!
 
@@ -14,34 +15,64 @@ public struct OpenAIImageProvider: ImageProvider {
     private let http: any HTTPClient
     private let apiKey: @Sendable () async -> APIKey?
     private let baseURL: URL
+    private let boundary: @Sendable () -> String
 
+    /// `boundary` is injectable so tests can golden the multipart body.
     public init(http: any HTTPClient, apiKey: @escaping @Sendable () async -> APIKey?,
-                baseURL: URL = OpenAIImageProvider.defaultBaseURL) {
+                baseURL: URL = OpenAIImageProvider.defaultBaseURL,
+                boundary: @escaping @Sendable () -> String = { "bookbook-\(UUID().uuidString)" }) {
         self.http = http
         self.apiKey = apiKey
         self.baseURL = baseURL
+        self.boundary = boundary
     }
 
     public func generate(
         _ request: ImageRequest,
         progress: @escaping @Sendable (GenerationProgress) -> Void
     ) async throws(ProviderError) -> ImageResult {
-        guard request.references.isEmpty, request.baseImage == nil else {
-            throw .invalidRequest(param: "references", nil)
+        let images = [request.baseImage].compactMap { $0 } + request.references.map(\.payload)
+        let isEdit = !images.isEmpty
+        var parameters = try Self.parameters(for: request)
+        if isEdit {
+            try Self.validate(images, limit: request.model.image.maxImageBytes)
+            // Edits always send an explicit size: the base image's, else the request's.
+            if let base = request.baseImage?.pixelSize {
+                parameters["size"] = "\(base.width)x\(base.height)"
+            }
         }
-        let parameters = try Self.parameters(for: request)
 
         guard let key = await apiKey() else { throw .missingKey }
 
-        var body: [String: Any] = parameters
-        body["prompt"] = request.instruction.rendered
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else {
-            throw .invalidRequest(param: nil, nil)
+        let prompt = request.instruction.rendered
+        let url: URL
+        let contentType: String
+        let bodyData: Data
+        if isEdit {
+            var form = MultipartForm(boundary: boundary())
+            for (index, image) in images.enumerated() {
+                guard let type = Self.imageType(image.contentType) else { throw .invalidRequest(param: "image", nil) }
+                form.addFile(name: "image[]", filename: "image\(index + 1).\(type.ext)", mimeType: type.mime, data: image.data)
+            }
+            form.addField(name: "prompt", value: prompt)
+            for (name, value) in parameters.sorted(by: { $0.key < $1.key }) { form.addField(name: name, value: "\(value)") }
+            let encoded = form.encoded()
+            url = baseURL.appending(path: "images/edits")
+            contentType = encoded.contentType
+            bodyData = encoded.body
+        } else {
+            var body: [String: Any] = parameters
+            body["prompt"] = prompt
+            guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else {
+                throw .invalidRequest(param: nil, nil)
+            }
+            url = baseURL.appending(path: "images/generations")
+            contentType = "application/json"
+            bodyData = data
         }
         let httpRequest = HTTPRequest(
-            method: "POST",
-            url: baseURL.appending(path: "images/generations"),
-            headers: ["Authorization": "Bearer \(key.revealForTransport())", "Content-Type": "application/json"],
+            method: "POST", url: url,
+            headers: ["Authorization": "Bearer \(key.revealForTransport())", "Content-Type": contentType],
             body: bodyData)
 
         progress(.sent)
@@ -65,6 +96,30 @@ public struct OpenAIImageProvider: ImageProvider {
     }
 
     // MARK: Request
+
+    static let maxEditImages = 16
+
+    /// Accepted upload formats. HEIC and the rest must be normalised by the caller.
+    static func imageType(_ identifier: String) -> (mime: String, ext: String)? {
+        guard let type = UTType(identifier) else { return nil }
+        if type.conforms(to: .png) { return ("image/png", "png") }
+        if type.conforms(to: .jpeg) { return ("image/jpeg", "jpg") }
+        if type.conforms(to: .webP) { return ("image/webp", "webp") }
+        return nil
+    }
+
+    /// Count, format and per-file size checks, before any network call.
+    static func validate(_ images: [ImagePayload], limit: Int) throws(ProviderError) {
+        guard images.count <= maxEditImages else { throw .invalidRequest(param: "image", nil) }
+        for (index, image) in images.enumerated() {
+            guard imageType(image.contentType) != nil else { throw .invalidRequest(param: "image[\(index)]", nil) }
+            guard image.data.count <= limit else {
+                throw .invalidRequest(param: "image[\(index)]", ProviderErrorRaw(
+                    status: nil, code: "file_above_max_size",
+                    body: "image[\(index)] is \(image.data.count) bytes; the limit is \(limit)."))
+            }
+        }
+    }
 
     /// Every JSON field except `prompt`.
     static func parameters(for request: ImageRequest) throws(ProviderError) -> [String: Any] {

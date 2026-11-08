@@ -314,7 +314,7 @@ public final class BookDocument {
         case let .importStoryText(texts, templateID, index, _):
             unfixed = .importStoryText(texts, templateID: templateID, index: index)
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK:
+             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop:
             return false
         }
         guard let prepared = prepare(unfixed) else { return false }
@@ -432,8 +432,18 @@ public final class BookDocument {
         case setTypography(Typography)
         /// Replace `pageOrder` with a permutation of it.
         case setPageOrder([PageID])
-        /// Replace an existing page wholesale (template change, done flag).
-        case replacePage(Page)
+        /// Replace an existing page's template, text and slots (template change). Slots keep
+        /// their live state: a slot whose session is still on the page takes the current
+        /// placement and baseline (so undo keeps a version an AI delivery placed after the
+        /// change, Phase 8). The slots' sessions are re-owned by their new boxes, and image
+        /// boxes without a slot get one (with an empty session, irreversibly). The inverse is
+        /// the page as it was, which re-owns the sessions back.
+        case setPageLayout(Page)
+        /// Phase 8: set a page's done flag only (so undo touches nothing else).
+        case setPageDone(PageID, Bool)
+        /// Phase 8: set the zoom and focal point of a placement of `version` (no-op if the box
+        /// now shows another version).
+        case setCrop(page: PageID, box: BoxID, version: VersionID, zoom: Double, center: NormalizedPoint)
         case setPageNumberStyle(PageNumberStyle)
         /// Phase 7: set the visual style fields and `visualRevision` exactly.
         case setStyleVisual(StyleVisual, revision: Int)
@@ -546,7 +556,7 @@ public final class BookDocument {
                 created.sessions[session.id] = session
                 changed.images[boxID] = ImageSlot(sessionID: session.id)
             }
-            edit = .replacePage(changed)
+            edit = .setPageLayout(changed)
             fixSplits = fix
 
         case let .importStoryText(texts, templateID, index, fix):
@@ -563,9 +573,19 @@ public final class BookDocument {
             fixSplits = fix
 
         case let .setPageDone(pageID, done):
-            guard var page = content.pages[pageID], page.isDone != done else { return nil }
-            page.isDone = done
-            edit = .replacePage(page)
+            guard let page = content.pages[pageID], page.isDone != done else { return nil }
+            edit = .setPageDone(pageID, done)
+
+        case let .setCrop(pageID, boxID, zoom, center):
+            guard let page = content.pages[pageID], let template = content.template(for: page),
+                  let box = template.box(boxID), box.content == .image,
+                  let placement = page.images[boxID]?.placement,
+                  let version = content.placedVersion(page: pageID, box: boxID) else { return nil }
+            let boxRect = PageGeometry(setup: content.style.pageSetup, kind: template.kind).renderRect(for: box)
+            let imageSize = CGSize(width: version.pixelSize.width, height: version.pixelSize.height)
+            let crop = CropMath.clamped(zoom: zoom, center: center, imageSize: imageSize, boxRect: boxRect)
+            if CropMath.isSame(crop, (placement.zoom, placement.center)) { return nil }
+            edit = .setCrop(page: pageID, box: boxID, version: placement.versionID, zoom: crop.zoom, center: crop.center)
 
         case let .setTypography(typography):
             edit = .setTypography(typography)
@@ -782,7 +802,10 @@ public final class BookDocument {
             let at = min(max(0, index), content.book.pageOrder.count)
             content.pages[page.id] = page
             content.book.pageOrder.insert(page.id, at: at)
-            return (.removePage(page.id), DirtySet(pages: [page.id]))
+            // A page restored by undoing its deletion may lack slots for image boxes its
+            // template gained since (Phase 8).
+            let sessions = fillMissingSlots(of: page.id, in: &content)
+            return (.removePage(page.id), DirtySet(pages: [page.id], sessions: sessions))
 
         case let .removePage(pageID):
             guard let index = content.book.pageOrder.firstIndex(of: pageID), let page = content.pages[pageID] else {
@@ -804,10 +827,34 @@ public final class BookDocument {
             content.book.pageOrder = order
             return (.setPageOrder(old), DirtySet(book: true))
 
-        case let .replacePage(page):
-            guard let old = content.pages[page.id], content.templates[page.templateID] != nil else { return nil }
+        case let .setPageLayout(target):
+            guard let old = content.pages[target.id], content.templates[target.templateID] != nil else { return nil }
+            var page = target
+            // Slots changed outside the undo stack (an AI delivery placing a version) keep that
+            // change: match them by session, which is the slot's identity.
+            var live: [SessionID: ImageSlot] = [:]
+            for slot in old.images.values { live[slot.sessionID] = slot }
+            for (boxID, slot) in page.images {
+                if let current = live[slot.sessionID] { page.images[boxID] = current }
+            }
             content.pages[page.id] = page
-            return (.replacePage(old), DirtySet(pages: [page.id]))
+            var dirty = DirtySet(pages: [page.id])
+            dirty.sessions = fillMissingSlots(of: page.id, in: &content)
+            dirty.sessions.formUnion(reownSessions(of: page.id, in: &content))
+            return (.setPageLayout(old), dirty)
+
+        case let .setPageDone(pageID, done):
+            guard let old = content.pages[pageID]?.isDone else { return nil }
+            content.pages[pageID]?.isDone = done
+            return (.setPageDone(pageID, old), DirtySet(pages: [pageID]))
+
+        case let .setCrop(pageID, boxID, versionID, zoom, center):
+            guard let placement = content.pages[pageID]?.images[boxID]?.placement,
+                  placement.versionID == versionID else { return nil }
+            content.pages[pageID]?.images[boxID]?.placement?.zoom = zoom
+            content.pages[pageID]?.images[boxID]?.placement?.center = center
+            return (.setCrop(page: pageID, box: boxID, version: versionID, zoom: placement.zoom,
+                             center: placement.center), DirtySet(pages: [pageID]))
 
         case let .setPageNumberStyle(style):
             let old = content.style.pageNumbers
@@ -840,6 +887,36 @@ public final class BookDocument {
             guard !inverses.isEmpty else { return nil }
             return (.compound(inverses.reversed()), dirty)
         }
+    }
+
+    /// Gives every image box of the page's template that has no slot an empty slot and session
+    /// (as `updateTemplate` does for the pages using a template). Irreversible: the sessions
+    /// stay behind as orphans if the page goes again. Returns the new sessions.
+    private static func fillMissingSlots(of pageID: PageID, in content: inout BookContent) -> Set<SessionID> {
+        guard let page = content.pages[pageID], let template = content.template(for: page) else { return [] }
+        var created: Set<SessionID> = []
+        for box in template.imageBoxes where page.images[box.id] == nil {
+            let session = Session(owner: .pageBox(pageID, box.id))
+            content.sessions[session.id] = session
+            content.pages[pageID]?.images[box.id] = ImageSlot(sessionID: session.id)
+            created.insert(session.id)
+        }
+        return created
+    }
+
+    /// Points each slot's session at the box now holding it (`.pageBox(page, box)`), so
+    /// in-flight requests and context assembly resolve the moved slot (Phase 8). Returns the
+    /// sessions changed.
+    private static func reownSessions(of pageID: PageID, in content: inout BookContent) -> Set<SessionID> {
+        guard let page = content.pages[pageID] else { return [] }
+        var changed: Set<SessionID> = []
+        for (boxID, slot) in page.images {
+            let owner = SessionOwner.pageBox(pageID, boxID)
+            guard let session = content.sessions[slot.sessionID], session.owner != owner else { continue }
+            content.sessions[slot.sessionID]?.owner = owner
+            changed.insert(slot.sessionID)
+        }
+        return changed
     }
 }
 

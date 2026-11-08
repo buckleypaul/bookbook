@@ -209,7 +209,7 @@ Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve 
 | §5 Phase 1 | `plan/done/phase-01-setup-ci.md` |
 | §5 Phase 2 | `plan/done/phase-02-thin-slice.md` |
 | §5 Phase 3 | `plan/done/phase-03-storage-library.md` |
-| §5 Phase 4 | `plan/phase-04-text-typography.md` |
+| §5 Phase 4 | `plan/done/phase-04-text-typography.md` |
 | §5 Phase 5 | `plan/phase-05-pages-cover.md` |
 | §5 Phase 6 | `plan/phase-06-template-editor.md` |
 | §5 Phase 7 | `plan/phase-07-style-guide.md` |

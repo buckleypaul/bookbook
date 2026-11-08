@@ -110,7 +110,7 @@ The Xcode app target stays thin, and the code lives in local Swift packages so t
 - **Geometry:** page setup is stored in **points** (1/72 in). Box frames are stored **normalized to the trim area of the template's coordinate space** (0…1 on each axis; a spread's x range covers both pages). That's what lets "boxes keep their position and size relative to the page" (§8.2) work when page setup changes. **Origin (Phase 2):** normalized rects and points have their origin at the trim's **top-left**, y increasing downward; BBLayout uses the same convention in points, and `PageRenderer` expects a context already set up that way (PDF contexts are flipped once by the caller).
 - **Money:** `Decimal` in USD.
 - **Revisions:** monotonic `Int` counters on things whose changes cause flags:
-  - `StyleGuide.visualRevision` goes up when the visual description, style references or negative guidance change. Typography and page setup don't count.
+  - `StyleGuide.visualRevision` goes up (to `visualRevisionHighWater + 1`, never reusing a number) when the visual description, style references or negative guidance change. Typography and page setup don't count.
   - `Asset.revision` goes up when the description or primary reference changes.
 
 ### 4.2 Core types (abridged)
@@ -307,7 +307,7 @@ struct Provenance {
 
 Flags clear on their own when the box gets a newer version. "Mark as OK" (a small addition to §8.5) writes the current revisions into `acknowledged`.
 
-**Phase 7 decisions.** Undoing a style edit restores the previous fields *and* `visualRevision` exactly, so flags it raised disappear on undo. Page-setup changes don't rewrite placements: box frames are already trim-normalized, and `PageGeometry.imageRect` re-clamps the stored focal point and zoom at draw time, so reverting a size change restores the original crop ("crops are kept where possible").
+**Phase 7 decisions.** Undoing a style edit restores the previous fields *and* `visualRevision`, so flags it raised disappear on undo, but `StyleGuide.visualRevisionHighWater` (decoded as `visualRevision` when missing, so no schema bump) never goes down: every bump sets `visualRevision = highWater + 1`, so a number is never reused and an image generated at a since-undone revision is still flagged after a different edit. Choosing the version that is already placed is a no-op (no undo step, `acknowledged.boxAspect` kept). Page-setup changes don't rewrite placements: box frames are already trim-normalized, and `PageGeometry.imageRect` re-clamps the stored focal point and zoom at draw time, so reverting a size change restores the original crop ("crops are kept where possible").
 
 ---
 

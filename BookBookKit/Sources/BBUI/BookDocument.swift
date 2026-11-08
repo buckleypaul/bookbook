@@ -504,6 +504,7 @@ public final class BookDocument {
             guard let page = content.pages[pageID], let template = content.template(for: page),
                   let box = template.box(boxID), let slot = page.images[boxID],
                   content.sessions[slot.sessionID]?.version(versionID) != nil else { return nil }
+            if slot.placement?.versionID == versionID { return nil }
             let placement = ImagePlacement(versionID: versionID, boxAspectWhenPlaced: content.boxAspect(box, in: template))
             var baseline = slot.acknowledged
             baseline.boxAspect = nil
@@ -757,6 +758,7 @@ public final class BookDocument {
             content.style.styleReferences = visual.styleReferences
             content.style.negativeGuidance = visual.negativeGuidance
             content.style.visualRevision = revision
+            content.style.visualRevisionHighWater = max(content.style.visualRevisionHighWater, revision)
             return (.setStyleVisual(old.visual, revision: old.visualRevision), DirtySet(style: true))
 
         case let .setPageSetup(setup):

@@ -37,12 +37,12 @@ import Testing
         #expect(lib.scan().count == 3)
     }
 
-    @Test func renameKeepsFolder() throws {
+    @Test func renameKeepsFolder() async throws {
         let (lib, dir) = try makeLibrary()
         defer { try? FileManager.default.removeItem(at: dir) }
         let a = try lib.createBook(title: "Fox", now: testNow)
         let later = testNow.addingTimeInterval(60)
-        let r = try lib.rename(a, to: "Badger", now: later)
+        let r = try await lib.rename(a, to: "Badger", now: later)
         #expect(r.title == "Badger")
         #expect(r.url == a.url)
         #expect(r.id == a.id)

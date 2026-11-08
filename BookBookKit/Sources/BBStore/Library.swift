@@ -1,6 +1,5 @@
 import BBModel
 import Foundation
-import Synchronization
 
 /// The library folder: a scan plus create (Phase 2; the index and FSEvents come in Phase 3).
 public struct Library: Sendable {
@@ -67,20 +66,6 @@ public struct Library: Sendable {
 
 // MARK: Phase 3 library operations
 
-/// Runs an async operation to completion from synchronous code (the library operations are synchronous
-/// by contract). Blocks the calling thread; the work runs on the global executor, so it is safe from the main thread.
-private func blockingAwait<T: Sendable>(_ operation: @escaping @Sendable () async -> T) -> T {
-    let result = Mutex<T?>(nil)
-    let done = DispatchSemaphore(value: 0)
-    Task.detached {
-        let value = await operation()
-        result.withLock { $0 = value }
-        done.signal()
-    }
-    done.wait()
-    return result.withLock { $0 }!
-}
-
 extension Library {
     /// Recursive copy with a new `Book.id` and the title "<title> copy" (folder name collision-safe).
     /// Skips `.lock` and `.journal`. The source must be flushed first if it's open.
@@ -135,25 +120,19 @@ extension Library {
 
     /// Sets the title of a closed book through a headless `BookStore` (lock, load, save, release).
     /// The package folder keeps its name. Throws `.locked` if another process holds it.
-    /// Blocks the calling thread while the store works.
-    public func rename(_ entry: LibraryEntry, to title: String, now: Date = Date()) throws(StoreError) -> LibraryEntry {
-        let url = entry.url
-        let outcome: Result<Void, StoreError> = blockingAwait {
-            let store = BookStore(packageURL: url)
-            do {
-                if case .heldByOther(let owner) = try await store.acquireLock() { return .failure(.locked(owner)) }
-                var content = try await store.load()
-                content.book.title = title
-                content.book.modifiedAt = now
-                try await store.save(content, dirty: DirtySet(book: true))
-                await store.releaseLock()
-                return .success(())
-            } catch {
-                await store.releaseLock()
-                return .failure(error as? StoreError ?? .io("\(error)"))
-            }
+    public func rename(_ entry: LibraryEntry, to title: String, now: Date = Date()) async throws(StoreError) -> LibraryEntry {
+        let store = BookStore(packageURL: entry.url)
+        do throws(StoreError) {
+            if case .heldByOther(let owner) = try await store.acquireLock() { throw StoreError.locked(owner) }
+            var content = try await store.load()
+            content.book.title = title
+            content.book.modifiedAt = now
+            try await store.save(content, dirty: DirtySet(book: true))
+            await store.releaseLock()
+        } catch {
+            await store.releaseLock()
+            throw error
         }
-        try outcome.get()
         var updated = entry
         updated.title = title
         updated.modifiedAt = now

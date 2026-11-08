@@ -26,12 +26,33 @@ public final class TemplateEditorModel {
     /// Snapping on/off (the canvas also disables it while ⌘ is held).
     public var snappingEnabled: Bool = true
 
+    /// No side effects on the document: SwiftUI may build (and throw away) several models for
+    /// one window; only the one that opens an interaction hooks into the document's group.
     public init(document: BookDocument) {
         self.document = document
     }
 
+    /// An undo/redo closed the document's open group under us: forget the interaction and
+    /// cancel the pending continuous-edit timer, so nothing registers after the undo. The
+    /// in-flight drag sees `isInteractionOpen(_:)` turn false and stops editing.
+    private func dropOpenInteraction(_ id: Int) {
+        guard openInteraction == id else { return }
+        openInteraction = nil
+        continuousTask?.cancel()
+        continuousTask = nil
+        activeGuides = []
+    }
+
     /// The open template, read live from the document.
-    public var template: Template? { templateID.flatMap { document.content.templates[$0] } }
+    /// A bundled preset the book hasn't copied yet reads through until its first edit.
+    public var template: Template? {
+        templateID.flatMap { id in document.content.templates[id] ?? Presets.bundledTemplates.first { $0.id == id } }
+    }
+
+    /// True while the open template is a bundled preset not (yet) in the book.
+    public var isUncopiedPreset: Bool {
+        templateID.map { document.content.templates[$0] == nil } ?? false
+    }
 
     /// The geometry the open template is edited in (spread = double width).
     public var geometry: PageGeometry? {
@@ -43,20 +64,21 @@ public final class TemplateEditorModel {
         template?.boxes.filter { selection.contains($0.id) } ?? []
     }
 
-    private var interactionOpen = false
+    /// The open interaction's token (nil when none is open).
+    @ObservationIgnored private var openInteraction: Int?
+    @ObservationIgnored private var nextInteraction = 0
     private var continuousTask: Task<Void, Never>?
     private var continuousName = ""
 
     // MARK: Opening and the template list
 
-    /// Opens a template. A bundled preset the book doesn't have yet is first copied in with
-    /// `.addTemplate` under its own ID. Clears the selection.
+    /// Opens a template. A bundled preset the book doesn't have yet opens read-through (no
+    /// document change); it is copied in under its own ID, folded into the first edit's undo
+    /// step. Clears the selection.
     public func open(_ id: TemplateID) {
         finishContinuousEdit()
-        if document.content.templates[id] == nil {
-            guard let preset = Presets.bundledTemplates.first(where: { $0.id == id }),
-                  document.perform(.addTemplate(preset)) else { return }
-        }
+        guard document.content.templates[id] != nil || Presets.bundledTemplates.contains(where: { $0.id == id })
+        else { return }
         templateID = id
         selection = []
         activeGuides = []
@@ -107,21 +129,43 @@ public final class TemplateEditorModel {
         var edited = current
         change(&edited)
         guard edited != current else { return }
+        if isUncopiedPreset {
+            // First edit of a preset: copy it into the book and edit it as one undo step.
+            document.beginUndoGroup(actionName: actionName)
+            if document.perform(.addTemplate(current)) {
+                document.perform(.updateTemplate(edited, actionName: actionName))
+            }
+            document.endUndoGroup(actionName: actionName)
+            return
+        }
         document.perform(.updateTemplate(edited, actionName: actionName))
     }
 
-    /// Mouse-down of a drag/resize/rotate: opens an undo group (`beginUndoGroup`).
-    public func beginInteraction() {
-        guard !interactionOpen else { return }
-        interactionOpen = true
-        document.beginUndoGroup()
+    /// Mouse-down of a drag/resize/rotate: opens an undo group (`beginUndoGroup`). Returns the
+    /// interaction's token (the already-open one's, if an interaction is open); an undo or redo
+    /// that closes the group ends it, after which `isInteractionOpen(token)` is false.
+    /// `actionName` names the undo step when it registers (pass the name `endInteraction` will use).
+    @discardableResult
+    public func beginInteraction(actionName: String? = nil) -> Int {
+        if let openInteraction { return openInteraction }
+        nextInteraction += 1
+        let id = nextInteraction
+        openInteraction = id
+        document.beginUndoGroup(actionName: actionName, onClosedByReplay: { [weak self] in self?.dropOpenInteraction(id) })
+        return id
+    }
+
+    /// True while the interaction `token` (from `beginInteraction`) is still open: not ended,
+    /// and not closed by an undo or redo.
+    public func isInteractionOpen(_ token: Int) -> Bool {
+        openInteraction == token
     }
 
     /// Mouse-up: closes the group as one undo step named `actionName`, and clears `activeGuides`.
     public func endInteraction(actionName: String) {
         activeGuides = []
-        guard interactionOpen else { return }
-        interactionOpen = false
+        guard openInteraction != nil else { return }
+        openInteraction = nil
         document.endUndoGroup(actionName: actionName)
     }
 
@@ -131,7 +175,7 @@ public final class TemplateEditorModel {
     public func updateContinuously(actionName: String, _ change: (inout Template) -> Void) {
         if continuousTask != nil, continuousName != actionName { finishContinuousEdit() }
         continuousTask?.cancel()
-        beginInteraction()
+        beginInteraction(actionName: actionName)
         continuousName = actionName
         update(actionName: actionName, change)
         continuousTask = Task { [weak self] in

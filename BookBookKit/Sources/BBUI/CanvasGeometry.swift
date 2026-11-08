@@ -64,10 +64,11 @@ enum CanvasHitTest {
         }
     }
 
-    /// The topmost box containing `point` (boxes are in layer order, first drawn first),
+    /// The topmost box containing `point` (text boxes draw above image boxes; see `BoxHitTesting.box`),
     /// honouring each box's rotation (inverse transform, A §8.2).
     static func box(at point: CGPoint, in boxes: [(box: Box, rect: CGRect)]) -> Box? {
-        let editable = boxes.map { EditableBox(id: $0.box.id, rect: $0.rect, rotationDegrees: $0.box.rotationDegrees) }
+        let editable = boxes.map { EditableBox(id: $0.box.id, rect: $0.rect, rotationDegrees: $0.box.rotationDegrees,
+                                         isText: $0.box.content != .image) }
         guard let id = BoxHitTesting.box(at: point, in: editable) else { return nil }
         return boxes.last { $0.box.id == id }?.box
     }

@@ -15,7 +15,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 3 | Storage and library | done | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks. [Log](progress/phase-3-storage-library.md) |
 | 4 | Text and typography | done | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. From Phase 5 on, no PRs: merge into main and push directly. [Log](progress/phase-4-text-typography.md) |
 | 5 | Pages tab, ordering and cover | done | `phase-5-pages-cover` | — | $0.00 | No live checks. [Log](progress/phase-5-pages-cover.md) |
-| 6 | Template editor | in progress | `phase-6-template-editor` | — | | |
+| 6 | Template editor | awaiting hand checks | `phase-6-template-editor` | — | $0.00 | No live checks. |
 | 7 | Style guide and page setup | not started | | | | |
 | 8 | Sessions and versions | not started | | | | |
 | 9 | Queue, cost, errors and settings (M2) | not started | | | | |
@@ -45,12 +45,18 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
 ### Phase 7
+- **High priority (review must-fix left after the two-round cap):** `TemplateEditorModel.beginInteraction` (`TemplateEditorModel.swift:149`) joins a pending `updateContinuously` burst: a canvas drag or Rotation slider started within 0.6 s of a stepper/colour change joins that group, then freezes when the timer closes it, and one undo reverts both. Call `finishContinuousEdit()` first. Likewise a one-shot `update` (toggle, Return) within 0.6 s lands in the open burst (from Phase 6 review).
+- Template editor: `endInteraction` should take the token so it can't close another caller's group; undo while a group is open but has no edit yet doesn't end the interaction (from Phase 6 review).
+- Template editor: layer order between a text box and an image box has no visible effect (text always draws above images, A §8), so Send to Back on a text box over an image looks like a no-op; disable or explain it (from Phase 6 hand checks).
+- Rotated full-bleed boxes: the editor rotates handles/hit-tests about the trim rect's centre, `PageRenderer` about the bleed-extended rect (`LayoutEditingController.swift:97`, `PageRenderer.swift:225`), so outline and clicks don't match the drawing (from Phase 6 review).
+- Template editor lane leftovers: no snapping during ⇧ aspect-locked resize; no multi-box resize handles; `PageRenderer`'s `showGuides` strokes one safe area across a spread (`PageRenderer.swift:167`); the in-place text editor isn't rotated for rotated text boxes; each drag tick copies `BookContent`, schedules a save and refreshes missing fonts (throttle) (from Phase 6).
 - Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phase 5).
 - The Page Numbers sheet's "Pages skipped" label shows "None" while "Skip front matter" is on; it counts only explicitly skipped pages, and IDs of deleted pages stay in `skippedPages` (from Phase 5).
 - Page Numbers sheet: pressing Done without touching the font swaps a stored non-regular face (e.g. `Helvetica-Bold`) for the family's regular face (`PageNumbersSheet.swift:110`) (from Phase 5 review).
 - Typography form: the body-font menu is stale after Import Font… until the sheet reopens; the "Alignment" label wraps; Escape loses a typed size that wasn't committed; a pending colour commit can fire after the sheet closes (from Phase 4).
 
 ### Phase 8
+- A page restored by undoing its deletion lacks slots for image boxes added to its template since; create slots lazily (from Phase 6).
 - Edits/references/masks in the OpenAI adapter (from Phase 2).
 - Separate "inspect" from "place" in the version strip (from Phase 2).
 - Moved image slots keep their session's old `owner` `.pageBox(page, oldBox)`, so in-flight requests resolve by the old box and never place; `ContextAssembler` also looks up the old box ID (from Phase 5 review).
@@ -83,6 +89,7 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Later
+- `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` is flaky (EINVAL writing `.journal/staged` under concurrent saves/opens); failed in Phase 6 Sessions A and B, passed on re-run. Likely a real race in BBStore journal-folder handling (from Phase 6).
 - After a split is accepted ("Continue Anyway"), every later structural command shows the split warning again; compare against the split state before the command (`BookDocument.wouldSplitSpread`) (from Phase 5 review).
 - An old bound title/author box whose text has no same-role target in the new template falls through to the generic mapping and lands in a body box; `pageNumberSlot` isn't excluded from body text (from Phase 5).
 - Story import picks the file type by extension only (`txt`/`rtf`); `.text`, `.md`, `.rtfd` give "unsupported type". Imported RTF keeps its own font (e.g. Helvetica-Light), not the body font (from Phase 5).
@@ -129,7 +136,7 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 6 — Template editor
 
-**Stage:** B
+**Stage:** B (done 2026-11-08; awaiting hand checks)
 
 - Contracts (main thread): `TextBoxStyle` overrides (`fontSize`, `alignment`, `color`); `BookCommand.addTemplate/updateTemplate(_, actionName:)/deleteTemplate`; `BookDocument.beginUndoGroup()/endUndoGroup(actionName:)`; `BookContent.pages(using:)`; `BBLayout/TemplateEditing.swift` (trim/normalized conversion, per-page safe areas, rotated hit-testing and handles, snapping, align/distribute).
 - Wave 1 (parallel): L1 model/commands/store (sonnet); L2 BBLayout geometry + renderer overrides + sample preview (sonnet).
@@ -137,5 +144,10 @@ The running phase writes its log here; when it is marked done, move the entry to
 - **Session A done (2026-11-08):** all four lanes merged (L1 `e8ea78c`, L2 `7e4a23a`, L3 `879ec5d`, L4 `fbc5b66`); `scripts/test.sh all` green. architecture.md §4.2, §6.2, §6.3 updated (as built).
 - **For Session B:** nothing has been run in the GUI yet: the Layouts tab, `TemplateCanvas` and box inspector need a full hand-check pass. Watch: L4 assumed the undo manager's `groupsByEvent = false` in tests; check that one drag is one undo step in the real app (where `groupsByEvent` is true). Selecting a bundled preset in the list copies it into the book as an "Add Layout" undo step (consider copying on first edit instead). Colour wells/steppers group edits with a 0.6 s timer (`updateContinuously`).
 - **Lane open issues (candidates for follow-ups):** no snapping during ⇧ aspect-locked corner resize; handles only for a single selection (no multi-box resize); `PageRenderer`'s built-in guides draw one safe area across a spread (the editor overdraws per-page areas; the page canvas still shows the single one); the in-place text editor isn't rotated for rotated text boxes; a page restored by undoing its deletion lacks slots for image boxes added to its template since (Phase 8 should create slots lazily); `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` failed once (flaky).
-- Assumptions: snap "guides" are fixed guides (margins, trim edges, page centres, fold) plus other boxes; no user-placed guides. A template's kind can't change after creation. Editing a bundled preset copies it into the book first (same ID).
+- Assumptions: snap "guides" are fixed guides (margins, trim edges, page centres, fold) plus other boxes; no user-placed guides. A template's kind can't change after creation. Editing a bundled preset copies it into the book first (same ID); since Session B the copy happens on the first edit, not on selection.
+- **Session B (2026-11-08):** gate green (`scripts/test.sh all`, 215 kit tests, no warnings). Two fix rounds:
+  - Round 1: undo/redo during an open undo group (inspector 0.6 s burst or drag) corrupted history; the group now registers its one undo step at its first edit, and mouse-up always closes a drag's group. Hit-testing now follows draw order (text boxes before image boxes, A §8). Selecting a bundled preset no longer copies it (copy on first edit, in that edit's undo step; Delete disabled on an uncopied preset). Return commits inspector number fields.
+  - Round 2: ⌘Z mid-drag no longer lets the drag continue (interaction token); the replay handler is per group (throwaway `TemplateEditorModel`s from body re-evaluation are harmless); `endUndoGroup` no longer adds an empty undo step (colour change needed two undos); inspector labels no longer wrap or duplicate; `CommitField` keeps half-typed text.
+  - Agent-driven hand checks: Layouts tab, delete-blocked with where-used, spread with full-bleed image + cream rounded panel, fold, snap guides, one drag = one undo, overrides (size, alignment, panel), rotate/layer/align/distribute, two pages updating live, 5° rotation on the page canvas all passed. Not verified by agents: a changed text colour, and image clipping of a rotated image box in the PDF (no image could be placed without an API call; a rotated panel exported correctly).
+  - `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` failed once again (EINVAL writing `.journal/staged`), passed on re-run; logged as a follow-up.
 

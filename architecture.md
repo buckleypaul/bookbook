@@ -428,7 +428,7 @@ struct BookBookApp: App {
 
 The canvas draws downsampled images from the cache; export uses the full-resolution files.
 
-**As built (Phase 6):** `CanvasView` only draws, fits to the view and forwards events to a mode controller: `PlacementController` (page canvas: selection, clicks, overflow badges; owns a `TextEditingController` for the in-place editor) or `LayoutEditingController` (template editor, hosted by `TemplateCanvas`). Drag maths lives in pure functions (`LayoutEditingMath`); hit-testing, handles, snapping and align/distribute are in `BBLayout/TemplateEditing.swift`. The editor manipulates *trim* rects (normalized frame × trim, no bleed push-out). The Layouts tab's state is `TemplateEditorModel` (one per window); editing a bundled preset copies it into the book first, under its own ID.
+**As built (Phase 6):** `CanvasView` only draws, fits to the view and forwards events to a mode controller: `PlacementController` (page canvas: selection, clicks, overflow badges; owns a `TextEditingController` for the in-place editor) or `LayoutEditingController` (template editor, hosted by `TemplateCanvas`). Drag maths lives in pure functions (`LayoutEditingMath`); hit-testing, handles, snapping and align/distribute are in `BBLayout/TemplateEditing.swift`. The editor manipulates *trim* rects (normalized frame × trim, no bleed push-out). The Layouts tab's state is `TemplateEditorModel` (one per window); selecting a bundled preset only opens it; the first edit copies it into the book under its own ID, folded into that edit's undo step (Session B change).
 
 ### 6.3 Commands and undo/redo (§8.10)
 
@@ -867,6 +867,8 @@ Each page is drawn in this order:
 3. Text boxes, with background panels first and then the text.
 4. The page number.
 5. Overlays, on screen only: trim line, safe area, fold and guides.
+
+Hit-testing follows this draw order: text boxes (topmost last in layer order) are hit before any image box, then image boxes in reverse layer order (`BoxHitTesting.box`).
 
 For export, the renderer fetches pre-processed bitmaps from `ExportImagePreparer` (§9.2), so the renderer itself never resamples.
 

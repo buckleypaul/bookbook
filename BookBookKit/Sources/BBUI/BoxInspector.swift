@@ -9,25 +9,41 @@ struct CommitField: View {
     var fractionDigits: Int = 1
     let commit: (Double) -> Void
     @State private var text = ""
+    /// What the field last showed of `value`; `text` differs from it once the user types.
+    @State private var shown = ""
     @FocusState private var focused: Bool
 
     var body: some View {
+        // The row shows the title (LabeledContent or the slider's label): in a grouped Form a
+        // titled TextField would draw it again, squeezed into the field's narrow width (the
+        // duplicated Frame labels and the mid-word wrapping). Hidden, it stays the accessibility label.
         TextField(title, text: $text)
+            .labelsHidden()
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.trailing)
             .focused($focused)
-            .onAppear { text = format(value) }
-            .onChange(of: value) { _, new in if !focused { text = format(new) } }
+            .onAppear { show(value) }
+            // A canvas drag or an undo changes `value` while the field may be focused: follow
+            // it, unless the user has half-typed a number (it's kept until commit). After this
+            // field's own commit `text == shown` again (Return keeps focus), so it follows.
+            .onChange(of: value) { _, new in if !focused || text == shown { show(new) } }
             .onSubmit(finish)
+            .onKeyPress(.return) { finish(); return .handled }
             .onChange(of: focused) { _, now in if !now { finish() } }
     }
 
+    private func show(_ v: Double) {
+        text = format(v)
+        shown = text
+    }
+
     private func finish() {
-        if let parsed = Double(text.trimmingCharacters(in: .whitespaces)), parsed.isFinite,
+        // Commit only what the user typed: an untouched field never writes its (maybe stale) text.
+        if text != shown, let parsed = Double(text.trimmingCharacters(in: .whitespaces)), parsed.isFinite,
            abs(parsed - value) > 1e-9 {
             commit(parsed)
         }
-        text = format(value)
+        show(value)
     }
 
     private func format(_ v: Double) -> String {
@@ -42,6 +58,9 @@ private typealias Align = BBModel.TextAlignment
 
 struct BoxInspector: View {
     let model: TemplateEditorModel
+    /// The open slider drag's interaction token. An undo mid-drag ends the interaction; the
+    /// slider then edits nothing until it is released.
+    @State private var sliderInteraction: Int?
 
     var body: some View {
         let boxes = model.selectedBoxes
@@ -150,16 +169,26 @@ struct BoxInspector: View {
                         edit: @escaping (String, @escaping (inout Box) -> Void) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(title)
-                Spacer()
+                Text(title).lineLimit(1).fixedSize(horizontal: true, vertical: false).layoutPriority(1)
+                Spacer(minLength: 4)
                 CommitField(title: title, value: value) { v in edit(action) { apply(&$0, v) } }
-                    .frame(width: 64)
-                Text(unit).foregroundStyle(.secondary)
+                    .frame(minWidth: 44, idealWidth: 64, maxWidth: 64)
+                Text(unit).foregroundStyle(.secondary).fixedSize()
             }
             Slider(value: Binding(get: { min(max(value, range.lowerBound), range.upperBound) },
-                                  set: { v in edit(action) { apply(&$0, v) } }),
+                                  set: { v in
+                                      if let token = sliderInteraction, !model.isInteractionOpen(token) { return }
+                                      edit(action) { apply(&$0, v) }
+                                  }),
                    in: range) { editing in
-                if editing { model.beginInteraction() } else { model.endInteraction(actionName: action) }
+                if editing {
+                    sliderInteraction = model.beginInteraction(actionName: action)
+                } else {
+                    if let token = sliderInteraction, model.isInteractionOpen(token) {
+                        model.endInteraction(actionName: action)
+                    }
+                    sliderInteraction = nil
+                }
             }
         }
     }
@@ -214,7 +243,14 @@ struct BoxInspector: View {
             Spacer()
             if let color {
                 ColorPicker(title, selection: Binding(get: { color.swiftUIColor },
-                                                      set: { set(RGBA(color: $0)) }), supportsOpacity: true)
+                                                      set: { new in
+                    // The well echoes our own colour back after a colour-space round trip:
+                    // ignore changes too small to see, so they never become an edit.
+                    let rgba = RGBA(color: new)
+                    let close = [abs(rgba.red - color.red), abs(rgba.green - color.green),
+                                 abs(rgba.blue - color.blue), abs(rgba.alpha - color.alpha)].allSatisfy { $0 < 0.5 / 255 }
+                    if !close { set(rgba) }
+                }), supportsOpacity: true)
                     .labelsHidden()
             } else {
                 Text(noneLabel).foregroundStyle(.secondary)

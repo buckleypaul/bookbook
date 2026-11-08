@@ -45,7 +45,29 @@ public final class BookDocument {
     @ObservationIgnored private weak var typingUndoManager: UndoManager?
     /// Open undo groups (`beginUndoGroup`): nesting depth and the inverses collected so far.
     @ObservationIgnored private var groupDepth = 0
-    @ObservationIgnored private var groupInverses: [Edit] = []
+    /// The open group's undo entry. It is registered at the group's first edit (not at its end),
+    /// so an undo that arrives while the group is still open undoes the group first.
+    @ObservationIgnored private var openGroup: UndoGroupRecord?
+    /// Counts undo registrations, so `endUndoGroup` can tell whether the group's step is
+    /// still the newest one before renaming it.
+    @ObservationIgnored private var undoRegistrations = 0
+
+    private final class UndoGroupRecord {
+        var inverses: [Edit] = []
+        /// The step's name: from `beginUndoGroup`, else the first edit's command, and finally
+        /// `endUndoGroup`'s (redo uses the final one).
+        var actionName: String?
+        /// The name the step was registered with.
+        var registeredName: String?
+        /// `undoRegistrations` right after the group's step was registered (nil until then).
+        var registeredAt: Int?
+        /// Called if an undo or redo closes the group before `endUndoGroup` does.
+        let onClosedByReplay: (@MainActor () -> Void)?
+        init(actionName: String?, onClosedByReplay: (@MainActor () -> Void)?) {
+            self.actionName = actionName
+            self.onClosedByReplay = onClosedByReplay
+        }
+    }
 
     // Library thumbnail (A §5.1): rewritten at most every `thumbnailInterval` after a change,
     // and on flush and close, never on the typing path.
@@ -168,7 +190,10 @@ public final class BookDocument {
         if groupDepth > 0 {
             // Inside an undo group: apply and save, but collect the inverse for `endUndoGroup`.
             guard let inverse = applyAndSave(edit) else { return false }
-            groupInverses.append(inverse)
+            if let record = openGroup {
+                record.inverses.append(inverse)
+                if record.registeredAt == nil { registerGroupUndo(record, fallbackName: command.actionName) }
+            }
             return true
         }
         // A typing edit that joins the open step changes the content but registers nothing: the
@@ -193,9 +218,24 @@ public final class BookDocument {
     /// Opens an undo group (mouse-down of a drag, resize or rotation). Until
     /// `endUndoGroup(actionName:)`, every successful `perform` applies its edit and saves as
     /// usual (pages update live) but registers no undo; the group's inverses are collected.
-    /// Closes any open typing step. Nested calls are ignored (the outer group wins).
-    public func beginUndoGroup() {
+    /// Closes any open typing step. Nested calls are ignored (the outer group wins, and so does
+    /// its `onClosedByReplay`).
+    ///
+    /// `actionName` names the step when it registers (at the first edit); without it the first
+    /// edit's command names it. A nested call can still supply the name while the outer group
+    /// has none and hasn't registered yet.
+    ///
+    /// `onClosedByReplay` is called if an undo or redo closes the group before
+    /// `endUndoGroup` does; the caller holding the group (a drag, a pending continuous edit)
+    /// then drops its state. The handler belongs to this group only, so several editors on
+    /// one document can't overwrite each other's.
+    public func beginUndoGroup(actionName: String? = nil, onClosedByReplay: (@MainActor () -> Void)? = nil) {
         typing.close()
+        if groupDepth == 0 {
+            openGroup = UndoGroupRecord(actionName: actionName, onClosedByReplay: onClosedByReplay)
+        } else if let actionName, let record = openGroup, record.registeredAt == nil, record.actionName == nil {
+            record.actionName = actionName
+        }
         groupDepth += 1
     }
 
@@ -205,12 +245,45 @@ public final class BookDocument {
     public func endUndoGroup(actionName: String) {
         guard groupDepth > 0 else { return }
         groupDepth -= 1
-        guard groupDepth == 0 else { return }
-        let inverses = groupInverses
-        groupInverses = []
-        guard !inverses.isEmpty else { return }
-        // Undo replays the inverses newest first, so everything returns to the state at begin.
-        registerUndo(.compound(inverses.reversed()), actionName: actionName)
+        guard groupDepth == 0, let record = openGroup else { return }
+        openGroup = nil
+        record.actionName = actionName
+        // The step was named when it registered, so usually there is nothing to do. Rename it
+        // only if the name changed, the step is still the newest one (nothing of ours registered
+        // since, and the top step still carries its name, which catches registrations from
+        // outside the document), and an NSUndoManager group is open: `setActionName` with none
+        // open (a timer closing a continuous edit, a mouse-up that registered nothing) would
+        // start a new, empty group that shows up as an extra undo step.
+        if let registeredAt = record.registeredAt, let registeredName = record.registeredName,
+           registeredName != actionName, registeredAt == undoRegistrations,
+           let undoManager, undoManager.groupingLevel > 0, !undoManager.isUndoing, !undoManager.isRedoing,
+           undoManager.canUndo, undoManager.undoActionName == registeredName {
+            undoManager.setActionName(actionName)
+        }
+    }
+
+    /// Registers the group's single undo step. Its inverses are read when it fires, so edits
+    /// made after registration are included. Undoing a still-open group closes it first.
+    private func registerGroupUndo(_ record: UndoGroupRecord, fallbackName: String) {
+        guard let undoManager else { return }
+        let name = record.actionName ?? fallbackName
+        record.actionName = name
+        record.registeredName = name
+        undoManager.registerUndo(withTarget: self) { doc in
+            MainActor.assumeIsolated {
+                doc.typing.close()
+                if doc.openGroup === record {
+                    doc.openGroup = nil
+                    doc.groupDepth = 0
+                    record.onClosedByReplay?()
+                }
+                // Replay newest first, so everything returns to the state at begin.
+                _ = doc.apply(.compound(record.inverses.reversed()), actionName: record.actionName ?? name)
+            }
+        }
+        undoManager.setActionName(name)
+        undoRegistrations += 1
+        record.registeredAt = undoRegistrations
     }
 
     /// For non-undoable writes (A §6.3): AI results, session changes, renaming the book. Never
@@ -618,6 +691,7 @@ public final class BookDocument {
                 }
             }
             undoManager.setActionName(actionName)
+            undoRegistrations += 1
         }
     }
 

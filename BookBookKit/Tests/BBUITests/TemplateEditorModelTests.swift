@@ -40,16 +40,47 @@ struct TemplateEditorModelTests {
 
     func frame(_ model: TemplateEditorModel, _ id: BoxID) -> NormalizedRect { model.template!.box(id)!.frame }
 
-    @Test func openPreset_copiesInWithOneUndoStep() throws {
+    @Test func openPreset_readsThroughWithoutChangingTheBook() throws {
         let (model, doc, undo) = try make()
         let preset = Presets.bundledTemplates.first { doc.content.templates[$0.id] == nil && $0.kind == .single }!
+        let before = doc.content
         step(undo) { model.open(preset.id) }
         #expect(model.templateID == preset.id)
-        #expect(doc.content.templates[preset.id] == preset)
+        #expect(model.template == preset)
+        #expect(model.isUncopiedPreset)
+        #expect(doc.content == before)
+        #expect(undo.undoActionName != "Add Layout")
+    }
+
+    @Test func firstEditOfPreset_copiesInAsOneUndoStep() throws {
+        let (model, doc, undo) = try make()
+        let preset = Presets.bundledTemplates.first { doc.content.templates[$0.id] == nil && $0.kind == .single }!
+        model.open(preset.id)
+        step(undo) { model.update(actionName: "Rename Layout") { $0.name = "Mine" } }
+        #expect(doc.content.templates[preset.id]?.name == "Mine")
+        #expect(!model.isUncopiedPreset)
         undo.undo()
         #expect(doc.content.templates[preset.id] == nil)
+        #expect(undo.undoActionName != "Rename Layout")
+        #expect(model.template == preset)
         undo.redo()
-        #expect(doc.content.templates[preset.id] == preset)
+        #expect(doc.content.templates[preset.id]?.name == "Mine")
+    }
+
+    @Test func delete_uncopiedPresetIsRefused_copiedOneDeletes() throws {
+        let (model, doc, undo) = try make()
+        let preset = Presets.bundledTemplates.first { doc.content.templates[$0.id] == nil && $0.kind == .single }!
+        model.open(preset.id)
+        var refused = true
+        step(undo) { refused = !model.delete(preset.id) }
+        #expect(refused)
+        #expect(model.templateID == preset.id)
+        #expect(undo.undoActionName != "Add Layout")
+        step(undo) { model.update(actionName: "Rename Layout") { $0.name = "Mine" } }
+        var deleted = false
+        step(undo) { deleted = model.delete(preset.id) }
+        #expect(deleted)
+        #expect(doc.content.templates[preset.id] == nil)
     }
 
     @Test func open_unknownIDDoesNothing() throws {
@@ -153,6 +184,40 @@ struct TemplateEditorModelTests {
         undo.endUndoGrouping()
         undo.undo()
         if case let .text(s) = model.template!.boxes[0].content { #expect(s.padding == 0) }
+        #expect(!undo.canUndo)
+    }
+
+    @Test func undoDuringOpenContinuousEdit_keepsHistoryConsistent() async throws {
+        let (model, _, undo) = try make()
+        _ = openBlank(model, undo)
+        step(undo) { model.addBox(.text(TextBoxStyle())) }
+        let id = try #require(model.selection.first)
+        let t0 = frame(model, id)
+        undo.removeAllActions()
+        func padding() -> Double? {
+            if case let .text(s) = model.template!.box(id)!.content { return s.padding }
+            return nil
+        }
+        step(undo) { model.update(actionName: "Move Box") { $0.boxes[0].frame.x = t0.x + 0.1 } }
+        let t1 = frame(model, id)
+        step(undo) {
+            model.updateContinuously(actionName: "Change Padding") {
+                if case .text(var s) = $0.boxes[0].content { s.padding = 7; $0.boxes[0].content = .text(s) }
+            }
+        }
+        #expect(padding() == 7)
+        // Undo while the continuous group is still open: the padding change is the step undone.
+        undo.undo()
+        #expect(padding() == 0)
+        #expect(frame(model, id) == t1)
+        // The old timer must not register anything afterwards (redo survives).
+        try await Task.sleep(for: .milliseconds(800))
+        #expect(undo.canRedo)
+        undo.redo()
+        #expect(padding() == 7)
+        undo.undo()
+        undo.undo()
+        #expect(frame(model, id) == t0)
         #expect(!undo.canUndo)
     }
 

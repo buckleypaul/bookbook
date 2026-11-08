@@ -16,6 +16,15 @@ struct TemplateEditingTests {
 
     // MARK: Normalized frames and safe areas
 
+    @Test func textBoxLayeredBelowImageIsStillHitFirst() {
+        let image = EditableBox(id: Self.id2, rect: CGRect(x: 0, y: 0, width: 200, height: 200), rotationDegrees: 0)
+        let text = EditableBox(id: Self.id1, rect: CGRect(x: 50, y: 50, width: 100, height: 40),
+                               rotationDegrees: 0, isText: true)
+        // Text first in the array = "sent to back"; it still draws (and hits) above the image.
+        #expect(BoxHitTesting.box(at: CGPoint(x: 60, y: 60), in: [text, image]) == Self.id1)
+        #expect(BoxHitTesting.box(at: CGPoint(x: 10, y: 10), in: [text, image]) == Self.id2)
+    }
+
     @Test func trimRectRoundTripSingleAndSpread() {
         let frame = NormalizedRect(x: 0.1, y: 0.2, width: 0.5, height: 0.25)
         for kind in [TemplateKind.single, .spread] {

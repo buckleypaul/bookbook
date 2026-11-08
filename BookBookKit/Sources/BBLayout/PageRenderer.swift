@@ -25,6 +25,14 @@ public struct PageRenderer {
     /// points, origin top-left, y down (e.g. a flipped NSView, or a PDF context after
     /// `translateBy(0, h); scaleBy(1, -1)`). Missing templates or images draw nothing / a placeholder.
     public func draw(page: Page, in content: BookContent, into ctx: CGContext, options: RenderOptions) {
+        draw(page: page, in: content, into: ctx, options: options, visibleRect: nil)
+    }
+
+    /// Same, but skips boxes whose (rotated) bounds miss `visibleRect` (trim space), so a
+    /// spread exported as two single PDF pages doesn't carry the other half's text in each
+    /// page's content stream. The caller clips to `visibleRect`; `nil` draws every box.
+    public func draw(page: Page, in content: BookContent, into ctx: CGContext, options: RenderOptions,
+                     visibleRect: CGRect?) {
         let geometry = PageGeometry(setup: content.style.pageSetup)
         ctx.saveGState()
         defer { ctx.restoreGState() }
@@ -36,15 +44,21 @@ public struct PageRenderer {
 
         guard let template = content.template(for: page) else { return }
 
+        func isVisible(_ box: Box) -> Bool {
+            guard let visibleRect else { return true }
+            return Self.bounds(of: box, geometry: geometry).intersects(visibleRect)
+        }
+
         // 2. Image boxes, in layer order.
-        for box in template.boxes where box.content == .image {
+        for box in template.boxes where box.content == .image && isVisible(box) {
             drawImageBox(box, page: page, content: content, geometry: geometry, ctx: ctx, options: options)
         }
 
         // 3. Text boxes: panel, then text.
         let typography = content.style.typography
         for box in template.boxes {
-            guard case .text(let style) = box.content, !options.hiddenTextBoxes.contains(box.id) else { continue }
+            guard case .text(let style) = box.content, !options.hiddenTextBoxes.contains(box.id), isVisible(box)
+            else { continue }
             drawTextBox(box, style: style, text: CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id],
                         typography: typography.resolved(for: box.role),
                         geometry: geometry, ctx: ctx)
@@ -156,6 +170,16 @@ public struct PageRenderer {
     }
 
     // MARK: Helpers
+
+    /// The box's render rect, grown to cover its rotation.
+    static func bounds(of box: Box, geometry: PageGeometry) -> CGRect {
+        let rect = geometry.renderRect(for: box)
+        guard box.rotationDegrees != 0, box.rotationDegrees.isFinite else { return rect }
+        let transform = CGAffineTransform(translationX: rect.midX, y: rect.midY)
+            .rotated(by: CGFloat(box.rotationDegrees) * .pi / 180)
+            .translatedBy(x: -rect.midX, y: -rect.midY)
+        return rect.applying(transform)
+    }
 
     /// Rotates the context around the box centre (clockwise on the page for positive degrees).
     private func applyRotation(_ box: Box, rect: CGRect, ctx: CGContext) {

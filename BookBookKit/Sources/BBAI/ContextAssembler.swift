@@ -47,14 +47,31 @@ public enum ContextAssembler {
     /// Resolves the session by the queue item's message first (box IDs can move), then by the
     /// target's slot.
     static func resolve(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> Resolved? {
-        guard case let .pageBox(pageID, boxID) = target,
-              let page = content.pages[pageID],
-              let template = content.template(for: page),
-              let box = template.box(boxID), box.content == .image,
-              let slot = page.images[boxID]
-        else { return nil }
-        let session = messageID.flatMap { content.session(containing: $0) } ?? content.sessions[slot.sessionID]
-        guard let session else { return nil }
+        guard case let .pageBox(targetPage, targetBox) = target else { return nil }
+        var pageID = targetPage, boxID = targetBox
+        let session: Session
+        if let messageID, let owner = content.session(containing: messageID) {
+            // The message's session owns the geometry: find the slot that holds it now, since the
+            // target's box ID may have moved or been reused by another box.
+            if content.pages[targetPage]?.images[targetBox]?.sessionID != owner.id {
+                var home: (PageID, BoxID)?
+                outer: for (id, page) in content.pages {
+                    for (box, slot) in page.images where slot.sessionID == owner.id {
+                        home = (id, box)
+                        break outer
+                    }
+                }
+                // No slot holds the session any more: fall back to the target's own box if it still exists.
+                if let home { (pageID, boxID) = home }
+            }
+            session = owner
+        } else {
+            guard let slot = content.pages[pageID]?.images[boxID], let found = content.sessions[slot.sessionID]
+            else { return nil }
+            session = found
+        }
+        guard let page = content.pages[pageID], let template = content.template(for: page),
+              let box = template.box(boxID), box.content == .image else { return nil }
         return Resolved(page: page, template: template, box: box, session: session)
     }
 
@@ -172,8 +189,10 @@ public enum ContextAssembler {
         }
         let prompt = ComposedPrompt(sections: sections)
 
-        // Refinements keep the base image's size (A §7.6); new images use §7.5 fitting.
-        let exactSize = isRefinement ? sent.first?.plan.pixelSize : nil
+        // Refinements keep the base image's shape (A §7.6), snapped to the model's size rules so imported
+        // images (scans, photos) stay valid; new images use §7.5 fitting.
+        let exactSize = isRefinement
+            ? sent.first?.plan.pixelSize.flatMap { AspectFitter.snap($0, model: model, quality: intent.quality) } : nil
         let baseImage = isRefinement ? sent.first?.payload : nil
         let references = sent.dropFirst(isRefinement ? 1 : 0).map {
             ReferenceImage(payload: $0.payload, sent: SentReference(image: $0.plan.ref, role: $0.plan.role, label: $0.plan.label))

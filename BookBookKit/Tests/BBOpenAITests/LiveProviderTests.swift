@@ -3,6 +3,7 @@ import BBModel
 import BBNet
 import BBTestSupport
 import Foundation
+import Synchronization
 import Testing
 @testable import BBOpenAI
 
@@ -39,12 +40,16 @@ import Testing
             try recorder.record(response, name: "slice-generate-low-1024x1024")
         }
 
-        let usage = try #require(result.usage)
+        // Record spend first, so a success without usage is still logged (as an estimate).
         LiveSpendGuard.record(
             test: "slice_generateLow", provider: "openai", model: request.model.id,
-            usage: LiveSpendGuard.Usage(inputTextTokens: usage.inputTextTokens, inputImageTokens: usage.inputImageTokens,
-                                        outputTextTokens: usage.outputTextTokens, outputImageTokens: usage.outputImageTokens))
+            usage: result.usage.map {
+                LiveSpendGuard.Usage(inputTextTokens: $0.inputTextTokens, inputImageTokens: $0.inputImageTokens,
+                                     outputTextTokens: $0.outputTextTokens, outputImageTokens: $0.outputImageTokens)
+            },
+            estimateUSD: 0.01)
 
+        let usage = try #require(result.usage)
         #expect(OpenAIImageProvider.pixelSize(of: result.imageData) == PixelSize(width: 1024, height: 1024))
         #expect(result.pixelSize == PixelSize(width: 1024, height: 1024))
         #expect(usage.outputImageTokens > 0)
@@ -58,11 +63,10 @@ import Testing
     }
 }
 
-private final class ResponseBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: HTTPResponse?
-    var value: HTTPResponse? { lock.lock(); defer { lock.unlock() }; return stored }
-    func set(_ response: HTTPResponse) { lock.lock(); stored = response; lock.unlock() }
+private final class ResponseBox: Sendable {
+    private let stored = Mutex<HTTPResponse?>(nil)
+    var value: HTTPResponse? { stored.withLock { $0 } }
+    func set(_ response: HTTPResponse) { stored.withLock { $0 = response } }
 }
 
 private struct CapturingClient: HTTPClient {

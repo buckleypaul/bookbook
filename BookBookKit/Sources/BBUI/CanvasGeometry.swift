@@ -19,8 +19,19 @@ struct CanvasTransform: Equatable {
                               y: ((viewSize.height - pageSize.height * self.scale) / 2).rounded())
     }
 
+    /// Fits `rect` (page points; e.g. the trim grown by the bleed) to the view. Page point
+    /// (0, 0) is still the trim's top-left, so `origin` may sit inside the fitted area.
+    init(viewSize: CGSize, fitting rect: CGRect, margin: CGFloat = 24) {
+        self.init(viewSize: viewSize, pageSize: rect.size, margin: margin)
+        origin = CGPoint(x: (origin.x - rect.minX * scale).rounded(), y: (origin.y - rect.minY * scale).rounded())
+    }
+
     func toPage(_ point: CGPoint) -> CGPoint {
         CGPoint(x: (point.x - origin.x) / scale, y: (point.y - origin.y) / scale)
+    }
+
+    func toView(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: origin.x + point.x * scale, y: origin.y + point.y * scale)
     }
 
     func toView(_ rect: CGRect) -> CGRect {
@@ -53,9 +64,12 @@ enum CanvasHitTest {
         }
     }
 
-    /// The topmost box containing `point` (boxes are in layer order, first drawn first).
+    /// The topmost box containing `point` (boxes are in layer order, first drawn first),
+    /// honouring each box's rotation (inverse transform, A §8.2).
     static func box(at point: CGPoint, in boxes: [(box: Box, rect: CGRect)]) -> Box? {
-        boxes.last { $0.rect.contains(point) }?.box
+        let editable = boxes.map { EditableBox(id: $0.box.id, rect: $0.rect, rotationDegrees: $0.box.rotationDegrees) }
+        guard let id = BoxHitTesting.box(at: point, in: editable) else { return nil }
+        return boxes.last { $0.box.id == id }?.box
     }
 
     /// A text box's rect inset by its padding (the text container's area).

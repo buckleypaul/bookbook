@@ -40,6 +40,8 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
 
     private static let log = Logger(subsystem: "app.bookbook", category: "InlineTextEditor")
 
+    /// `typography` is the box's own (`InlineTextEditor.typography(for:base:)`): role-resolved,
+    /// with its style overrides applied, so the editor wraps and styles like the renderer.
     init(pageID: PageID, boxID: BoxID, text: RichText, typography: Typography,
          formatting: TextFormatController? = nil,
          undoManager: @escaping () -> UndoManager?, onChange: @escaping (RichText, Bool) -> Void) {
@@ -427,6 +429,18 @@ enum RichTextFormatting {
         }
         if result.isEmpty, !text.paragraphs.isEmpty { result = [text.paragraphs.count - 1] }
         return result
+    }
+}
+
+extension InlineTextEditor {
+    /// The typography a text box lays out with, the same as `PageRenderer`'s: the style guide
+    /// resolved for the box's role (title-role boxes use the title font), with the box's style
+    /// overrides on top (A §4.2). The canvas passes this to the editor, so every load, reload
+    /// and format commit in the editor (`RichTextBridge`) matches the rendered page.
+    static func typography(for box: Box, base: Typography) -> Typography {
+        let resolved = base.resolved(for: box.role)
+        guard case let .text(style) = box.content else { return resolved }
+        return resolved.applying(style)
     }
 }
 

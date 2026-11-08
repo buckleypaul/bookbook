@@ -12,7 +12,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 0 | Live-API spikes and fixtures | done | `phase-0-spikes` | [#2](https://github.com/buckleypaul/bookbook/pull/2) | $0.44 | OpenAI + local spikes; Gemini spikes (§4.2) moved to Phase 13. [Log](progress/phase-0-spikes.md) |
 | 1b | Project setup and CI | done | `phase-1b-setup-ci` | [#3](https://github.com/buckleypaul/bookbook/pull/3) | $0.00 | XcodeGen project; CI on `xcode-27`. [Log](progress/phase-1b-setup-ci.md) |
 | 2 | Thin vertical slice (M1) | done | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | [Log](progress/phase-2-thin-slice.md) |
-| 3 | Storage and library | not started | | | | |
+| 3 | Storage and library | in progress | `phase-3-storage-library` | | | |
 | 4 | Text and typography | not started | | | | |
 | 5 | Pages tab, ordering and cover | not started | | | | |
 | 6 | Template editor | not started | | | | |
@@ -101,3 +101,17 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
+
+### Phase 3 — Storage and library
+
+**Stage:** A
+
+Started 2026-11-08.
+
+**Contracts (main thread, committed before the lanes):** `StoreError.locked/.readOnly`, `LockOwner`, `LockAcquisition`, `LibraryEntry.thumbnailURL` (+ Codable); stubs for the `BookStore` lock / read-only / thumbnail / sweep API, `Migrator`, `CostLedger`, `LibraryIndex`, the `Library` ops (duplicate, trash, rename, moveBooks), `ThumbnailCache` and `BookThumbnail`. BBStoreTests gets a `Fixtures/` resource folder.
+
+**Assumptions (plan defaults):**
+- Rename changes `Book.title` only; the package folder keeps its name. A closed book is renamed through a headless `BookStore`, an open one through its `BookDocument` (not undoable: it isn't in PD §8.10's list).
+- The library location is saved in `UserDefaults` key `libraryPath` (A §5.5). The `-BookBookLibraryRoot` launch argument still wins. Moving the books needs every book window closed first (the app closes them after flushing).
+- A book held by another live process opens read-only: editing is disabled and nothing is written (no journal replay, migration, sweep or ledger repair).
+- The library thumbnail is the first story page while the cover is hidden (until Phase 5).

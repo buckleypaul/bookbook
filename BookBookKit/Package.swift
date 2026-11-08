@@ -51,7 +51,10 @@ let package = Package(
         .target(name: "BBTestSupport", resources: [.copy("Resources/Fonts")], swiftSettings: settings),
 
         .testTarget(name: "BBModelTests", dependencies: ["BBModel", "BBTestSupport"], swiftSettings: settings),
-        .testTarget(name: "BBStoreTests", dependencies: ["BBStore", "BBTestSupport"], swiftSettings: settings),
+        .testTarget(
+            name: "BBStoreTests", dependencies: ["BBStore", "BBTestSupport"],
+            resources: [.copy("Fixtures")], swiftSettings: settings
+        ),
         .testTarget(
             name: "BBLayoutTests", dependencies: ["BBLayout", "BBTestSupport", snapshots],
             exclude: ["__Snapshots__"], swiftSettings: settings

@@ -10,6 +10,32 @@ public enum StoreError: Error, Hashable, Sendable {
     /// The book was written by a newer BookBook.
     case schemaTooNew(Int)
     case keychain(Int32)
+    /// Phase 3: another live process holds the book's `.lock`.
+    case locked(LockOwner)
+    /// Phase 3: the store was opened read-only; writes are refused.
+    case readOnly
+}
+
+// MARK: Phase 3 contract (main thread)
+
+/// Contents of a book's `.lock` file (A §5.3).
+public struct LockOwner: Codable, Hashable, Sendable {
+    public var pid: Int32
+    public var host: String
+    public var acquiredAt: Date
+
+    public init(pid: Int32, host: String, acquiredAt: Date) {
+        self.pid = pid
+        self.host = host
+        self.acquiredAt = acquiredAt
+    }
+}
+
+public enum LockAcquisition: Hashable, Sendable {
+    /// This store now holds the lock (fresh, re-entrant from this process, or a stale lock taken over).
+    case acquired
+    /// Another live process holds it. The caller may offer to open read-only (`BookStore.setReadOnly()`).
+    case heldByOther(LockOwner)
 }
 
 /// Which entities changed since the last save. Accumulates until a save completes.
@@ -54,17 +80,20 @@ public struct DirtySet: Hashable, Sendable {
     }
 }
 
-/// A book in the library folder.
-public struct LibraryEntry: Hashable, Sendable, Identifiable {
+/// A book in the library folder. Codable for the cached library index (Phase 3).
+public struct LibraryEntry: Codable, Hashable, Sendable, Identifiable {
     public var id: BookID
     public var title: String
     public var url: URL
     public var modifiedAt: Date
+    /// `<package>/thumbnail.png` when it exists (Phase 3).
+    public var thumbnailURL: URL?
 
-    public init(id: BookID, title: String, url: URL, modifiedAt: Date) {
+    public init(id: BookID, title: String, url: URL, modifiedAt: Date, thumbnailURL: URL? = nil) {
         self.id = id
         self.title = title
         self.url = url
         self.modifiedAt = modifiedAt
+        self.thumbnailURL = thumbnailURL
     }
 }

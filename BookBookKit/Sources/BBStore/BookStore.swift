@@ -204,3 +204,38 @@ public actor BookStore {
         return out
     }
 }
+
+// MARK: Phase 3 contract (stubs; the store-durability lane implements these and may move them into the actor body)
+
+extension BookStore {
+    /// Takes `<package>/.lock` (A §5.3). A lock held by this process, or by a dead PID on this host, is taken over.
+    /// Call before `load()`. A lock from another host is treated as live.
+    public func acquireLock() throws(StoreError) -> LockAcquisition {
+        .acquired
+    }
+
+    /// Removes `.lock` if this store holds it. Safe to call more than once.
+    public func releaseLock() {}
+
+    /// After this, `load()` never writes (no journal replay, migration, sweep or ledger repair) and
+    /// `save`, `scheduleSave`, `storeImage` and `writeThumbnail` refuse with `.readOnly`.
+    public func setReadOnly() {}
+
+    public var isReadOnly: Bool { false }
+
+    /// `<package>/thumbnail.png` (A §5.1).
+    public nonisolated var thumbnailURL: URL {
+        packageURL.appending(path: "thumbnail.png", directoryHint: .notDirectory)
+    }
+
+    /// Writes `thumbnail.png` atomically (temp file + rename). Not journaled: it's a rebuildable cache.
+    public func writeThumbnail(_ png: Data) throws(StoreError) {}
+
+    /// Deletes `images/` files that no JSON in `content` refers to and that are older than `minimumAge` (A §5.2).
+    /// `load()` calls this at open; public for tests and Phase 16 clean-up. Returns the number removed.
+    @discardableResult
+    public func sweepOrphanImages(referencedBy content: BookContent, minimumAge: TimeInterval = 86_400,
+                                  now: Date = Date()) throws(StoreError) -> Int {
+        0
+    }
+}

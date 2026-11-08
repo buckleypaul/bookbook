@@ -53,3 +53,31 @@ public struct Library: Sendable {
         return LibraryEntry(id: content.book.id, title: title, url: url, modifiedAt: now)
     }
 }
+
+// MARK: Phase 3 contract (stubs; the library-index lane implements these)
+
+extension Library {
+    /// Recursive copy with a new `Book.id` and the title "<title> copy" (folder name collision-safe).
+    /// Skips `.lock` and `.journal`. The source must be flushed first if it's open.
+    public func duplicate(_ entry: LibraryEntry, now: Date = Date()) throws(StoreError) -> LibraryEntry {
+        throw .io("not implemented")
+    }
+
+    /// Moves the package to the Trash (`FileManager.trashItem`). Returns its URL in the Trash.
+    @discardableResult
+    public func trash(_ entry: LibraryEntry) throws(StoreError) -> URL? {
+        throw .io("not implemented")
+    }
+
+    /// Sets the title of a closed book through a headless `BookStore` (lock, load, save, release).
+    /// The package folder keeps its name. Throws `.locked` if another process holds it.
+    public func rename(_ entry: LibraryEntry, to title: String, now: Date = Date()) throws(StoreError) -> LibraryEntry {
+        throw .io("not implemented")
+    }
+
+    /// Moves every `*.bookbook` from this library's root into `newRoot` (created if needed); a name clash gets " 2" etc.
+    /// Returns the new package URLs. Stops at the first failure, leaving moved books in `newRoot`.
+    public func moveBooks(to newRoot: URL) throws(StoreError) -> [URL] {
+        throw .io("not implemented")
+    }
+}

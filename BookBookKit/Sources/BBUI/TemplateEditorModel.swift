@@ -28,6 +28,16 @@ public final class TemplateEditorModel {
 
     public init(document: BookDocument) {
         self.document = document
+        document.undoGroupWasClosedByReplay = { [weak self] in self?.dropOpenInteraction() }
+    }
+
+    /// An undo/redo closed the document's open group under us: forget the interaction and
+    /// cancel the pending continuous-edit timer, so nothing registers after the undo.
+    private func dropOpenInteraction() {
+        interactionOpen = false
+        continuousTask?.cancel()
+        continuousTask = nil
+        activeGuides = []
     }
 
     /// The open template, read live from the document.

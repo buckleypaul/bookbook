@@ -45,7 +45,19 @@ public final class BookDocument {
     @ObservationIgnored private weak var typingUndoManager: UndoManager?
     /// Open undo groups (`beginUndoGroup`): nesting depth and the inverses collected so far.
     @ObservationIgnored private var groupDepth = 0
-    @ObservationIgnored private var groupInverses: [Edit] = []
+    /// The open group's undo entry. It is registered at the group's first edit (not at its end),
+    /// so an undo that arrives while the group is still open undoes the group first.
+    @ObservationIgnored private var openGroup: UndoGroupRecord?
+    /// Called when an undo or redo closed the open group before `endUndoGroup` did (an editor
+    /// holding the group, such as a pending continuous edit, drops its state).
+    @ObservationIgnored public var undoGroupWasClosedByReplay: (() -> Void)?
+
+    private final class UndoGroupRecord {
+        var inverses: [Edit] = []
+        var actionName: String
+        var registered = false
+        init(actionName: String) { self.actionName = actionName }
+    }
 
     // Library thumbnail (A §5.1): rewritten at most every `thumbnailInterval` after a change,
     // and on flush and close, never on the typing path.
@@ -168,7 +180,13 @@ public final class BookDocument {
         if groupDepth > 0 {
             // Inside an undo group: apply and save, but collect the inverse for `endUndoGroup`.
             guard let inverse = applyAndSave(edit) else { return false }
-            groupInverses.append(inverse)
+            if let record = openGroup {
+                record.inverses.append(inverse)
+                if !record.registered {
+                    record.registered = true
+                    registerGroupUndo(record)
+                }
+            }
             return true
         }
         // A typing edit that joins the open step changes the content but registers nothing: the
@@ -196,6 +214,7 @@ public final class BookDocument {
     /// Closes any open typing step. Nested calls are ignored (the outer group wins).
     public func beginUndoGroup() {
         typing.close()
+        if groupDepth == 0 { openGroup = UndoGroupRecord(actionName: "Edit") }
         groupDepth += 1
     }
 
@@ -205,12 +224,29 @@ public final class BookDocument {
     public func endUndoGroup(actionName: String) {
         guard groupDepth > 0 else { return }
         groupDepth -= 1
-        guard groupDepth == 0 else { return }
-        let inverses = groupInverses
-        groupInverses = []
-        guard !inverses.isEmpty else { return }
-        // Undo replays the inverses newest first, so everything returns to the state at begin.
-        registerUndo(.compound(inverses.reversed()), actionName: actionName)
+        guard groupDepth == 0, let record = openGroup else { return }
+        openGroup = nil
+        record.actionName = actionName
+        if record.registered { undoManager?.setActionName(actionName) }
+    }
+
+    /// Registers the group's single undo step. Its inverses are read when it fires, so edits
+    /// made after registration are included. Undoing a still-open group closes it first.
+    private func registerGroupUndo(_ record: UndoGroupRecord) {
+        guard let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { doc in
+            MainActor.assumeIsolated {
+                doc.typing.close()
+                if doc.openGroup === record {
+                    doc.openGroup = nil
+                    doc.groupDepth = 0
+                    doc.undoGroupWasClosedByReplay?()
+                }
+                // Replay newest first, so everything returns to the state at begin.
+                _ = doc.apply(.compound(record.inverses.reversed()), actionName: record.actionName)
+            }
+        }
+        undoManager.setActionName(record.actionName)
     }
 
     /// For non-undoable writes (A §6.3): AI results, session changes, renaming the book. Never

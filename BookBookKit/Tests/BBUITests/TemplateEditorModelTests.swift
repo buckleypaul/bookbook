@@ -156,6 +156,40 @@ struct TemplateEditorModelTests {
         #expect(!undo.canUndo)
     }
 
+    @Test func undoDuringOpenContinuousEdit_keepsHistoryConsistent() async throws {
+        let (model, _, undo) = try make()
+        _ = openBlank(model, undo)
+        step(undo) { model.addBox(.text(TextBoxStyle())) }
+        let id = try #require(model.selection.first)
+        let t0 = frame(model, id)
+        undo.removeAllActions()
+        func padding() -> Double? {
+            if case let .text(s) = model.template!.box(id)!.content { return s.padding }
+            return nil
+        }
+        step(undo) { model.update(actionName: "Move Box") { $0.boxes[0].frame.x = t0.x + 0.1 } }
+        let t1 = frame(model, id)
+        step(undo) {
+            model.updateContinuously(actionName: "Change Padding") {
+                if case .text(var s) = $0.boxes[0].content { s.padding = 7; $0.boxes[0].content = .text(s) }
+            }
+        }
+        #expect(padding() == 7)
+        // Undo while the continuous group is still open: the padding change is the step undone.
+        undo.undo()
+        #expect(padding() == 0)
+        #expect(frame(model, id) == t1)
+        // The old timer must not register anything afterwards (redo survives).
+        try await Task.sleep(for: .milliseconds(800))
+        #expect(undo.canRedo)
+        undo.redo()
+        #expect(padding() == 7)
+        undo.undo()
+        undo.undo()
+        #expect(frame(model, id) == t0)
+        #expect(!undo.canUndo)
+    }
+
     @Test func addBox_selectsAndCentresInSafeArea() throws {
         let (model, _, undo) = try make()
         _ = openBlank(model, undo)

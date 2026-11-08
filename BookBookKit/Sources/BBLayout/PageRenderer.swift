@@ -14,6 +14,8 @@ public struct PageRenderer {
     static let boxGuide = CGColor(srgbRed: 0.55, green: 0.55, blue: 0.60, alpha: 0.6)
 
     public var images: any PageImageSource
+    /// Optional layout cache (the canvas sets it). When nil, every draw lays out afresh.
+    public var layouts: TextBoxLayoutCache?
 
     public init(images: any PageImageSource) {
         self.images = images
@@ -43,7 +45,7 @@ public struct PageRenderer {
         let typography = content.style.typography
         for box in template.boxes {
             guard case .text(let style) = box.content, !options.hiddenTextBoxes.contains(box.id) else { continue }
-            drawTextBox(box, style: style, text: page.text[box.id], typography: typography,
+            drawTextBox(box, style: style, text: page.text[box.id], typography: typography.resolved(for: box.role),
                         geometry: geometry, ctx: ctx)
         }
 
@@ -64,8 +66,10 @@ public struct PageRenderer {
             guard case .text(let style) = box.content, let text = page.text[box.id], !text.paragraphs.isEmpty
             else { continue }
             let rect = geometry.renderRect(for: box).insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
-            let layout = TextBoxLayout(text: text, typography: content.style.typography,
-                                       containerSize: CGSize(width: max(0, rect.width), height: max(0, rect.height)))
+            let typography = content.style.typography.resolved(for: box.role)
+            let size = CGSize(width: max(0, rect.width), height: max(0, rect.height))
+            let layout = layouts?.layout(text: text, typography: typography, containerSize: size)
+                ?? TextBoxLayout(text: text, typography: typography, containerSize: size)
             if layout.isOverflowing { result.insert(box.id) }
         }
         return result
@@ -122,7 +126,8 @@ public struct PageRenderer {
         guard let text, !text.paragraphs.isEmpty else { return }
         let inner = rect.insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
         guard inner.width > 0, inner.height > 0 else { return }
-        let layout = TextBoxLayout(text: text, typography: typography, containerSize: inner.size)
+        let layout = layouts?.layout(text: text, typography: typography, containerSize: inner.size)
+            ?? TextBoxLayout(text: text, typography: typography, containerSize: inner.size)
         layout.draw(in: ctx, origin: inner.origin)
     }
 

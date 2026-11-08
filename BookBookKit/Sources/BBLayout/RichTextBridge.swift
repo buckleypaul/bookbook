@@ -148,9 +148,14 @@ public enum RichTextBridge {
         // Which PostScript name does this run use? Prefer the requested name when it still
         // resolves to this font (keeps missing-font names); otherwise the font's own base face.
         var family = baseName
-        if let requested = attributes[requestedFontKey] as? String,
-           baseFontName(of: resolveFont(postScriptName: requested, size: size, bold: false, italic: false).font) == baseName {
-            family = requested
+        if let requested = attributes[requestedFontKey] as? String {
+            let requestedBase = baseFontName(of: resolveFont(postScriptName: requested, size: size, bold: false, italic: false).font)
+            // A missing font is drawn with the system font (whose bold/italic faces can have
+            // differently named bases), so accept the requested name when the run uses that fallback.
+            let usesSystemFallback = font.fontName.hasPrefix(".")
+            if requestedBase == baseName || (NSFont(name: requested, size: size) == nil && usesSystemFallback) {
+                family = requested
+            }
         }
         let bodyName = typography.bodyFont.postScriptName
         let isDefaultFamily = family == bodyName

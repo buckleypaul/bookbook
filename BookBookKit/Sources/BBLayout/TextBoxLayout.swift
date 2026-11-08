@@ -46,6 +46,8 @@ public final class TextBoxLayout {
 
     /// True if the laid-out text is taller than the container or doesn't reach the end.
     public var isOverflowing: Bool {
+        // No text can't overflow, even in a box too small for an empty line.
+        if (contentStorage.textStorage?.length ?? 0) == 0 { return false }
         if usedHeight > containerSize.height + Self.overflowTolerance { return true }
         let documentEnd = layoutManager.documentRange.endLocation
         guard let last = fragments.last else {

@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import BBModel
 import Foundation
 
@@ -14,7 +15,8 @@ import Foundation
 ///   `bold: false`, so it follows the style when the font changes, and `bold: true` draws the
 ///   family's regular weight. The flag picks the family's other face through `NSFontManager`.
 ///   If the family has no bold/italic face, they are synthesized (negative stroke width for bold,
-///   obliqueness for italic), so the flags survive a round trip. A family with no non-bold or
+///   a sheared font matrix for italic), so the flags survive a round trip. (TextKit 2 ignores the
+///   `.obliqueness` attribute when drawing, so italic is a font property, not an attribute.) A family with no non-bold or
 ///   non-italic face can't draw the "off" state and draws its base face instead.
 /// - Paragraphs are separated by "\n". Each paragraph gets a paragraph style built from the
 ///   typography (alignment, `lineHeightMultiple` = `lineSpacing`), with its alignment override.
@@ -30,7 +32,7 @@ public enum RichTextBridge {
 
     /// Stroke width (percent of point size, negative = fill and stroke) used for synthetic bold.
     static let syntheticBoldStrokeWidth: CGFloat = -3
-    /// Skew used for synthetic italic.
+    /// Shear (x per unit of y) of the font matrix used for synthetic italic.
     static let syntheticObliqueness: CGFloat = 0.2
 
     // MARK: RichText → NSAttributedString
@@ -63,6 +65,16 @@ public enum RichTextBridge {
         return attributes
     }
 
+    /// Whether `run` is drawn bold / italic (real face or synthesized): its base face's traits
+    /// with the relative flags applied. The format bar shows this, not the stored flags (A §4.2).
+    public static func drawnTraits(of run: Run, typography: Typography) -> (bold: Bool, italic: Bool) {
+        let name = run.fontFamily ?? typography.bodyFont.postScriptName
+        let resolved = resolveFont(postScriptName: name, size: CGFloat(run.size ?? typography.bodySize),
+                                   toggleBold: run.bold, toggleItalic: run.italic)
+        let traits = resolved.font.fontDescriptor.symbolicTraits
+        return (traits.contains(.bold) || resolved.syntheticBold, traits.contains(.italic) || resolved.syntheticItalic)
+    }
+
     static func runAttributes(_ run: Run, typography: Typography) -> [NSAttributedString.Key: Any] {
         let name = run.fontFamily ?? typography.bodyFont.postScriptName
         let size = CGFloat(run.size ?? typography.bodySize)
@@ -75,7 +87,6 @@ public enum RichTextBridge {
         ]
         if run.underline { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
         if resolved.syntheticBold { attributes[.strokeWidth] = syntheticBoldStrokeWidth }
-        if resolved.syntheticItalic { attributes[.obliqueness] = syntheticObliqueness }
         return attributes
     }
 
@@ -147,7 +158,8 @@ public enum RichTextBridge {
         }
         let traits = font.fontDescriptor.symbolicTraits
         let drawnBold = traits.contains(.bold) || ((attributes[.strokeWidth] as? CGFloat).map { $0 < 0 } ?? false)
-        let drawnItalic = traits.contains(.italic) || ((attributes[.obliqueness] as? CGFloat).map { $0 > 0 } ?? false)
+        let drawnItalic = traits.contains(.italic) || isSheared(font)
+            || ((attributes[.obliqueness] as? CGFloat).map { $0 > 0 } ?? false)
         let size = font.pointSize
         let baseName = baseFontName(of: font)
 
@@ -228,10 +240,27 @@ public enum RichTextBridge {
                 font = manager.convert(font, toNotHaveTrait: .italicFontMask)
             } else {
                 let converted = manager.convert(font, toHaveTrait: .italicFontMask)
-                if converted.fontDescriptor.symbolicTraits.contains(.italic) { font = converted } else { syntheticItalic = true }
+                if converted.fontDescriptor.symbolicTraits.contains(.italic) {
+                    font = converted
+                } else {
+                    font = sheared(font)
+                    syntheticItalic = true
+                }
             }
         }
         return ResolvedFont(font: font, syntheticBold: syntheticBold, syntheticItalic: syntheticItalic)
+    }
+
+    /// `font` with a sheared matrix (synthetic italic). TextKit 2 draws the shear in the editor,
+    /// the canvas and PDF export alike.
+    static func sheared(_ font: NSFont) -> NSFont {
+        var matrix = CGAffineTransform(a: 1, b: 0, c: syntheticObliqueness, d: 1, tx: 0, ty: 0)
+        return CTFontCreateWithFontDescriptor(font.fontDescriptor as CTFontDescriptor, font.pointSize, &matrix) as NSFont
+    }
+
+    /// True if the font's matrix leans right (synthetic italic).
+    static func isSheared(_ font: NSFont) -> Bool {
+        CTFontGetMatrix(font as CTFont).c > 0.001
     }
 
     /// The PostScript name of the font's upright, regular-weight face in the same family.

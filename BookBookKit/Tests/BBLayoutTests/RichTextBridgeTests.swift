@@ -42,8 +42,10 @@ struct RichTextBridgeTests {
         #expect(regular.pointSize == 15)
         let bold = try #require(s.attribute(.font, at: 1, effectiveRange: nil) as? NSFont)
         #expect(bold.fontName == "AtkinsonHyperlegible-Bold")
-        // No italic face is bundled, so italic is synthesized.
-        #expect((s.attribute(.obliqueness, at: 2, effectiveRange: nil) as? CGFloat ?? 0) > 0)
+        // No italic face is bundled, so italic is synthesized with a sheared font matrix.
+        let italic = try #require(s.attribute(.font, at: 2, effectiveRange: nil) as? NSFont)
+        #expect(italic.fontName == "AtkinsonHyperlegible-Regular")
+        #expect(RichTextBridge.isSheared(italic))
         // Missing font: system font at the requested size, no crash.
         let fallback = try #require(s.attribute(.font, at: 4, effectiveRange: nil) as? NSFont)
         #expect(fallback.pointSize == 11)
@@ -125,5 +127,48 @@ struct RichTextBridgeTests {
         #expect(font.fontName == "AvenirNext-Regular")
         #expect(!font.fontDescriptor.symbolicTraits.contains(.bold))
         #expect(s.attribute(.strokeWidth, at: 0, effectiveRange: nil) == nil)
+    }
+
+    // MARK: Synthesized traits are drawn (TextKit 2 ignores `.obliqueness`)
+
+    /// Pixels drawn for `text` by `TextBoxLayout` (the canvas and export path).
+    private func inked(_ text: RichText) -> [Bool] {
+        let size = CGSize(width: 220, height: 40)
+        let ctx = LayoutFixtures.flippedBitmap(size: size, scale: 1)
+        TextBoxLayout(text: text, typography: typography, containerSize: size).draw(in: ctx, origin: .zero)
+        guard let data = ctx.data else { return [] }
+        let bytes = data.assumingMemoryBound(to: UInt8.self)
+        return (0..<(ctx.bytesPerRow * ctx.height)).map { bytes[$0] > 128 }
+    }
+
+    @Test func syntheticItalic_drawsAndRoundTripsWithBoldAndUnderline() {
+        let plain = inked(RichText(plain: "Hello lll"))
+        let italic = RichText(paragraphs: [Paragraph(runs: [Run(text: "Hello lll", italic: true)])])
+        #expect(inked(italic) != plain)
+        let all = RichText(paragraphs: [Paragraph(runs: [Run(text: "Hello lll", bold: true, italic: true, underline: true)])])
+        let underlined = RichText(paragraphs: [Paragraph(runs: [Run(text: "Hello lll", underline: true)])])
+        let boldUnderlined = RichText(paragraphs: [Paragraph(runs: [Run(text: "Hello lll", bold: true, underline: true)])])
+        #expect(inked(all) != inked(underlined))
+        #expect(inked(all) != inked(boldUnderlined))
+        let s = RichTextBridge.attributedString(from: all, typography: typography)
+        #expect(RichTextBridge.richText(from: s, typography: typography) == all)
+    }
+
+    @Test func syntheticBold_strokeIsDrawn() {
+        // A family with no bold face gets a negative stroke width; check that TextKit 2 draws it.
+        var attributes = RichTextBridge.defaultAttributes(typography: typography)
+        let plain = NSAttributedString(string: "Hello lll", attributes: attributes)
+        attributes[.strokeWidth] = RichTextBridge.syntheticBoldStrokeWidth
+        let stroked = NSAttributedString(string: "Hello lll", attributes: attributes)
+        func ink(_ s: NSAttributedString) -> Int {
+            let size = CGSize(width: 220, height: 40)
+            let ctx = LayoutFixtures.flippedBitmap(size: size, scale: 1)
+            TextBoxLayout(attributedString: s, containerSize: size).draw(in: ctx, origin: .zero)
+            guard let data = ctx.data else { return 0 }
+            let bytes = data.assumingMemoryBound(to: UInt8.self)
+            return (0..<(ctx.bytesPerRow * ctx.height)).filter { bytes[$0] > 128 }.count
+        }
+        #expect(ink(stroked) > ink(plain))
+        #expect(RichTextBridge.richText(from: stroked, typography: typography).paragraphs[0].runs[0].bold)
     }
 }

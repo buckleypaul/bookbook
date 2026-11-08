@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// A journaled transaction (A §5.2 steps 2-5). Staged files live in
 /// `.journal/<txid>/staged/<relative path>`; `manifest.json` lists targets and deletions;
@@ -68,11 +69,18 @@ struct Journal {
 
     /// `<20-digit wall-clock nanoseconds>-<UUID>`: names sort by creation time, so recovery
     /// replays committed transactions oldest-first.
+    /// Strictly increasing within the process: `Date` only resolves ~240 ns, so two saves in
+    /// the same instant would otherwise tie and fall back to random UUID order.
     static func newTxid() -> String {
-        let ns = UInt64(max(0, Date().timeIntervalSince1970) * 1e9)
+        let ns = lastTxidNanoseconds.withLock { last in
+            last = max(last + 1, UInt64(max(0, Date().timeIntervalSince1970) * 1e9))
+            return last
+        }
         let digits = String(ns)
         return String(repeating: "0", count: max(0, 20 - digits.count)) + digits + "-" + UUID().uuidString
     }
+
+    private static let lastTxidNanoseconds = Mutex<UInt64>(0)
 
     private static var txidPattern: Regex<Substring> {
         /^[0-9]{20}-[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/

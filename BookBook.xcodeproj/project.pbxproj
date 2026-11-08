@@ -7,12 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0EA3BCA744ADA98814DDC9E1 /* AppWiring.swift in Sources */ = {isa = PBXBuildFile; fileRef = C16F71EB71889D0246E5EA14 /* AppWiring.swift */; };
 		238C09F441D0896DEEABA139 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F633D5BA99E37EA201D8212C /* Assets.xcassets */; };
+		33AFA4F1DDCA3A38624BD570 /* BBNet in Frameworks */ = {isa = PBXBuildFile; productRef = AA3354545D0090AAF41537C0 /* BBNet */; };
 		39F9902360051C899F8C32D0 /* BookBookApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DB3D4EA1121AF67BA4AE5E3 /* BookBookApp.swift */; };
 		4DD42F5A516EC2975F8831F1 /* BBUI in Frameworks */ = {isa = PBXBuildFile; productRef = 91585EDCDBE4BEDD4A99B6F3 /* BBUI */; };
-		698FA59211794CAE4B04B045 /* BBOpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = 8271AA0B6C3E9CADD7D8BC2B /* BBOpenAI */; };
-		75D4DE36254A6EDA0859565E /* BBGemini in Frameworks */ = {isa = PBXBuildFile; productRef = 54F6C2243CCAD2F2C31598DC /* BBGemini */; };
+		698FA59211794CAE4B04B045 /* BBModel in Frameworks */ = {isa = PBXBuildFile; productRef = 1A9C3DDA5C9AE45A23E3BB44 /* BBModel */; };
+		75D4DE36254A6EDA0859565E /* BBStore in Frameworks */ = {isa = PBXBuildFile; productRef = AC74D945B7267A3AB6CB638A /* BBStore */; };
+		764269B32DE14B73BC7B5121 /* BBOpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = 8271AA0B6C3E9CADD7D8BC2B /* BBOpenAI */; };
+		7D5568AF19B81477DDE81FF8 /* BBAICore in Frameworks */ = {isa = PBXBuildFile; productRef = D4764BBB489F68CAEDB1D98C /* BBAICore */; };
 		EF54344FF335CBEBF57E1A05 /* AppSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08E301F81A6D6ED86E858ACA /* AppSmokeTests.swift */; };
+		FBADCC99BC8AEA0D5145015E /* BBGemini in Frameworks */ = {isa = PBXBuildFile; productRef = 54F6C2243CCAD2F2C31598DC /* BBGemini */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -36,6 +41,7 @@
 		92FBD6153F984B5D6C184BBC /* BookBookTests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = BookBookTests.xcconfig; sourceTree = "<group>"; };
 		A9E82584A124947B00C3DD54 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		B35DC1A5B3BEBC2CD3B904FA /* BookBook-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "BookBook-Release.xcconfig"; sourceTree = "<group>"; };
+		C16F71EB71889D0246E5EA14 /* AppWiring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppWiring.swift; sourceTree = "<group>"; };
 		C9CEDB99EAAAEE0B4C053B5C /* BookBook.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BookBook.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFEA6F2FA43BA9E55A2E4D55 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		F4640A62208E473B9EF64D8D /* BookBook-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "BookBook-Debug.xcconfig"; sourceTree = "<group>"; };
@@ -48,8 +54,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				4DD42F5A516EC2975F8831F1 /* BBUI in Frameworks */,
-				698FA59211794CAE4B04B045 /* BBOpenAI in Frameworks */,
-				75D4DE36254A6EDA0859565E /* BBGemini in Frameworks */,
+				698FA59211794CAE4B04B045 /* BBModel in Frameworks */,
+				75D4DE36254A6EDA0859565E /* BBStore in Frameworks */,
+				7D5568AF19B81477DDE81FF8 /* BBAICore in Frameworks */,
+				33AFA4F1DDCA3A38624BD570 /* BBNet in Frameworks */,
+				764269B32DE14B73BC7B5121 /* BBOpenAI in Frameworks */,
+				FBADCC99BC8AEA0D5145015E /* BBGemini in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -72,6 +82,7 @@
 		1B3C8E44FC8023C46196404A /* BookBook */ = {
 			isa = PBXGroup;
 			children = (
+				C16F71EB71889D0246E5EA14 /* AppWiring.swift */,
 				F633D5BA99E37EA201D8212C /* Assets.xcassets */,
 				1C8183E95F95D36E1D6C8EEB /* BookBook.entitlements */,
 				2DB3D4EA1121AF67BA4AE5E3 /* BookBookApp.swift */,
@@ -160,6 +171,10 @@
 			name = BookBook;
 			packageProductDependencies = (
 				91585EDCDBE4BEDD4A99B6F3 /* BBUI */,
+				1A9C3DDA5C9AE45A23E3BB44 /* BBModel */,
+				AC74D945B7267A3AB6CB638A /* BBStore */,
+				D4764BBB489F68CAEDB1D98C /* BBAICore */,
+				AA3354545D0090AAF41537C0 /* BBNet */,
 				8271AA0B6C3E9CADD7D8BC2B /* BBOpenAI */,
 				54F6C2243CCAD2F2C31598DC /* BBGemini */,
 			);
@@ -233,6 +248,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0EA3BCA744ADA98814DDC9E1 /* AppWiring.swift in Sources */,
 				39F9902360051C899F8C32D0 /* BookBookApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -456,6 +472,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		1A9C3DDA5C9AE45A23E3BB44 /* BBModel */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BBModel;
+		};
 		54F6C2243CCAD2F2C31598DC /* BBGemini */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BBGemini;
@@ -467,6 +487,18 @@
 		91585EDCDBE4BEDD4A99B6F3 /* BBUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = BBUI;
+		};
+		AA3354545D0090AAF41537C0 /* BBNet */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BBNet;
+		};
+		AC74D945B7267A3AB6CB638A /* BBStore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BBStore;
+		};
+		D4764BBB489F68CAEDB1D98C /* BBAICore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BBAICore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

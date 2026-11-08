@@ -26,6 +26,14 @@ targets:
       - package: BookBookKit
         product: BBUI
       - package: BookBookKit
+        product: BBModel
+      - package: BookBookKit
+        product: BBStore
+      - package: BookBookKit
+        product: BBAICore
+      - package: BookBookKit
+        product: BBNet
+      - package: BookBookKit
         product: BBOpenAI
       - package: BookBookKit
         product: BBGemini

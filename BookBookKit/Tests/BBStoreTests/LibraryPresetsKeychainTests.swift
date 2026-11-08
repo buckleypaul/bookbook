@@ -34,7 +34,7 @@ import Testing
 @Suite struct PresetsTests {
     @Test func templatesDecodeWithFixedIDs() throws {
         let all = try Presets.templates()
-        #expect(all.count == 2)
+        #expect(all.count == 10)
         let story = try Presets.storyTemplate()
         let cover = try Presets.coverTemplate()
         #expect(story.id == Presets.storyTemplateID)

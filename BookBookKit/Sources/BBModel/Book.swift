@@ -133,10 +133,67 @@ public struct PageSetup: Hashable, Codable, Sendable {
         margins: EdgeInsetsPt(all: 36))
 }
 
-/// Page number style. Minimal in Phase 2 (off); Phase 5 adds position, font, start and skips.
+/// Where page numbers sit on a page (PD §8.2). "Outer"/"inner" depend on the physical side:
+/// outer is the left edge of a left-hand page and the right edge of a right-hand page.
+public enum PageNumberPosition: String, Codable, Sendable, CaseIterable {
+    case bottomCenter, bottomOuter, bottomInner, topCenter, topOuter, topInner
+}
+
+/// Page number style (PD §8.2, A §8.1, Phase 5). Numbers are positional: physical position
+/// `p` (story page 1 is position 1, the cover is 0) shows `startNumber + p - 1`. Skipped pages
+/// keep their number; it just isn't drawn. The cover is never numbered.
+///
+/// Decoding tolerates the Phase 2 shape (`{"enabled": …}` only): missing keys take defaults.
 public struct PageNumberStyle: Hashable, Codable, Sendable {
     public var enabled: Bool
-    public init(enabled: Bool = false) { self.enabled = enabled }
+    public var position: PageNumberPosition
+    /// nil = the style's body font.
+    public var fontFamily: String?
+    public var size: Double
+    /// nil = the typography colour.
+    public var color: RGBA?
+    public var startNumber: Int
+    /// Skip pages whose template has a front-matter `PageRole` (title, dedication, belongs-to).
+    public var skipFrontMatter: Bool
+    /// Specific pages to skip.
+    public var skippedPages: Set<PageID>
+
+    public init(enabled: Bool = false, position: PageNumberPosition = .bottomCenter,
+                fontFamily: String? = nil, size: Double = 12, color: RGBA? = nil,
+                startNumber: Int = 1, skipFrontMatter: Bool = true, skippedPages: Set<PageID> = []) {
+        self.enabled = enabled
+        self.position = position
+        self.fontFamily = fontFamily
+        self.size = size
+        self.color = color
+        self.startNumber = startNumber
+        self.skipFrontMatter = skipFrontMatter
+        self.skippedPages = skippedPages
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, position, fontFamily, size, color, startNumber, skipFrontMatter, skippedPages
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = PageNumberStyle()
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? d.enabled
+        position = try c.decodeIfPresent(PageNumberPosition.self, forKey: .position) ?? d.position
+        fontFamily = try c.decodeIfPresent(String.self, forKey: .fontFamily)
+        size = try c.decodeIfPresent(Double.self, forKey: .size) ?? d.size
+        color = try c.decodeIfPresent(RGBA.self, forKey: .color)
+        startNumber = try c.decodeIfPresent(Int.self, forKey: .startNumber) ?? d.startNumber
+        skipFrontMatter = try c.decodeIfPresent(Bool.self, forKey: .skipFrontMatter) ?? d.skipFrontMatter
+        skippedPages = try c.decodeIfPresent(Set<PageID>.self, forKey: .skippedPages) ?? d.skippedPages
+    }
+}
+
+/// What a template is for, beyond its geometry (Phase 5). Front-matter roles are skipped by
+/// page numbering when `PageNumberStyle.skipFrontMatter` is on.
+public enum PageRole: String, Codable, Sendable, CaseIterable {
+    case titlePage, dedication, belongsTo, theEnd
+    public var isFrontMatter: Bool { self != .theEnd }
 }
 
 // MARK: - Templates
@@ -152,12 +209,16 @@ public struct Template: Hashable, Codable, Sendable, Identifiable {
     public var kind: TemplateKind
     /// Array order = layer order (first is drawn first).
     public var boxes: [Box]
+    /// Front/back-matter role (title page, dedication, …); nil for ordinary story layouts.
+    public var pageRole: PageRole?
 
-    public init(id: TemplateID = TemplateID(), name: String, kind: TemplateKind, boxes: [Box]) {
+    public init(id: TemplateID = TemplateID(), name: String, kind: TemplateKind, boxes: [Box],
+                pageRole: PageRole? = nil) {
         self.id = id
         self.name = name
         self.kind = kind
         self.boxes = boxes
+        self.pageRole = pageRole
     }
 
     public func box(_ id: BoxID) -> Box? { boxes.first { $0.id == id } }

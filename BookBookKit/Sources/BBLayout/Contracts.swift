@@ -34,13 +34,17 @@ public struct RenderOptions: Hashable, Sendable {
     public var hiddenTextBoxes: Set<BoxID>
     /// Draw a light placeholder in empty image boxes (screen only).
     public var showEmptyImagePlaceholders: Bool
+    /// Page numbers to draw (Phase 5), from `PageNumbering.marks`. Drawn last, in the
+    /// template's `.pageNumberSlot` box if it has one, else at `PageNumberStyle.position`.
+    public var pageNumbers: [PageNumberMark]
 
     public init(target: Target, showGuides: Bool = false, hiddenTextBoxes: Set<BoxID> = [],
-                showEmptyImagePlaceholders: Bool = false) {
+                showEmptyImagePlaceholders: Bool = false, pageNumbers: [PageNumberMark] = []) {
         self.target = target
         self.showGuides = showGuides
         self.hiddenTextBoxes = hiddenTextBoxes
         self.showEmptyImagePlaceholders = showEmptyImagePlaceholders
+        self.pageNumbers = pageNumbers
     }
 
     public static let screen = RenderOptions(target: .screen, showGuides: true, showEmptyImagePlaceholders: true)
@@ -52,4 +56,18 @@ public struct RenderOptions: Hashable, Sendable {
 public enum TextContainerSettings {
     public static let lineFragmentPadding: CGFloat = 0
     public static let textContainerInset: NSSize = .zero
+}
+
+/// One page number to draw on a page (Phase 5).
+public struct PageNumberMark: Hashable, Sendable {
+    public var text: String
+    /// 0 for a single page or a spread's left half, 1 for a spread's right half.
+    public var half: Int
+    /// The physical side, which decides "outer"/"inner".
+    public var isLeftHand: Bool
+    public init(text: String, half: Int, isLeftHand: Bool) {
+        self.text = text
+        self.half = half
+        self.isLeftHand = isLeftHand
+    }
 }

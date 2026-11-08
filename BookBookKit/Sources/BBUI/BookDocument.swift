@@ -188,6 +188,20 @@ public final class BookDocument {
         scheduleSave(dirty)
     }
 
+    /// True when performing `command` (with `fixSplits: false`) would leave a spread split
+    /// across two sheets (PD §8.5). The UI then warns and offers the `fixSplits: true`
+    /// variant. False for non-structural commands.
+    public func wouldSplitSpread(_ command: BookCommand) -> Bool {
+        fatalError("Phase 5 lane L3")
+    }
+
+    /// Book Settings (PD §8.12): set the author. Not undoable, like `rename(to:)`; the cover
+    /// redraws from `content.book`. Returns false for a read-only book.
+    @discardableResult
+    public func setAuthor(_ author: String) -> Bool {
+        fatalError("Phase 5 lane L3")
+    }
+
     /// Renames the book (`Book.title`; the package folder keeps its name). Not undoable
     /// (PD §8.10). Returns false if the title is empty or the book can't be edited.
     @discardableResult
@@ -294,7 +308,7 @@ public final class BookDocument {
             let placement = ImagePlacement(versionID: versionID, boxAspectWhenPlaced: content.boxAspect(box))
             return .setPlacement(page: pageID, box: boxID, placement: placement)
 
-        case let .addPage(index, templateID):
+        case let .addPage(index, templateID, _):
             guard let template = content.templates[templateID], template.kind == .single else { return nil }
             // The new page's empty sessions are created irreversibly (they're harmless if the
             // add is undone); the page itself is the undoable part.
@@ -304,12 +318,16 @@ public final class BookDocument {
             scheduleSave(DirtySet(sessions: Set(sessions.keys)))
             return .insertPage(page, index: index)
 
-        case let .deletePage(pageID):
+        case let .deletePage(pageID, _):
             guard content.book.pageOrder.contains(pageID) else { return nil }
             return .removePage(pageID)
 
         case let .setTypography(typography):
             return .setTypography(typography)
+
+        case .duplicatePage, .reorderPages, .setPageTemplate, .importStoryText, .setPageDone,
+             .setPageNumberStyle:
+            fatalError("Phase 5 lane L3")
         }
     }
 

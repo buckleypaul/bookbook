@@ -14,7 +14,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 2 | Thin vertical slice (M1) | done | `phase-2-thin-slice` | [#4](https://github.com/buckleypaul/bookbook/pull/4) | $0.006 | [Log](progress/phase-2-thin-slice.md) |
 | 3 | Storage and library | done | `phase-3-storage-library` | [#7](https://github.com/buckleypaul/bookbook/pull/7) | $0.00 | No live checks. [Log](progress/phase-3-storage-library.md) |
 | 4 | Text and typography | done | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. From Phase 5 on, no PRs: merge into main and push directly. [Log](progress/phase-4-text-typography.md) |
-| 5 | Pages tab, ordering and cover | not started | | | | |
+| 5 | Pages tab, ordering and cover | in progress | `phase-5-pages-cover` | — | $0.00 | No live checks. |
 | 6 | Template editor | not started | | | | |
 | 7 | Style guide and page setup | not started | | | | |
 | 8 | Sessions and versions | not started | | | | |
@@ -118,4 +118,19 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-_No phase running._
+### Phase 5 — Pages tab, ordering and cover
+
+**Stage:** A
+
+**Contracts** (commit `feat(phase-5): contracts`): `PageNumberStyle` (position, font, size, colour, start, skip front matter, skipped pages; tolerant decoding), `PageNumberPosition`, `PageRole` + `Template.pageRole`, `TemplateReassignment` (BBModel); `PageSequencer`/`SequenceLayout`/`Opening`, `PageNumbering`, `StoryTextImporter`, `RenderOptions.pageNumbers`/`PageNumberMark` (BBLayout); `Presets` IDs 0003–000A; new `BookCommand` cases (`duplicatePage`, `reorderPages`, `setPageTemplate`, `importStoryText`, `setPageDone`, `setPageNumberStyle`, `fixSplits` on structural commands); `BookDocument.wouldSplitSpread(_:)`, `setAuthor(_:)`.
+
+**Lanes:** wave 1: L1 model/layout logic + tests, L2 presets JSON, L4 renderer/export (page numbers, cover). Wave 2: L3 BookDocument commands, L5 UI (overview, story import, Book Settings, page numbers sheet).
+
+**Assumptions (plan defaults, overrule if wrong):**
+- Page numbers are positional: position `p` shows `start + p − 1`; skipped pages keep their number but don't draw it. The cover is never numbered.
+- A split spread is fixed by inserting one text-only blank page right before it.
+- Template change: role-matched boxes first, then reading order; leftover text is appended to the last text box, leftover images are dropped from the page (sessions kept).
+- Presets missing from an older book are copied in when a command first uses them.
+- Book Settings title uses the existing `rename(to:)`; author is set the same way (not undoable; PD §8.10 doesn't list them).
+- Page-number settings live in a sheet from the Pages overview until the Style tab (Phase 7).
+

@@ -1,0 +1,2 @@
+Story text on this page, for context only (do not draw it as text in the image):
+{{story}}

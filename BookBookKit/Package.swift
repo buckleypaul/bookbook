@@ -45,22 +45,28 @@ let package = Package(
         // PDF, booklet, upscale, preflight.
         .target(name: "BBExport", dependencies: ["BBLayout", "BBModel"], swiftSettings: settings),
         // SwiftUI features, AppKit canvas, view models.
-        .target(name: "BBUI", dependencies: ["BBExport", "BBAI", "BBStore", "BBLayout", "BBModel"], swiftSettings: settings),
+        .target(name: "BBUI", dependencies: ["BBExport", "BBAI", "BBAICore", "BBStore", "BBLayout", "BBModel"], swiftSettings: settings),
 
         // Test-only helpers (live-test gate, bundled test font). Never linked into the app.
         .target(name: "BBTestSupport", resources: [.copy("Resources/Fonts")], swiftSettings: settings),
 
         .testTarget(name: "BBModelTests", dependencies: ["BBModel", "BBTestSupport"], swiftSettings: settings),
         .testTarget(name: "BBStoreTests", dependencies: ["BBStore", "BBTestSupport"], swiftSettings: settings),
-        .testTarget(name: "BBLayoutTests", dependencies: ["BBLayout", "BBTestSupport", snapshots], swiftSettings: settings),
+        .testTarget(
+            name: "BBLayoutTests", dependencies: ["BBLayout", "BBTestSupport", snapshots],
+            exclude: ["__Snapshots__"], swiftSettings: settings
+        ),
         .testTarget(name: "BBNetTests", dependencies: ["BBNet", "BBTestSupport"], swiftSettings: settings),
         .testTarget(name: "BBAICoreTests", dependencies: ["BBAICore", "BBTestSupport"], swiftSettings: settings),
         .testTarget(name: "BBAITests", dependencies: ["BBAI", "BBTestSupport", snapshots], swiftSettings: settings),
         // Holds the LiveProviderTests suite (implementation-plan.md §2.3).
-        .testTarget(name: "BBOpenAITests", dependencies: ["BBOpenAI", "BBTestSupport"], swiftSettings: settings),
+        .testTarget(
+            name: "BBOpenAITests", dependencies: ["BBOpenAI", "BBTestSupport"],
+            resources: [.copy("Fixtures")], swiftSettings: settings
+        ),
         .testTarget(name: "BBGeminiTests", dependencies: ["BBGemini", "BBTestSupport"], swiftSettings: settings),
         .testTarget(name: "BBExportTests", dependencies: ["BBExport", "BBTestSupport", snapshots], swiftSettings: settings),
-        .testTarget(name: "BBUITests", dependencies: ["BBUI", "BBTestSupport", snapshots], swiftSettings: settings),
+        .testTarget(name: "BBUITests", dependencies: ["BBUI", "BBAI", "BBAICore", "BBTestSupport", snapshots], swiftSettings: settings),
         .testTarget(name: "BBTestSupportTests", dependencies: ["BBTestSupport"], swiftSettings: settings),
     ]
 )

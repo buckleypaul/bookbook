@@ -2,6 +2,7 @@ import AppKit
 import BBLayout
 import BBModel
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// What the canvas draws: one page or spread, through `PageRenderer`.
 @MainActor
@@ -48,6 +49,10 @@ protocol CanvasController: AnyObject {
     func keyDown(with event: NSEvent) -> Bool
     /// The cursor to show over `point`; nil leaves the cursor alone.
     func cursor(at point: CGPoint) -> NSCursor?
+    /// Trackpad pinch. True if handled (otherwise the view passes it on).
+    func magnify(with event: NSEvent, at point: CGPoint) -> Bool
+    /// Scroll wheel or trackpad scroll. True if handled.
+    func scrollWheel(with event: NSEvent, at point: CGPoint) -> Bool
     /// The view's size changed (re-place subviews).
     func canvasDidResize()
 }
@@ -61,6 +66,8 @@ extension CanvasController {
     func flagsChanged(with event: NSEvent) {}
     func keyDown(with event: NSEvent) -> Bool { false }
     func cursor(at point: CGPoint) -> NSCursor? { nil }
+    func magnify(with event: NSEvent, at point: CGPoint) -> Bool { false }
+    func scrollWheel(with event: NSEvent, at point: CGPoint) -> Bool { false }
     func canvasDidResize() {}
 }
 
@@ -85,10 +92,15 @@ final class CanvasView: NSView {
     let layoutCache = TextBoxLayoutCache()
     private var trackingArea: NSTrackingArea?
 
+    /// Image files dropped on an image box of the page canvas (PD §8.6 "use your own image"):
+    /// page, box, file URLs (images only). Only in the page-canvas mode.
+    var onDropImageFiles: (PageID, BoxID, [URL]) -> Void = { _, _, _ in }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
+        registerForDraggedTypes([.fileURL])
     }
 
     @available(*, unavailable)
@@ -206,6 +218,16 @@ final class CanvasView: NSView {
         if controller?.keyDown(with: event) != true { super.keyDown(with: event) }
     }
 
+    override func magnify(with event: NSEvent) {
+        if let controller, let point = pagePoint(event), controller.magnify(with: event, at: point) { return }
+        super.magnify(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if let controller, let point = pagePoint(event), controller.scrollWheel(with: event, at: point) { return }
+        super.scrollWheel(with: event)
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if trackingArea == nil {
@@ -222,6 +244,56 @@ final class CanvasView: NSView {
         } else {
             super.mouseMoved(with: event)
         }
+    }
+}
+
+// MARK: - Dropping image files
+
+extension CanvasView {
+    /// Image file URLs on a drag pasteboard (HEIC and the rest of `public.image`).
+    static func imageFileURLs(on pasteboard: NSPasteboard) -> [URL] {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true,
+            .urlReadingContentsConformToTypes: [UTType.image.identifier],
+        ]
+        return pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL] ?? []
+    }
+
+    /// The page-canvas image box under a drag at `location` (window coordinates), if any.
+    /// Only image boxes are targets, so a text box drawn over one doesn't block the drop.
+    func dropTarget(atWindowLocation location: CGPoint) -> (page: PageID, box: BoxID)? {
+        guard let placement = controller as? PlacementController, let pageID = placement.pageID,
+              let point = transform?.toPage(convert(location, from: nil)) else { return nil }
+        let images = placement.boxRects.filter { $0.box.content == .image }
+        guard let box = CanvasHitTest.box(at: point, in: images) else { return nil }
+        return (pageID, box.id)
+    }
+
+    private func updateDrop(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        let target = Self.imageFileURLs(on: sender.draggingPasteboard).isEmpty
+            ? nil : dropTarget(atWindowLocation: sender.draggingLocation)
+        (controller as? PlacementController)?.dropTargetBox = target?.box
+        return target == nil ? [] : .copy
+    }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { updateDrop(sender) }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation { updateDrop(sender) }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        (controller as? PlacementController)?.dropTargetBox = nil
+    }
+
+    override func draggingEnded(_ sender: any NSDraggingInfo) {
+        (controller as? PlacementController)?.dropTargetBox = nil
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        (controller as? PlacementController)?.dropTargetBox = nil
+        let urls = Self.imageFileURLs(on: sender.draggingPasteboard)
+        guard !urls.isEmpty, let target = dropTarget(atWindowLocation: sender.draggingLocation) else { return false }
+        onDropImageFiles(target.page, target.box, urls)
+        return true
     }
 }
 
@@ -261,6 +333,19 @@ extension CanvasView {
         get { placement.onOpenBookSettings }
         set { placement.onOpenBookSettings = newValue }
     }
+    /// Crop gestures (Phase 8): open the undo group, update the crop, close the group.
+    var onBeginCrop: (_ onClosedByReplay: @escaping @MainActor () -> Void) -> Void {
+        get { placement.onBeginCrop }
+        set { placement.onBeginCrop = newValue }
+    }
+    var onCrop: (PageID, BoxID, Double, NormalizedPoint) -> Void {
+        get { placement.onCrop }
+        set { placement.onCrop = newValue }
+    }
+    var onEndCrop: () -> Void {
+        get { placement.onEndCrop }
+        set { placement.onEndCrop = newValue }
+    }
     /// A text change: page, box, text, and whether it may coalesce with the typing before it.
     var onTextChange: (PageID, BoxID, RichText, Bool) -> Void {
         get { placement.textEditing.onTextChange }
@@ -291,6 +376,9 @@ struct PageCanvas: NSViewRepresentable {
     @Binding var selectedImageBox: BoxID?
     /// Double-click on a title/author box.
     var onOpenBookSettings: () -> Void = {}
+    /// Image files dropped on an image box: page, box, file URLs (Phase 8; the window wires it
+    /// to the import).
+    var onDropImageFiles: (PageID, BoxID, [URL]) -> Void = { _, _, _ in }
 
     func makeNSView(context: Context) -> CanvasView {
         let view = CanvasView(frame: .zero)
@@ -307,6 +395,14 @@ struct PageCanvas: NSViewRepresentable {
         }
         view.onEndTypingStep = { document.endTypingStep() }
         view.onOpenBookSettings = onOpenBookSettings
+        view.onDropImageFiles = onDropImageFiles
+        view.onBeginCrop = { closed in
+            document.beginUndoGroup(actionName: BookCommand.cropActionName, onClosedByReplay: closed)
+        }
+        view.onCrop = { page, box, zoom, center in
+            document.perform(.setCrop(page: page, box: box, zoom: zoom, center: center))
+        }
+        view.onEndCrop = { document.endUndoGroup(actionName: BookCommand.cropActionName) }
         view.formatting = document.formatting
         view.undoManagerProvider = { [weak undoManager] in undoManager }
         view.update(content: content, pageID: pageID, selectedImageBox: selectedImageBox, imageSource: imageSource,

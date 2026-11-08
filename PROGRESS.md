@@ -16,7 +16,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 4 | Text and typography | done | `phase-4-text-typography` | [#8](https://github.com/buckleypaul/bookbook/pull/8) | $0.00 | No live checks. From Phase 5 on, no PRs: merge into main and push directly. [Log](progress/phase-4-text-typography.md) |
 | 5 | Pages tab, ordering and cover | done | `phase-5-pages-cover` | — | $0.00 | No live checks. [Log](progress/phase-5-pages-cover.md) |
 | 6 | Template editor | done | `phase-6-template-editor` | — | $0.00 | No live checks. [Log](progress/phase-6-template-editor.md) |
-| 7 | Style guide and page setup | awaiting hand checks | `phase-7-style-page-setup` | — | $0.00 | No live checks. |
+| 7 | Style guide and page setup | done | `phase-7-style-page-setup` | — | $0.00 | No live checks. [Log](progress/phase-7-style-page-setup.md) |
 | 8 | Sessions and versions | not started | | | | |
 | 9 | Queue, cost, errors and settings (M2) | not started | | | | |
 | 10 | Assets and character sheets | not started | | | | |
@@ -43,9 +43,6 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 ## Open follow-ups
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
-
-### Phase 7
-- Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phase 5).
 
 ### Phase 8
 - Send style reference images with generation requests (`ContextAssembler` doesn't read `styleReferences`) and show them in Version details (from Phase 7).
@@ -78,6 +75,7 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - Export off the main actor (from Phase 2).
 
 ### Phase 16
+- Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phases 5 and 7; unreachable in Phase 7 because the box opens Book Settings).
 - A Finder copy of a package keeps the same `Book.id`; give one a new ID on detection (from Phase 3).
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
@@ -138,25 +136,4 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-### Phase 7 — Style guide and page setup
-
-**Stage:** B (done; awaiting hand checks)
-
-Started 2026-11-08. Session A done 2026-11-08; `scripts/test.sh all` green at the end of A.
-
-**Lanes (all merged into `phase-7-style-page-setup`):**
-- Contracts (main thread): `PageSizePreset`, `Orientation.square`, `PageSetup.sizePreset` + `applying(preset:orientation:customSize:)`, `StyleVisual`/`StyleGuide.applying(_:)`, `ImageFlags` + `BookContent.imageFlags`, `BookCommand.setStyleVisual/.setPageSetup/.markFlagsOK`, `StylePreset` + `Presets.stylePresets()`.
-- L1 model + commands (sonnet): presets and sizes, `PageSetup` decoder (missing `sizePreset` → `.usLetter` for 612×792, else `.custom`), revision bump, flag derivation, bleed/spread/fold-aware `boxAspect(_:in:)`, the three commands with undo, placing a version clears `acknowledged.boxAspect`; 8 text-only style presets.
-- L2 UI (sonnet): Style tab (sidebar `.style`, now icon-only tabs to fit the minimum window width), preset picker, description, reference images (stored via `store.storeImage`), negative guidance, Typography sheet button, `PageSetupForm` (one uniform margin field), flag icons on thumbnails and page list, "Mark Images as OK" context menu, `ImageFlagsRow` with Mark as OK above the page editor's session panel.
-- L3 canvas (opus): page canvas shows the bleed area; shared `PageRenderer.drawGuides` (trim line with bleed on, safe area per page half, box outlines) in both editors; fold rule; rotation about the render rect's centre everywhere; 8 new snapshots (`PageSetupSnapshotTests`), geometry tests. No existing snapshots re-recorded.
-- L4 follow-ups (sonnet): template-editor undo grouping (burst closed before drags/one-shots, token `endInteraction`), layer-order controls disabled when they'd have no visible effect, Page Numbers skipped count and bold-face keep, Typography form fixes.
-
-**Decisions (logged in architecture.md §4.4, §8.2):** style-changed formula is `max(provenance.styleRevision, acknowledged.styleRevision) < visualRevision` (the A §4.4 wording was inverted); imported versions never get style changed; undo of a style edit restores the revision exactly; placements aren't rewritten on page-setup change (focal point/zoom re-clamped at draw, so reverting restores the crop); fold rule; rotation centre.
-
-**For Session B:** no live checks. Hand checks need a book with placed images (use fixture/imported images; imported versions have no provenance, so "style changed" needs a generated version — check what the hand-check driver can do offline, or note it for the user). Check undo for every Style-tab and page-setup field. Style references are stored but not sent to the provider yet (Phase 8 follow-up) — confirm Version details doesn't claim otherwise.
-
-**Session B (2026-11-08):** `scripts/test.sh all` green; secret scan clean; no live checks ($0.00).
-- Review round 1 (`a1ba052`): `visualRevision` is now monotonic through `StyleGuide.visualRevisionHighWater` (tolerant decode, defaults to `visualRevision`; A §4.1/§4.4 updated). Undo restores the fields and the revision but never lowers the high-water mark. `.chooseVersion` of the placed version is a no-op. The Style tab text editors follow model changes, so ⌘Z isn't reversed on blur. Re-review: no must-fix.
-- Hand-check round 2 (`d7a12b8`): `CommitField` (margins, bleed, custom size, box inspector) shows the committed value and ends editing on Return, so Edit > Undo works. Confirmed in the app.
-- Driven hand checks (placed versions written into a throwaway package's JSON, because there is no image import UI yet): checks 1–3 passed; undo passed for every Style/page-setup field; Version details doesn't claim references are sent. The title-box B follow-up wasn't reachable (the box opens Book Settings; B is disabled), so it stays open.
-
+_No phase in progress._

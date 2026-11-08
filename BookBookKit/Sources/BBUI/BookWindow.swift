@@ -101,6 +101,7 @@ struct BookEditor: View {
     @State private var styleModel: StyleTabModel
     @State private var sidebarTab: SidebarTab = .pages
     @State private var selectedImageBox: BoxID?
+    @State private var canvasImportError: String?
     @State private var showSession = true
     @State private var showTypography = false
     @State private var showNumbers = true
@@ -306,14 +307,38 @@ struct BookEditor: View {
             case .editor:
                 if let page = pages.selectedPage, content.pages[page] != nil {
                     PageCanvas(document: document, content: content, pageID: page, imageSource: images,
-                               selectedImageBox: $selectedImageBox) { [pages] in pages.sheet = .bookSettings }
+                               selectedImageBox: $selectedImageBox,
+                               onOpenBookSettings: { [pages] in pages.sheet = .bookSettings },
+                               onDropImageFiles: { page, box, urls in importDroppedImages(urls, page: page, box: box) })
                         // Read-only: no text editing or box selection (the canvas is AppKit).
                         .allowsHitTesting(document.isEditable)
+                        .alert("Couldn't Use That Image", isPresented: Binding(
+                            get: { canvasImportError != nil }, set: { if !$0 { canvasImportError = nil } })) {
+                            Button("OK", role: .cancel) {}
+                        } message: { Text(canvasImportError ?? "") }
                 } else {
                     ContentUnavailableView("No Page Selected", systemImage: "doc",
                                            description: Text("Choose a page, or add one with +."))
                 }
             }
+            }
+        }
+    }
+
+    /// "Use your own image" by dropping files on an image box (PD §8.6): selects the box and
+    /// imports each file as a version (the first auto-places if the box is empty).
+    private func importDroppedImages(_ urls: [URL], page: PageID, box: BoxID) {
+        selectedImageBox = box
+        let document = document
+        Task {
+            for url in urls {
+                do {
+                    _ = try await document.importImage(from: url, page: page, box: box)
+                } catch let failure as ImageImportFailure {
+                    canvasImportError = failure.message
+                } catch {
+                    canvasImportError = error.localizedDescription
+                }
             }
         }
     }

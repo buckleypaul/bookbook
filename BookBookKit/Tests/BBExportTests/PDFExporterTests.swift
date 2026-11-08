@@ -64,9 +64,9 @@ struct PDFExporterTests {
         let data = try PDFExporter.standardPDFData(Self.book(), images: Self.images())
         let document = try #require(PDFDocument(data: data))
 
-        #expect(document.pageCount == 2)
+        #expect(document.pageCount == 3) // cover + 2 story pages
         for index in 0..<2 {
-            let page = try #require(document.page(at: index))
+            let page = try #require(document.page(at: index + 1))
             #expect(page.bounds(for: .mediaBox) == CGRect(x: 0, y: 0, width: 612, height: 792))
             let pageText = normalise(page.string ?? "")
             #expect(pageText.contains(normalise("Page \(index + 1). " + Self.pageTexts[index])))
@@ -75,7 +75,7 @@ struct PDFExporterTests {
         #expect(document.documentAttributes?[PDFDocumentAttribute.titleAttribute] as? String == "The Fox Book")
 
         // The text sits inside the text box (y-up PDF space): selection bounds, not characterBounds (SL-1).
-        let page0 = try #require(document.page(at: 0))
+        let page0 = try #require(document.page(at: 1))
         let hit = try #require(document.findString("castle gate", withOptions: []).first)
         let bounds = hit.bounds(for: page0)
         let textBoxPDF = CGRect(x: 0.06 * 612, y: 792 - 0.94 * 792, width: 0.88 * 612, height: 0.24 * 792)
@@ -84,7 +84,7 @@ struct PDFExporterTests {
         // Fonts: both faces embedded as subsets.
         let provider = try #require(CGDataProvider(data: data as CFData))
         let cgDoc = try #require(CGPDFDocument(provider))
-        let pageDict = try #require(cgDoc.page(at: 1)?.dictionary)
+        let pageDict = try #require(cgDoc.page(at: 2)?.dictionary)
         let fonts = PDFFonts.fonts(inPage: pageDict)
         #expect(fonts.count >= 2)
         #expect(fonts.allSatisfy { $0.isEmbedded })
@@ -98,7 +98,7 @@ struct PDFExporterTests {
             .appendingPathComponent("bookbook-pdf-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: url) }
         try PDFExporter.exportStandard(Self.book(), images: Self.images(), to: url)
-        #expect(PDFDocument(url: url)?.pageCount == 2)
+        #expect(PDFDocument(url: url)?.pageCount == 3) // cover + 2 story pages
     }
 
     @Test func coverOnlyBook_throwsNoPages() {
@@ -107,6 +107,43 @@ struct PDFExporterTests {
         #expect(throws: PDFExportError.noPages) {
             try PDFExporter.standardPDFData(content, images: Self.images())
         }
+    }
+
+    @Test func coverIsFirstPage_withBoundTitleAndAuthor() throws {
+        var content = Self.book()
+        let titleBox = Box(frame: NormalizedRect(x: 0.1, y: 0.1, width: 0.8, height: 0.2),
+                           content: .text(TextBoxStyle()), role: .title)
+        let authorBox = Box(frame: NormalizedRect(x: 0.1, y: 0.7, width: 0.8, height: 0.1),
+                            content: .text(TextBoxStyle()), role: .author)
+        let cover = Template(name: "Cover with text", kind: .cover, boxes: [titleBox, authorBox])
+        content.templates[cover.id] = cover
+        var coverPage = try #require(content.coverPage)
+        coverPage.templateID = cover.id
+        content.pages[coverPage.id] = coverPage
+
+        let document = try #require(PDFDocument(data: try PDFExporter.standardPDFData(content, images: Self.images())))
+        #expect(document.pageCount == 3)
+        let first = normalise(try #require(document.page(at: 0)).string ?? "")
+        #expect(first.contains("The Fox Book") && first.contains("A. Tester"))
+        #expect(!normalise(try #require(document.page(at: 1)).string ?? "").contains("The Fox Book"))
+    }
+
+    @Test func pageNumberMarks_arePassedPerPageAndDrawn() throws {
+        let content = Self.book()
+        var asked: [PageID] = []
+        let numbers: [PageID: String] = Dictionary(uniqueKeysWithValues:
+            zip(content.book.pageOrder, ["41", "42"]))
+        let data = try PDFExporter.standardPDFData(content, images: Self.images()) { id in
+            asked.append(id)
+            return numbers[id].map { [PageNumberMark(text: $0, half: 0, isLeftHand: id == content.book.pageOrder[1])] } ?? []
+        }
+        #expect(asked.contains(content.book.coverPageID))
+        #expect(Set(asked) == Set(content.book.pageOrder + [content.book.coverPageID]))
+        let document = try #require(PDFDocument(data: data))
+        let texts = (0..<3).map { document.page(at: $0)?.string ?? "" }
+        #expect(!texts[0].contains("4"))
+        #expect(texts[1].contains("41"))
+        #expect(texts[2].contains("42"))
     }
 
     private func normalise(_ s: String) -> String {

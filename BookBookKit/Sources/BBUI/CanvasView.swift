@@ -110,6 +110,8 @@ final class CanvasView: NSView {
         return CanvasTransform(viewSize: bounds.size, fitting: sheetRect(scene, geometry: geometry))
     }
 
+    private var lastPagePoint: CGPoint?
+
     private func pagePoint(_ event: NSEvent) -> CGPoint? {
         transform?.toPage(convert(event.locationInWindow, from: nil))
     }
@@ -171,16 +173,21 @@ final class CanvasView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let controller, let point = pagePoint(event) else { return }
+        lastPagePoint = point
         controller.mouseDown(with: event, at: point)
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let controller, let point = pagePoint(event) else { return }
+        lastPagePoint = point
         controller.mouseDragged(with: event, at: point)
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let controller, let point = pagePoint(event) else { return }
+        guard let controller else { return }
+        // Always deliver mouse-up: a drag's undo group must close even if the pointer left
+        // the page (no page point), so fall back to the last known position.
+        let point = pagePoint(event) ?? lastPagePoint ?? .zero
         controller.mouseUp(with: event, at: point)
     }
 

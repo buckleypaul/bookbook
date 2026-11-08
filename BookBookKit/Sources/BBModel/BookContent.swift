@@ -60,10 +60,17 @@ public struct BookContent: Hashable, Sendable {
         var maxY = box.frame.maxY * trimH
         let bleed = setup.bleedEnabled ? max(0, setup.bleedAmount) : 0
         if bleed > 0 {
-            if box.bleedEdges.contains(.top) { minY -= bleed }
-            if box.bleedEdges.contains(.leading) { minX -= bleed }
-            if box.bleedEdges.contains(.bottom) { maxY += bleed }
-            if box.bleedEdges.contains(.trailing) { maxX += bleed }
+            // Same fold rule as `PageGeometry.pushedBleedEdges`: no bleed on an edge at a spread's fold.
+            var edges = box.bleedEdges
+            if spread {
+                let fold = trimW / 2
+                if abs(minX - fold) <= 0.5 { edges.remove(.leading) }
+                if abs(maxX - fold) <= 0.5 { edges.remove(.trailing) }
+            }
+            if edges.contains(.top) { minY -= bleed }
+            if edges.contains(.leading) { minX -= bleed }
+            if edges.contains(.bottom) { maxY += bleed }
+            if edges.contains(.trailing) { maxX += bleed }
         }
         let w = max(0, maxX - minX), h = max(0, maxY - minY)
         return h > 0 ? w / h : 0

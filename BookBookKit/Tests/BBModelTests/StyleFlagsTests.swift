@@ -185,4 +185,15 @@ struct StyleFlagsTests {
         let back = try JSONDecoder().decode(PageSetup.self, from: JSONEncoder().encode(setup))
         #expect(back == setup)
     }
+
+    @Test func spreadFoldEdgeGetsNoBleed() {
+        var content = BookContent.makeNew(title: "T", storyTemplate: Self.story, coverTemplate: Self.cover, now: Self.now)
+        content.style.pageSetup.bleedEnabled = true
+        content.style.pageSetup.bleedAmount = 9
+        var spread = Self.story
+        spread.kind = .spread
+        // Left half, full bleed: the trailing edge sits on the fold and gets no bleed.
+        let left = Box(frame: NormalizedRect(x: 0, y: 0, width: 0.5, height: 1), bleedEdges: .all, content: .image)
+        #expect(abs(content.boxAspect(left, in: spread) - (612.0 + 9) / 810.0) < 1e-9)
+    }
 }

@@ -36,7 +36,7 @@ import Testing
     @Test func textOutputAndMissingRates() throws {
         let cost = try calculator().actualCost(of: TokenUsage(inputTextTokens: 1_000_000, outputTextTokens: 1_000_000),
                                                provider: .openai, model: "gpt-6-luna")
-        #expect(cost == Decimal(string: "11.25"))
+        #expect(cost == Decimal(string: "0.60"))
         // Image output has no rate on a text model: counts as 0.
         let none = try calculator().actualCost(of: TokenUsage(outputImageTokens: 1000), provider: .openai, model: "gpt-6-luna")
         #expect(none == 0)

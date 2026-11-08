@@ -4,8 +4,10 @@ BookBook is a macOS 27 app for writing and illustrating picture books with AI im
 
 - `product-description.md` (PD): what the product does. It's the source of truth for requirements.
 - `architecture.md` (A): how it's built.
-- `implementation-plan.md`: the phases, working rules (§2), and dependencies (§3).
-- `PROGRESS.md`: where the build is now. `PHASE_PROMPT.md`: how one phase session runs.
+- `implementation-plan.md`: decisions (§0), phase overview (§1), working rules (§2) and dependencies (§3). Each phase's spec is in `plan/phase-NN-*.md`; finished phases are in `plan/done/`. Read only the phase you're working on.
+- `PROGRESS.md`: where the build is now (status table, open follow-ups, current phase log). Finished phase logs are in `progress/`; read them only when you need the history.
+- `PHASE_PROMPT.md`: how one phase session runs.
+- Don't read `architecture-decisions.md` or the `Spikes/` reports unless the task needs that history.
 
 ## Module map
 
@@ -52,11 +54,11 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
 - **Never** print, log, `echo`, write to a file, put in a fixture, commit, or paste a key into chat. Never run `security … -w` on its own, outside `$(…)`. To check that an item exists, run `security find-generic-password -a "$USER" -s <service> >/dev/null 2>&1` (no `-w`).
 - Tests read the key only from `ProcessInfo.environment`. It goes straight to the HTTP client and into nothing that can appear in a failure message.
 - `BBNet` always redacts `Authorization` and `x-goog-api-key` in its own diagnostics. Request and response bodies are never logged.
-- **The fixture recorder** saves only response bodies plus an allowlist of response headers (`content-type`, `retry-after`, rate-limit headers, `x-request-id`). Request headers are never saved. It checks in memory that a file's bytes don't contain the key before writing, and refuses if they do. Organisation and project IDs are replaced with placeholders.
+- **The fixture recorder** never saves request headers, and it refuses to write any file that contains the key. Read plan §2.2 before changing it.
 - **Live tests never use snapshot assertions.** The only files a live run writes are fixtures (through the recorder) and the spend log `~/Library/Caches/BookBook-dev/live-spend.jsonl` (no key or prompt text).
 - **Live tests never run in CI.** They skip themselves unless `BOOKBOOK_LIVE_TESTS=1` is set and a key is present.
 - **Spend:** $10 total cap (plan §2.4). `LiveSpendGuard` skips live tests once the running total passes `BOOKBOOK_LIVE_BUDGET` (default 10). Ask the user before any live run that would take the total in `PROGRESS.md` past $8, and record each run's spend there. Only run the live checks the current phase lists. Use Draft/low quality and small sizes unless the question needs more.
-- **The in-app key is separate.** The app stores its own key under `app.bookbook.api-key` / `openai`, and never reads the dev item. It's entered in a `SecureField` and goes only to the Keychain: never `UserDefaults`, `@SceneStorage`/`@AppStorage`, window restoration, the queue file or logs.
+- **The in-app key is separate** (`app.bookbook.api-key` / `openai`). The app never reads the dev item. The key goes only to the Keychain: never `UserDefaults`, `@SceneStorage`/`@AppStorage`, window restoration, the queue file or logs (plan §2.2).
 
 ## Secret scanning
 
@@ -69,6 +71,6 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
 
 - One phase per session, on branch `phase-<id>-<slug>`, ending in a PR to `main` (plan §2.6). Update `PROGRESS.md` as you go.
 - Small, logical commits with conventional messages. Never force-push `main`, never use `--no-verify`, and never change the repo's git identity (`Paul Buckley <paul@paulbuckley.me>`, set in the repo config).
-- Build only what the current phase lists. Put anything else under "Follow-ups" in `PROGRESS.md`.
+- Build only what the current phase lists. Put anything else under "Open follow-ups" in `PROGRESS.md`, tagged with its target phase.
 - If the architecture is wrong or too vague, make the smallest sound choice, update `architecture.md` in the same PR, and log it. Product-level changes need the user's approval.
 - Definition of done (plan §2.1): every undoable edit goes through a `BookCommand`; everything sent to a provider is shown in Version details; Swift 6 strict concurrency, with no warnings suppressed.

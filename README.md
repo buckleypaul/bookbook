@@ -64,8 +64,10 @@ Documents:
 
 - [`product-description.md`](product-description.md): what BookBook does (source of truth for requirements)
 - [`architecture.md`](architecture.md): how it's built
-- [`implementation-plan.md`](implementation-plan.md): the phased build plan
-- [`PROGRESS.md`](PROGRESS.md): where the build is now
+- [`implementation-plan.md`](implementation-plan.md): the build plan's core (decisions, rules, dependencies); each phase's spec is in [`plan/`](plan/)
+- [`PROGRESS.md`](PROGRESS.md): where the build is now; finished phase logs are in [`progress/`](progress/)
+- [`architecture-decisions.md`](architecture-decisions.md): the architecture decision log and findings
+- [`PHASE_PROMPT.md`](PHASE_PROMPT.md): how a phase session runs
 
 ## Licences
 

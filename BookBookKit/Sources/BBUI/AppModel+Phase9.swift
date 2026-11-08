@@ -42,6 +42,13 @@ extension AppModel {
         return estimate(intent, target: .pageBox(page, box), content: document.content)
     }
 
+    /// The estimate for "Regenerate with same settings": the version's stored intent, unchanged.
+    /// nil for a version with no provenance.
+    public func regenerateEstimate(_ version: Version, page: PageID, box: BoxID, in document: BookDocument) -> CostEstimate? {
+        guard let intent = version.provenance?.intent else { return nil }
+        return estimate(intent, target: .pageBox(page, box), content: document.content)
+    }
+
     /// Asks `CostPolicy` with the Settings threshold and the book's ledger total and budget.
     public func costDecision(for estimate: CostEstimate, in document: BookDocument) async -> CostDecision {
         let total = await ledgerSummary(for: document.id).total

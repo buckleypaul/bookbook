@@ -1,5 +1,6 @@
 import AppKit
 import BBExport
+import BBLayout
 import BBModel
 import SwiftUI
 import UniformTypeIdentifiers
@@ -121,8 +122,9 @@ enum PDFExportAction {
         panel.nameFieldStringValue = defaultFileName(title: document.content.book.title)
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try PDFExporter.exportStandard(document.content, images: ImageCache(store: document.store, maxPixelSize: nil),
-                                           to: url)
+            let content = document.content
+            try PDFExporter.exportStandard(content, images: ImageCache(store: document.store, maxPixelSize: nil),
+                                           to: url, pageNumbers: PageNumberMarks.make(for: content))
         } catch {
             let alert = NSAlert()
             alert.alertStyle = .warning

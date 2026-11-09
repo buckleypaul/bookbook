@@ -9,7 +9,6 @@ import Testing
 final class RecordingServices: ExportServices {
     var preflightOptions: [ExportOptions] = []
     var gate: CheckedContinuation<Void, Never>?
-    func runPreflight() async -> [PreflightIssue] { [] }
     func runPreflight(for options: ExportOptions) async -> [PreflightIssue] {
         preflightOptions.append(options)
         return []

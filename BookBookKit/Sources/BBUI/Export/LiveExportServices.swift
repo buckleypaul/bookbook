@@ -30,10 +30,6 @@ public final class LiveExportServices: ExportServices {
                             preparer: preparer, imageURL: { store.imageURL(for: $0) })
     }
 
-    public func runPreflight() async -> [PreflightIssue] {
-        await runPreflight(for: ExportOptions())
-    }
-
     public func runPreflight(for options: ExportOptions) async -> [PreflightIssue] {
         let content = document.content
         let store = document.store
@@ -52,6 +48,8 @@ public final class LiveExportServices: ExportServices {
             byKey[request.key] = request
         }
         requests = byKey
+        // A superseded check: skip the layout and spelling pass; the sheet ignores the result.
+        guard !Task.isCancelled else { return [] }
         return Preflight.run(content, assessments: assessments, spelling: SystemSpellingChecker(),
                              pages: selected)
     }

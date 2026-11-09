@@ -12,6 +12,7 @@ public actor LibraryIndex {
     private var continuations: [UUID: AsyncStream<[LibraryEntry]>.Continuation] = [:]
     private var watcher: FSEventsWatcher?
     private var debounceTask: Task<Void, Never>?
+    private var resolving = false
 
     /// `~/Library/Application Support/BookBook/library-index.json`.
     public static var defaultCacheURL: URL {
@@ -42,6 +43,20 @@ public actor LibraryIndex {
         current = Library(root: root).scan()
         writeCache()
         return current
+    }
+
+    /// `refresh()` after giving every duplicate `Book.id` (a Finder copy) a fresh one; see
+    /// `Library.resolveDuplicateBookIDs`. The package already in the index keeps its id. A call
+    /// that overlaps a run in progress just refreshes.
+    @discardableResult
+    public func refreshResolvingDuplicates() async -> [LibraryEntry] {
+        if !resolving {
+            resolving = true
+            let known = Dictionary(current.map { ($0.id, $0.url) }, uniquingKeysWith: { first, _ in first })
+            await Library(root: root).resolveDuplicateBookIDs(preferring: known)
+            resolving = false
+        }
+        return refresh()
     }
 
     public func entry(for id: BookID) -> LibraryEntry? {
@@ -111,9 +126,10 @@ public actor LibraryIndex {
         }
     }
 
-    private func refreshAndYield() {
+    private func refreshAndYield() async {
         guard watcher != nil else { return }
-        let fresh = refresh()
+        let fresh = await refreshResolvingDuplicates()
+        guard watcher != nil else { return }
         for c in continuations.values { c.yield(fresh) }
     }
 

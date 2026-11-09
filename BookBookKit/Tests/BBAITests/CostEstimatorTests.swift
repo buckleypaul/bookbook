@@ -174,6 +174,18 @@ import Testing
         #expect(est.amount != nil)
     }
 
+    @Test func regionEditHasAKnownNonZeroEstimate() throws {
+        let catalog = try ModelCatalog.bundled()
+        let b = try RegionEditPipelineTests.makeBook()
+        let result = try #require(CostEstimator.estimateInput(intent: b.intent(), target: b.book.target,
+                                                              content: b.book.content, catalog: catalog))
+        #expect(result.inputImageSizes == [RegionEditPipelineTests.size])
+        #expect(result.promptCharacters > 0)
+        let est = CostEstimator.estimate(result, priceList: try PriceList.bundled())
+        let amount = try #require(est.amount)
+        #expect(amount > 0)
+    }
+
     @Test func estimateInputNilForUnknownModelOrTarget() throws {
         let catalog = try ModelCatalog.bundled()
         let book = SliceBook.make()

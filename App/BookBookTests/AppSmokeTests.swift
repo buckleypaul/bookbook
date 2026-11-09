@@ -1,3 +1,4 @@
+import BBNet
 import BBStore
 import Foundation
 import Testing
@@ -17,8 +18,8 @@ import Testing
 /// Phase 16b (#44): as a test host the app wires no model listers, so launch never calls `/models`.
 @MainActor @Test func app_noModelListersUnderTests() {
     let keychain = KeychainStore(service: "app.bookbook.tests-\(UUID())")
-    #expect(AppWiring.listers(keychain: keychain).isEmpty)
-    #expect(AppWiring.listers(keychain: keychain, underTests: false).count == 1)
+    #expect(AppWiring.listers(keychain: keychain, http: URLSessionHTTPClient()).isEmpty)
+    #expect(AppWiring.listers(keychain: keychain, http: URLSessionHTTPClient(), underTests: false).count == 1)
 }
 
 /// Phase 1b smoke test: the app module loads and the host app has the expected bundle ID.

@@ -88,7 +88,10 @@ struct PresetSampleImage: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .accessibilityHidden(true)
         .task(id: preset?.sampleImage) {
-            image = preset?.sampleImageURL.flatMap { try? Data(contentsOf: $0) }.flatMap { NSImage(data: $0) }
+            // Read the file off the main actor (#3g).
+            let url = preset?.sampleImageURL
+            let data = await Task.detached { url.flatMap { try? Data(contentsOf: $0) } }.value
+            image = data.flatMap { NSImage(data: $0) }
         }
     }
 }

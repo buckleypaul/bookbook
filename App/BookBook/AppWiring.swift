@@ -12,13 +12,15 @@ import Foundation
 enum AppWiring {
     static func makeModel() -> AppModel {
         let keychain = KeychainStore()
-        let chat = chatProvider(keychain: keychain)
+        // One client (one URLSession) shared by every provider.
+        let http = URLSessionHTTPClient()
+        let chat = chatProvider(keychain: keychain, http: http)
         let support = appSupportFolder(arguments: launchArguments())
-        let model = AppModel(providers: providers(keychain: keychain), libraryRoot: libraryRoot(),
+        let model = AppModel(providers: providers(keychain: keychain, http: http), libraryRoot: libraryRoot(),
                              keychainService: keychain.service,
                              indexCacheURL: support.map(indexCacheURL(in:)) ?? LibraryIndex.defaultCacheURL,
                              appSupport: AppSupportFiles(folderURL: support),
-                             listers: listers(keychain: keychain),
+                             listers: listers(keychain: keychain, http: http),
                              network: NetworkMonitor(), visionProviders: [.openai: chat])
         model.layoutProvider = chat
         return model
@@ -44,8 +46,8 @@ enum AppWiring {
 
     /// Phase 12: OpenAI Chat Completions for templates (layout) and the consistency check
     /// (vision); the app's own Keychain item, read at request time.
-    static func chatProvider(keychain: KeychainStore) -> OpenAIChatProvider {
-        OpenAIChatProvider(http: URLSessionHTTPClient(), apiKey: { keychain.read(.openai) })
+    static func chatProvider(keychain: KeychainStore, http: any HTTPClient) -> OpenAIChatProvider {
+        OpenAIChatProvider(http: http, apiKey: { keychain.read(.openai) })
     }
 
     /// The library folder: the `-BookBookLibraryRoot /path` launch argument (argument domain
@@ -55,16 +57,16 @@ enum AppWiring {
     }
 
     /// The provider reads the app's own Keychain item at request time (never the dev item).
-    static func providers(keychain: KeychainStore) -> [ProviderID: any ImageProvider] {
-        [.openai: OpenAIImageProvider(http: URLSessionHTTPClient(), apiKey: { keychain.read(.openai) })]
+    static func providers(keychain: KeychainStore, http: any HTTPClient) -> [ProviderID: any ImageProvider] {
+        [.openai: OpenAIImageProvider(http: http, apiKey: { keychain.read(.openai) })]
     }
 
     /// List-models for Test connection and availability; the same app Keychain item, read at
     /// call time (never the dev item). None while the app is a test host, so a saved in-app key
     /// never triggers a `/models` call during `scripts/test.sh app` (#44).
-    static func listers(keychain: KeychainStore,
+    static func listers(keychain: KeychainStore, http: any HTTPClient,
                         underTests: Bool = OnboardingState.runningUnderTests) -> [ProviderID: any ModelLister] {
         guard !underTests else { return [:] }
-        return [.openai: OpenAIModelLister(http: URLSessionHTTPClient(), apiKey: { keychain.read(.openai) })]
+        return [.openai: OpenAIModelLister(http: http, apiKey: { keychain.read(.openai) })]
     }
 }

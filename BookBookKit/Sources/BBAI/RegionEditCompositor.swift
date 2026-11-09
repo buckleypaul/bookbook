@@ -47,11 +47,14 @@ enum RegionEditCompositor {
         }
         do throws(ImageOpsError) {
             let mask = try ImageOps.decodeMask(storedMask)
-            if try ImageOps.blackFillFraction(of: raw, in: mask) > blackFillLimit {
+            // Decoded once for both the black-fill check and the composite.
+            let edited = try ImageOps.decodeImage(raw)
+            if try ImageOps.blackFillFraction(of: edited, in: mask) > blackFillLimit {
                 return .failure(failure(RegionEditFailure.blankAreaCode,
                                         "The model returned a blank (black) area inside the selected area instead of an edit."))
             }
-            let png = try ImageOps.composite(original: base, edited: raw, mask: mask, featherPixels: featherPixels)
+            let png = try ImageOps.composite(original: base, decodingEdited: { edited }, mask: mask,
+                                             featherPixels: featherPixels)
             return .success(Edit(png: png, pixelSize: mask.pixelSize, featherPixels: featherPixels))
         } catch {
             return .failure(failure(RegionEditFailure.compositeFailedCode,

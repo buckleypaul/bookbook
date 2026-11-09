@@ -212,22 +212,9 @@ public actor GenerationQueue {
     public func retry(_ id: QueueItemID) {
         guard let index = entries.firstIndex(where: { $0.id == id }),
               case .failed = entries[index].state else { return }
-        var entry = entries.remove(at: index)
-        entry.state = .waiting
-        if let version = entry.item.kind.checkedVersion {
-            let alreadyChecking = entries.contains { other in
-                if case .failed = other.state { return false }
-                return other.item.kind.checkedVersion == version
-            }
-            if !alreadyChecking {
-                let front = entries.firstIndex { $0.state == .waiting && $0.id != current?.id } ?? entries.endIndex
-                entries.insert(entry, at: front)
-            }
-        } else {
-            entries.append(entry)
-        }
-        changed()
-        startNextIfIdle()
+        let item = entries.remove(at: index).item
+        // `enqueue` applies the check dedupe, publishes, saves and starts the next item.
+        enqueue([item], position: item.kind.checkedVersion == nil ? .end : .front)
     }
 
     public func pause() {
@@ -490,13 +477,13 @@ public actor GenerationQueue {
             await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
             return nil
         }
-        guard let planned = ContextAssembler.plan(intent: item.intent, target: item.target,
-                                                  messageID: item.messageID, content: content) else {
+        guard let prepared = ContextAssembler.prepare(intent: item.intent, target: item.target,
+                                                      messageID: item.messageID, content: content) else {
             await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
             return nil
         }
         var imageData: [ImageRef: Data] = [:]
-        for image in planned {
+        for image in ContextAssembler.plan(prepared) {
             if let data = await host.imageData(for: image.ref, in: item.bookID) { imageData[image.ref] = data }
         }
         // Region edit (A §7.6): the user's mask is read with the other images.
@@ -508,12 +495,18 @@ public actor GenerationQueue {
             await finishCancelled(item)
             return nil
         }
-        do throws(AssemblyError) {
-            let (request, report) = try ContextAssembler.assemble(
-                intent: item.intent, target: item.target, messageID: item.messageID, content: content,
-                model: model, imageData: imageData)
+        // Off the actor: a region edit decodes and re-encodes its mask here (A §7.6).
+        let intent = item.intent
+        let assembled = await Task.detached(priority: .userInitiated) { [imageData] in
+            Result { () throws(AssemblyError) in
+                try ContextAssembler.assemble(prepared: prepared, intent: intent, content: content, model: model,
+                                              imageData: imageData)
+            }
+        }.value
+        switch assembled {
+        case let .success((request, report)):
             return (provider, model, request, report, item.intent.regionMask.flatMap { imageData[$0] })
-        } catch {
+        case let .failure(error):
             await finishFailed(item, error.providerError, report: nil, attempts: 0)
             return nil
         }
@@ -644,12 +637,17 @@ public actor GenerationQueue {
             if let data = await host.imageData(for: image.ref, in: item.bookID) { imageData[image.ref] = data }
         }
         if isCancelled(item.id) { return await finishCancelled(item) }
+        // Off the actor: every image may be decoded and downscaled.
+        let instructions = consistencyInstructions
+        let assembling = await Task.detached(priority: .userInitiated) { [imageData] in
+            Result { () throws(AssemblyError) in
+                try ConsistencyAssembler.assemble(plan, model: model, imageData: imageData, instructions: instructions)
+            }
+        }.value
         let assembled: AssembledConsistency
-        do throws(AssemblyError) {
-            assembled = try ConsistencyAssembler.assemble(plan, model: model, imageData: imageData,
-                                                          instructions: consistencyInstructions)
-        } catch {
-            return await finishFailed(item, error.providerError, report: nil, attempts: 0)
+        switch assembling {
+        case let .success(value): assembled = value
+        case let .failure(error): return await finishFailed(item, error.providerError, report: nil, attempts: 0)
         }
         let request = assembled.request
         let result = await perform(item, model: model.id, report: nil) { _ async throws(ProviderError) in
@@ -764,10 +762,4 @@ public actor GenerationQueue {
             if result == .delivered { queueFollowUp(after: pending.delivery) }
         }
     }
-}
-
-/// Prices nothing, so every ledger line is the item's estimate. For the Phase 2 initializer.
-struct UnpricedCostPricing: CostPricing {
-    func actualCost(of usage: TokenUsage, provider: ProviderID, model: String) -> Decimal? { nil }
-    var priceListAsOf: String? { nil }
 }

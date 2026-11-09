@@ -312,4 +312,59 @@ struct ImageOpsTests {
         let empty = RegionMask(pixelSize: size(20, 20), bytes: [UInt8](repeating: 0, count: 400))
         #expect(try ImageOps.blackFillFraction(of: black, in: empty) == 0)
     }
+
+    /// The per-tap box blur `feather` used before its running-sum rewrite, kept as the reference.
+    private func referenceFeather(_ src: [UInt8], width w: Int, height h: Int, featherPixels: Double) -> [UInt8] {
+        let r = Int((max(0, featherPixels) / 2).rounded(.down))
+        guard r > 0, w > 0, h > 0 else { return src }
+        let n = 2 * r + 1
+        var tmp = [Int32](repeating: 0, count: w * h)
+        var out = src
+        for y in 0..<h {
+            let row = y * w
+            for x in 0..<w {
+                var sum: Int32 = 0
+                for k in -r...r { sum += Int32(src[row + min(max(x + k, 0), w - 1)]) }
+                tmp[row + x] = sum
+            }
+        }
+        let div = Int32(n * n)
+        for x in 0..<w {
+            for y in 0..<h {
+                var sum: Int32 = 0
+                for k in -r...r { sum += tmp[min(max(y + k, 0), h - 1) * w + x] }
+                out[y * w + x] = UInt8((sum + div / 2) / div)
+            }
+        }
+        return out
+    }
+
+    /// The running-sum feather is bit-identical to the per-tap one, including windows wider than
+    /// the image (edge replication on both sides).
+    @Test(arguments: [(97, 61, 8.0), (13, 9, 8.0), (3, 2, 9.0), (1, 40, 4.0), (40, 1, 6.0), (50, 50, 1.0)])
+    func featherMatchesPerTapBoxBlur(width: Int, height: Int, feather: Double) {
+        var rng = SplitMix64(seed: UInt64(width * 1000 + height))
+        // Random noise plus solid blocks, so both busy and flat areas are covered.
+        let src = (0..<(width * height)).map { i -> UInt8 in
+            let x = i % width, y = i / width
+            if (x / 7 + y / 5) % 3 == 0 { return 255 }
+            return UInt8(truncatingIfNeeded: rng.next())
+        }
+        let new = ImageOps.feather(src, width: width, height: height, featherPixels: feather)
+        let old = referenceFeather(src, width: width, height: height, featherPixels: feather)
+        #expect(new == old)
+    }
+}
+
+/// A seeded generator, so the random mask is the same on every run.
+private struct SplitMix64: RandomNumberGenerator {
+    var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
 }

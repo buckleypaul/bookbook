@@ -150,7 +150,8 @@ struct DraftAllFlow: ViewModifier {
             } message: {
                 Text("Every image box already has a picture.")
             }
-            .sheet(isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+            .sheet(isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } }),
+                   onDismiss: { if notice == nil { plan = nil } }) {
                 if let provider = notice {
                     RealPersonNoticeSheet(provider: provider,
                                           onContinue: {

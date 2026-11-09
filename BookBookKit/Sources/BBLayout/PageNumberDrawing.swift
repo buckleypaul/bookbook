@@ -54,8 +54,9 @@ enum PageNumberDrawing {
         return Placement(rect: CGRect(x: left, y: y, width: right - left, height: height), alignment: alignment)
     }
 
+    /// Draws `mark`, reusing a layout from `layouts` when given.
     static func draw(_ mark: PageNumberMark, content: BookContent, template: Template, geometry: PageGeometry,
-                     ctx: CGContext) {
+                     layouts: TextBoxLayoutCache? = nil, ctx: CGContext) {
         guard !mark.text.isEmpty else { return }
         let style = content.style.pageNumbers
         let placement = placement(for: mark, style: style, template: template, geometry: geometry)
@@ -67,7 +68,8 @@ enum PageNumberDrawing {
         let run = Run(text: mark.text, fontFamily: style.fontFamily ?? typography.bodyFont.postScriptName,
                       size: style.size, color: style.color ?? typography.color)
         let text = RichText(paragraphs: [Paragraph(runs: [run])])
-        let layout = TextBoxLayout(text: text, typography: typography, containerSize: placement.rect.size)
+        let layout = layouts?.layout(text: text, typography: typography, containerSize: placement.rect.size)
+            ?? TextBoxLayout(text: text, typography: typography, containerSize: placement.rect.size)
         // Centre the line vertically in its rect.
         let offset = max(0, (placement.rect.height - layout.usedHeight) / 2)
         layout.draw(in: ctx, origin: CGPoint(x: placement.rect.minX, y: placement.rect.minY + offset))

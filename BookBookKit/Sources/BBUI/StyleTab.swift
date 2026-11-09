@@ -218,12 +218,16 @@ struct StyleTab: View {
         .sheet(isPresented: $showTypography) { TypographyForm(document: document) }
     }
 
+    @ViewBuilder
     private var presetPicker: some View {
         Picker("Preset", selection: Binding(
             get: { model.visual.presetID ?? "" },
             set: { id in model.choosePreset(model.presets.first { $0.id == id }) })) {
             Text("None").tag("")
             ForEach(model.presets) { Text($0.name).tag($0.id) }
+        }
+        if let preset = model.presets.first(where: { $0.id == model.visual.presetID }), preset.sampleImageURL != nil {
+            PresetSampleImage(preset: preset, size: 96)
         }
     }
 }

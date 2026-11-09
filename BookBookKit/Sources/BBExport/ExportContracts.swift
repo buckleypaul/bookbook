@@ -255,7 +255,13 @@ public struct ImageAssessment: Hashable, Sendable {
     }
 }
 
-// The image lane implements, in `Sources/BBExport/Images/`:
+/// What the exporter needs from image preparation; `ExportImagePreparer` conforms. Tests fake it.
+public protocol ImagePreparing: Sendable {
+    func assess(_ request: ImagePreparationRequest) async -> ImageAssessment
+    func prepare(_ request: ImagePreparationRequest) async throws -> CGImage
+}
+
+// The image lane implements, in `Sources/BBExport/Images/` (stubs are in place; replace them):
 //
 //   public struct CoreImageUpscaler: Upscaler            // CILanczosScaleTransform + CISharpenLuminance ≈0.4
 //   public enum ImagePreparationPlanner {
@@ -264,7 +270,7 @@ public struct ImageAssessment: Hashable, Sendable {
 //                                   imageURL: (ImageRef) -> URL,
 //                                   pixelSize: (ImageRef) -> CGSize?) -> [ImagePreparationRequest]
 //   }
-//   public actor ExportImagePreparer {
+//   public actor ExportImagePreparer: ImagePreparing {
 //       public init(cacheDirectory: URL, upscaler: any Upscaler = CoreImageUpscaler())
 //       public func assess(_ request: ImagePreparationRequest) -> ImageAssessment
 //       /// Cropped + resampled to `requiredPixels`, cached as <hash>-<w>x<h>.jpg|png.
@@ -322,7 +328,7 @@ public protocol SpellingChecking: AnyObject {
     func misspelledWords(in text: String) -> [String]
 }
 
-// The preflight lane implements, in `Sources/BBExport/Preflight/`:
+// The preflight lane implements, in `Sources/BBExport/Preflight/` (stubs in place; replace them):
 //
 //   public final class SystemSpellingChecker: SpellingChecking   // NSSpellChecker, @MainActor
 //   @MainActor public enum Preflight {
@@ -335,10 +341,10 @@ public protocol SpellingChecking: AnyObject {
 
 // MARK: - Exporter (A §9.1)
 
-// The pipeline lane implements, in `Sources/BBExport/Pipeline/`:
+// The pipeline lane implements, in `Sources/BBExport/Pipeline/` (stubs in place; replace them):
 //
 //   @MainActor public final class BookExporter {
-//       public init(content: BookContent, images: any PageImageSource, preparer: ExportImagePreparer,
+//       public init(content: BookContent, images: any PageImageSource, preparer: any ImagePreparing,
 //                   imageURL: @escaping @Sendable (ImageRef) -> URL)
 //       /// Page numbers come from `PageNumberMarks.make(for: content)`.
 //       /// Renders one page per step on the main actor with `await` between pages (UI stays live);

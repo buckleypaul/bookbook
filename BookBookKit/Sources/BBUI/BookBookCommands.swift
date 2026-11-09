@@ -6,10 +6,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension FocusedValues {
-    /// The book in the key book window (drives File ▸ Export PDF…).
+    /// The book in the key book window (drives File ▸ Export… and Print…).
     @Entry public var focusedBook: BookDocument?
     /// Presents the typography form in the key book window (Format ▸ Typography…).
     @Entry var showTypography: Binding<Bool>?
+    /// Presents the export sheet in the key book window (File ▸ Export…).
+    @Entry var showExport: Binding<Bool>?
     /// The Pages tab's controller in the key book window (Page menu, Import Story Text…,
     /// Book Settings…, Page Numbers…).
     @Entry var pagesController: PagesController?
@@ -21,6 +23,7 @@ public struct BookBookCommands: Commands {
     private let app: AppModel
     @FocusedValue(\.focusedBook) private var book
     @FocusedValue(\.showTypography) private var showTypography
+    @FocusedValue(\.showExport) private var showExport
     @FocusedValue(\.pagesController) private var pages
     @Environment(\.openWindow) private var openWindow
 
@@ -72,11 +75,20 @@ public struct BookBookCommands: Commands {
             Button("Import Story Text…") { pages?.sheet = .importStory }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(pages?.isEditable != true)
-            Button("Export PDF…") {
-                if let book { PDFExportAction.run(book) }
+            Button("Export…") { showExport?.wrappedValue = true }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(book == nil || showExport == nil)
+            Button("Export Page as Image…") {
+                if let book, let page = pages?.selectedPage ?? book.content.book.pageOrder.first {
+                    ExportActions.exportPageAsImage(book, page: page)
+                }
             }
-            .keyboardShortcut("e", modifiers: [.command, .shift])
-            .disabled(book == nil)
+            .disabled(book == nil || (pages?.selectedPage ?? book?.content.book.pageOrder.first) == nil)
+        }
+        CommandGroup(replacing: .printItem) {
+            Button("Print…") { if let book { ExportActions.print(book) } }
+                .keyboardShortcut("p")
+                .disabled(book == nil)
         }
     }
 
@@ -113,37 +125,5 @@ public struct BookBookCommands: Commands {
             if let selected { pages?.toggleSkipNumber(selected) }
         }
         .disabled(!editable || !story)
-    }
-}
-
-/// File ▸ Export PDF… (Standard): a save panel, then `PDFExporter` with full-resolution images.
-@MainActor
-enum PDFExportAction {
-    static func run(_ document: BookDocument) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.canCreateDirectories = true
-        panel.nameFieldStringValue = defaultFileName(title: document.content.book.title)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let content = document.content
-            try PDFExporter.exportStandard(content, images: ImageCache(store: document.store, maxPixelSize: nil),
-                                           to: url, pageNumbers: PageNumberMarks.make(for: content))
-        } catch {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Couldn't export the PDF"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
-        }
-    }
-
-    /// `<title>.pdf`, with path separators replaced.
-    static func defaultFileName(title: String) -> String {
-        var name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "/", with: "-")
-            .replacingOccurrences(of: ":", with: "-")
-        if name.isEmpty { name = "Untitled" }
-        return name + ".pdf"
     }
 }

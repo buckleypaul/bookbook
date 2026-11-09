@@ -164,6 +164,10 @@ enum FlagText {
             out.append(Entry(symbol: "paintpalette.fill", color: .purple, title: "Style changed",
                              help: "The book's visual style changed after this image was made."))
         }
+        if flags.contains(.assetChanged) {
+            out.append(Entry(symbol: "person.crop.square.fill", color: .teal, title: "Asset changed",
+                             help: "A character, prop or place used for this image was edited after it was made."))
+        }
         if flags.contains(.layoutChanged) {
             out.append(Entry(symbol: "rectangle.dashed", color: .orange, title: "Layout changed",
                              help: "This box's shape changed since the image was placed."))

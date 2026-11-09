@@ -162,6 +162,12 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
         #endif
     }
 
+    /// Safety net: an editor dropped without `tearDown()` still closes its colour burst, or the
+    /// document's undo group would stay open and merge every later edit into one step.
+    isolated deinit {
+        finishColorBurst()
+    }
+
     func tearDown() {
         finishColorBurst()
         #if DEBUG

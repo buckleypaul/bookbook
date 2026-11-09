@@ -55,13 +55,16 @@ public struct Migrator: Sendable {
     @discardableResult
     public func migrateIfNeeded(packageURL: URL) throws(StoreError) -> Int? {
         struct SchemaProbe: Decodable { var schemaVersion: Int }
-        let original = try Self.gather(packageURL)
-        guard let bookData = original[PackageCoding.bookPath] else {
+        // Read only book.json first: an up-to-date book needs nothing else.
+        let bookURL = packageURL.appending(path: PackageCoding.bookPath)
+        guard FileManager.default.fileExists(atPath: bookURL.path(percentEncoded: false)) else {
             throw StoreError.notFound(packageURL.lastPathComponent)
         }
+        let bookData = try PackageCoding.io("read package") { try Data(contentsOf: bookURL) }
         let version = try PackageCoding.decode(SchemaProbe.self, from: bookData, what: "book.json").schemaVersion
         if version > currentVersion { throw StoreError.schemaTooNew(version) }
         if version == currentVersion { return nil }
+        let original = try Self.gather(packageURL)
         var migrated = original
         try migrate(&migrated, from: version)
         let changed = migrated.filter { original[$0.key] != $0.value }

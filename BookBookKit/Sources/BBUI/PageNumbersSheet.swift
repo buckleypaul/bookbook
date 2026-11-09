@@ -15,8 +15,8 @@ extension PageNumberPosition {
     }
 }
 
-/// Maps between the family names the picker shows and the PostScript names
-/// `PageNumberStyle.fontFamily` stores (drawing resolves fonts by PostScript name).
+/// Maps a family the picker shows to the PostScript name `PageNumberStyle.fontFamily` stores
+/// (drawing resolves fonts by PostScript name). The reverse is `FontFamilies.family(of:)`.
 enum PageNumberFontNames {
     /// PostScript name of the family's regular face (else its first face); nil if unavailable.
     static func postScriptName(forFamily family: String) -> String? {
@@ -28,11 +28,6 @@ enum PageNumberFontNames {
         }
         let regular = faces.first { ["Regular", "Roman", "Book", "Normal", "Medium"].contains($0.style) }
         return (regular ?? faces.first)?.ps
-    }
-
-    /// Display family for a stored PostScript name; nil when the font isn't installed.
-    static func family(forPostScriptName name: String) -> String? {
-        NSFont(name: name, size: 12)?.familyName
     }
 }
 
@@ -66,9 +61,10 @@ struct PageNumbersSheet: View {
     init(pages: PagesController, style: PageNumberStyle, content: BookContent? = nil) {
         self.pages = pages
         self.content = content
-        initialFamily = style.fontFamily.map { PageNumberFontNames.family(forPostScriptName: $0) ?? $0 }
+        let initialFamily = style.fontFamily.map { FontFamilies.family(of: $0) ?? $0 }
+        self.initialFamily = initialFamily
         _draft = State(initialValue: style)
-        _family = State(initialValue: style.fontFamily.map { PageNumberFontNames.family(forPostScriptName: $0) ?? $0 })
+        _family = State(initialValue: initialFamily)
     }
 
     /// Pages without a number: individually skipped ones that still exist, plus front matter
@@ -148,7 +144,7 @@ struct PageNumbersSheet: View {
         .padding(20)
         .frame(width: 460)
         .onAppear {
-            var list = NSFontManager.shared.availableFontFamilies
+            var list = FontFamilies.all
             // Keep a family the style names even if it isn't installed.
             if let family, !list.contains(family) { list.insert(family, at: 0) }
             families = list

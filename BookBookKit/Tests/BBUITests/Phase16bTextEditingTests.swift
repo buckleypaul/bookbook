@@ -135,6 +135,30 @@ struct Phase16bTextEditingTests {
         h.editor.tearDown()
     }
 
+    @Test func editorDroppedWithoutTearDown_closesTheBurst() throws {
+        weak var dropped: InlineTextEditor?
+        // A pool around the editor's whole life: AppKit autoreleases it in delegate calls.
+        let h = try autoreleasepool {
+            let h = try Harness()
+            h.editor.textView.setSelectedRange(boom)
+            h.step { h.editor.apply(.setColor(red)) }
+            #expect(h.editor.isColorBurstOpen)
+            dropped = h.editor
+            h.editor = nil
+            return h
+        }
+        #expect(dropped == nil, "the editor is gone")
+        // Two separate edits after it: each its own undo step, not merged into the burst.
+        h.step { h.doc.perform(.setRichText(page: h.page, box: h.box, text: RichText(plain: "One"), coalescing: false)) }
+        h.step { h.doc.perform(.setRichText(page: h.page, box: h.box, text: RichText(plain: "Two"), coalescing: false)) }
+        h.undo.undo()
+        #expect(h.text == RichText(plain: "One"))
+        h.undo.undo()
+        #expect(h.runs.last == Run(text: "BOOM!", color: red), "the burst is its own step")
+        h.undo.undo()
+        #expect(h.runs == [Run(text: "Hello BOOM!")])
+    }
+
     // MARK: #78a
 
     @Test func pastedKerningLinkAndSpacing_areDroppedFromTheView() throws {

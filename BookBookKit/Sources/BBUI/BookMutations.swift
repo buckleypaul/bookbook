@@ -74,11 +74,23 @@ public enum BookMutations {
     /// keeps the result in its strip. Placement needs the page and slot to exist.
     ///
     /// Returns what changed; empty if the session is gone.
+    ///
+    /// Phase 12: the version gets `versionID` (default: the queue's `delivery.versionID`) and the
+    /// intent's `versionSource` when set. A consistency check's delivery goes to
+    /// `applyConsistencyDelivery` instead.
     public static func applyDelivery(_ delivery: GenerationDelivery, storedImage: ImageRef?,
-                                     to content: inout BookContent, versionID: VersionID = VersionID(),
+                                     to content: inout BookContent, versionID: VersionID? = nil,
                                      now: Date) -> DirtySet {
+        guard delivery.item.kind == .image else { return applyConsistencyDelivery(delivery, to: &content) }
+        let versionID = versionID ?? delivery.versionID
         guard case let .pageBox(pageID, boxID) = delivery.item.target else {
-            return applyAssetDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID, now: now)
+            var dirty = applyAssetDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID,
+                                           now: now)
+            if case let .success(_, provenance) = delivery.outcome, let source = provenance.intent.versionSource,
+               let changed = setSource(source, of: versionID, in: &content) {
+                dirty.sessions.insert(changed)
+            }
+            return dirty
         }
         let page = content.pages[pageID]
         let slot = page?.images[boxID]
@@ -99,7 +111,7 @@ public enum BookMutations {
             let provenance = resolvingDeletedMentions(provenance, message: messageIndex.map { session.messages[$0] },
                                                       in: content)
             let version = Version(id: versionID, image: storedImage, pixelSize: result.pixelSize,
-                                  source: provenance.intent.regionMask == nil ? .generated : .regionEdit,
+                                  source: versionSource(for: provenance.intent),
                                   parent: provenance.intent.refines, createdAt: now, provenance: provenance)
             session.versions.append(version)
             if let messageIndex { session.messages[messageIndex].producedVersion = version.id }
@@ -122,6 +134,47 @@ public enum BookMutations {
 
         content.sessions[session.id] = session
         return dirty
+    }
+
+    /// The source a delivered version records: the intent's `versionSource` (e.g.
+    /// `.consistencyFix`), else `.regionEdit` with a mask, else `.generated`.
+    public static func versionSource(for intent: GenerationIntent) -> VersionSource {
+        intent.versionSource ?? (intent.regionMask == nil ? .generated : .regionEdit)
+    }
+
+    /// Sets a version's source; returns its session if anything changed.
+    private static func setSource(_ source: VersionSource, of versionID: VersionID,
+                                  in content: inout BookContent) -> SessionID? {
+        guard let session = content.sessions.values.first(where: { $0.version(versionID) != nil }),
+              let index = session.versions.firstIndex(where: { $0.id == versionID }),
+              session.versions[index].source != source else { return nil }
+        content.sessions[session.id]?.versions[index].source = source
+        return session.id
+    }
+
+    // MARK: Phase 12 consistency checks (A §7.8; not undoable)
+
+    /// A consistency check's delivery: on `.consistency(report)`, the checked version's report is
+    /// replaced; nothing else changes. A failure (or cancel) changes nothing at all, and a
+    /// version that's gone is ignored. Returns the session changed, if any.
+    public static func applyConsistencyDelivery(_ delivery: GenerationDelivery,
+                                                to content: inout BookContent) -> DirtySet {
+        guard case let .consistency(report) = delivery.outcome, let versionID = delivery.item.kind.checkedVersion,
+              let session = content.sessions.values.first(where: { $0.version(versionID) != nil }),
+              let index = session.versions.firstIndex(where: { $0.id == versionID }) else { return DirtySet() }
+        content.sessions[session.id]?.versions[index].consistency = report
+        return DirtySet(sessions: [session.id])
+    }
+
+    /// Dismisses (or restores) a version's consistency warning (PD §8.9). Empty if the version
+    /// has no report or nothing changed.
+    public static func setConsistencyDismissed(_ dismissed: Bool, version: VersionID, in sessionID: SessionID,
+                                               to content: inout BookContent) -> DirtySet {
+        guard let index = content.sessions[sessionID]?.versions.firstIndex(where: { $0.id == version }),
+              let report = content.sessions[sessionID]?.versions[index].consistency,
+              report.dismissed != dismissed else { return DirtySet() }
+        content.sessions[sessionID]?.versions[index].consistency?.dismissed = dismissed
+        return DirtySet(sessions: [sessionID])
     }
 
     /// Places `version` (zoom 1, centred) if the box exists, belongs to `session` and is empty.

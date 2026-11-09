@@ -45,7 +45,7 @@ extension AppModel {
     /// The estimate for "Regenerate with same settings": the version's stored intent, unchanged.
     /// nil for a version with no provenance.
     public func regenerateEstimate(_ version: Version, page: PageID, box: BoxID, in document: BookDocument) -> CostEstimate? {
-        guard let intent = version.provenance?.intent else { return nil }
+        guard let intent = (version.provenance?.intent).map(replayed) else { return nil }
         return estimate(intent, target: .pageBox(page, box), content: document.content)
     }
 
@@ -87,7 +87,7 @@ extension AppModel {
                                  messageID: MessageID(), intent: intent)
             return prepared(item, content: content)
         }
-        return DraftAllPlan(items: items, targets: targets, estimate: CostEstimate.total(items.map(\.estimate)))
+        return DraftAllPlan(items: items, targets: targets, estimate: CostEstimate.total(items.map(\.estimateIncludingFollowUp)))
     }
 
     /// Appends the pending messages and enqueues every item in one call. False if nothing was queued.

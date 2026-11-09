@@ -220,9 +220,14 @@ public final class OpenBooks {
     /// - `.bookUnavailable`: locked by another process, open read-only here, or the image or
     ///   session couldn't be written. Nothing was applied; the queue keeps it and retries.
     /// - `.bookGone`: deleted, in the Trash, or unreadable for good (corrupt, newer schema).
+    ///
+    /// Phase 12: a consistency check's report is written onto its version the same way (not
+    /// undoable); a failed or cancelled check touches nothing and is reported as delivered.
     @discardableResult
     public func deliver(_ delivery: GenerationDelivery, now: @escaping @Sendable () -> Date) async -> DeliveryResult {
         let id = delivery.item.bookID
+        let isImage = delivery.item.kind == .image
+        if !isImage, case .failure = delivery.outcome { return .delivered }
         let result: DeliveryResult = await serialized(id) { [self] in
             if let open = documents[id], !open.isClosed {
                 guard open.isEditable else {
@@ -241,7 +246,7 @@ public final class OpenBooks {
             }
             return await deliverToClosedBook(delivery, now: now)
         }
-        if result == .delivered { onDelivered(delivery.item.messageID) }
+        if result == .delivered, isImage { onDelivered(delivery.item.messageID) }
         return result
     }
 

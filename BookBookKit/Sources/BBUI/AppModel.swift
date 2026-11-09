@@ -86,6 +86,15 @@ public final class AppModel {
     @ObservationIgnored private let indexCacheURL: URL
     @ObservationIgnored private let userDefaults: UserDefaults
     @ObservationIgnored let now: @Sendable () -> Date
+    /// Phase 12: the providers wired for the consistency check (A §7.8).
+    @ObservationIgnored let visionProviderIDs: Set<ProviderID>
+    /// Phase 12 seams (tests replace them; the defaults are the BBAI functions).
+    @ObservationIgnored var consistencyEstimator: (CatalogTextModel, Int, PriceList) -> CostEstimate = {
+        CostEstimator.estimateConsistency(model: $0, imageCount: $1, priceList: $2)
+    }
+    @ObservationIgnored var correctionMessage: ([ConsistencyDifference]) -> String = {
+        ConsistencyPrompt.correctionMessage($0)
+    }
 
     /// - Parameters:
     ///   - providers: the concrete image providers (the app wires OpenAI; tests pass fakes).
@@ -96,12 +105,16 @@ public final class AppModel {
     ///   - listers: list-models clients for Test connection and model availability.
     ///   - network: online/offline updates (the app passes `NetworkMonitor`); nil = always online.
     ///   - priceList: nil uses the bundled price list (or the user's copy in `appSupport`).
+    ///   - visionProviders: Phase 12 consistency-check providers (the app wires OpenAI; tests pass
+    ///     fakes). Empty = no checks: no follow-ups are queued or estimated, and on-demand checks
+    ///     are refused (`canCheckConsistency`).
     public init(providers: [ProviderID: any ImageProvider], catalog: ModelCatalog? = nil,
                 libraryRoot: URL = Library.defaultRoot, keychainService: String = KeychainStore.appService,
                 indexCacheURL: URL = LibraryIndex.defaultCacheURL, userDefaults: UserDefaults = .standard,
                 thumbnails: ThumbnailCache = ThumbnailCache(), appSupport: AppSupportFiles = AppSupportFiles(),
                 listers: [ProviderID: any ModelLister] = [:], network: (any NetworkStatusSource)? = nil,
-                priceList: PriceList? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
+                priceList: PriceList? = nil, now: @escaping @Sendable () -> Date = { Date() },
+                visionProviders: [ProviderID: any VisionProvider] = [:]) {
         let library = Library(root: libraryRoot)
         let bundledCatalog = catalog ?? ((try? ModelCatalog.bundled()) ?? ModelCatalog(asOf: "", imageModels: []))
         let openBooks = OpenBooks(library: library, defaults: userDefaults)
@@ -123,7 +136,9 @@ public final class AppModel {
         self.openBooks = openBooks
         self.writer = writer
         self.queue = GenerationQueue(providers: providers, catalog: effective, host: writer, pricing: prices.calculator,
-                                     persistence: QueueFileStore(files: appSupport), now: now)
+                                     persistence: QueueFileStore(files: appSupport), now: now,
+                                     visionProviders: visionProviders)
+        self.visionProviderIDs = Set(visionProviders.keys)
         self.appSupport = appSupport
         self.preferences = preferences
         self.prices = prices
@@ -447,16 +462,27 @@ public final class AppModel {
     /// "Regenerate with same settings" for any target (asset slots and sheet items included).
     @discardableResult
     public func regenerate(_ version: Version, target: GenerationTarget, in document: BookDocument) -> Bool {
-        guard let intent = version.provenance?.intent else { return false }
+        guard let intent = (version.provenance?.intent).map(replayed) else { return false }
         let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, target: target,
                                                            now: now())
         return enqueue(message, prepared(item, content: document.content), in: document)
     }
 
-    /// Fills in the item's estimate, display labels and enqueue time (A §7.9, §7.10).
+    /// A stored intent replayed now: unchanged, except the consistency follow-up follows today's
+    /// Settings switch (it's captured at enqueue time, A §7.8).
+    func replayed(_ intent: GenerationIntent) -> GenerationIntent {
+        var intent = intent
+        intent.checkConsistency = preferences.consistencyCheckEnabled
+        return intent
+    }
+
+    /// Fills in the item's estimate, display labels and enqueue time (A §7.9, §7.10), and its
+    /// consistency follow-up (A §7.8): `checkConsistency` defaults to the Settings switch.
     func prepared(_ item: QueueItem, content: BookContent) -> QueueItem {
         var item = item
-        item.estimate = estimate(item.intent, target: item.target, content: content)
+        if item.intent.checkConsistency == nil { item.intent.checkConsistency = preferences.consistencyCheckEnabled }
+        item.estimate = ownEstimate(item.intent, target: item.target, content: content)
+        item.consistencyFollowUp = consistencyFollowUp(for: item.intent, target: item.target, content: content)
         switch item.target {
         case let .pageBox(page, box):
             item.display = DraftAllPlanner.display(page: page, box: box, in: content)
@@ -467,9 +493,18 @@ public final class AppModel {
         return item
     }
 
-    /// `CostEstimator` on the effective catalog and the current price list; `.unknown` if the
-    /// model or target can't be resolved or the model has no price entry.
+    /// What the user is shown for a generation: its own request plus its consistency follow-up
+    /// when one would be queued (`intent.checkConsistency`, nil = the Settings switch; A §7.10).
     func estimate(_ intent: GenerationIntent, target: GenerationTarget, content: BookContent) -> CostEstimate {
+        let own = ownEstimate(intent, target: target, content: content)
+        guard let followUp = consistencyFollowUp(for: intent, target: target, content: content) else { return own }
+        return CostEstimate.total([own, followUp.estimate])
+    }
+
+    /// `CostEstimator` on the effective catalog and the current price list for this request
+    /// alone (the queue item's `estimate`); `.unknown` if the model or target can't be resolved
+    /// or the model has no price entry.
+    func ownEstimate(_ intent: GenerationIntent, target: GenerationTarget, content: BookContent) -> CostEstimate {
         guard let input = CostEstimator.estimateInput(intent: intent, target: target, content: content,
                                                       catalog: catalog) else { return .unknown }
         return CostEstimator.estimate(input, priceList: prices.current)

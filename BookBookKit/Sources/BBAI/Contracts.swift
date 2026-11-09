@@ -270,8 +270,8 @@ public struct GenerationDelivery: Sendable {
 
 public enum DeliveryResult: Hashable, Sendable {
     case delivered
-    /// Locked by another process (or read-only here): the queue keeps the delivery in memory
-    /// and retries it later (`QueueSnapshot.undeliveredCount`).
+    /// Locked by another process (or read-only here): the queue keeps the delivery (saved in
+    /// `queue.json`, Phase 16b) and retries it later, and at the next launch (`QueueSnapshot.undeliveredCount`).
     case bookUnavailable
     /// Deleted or in the Trash: dropped (A §6.4).
     case bookGone
@@ -307,7 +307,9 @@ public struct PersistedQueue: Hashable, Codable, Sendable {
     /// 2 (Phase 12): items may be consistency checks (`QueueItem.kind`). Version 1 files still
     /// decode (every item is an image item); builds before Phase 12 ignore a version 2 file
     /// rather than run a check as an image request.
-    public static let currentSchemaVersion = 2
+    /// 3 (Phase 16b): `undelivered` lists finished results whose book was locked; their image
+    /// bytes live in spool files next to `queue.json`. Version 1 and 2 files decode with none.
+    public static let currentSchemaVersion = 3
 
     public struct Entry: Hashable, Codable, Sendable {
         public var item: QueueItem
@@ -326,9 +328,167 @@ public struct PersistedQueue: Hashable, Codable, Sendable {
 
     public var schemaVersion: Int
     public var entries: [Entry]
+    /// Phase 16b: deliveries waiting for their book (`DeliveryResult.bookUnavailable`), oldest
+    /// first. Redelivered after `restore()`.
+    public var undelivered: [PersistedDelivery]
 
-    public init(schemaVersion: Int = PersistedQueue.currentSchemaVersion, entries: [Entry]) {
+    public init(schemaVersion: Int = PersistedQueue.currentSchemaVersion, entries: [Entry],
+                undelivered: [PersistedDelivery] = []) {
         self.schemaVersion = schemaVersion
         self.entries = entries
+        self.undelivered = undelivered
+    }
+
+    private enum CodingKeys: String, CodingKey { case schemaVersion, entries, undelivered }
+
+    /// Files before schema 3 have no `undelivered`.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        entries = try c.decode([Entry].self, forKey: .entries)
+        undelivered = try c.decodeIfPresent([PersistedDelivery].self, forKey: .undelivered) ?? []
+    }
+
+    /// Per book, the image file names in its `images/` that queued work still needs and the
+    /// open-time sweep must keep (#29a).
+    public var protectedImageFileNames: [BookID: Set<String>] {
+        var names: [BookID: Set<String>] = [:]
+        for entry in entries { names[entry.item.bookID, default: []].formUnion(entry.bookImageFileNames) }
+        for delivery in undelivered { names[delivery.item.bookID, default: []].formUnion(delivery.bookImageFileNames) }
+        return names
+    }
+}
+
+/// An image a persisted delivery needs, kept as a spool file (`QueuePersistence` writes and
+/// reads the bytes; only `fileName` and `ref` are encoded).
+public struct SpooledImage: Hashable, Codable, Sendable {
+    /// The file name in the persistence's spool folder (`<token>.<ext>`, or
+    /// `<token>-<sha256>.<ext>` for an additional image).
+    public var fileName: String
+    /// nil = the result image; otherwise the additional image's ref (`GenerationDelivery.additionalImages`).
+    public var ref: ImageRef?
+    /// Not encoded. Empty after decoding until the persistence reads the spool file.
+    public var data: Data
+
+    public init(fileName: String, ref: ImageRef?, data: Data) {
+        self.fileName = fileName
+        self.ref = ref
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey { case fileName, ref }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        fileName = try c.decode(String.self, forKey: .fileName)
+        ref = try c.decodeIfPresent(ImageRef.self, forKey: .ref)
+        data = Data()
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(fileName, forKey: .fileName)
+        try c.encodeIfPresent(ref, forKey: .ref)
+    }
+}
+
+/// Phase 16b (#42a): a `GenerationDelivery` the host couldn't write yet, as saved in
+/// `queue.json`. Image bytes are in `images` (spool files), never in the JSON.
+public struct PersistedDelivery: Hashable, Codable, Sendable {
+    public enum Outcome: Hashable, Codable, Sendable {
+        /// `GenerationDelivery.Outcome.success` without the image bytes (`images` holds them).
+        case success(contentType: String, pixelSize: PixelSize, usage: TokenUsage?, revisedPrompt: String?,
+                     parametersSent: [String: String], provenance: Provenance)
+        case failure(ProviderError)
+        case consistency(ConsistencyReport)
+    }
+
+    /// Identifies the delivery across launches; names its spool files.
+    public var token: UUID
+    public var item: QueueItem
+    public var outcome: Outcome
+    public var costRecordID: CostRecordID?
+    public var versionID: VersionID
+    public var images: [SpooledImage]
+
+    public init(token: UUID, item: QueueItem, outcome: Outcome, costRecordID: CostRecordID?, versionID: VersionID,
+                images: [SpooledImage]) {
+        self.token = token
+        self.item = item
+        self.outcome = outcome
+        self.costRecordID = costRecordID
+        self.versionID = versionID
+        self.images = images
+    }
+
+    public init(token: UUID, delivery: GenerationDelivery) {
+        var images: [SpooledImage] = []
+        let outcome: Outcome
+        switch delivery.outcome {
+        case let .success(result, provenance):
+            let ext = ImageRef(sha256: "", contentType: result.contentType).fileExtension
+            images.append(SpooledImage(fileName: "\(token.uuidString).\(ext)", ref: nil, data: result.imageData))
+            outcome = .success(contentType: result.contentType, pixelSize: result.pixelSize, usage: result.usage,
+                               revisedPrompt: result.revisedPrompt, parametersSent: result.parametersSent,
+                               provenance: provenance)
+        case let .failure(error):
+            outcome = .failure(error)
+        case let .consistency(report):
+            outcome = .consistency(report)
+        }
+        for (ref, data) in delivery.additionalImages.sorted(by: { $0.key.sha256 < $1.key.sha256 }) {
+            images.append(SpooledImage(fileName: "\(token.uuidString)-\(ref.fileName)", ref: ref, data: data))
+        }
+        self.init(token: token, item: delivery.item, outcome: outcome, costRecordID: delivery.costRecordID,
+                  versionID: delivery.versionID, images: images)
+    }
+
+    /// The delivery again; nil when an image's bytes are missing.
+    public var delivery: GenerationDelivery? {
+        let deliveryOutcome: GenerationDelivery.Outcome
+        switch outcome {
+        case let .success(contentType, pixelSize, usage, revisedPrompt, parametersSent, provenance):
+            guard let data = images.first(where: { $0.ref == nil })?.data, !data.isEmpty else { return nil }
+            let result = ImageResult(imageData: data, contentType: contentType, pixelSize: pixelSize, usage: usage,
+                                     revisedPrompt: revisedPrompt, parametersSent: parametersSent)
+            deliveryOutcome = .success(result: result, provenance: provenance)
+        case let .failure(error):
+            deliveryOutcome = .failure(error)
+        case let .consistency(report):
+            deliveryOutcome = .consistency(report)
+        }
+        var additional: [ImageRef: Data] = [:]
+        for image in images {
+            guard let ref = image.ref else { continue }
+            guard !image.data.isEmpty else { return nil }
+            additional[ref] = image.data
+        }
+        return GenerationDelivery(item: item, outcome: deliveryOutcome, costRecordID: costRecordID,
+                                  additionalImages: additional, versionID: versionID)
+    }
+
+    /// Image file names in the book's `images/` this delivery will reference once written
+    /// (the region mask and sent references), which the open-time sweep must keep (#29a).
+    public var bookImageFileNames: Set<String> {
+        var refs: [ImageRef] = item.intent.regionMask.map { [$0] } ?? []
+        if case let .success(_, _, _, _, _, provenance) = outcome {
+            refs += provenance.referencesSent.map(\.image) + provenance.referencesOmitted.map(\.image)
+            refs += [provenance.maskSent, provenance.intent.regionMask].compactMap { $0 }
+        }
+        return Set(refs.map(\.fileName))
+    }
+}
+
+extension PersistedQueue.Entry {
+    /// Image file names in the book's `images/` this entry needs while it's queued: the region
+    /// mask (not in the book's JSON until the edit lands) and, for a failed item, the images its
+    /// report names. Refine bases and attached references are versions the book's JSON still
+    /// holds, so the sweep keeps their images already.
+    public var bookImageFileNames: Set<String> {
+        var refs: [ImageRef] = item.intent.regionMask.map { [$0] } ?? []
+        if let report = failure?.report {
+            refs += report.referencesSent.map(\.image) + report.referencesOmitted.map(\.image)
+        }
+        return Set(refs.map(\.fileName))
     }
 }

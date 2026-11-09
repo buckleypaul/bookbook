@@ -54,13 +54,21 @@ public final class AppModel {
     /// From `LibraryIndex`, newest first.
     public private(set) var libraryEntries: [LibraryEntry] = []
     public private(set) var queueSnapshot = QueueSnapshot()
+    /// Phase 16b: finished pictures still waiting for their book (locked by another process).
+    /// They're saved with the queue and redelivered at the next launch. Observable.
+    public var undeliveredCount: Int { queueSnapshot.undeliveredCount }
     /// From `KeychainStore.hasKey` (never reads the secret).
     public private(set) var hasOpenAIKey = false
-    /// Set by File ▸ New Book…; the Library window shows its sheet.
-    public var newBookRequested = false
+    /// Set by File ▸ New Book…; the Library window shows its sheet. Setting it clears
+    /// `newBookFromStoryRequested`, so the two sheets never collide.
+    public var newBookRequested = false {
+        didSet { if newBookRequested, newBookFromStoryRequested { newBookFromStoryRequested = false } }
+    }
     /// Set by File ▸ New Book from Story…; the Library window shows the title sheet, and the new
-    /// book opens with the Import Story Text sheet already up.
-    public var newBookFromStoryRequested = false
+    /// book opens with the Import Story Text sheet already up. Setting it clears `newBookRequested`.
+    public var newBookFromStoryRequested = false {
+        didSet { if newBookFromStoryRequested, newBookRequested { newBookRequested = false } }
+    }
     /// Books created by New Book from Story… whose window hasn't yet presented the import sheet.
     @ObservationIgnored private var pendingStoryImports: Set<BookID> = []
     /// Pictures that arrived but couldn't be written into their book, by message (shown in the thread).
@@ -285,7 +293,9 @@ public final class AppModel {
     /// is no `BookCommand` and the new book's undo stack starts empty. With `importStoryAfter`,
     /// the book's window shows the story-import sheet when it opens (`takePendingStoryImport`).
     public func createBook(spec: NewBookSpec) async throws -> LibraryEntry {
-        let entry = try library.createBook(spec: spec, now: now())
+        let library = library, now = now()
+        // File I/O off the main actor (#3g).
+        let entry = try await Task.detached { try library.createBook(spec: spec, now: now) }.value
         openBooks.remember([entry])
         if spec.importStoryAfter { pendingStoryImports.insert(entry.id) }
         await refreshLibrary()
@@ -420,14 +430,17 @@ public final class AppModel {
     }
 
     /// A book window closed itself after `closeWindow(for:)`.
+    /// Also drops a story import the window never presented (#72b).
     public func windowDidClose(_ id: BookID) {
         windowCloseRequests.remove(id)
+        pendingStoryImports.remove(id)
     }
 
     /// A book window whose book isn't in the library any more (restored by SwiftUI after it was
-    /// deleted): forget it silently.
+    /// deleted): forget it silently, with any pending story import.
     public func forgetBook(_ id: BookID) {
         openBooks.forget(id)
+        pendingStoryImports.remove(id)
     }
 
     /// Whether the index still has the book (after `start()`).
@@ -455,11 +468,14 @@ public final class AppModel {
         openBooks.isTerminating = true
     }
 
-    /// Quit: flushes and closes every book (releasing locks), keeping the open-books list.
+    /// Quit: flushes and closes every book (releasing locks), keeping the open-books list, then
+    /// waits for the queue's last `queue.json` save (#34a).
     public func prepareForQuit() async {
         beginTermination()
         await openBooks.closeAllForQuit()
         await index.stopWatching()
+        await queueOperationsSettled()
+        await queue.flushPersistence()
     }
 
     // MARK: Keys (A §5.5, plan §2.2: the key goes only to the Keychain)
@@ -517,10 +533,12 @@ public final class AppModel {
     }
 
     /// A stored intent replayed now: unchanged, except the consistency follow-up follows today's
-    /// Settings switch (it's captured at enqueue time, A §7.8).
+    /// Settings switch (it's captured at enqueue time, A §7.8), and `versionSource` is cleared:
+    /// a replay is a plain generation, not another consistency fix (#18).
     func replayed(_ intent: GenerationIntent) -> GenerationIntent {
         var intent = intent
         intent.checkConsistency = preferences.consistencyCheckEnabled
+        intent.versionSource = nil
         return intent
     }
 

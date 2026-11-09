@@ -10,7 +10,9 @@ import Foundation
 // into a context whose user space is already set up that way (see `PageRenderer.draw`).
 //
 // ISOLATION: TextKit 2 layout and drawing are @MainActor in Phase 2 (simple and sound; export of
-// a slice-sized book on the main actor is acceptable). Phase 14 revisits for background export.
+// a slice-sized book on the main actor is acceptable). Phase 14 keeps rendering on the main
+// actor, one page per step with a suspension in between, and moves image preparation (decode,
+// crop, upscale, encode) off it (A §9.1).
 
 /// Where a renderer gets bitmaps from.
 @MainActor
@@ -19,12 +21,36 @@ public protocol PageImageSource: AnyObject {
     func image(for ref: ImageRef) -> CGImage?
 }
 
+/// Identifies one image box on one page (Phase 14): the unit `ExportImagePreparer` prepares.
+public struct BoxImageKey: Hashable, Sendable, Codable {
+    public var page: PageID
+    public var box: BoxID
+    public init(page: PageID, box: BoxID) {
+        self.page = page
+        self.box = box
+    }
+}
+
+/// Export-time bitmaps already cropped and resampled for one box (Phase 14, A §8.4 / §9.2).
+/// When a renderer has one and it returns an image for a box, the renderer draws that image
+/// filling the box's `PageGeometry.renderRect(for:)` (clipped to the box shape) instead of
+/// drawing the source image with its placement transform, so it never resamples itself.
+@MainActor
+public protocol PreparedImageSource: AnyObject {
+    func preparedImage(for key: BoxImageKey) -> CGImage?
+}
+
 public struct RenderOptions: Hashable, Sendable {
     public enum Target: Hashable, Sendable {
         case screen
         case thumbnail
-        /// PDF at trim size (Phase 14 adds `.pdfBleed` and `.print`).
+        /// PDF at trim size.
         case pdfTrim
+        /// PDF that also draws the bleed area (print-shop output, Phase 14). The context is
+        /// still in trim space (origin at the trim's top-left); content past the trim is kept.
+        case pdfBleed
+        /// The print path (Phase 14): same drawing as `.pdfTrim`, never any screen overlays.
+        case print
     }
 
     public var target: Target

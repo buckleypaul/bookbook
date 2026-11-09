@@ -913,7 +913,8 @@ Book snapshot ─▶ PageSequencer ─▶ Imposition (standard | printShop | boo
              ─▶ PageRenderer into CGPDFContext ─▶ .pdf  (or PDFDocument.printOperation for Print)
 ```
 
-- The export runs in a detached task over a `Sendable` snapshot, with progress reporting and cancellation. The UI stays usable.
+- The export works from a `Sendable` `BookContent` snapshot, with progress reporting and cancellation. The UI stays usable. Image preparation (decode, crop, upscale, encode) runs off the main actor in the `ExportImagePreparer` actor. Page drawing stays on the main actor because TextKit 2 layout is `@MainActor` (§8.3): `BookExporter` draws one page per step and suspends in between, so the UI keeps responding (Phase 14 decision).
+- For export, the renderer draws each box's prepared bitmap (`PreparedImageSource`, keyed by `BoxImageKey`) filling the box's render rect, rather than resampling the source image itself.
 - **Standard:** the media box is the trim size. No bleed.
 - **Print shop** (bleed must be on):
   - The media box is the trim plus the bleed plus a 0.25 in mark area. `TrimBox` and `BleedBox` are set as PDF box attributes.

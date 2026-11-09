@@ -133,6 +133,12 @@ struct ExportSheetModelTests {
         bigger.rangeTo = 3
         #expect(bigger.options.pageRange == 2...3)
         #expect(bigger.predictedBlanks == 2)
+        // Cover + 3 story pages = 4 pages, but the inside front cover blank is needed so
+        // story page 1 stays right-hand: 4 + 1 leading + 3 padding.
+        let (three, _, _, _) = try makeModel(extraPages: 2)
+        three.outputType = .booklet
+        #expect(three.totalPositions == 3)
+        #expect(three.predictedBlanks == 4)
     }
 
     @Test func rangeValidation() throws {

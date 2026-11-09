@@ -117,10 +117,15 @@ public final class ExportSheetModel {
         return positions + (includeCover ? 1 : 0)
     }
 
-    /// Booklet only: blank pages the export will add to reach a multiple of 4.
+    /// Booklet only: blank pages the export will add (the inside front cover or a parity
+    /// blank before an even-starting range, plus padding to a multiple of 4).
     public var predictedBlanks: Int? {
         guard outputType == .booklet, selectedPageCount > 0 else { return nil }
-        return BookletImposition.paddedCount(selectedPageCount) - selectedPageCount
+        let storyPages = selectedPageCount - (includeCover ? 1 : 0)
+        let first: Int? = storyPages > 0 ? (limitsRange ? max(rangeFrom, 1) : 1) : nil
+        let blanks = BookletImposition.blanks(contentPages: selectedPageCount,
+                                              includeCover: includeCover, firstStoryPosition: first)
+        return blanks.leading + blanks.trailing
     }
 
     public var canExport: Bool {

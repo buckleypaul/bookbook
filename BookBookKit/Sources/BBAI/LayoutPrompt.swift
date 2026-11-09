@@ -4,15 +4,6 @@ import Foundation
 
 // Phase 12. A §7.7.
 
-/// Loads the text and vision prompts (`Prompts/layout-v1`, `Prompts/consistency-v1`).
-enum TextPrompts {
-    static func text(_ key: String, set: String) -> String {
-        guard let url = Bundle.module.resourceURL?.appendingPathComponent("Prompts/\(set)/\(key).txt"),
-              let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
-        return text.trimmingCharacters(in: .newlines)
-    }
-}
-
 public enum LayoutPrompt {
     static let set = "layout-v1"
 
@@ -44,7 +35,7 @@ public enum LayoutPrompt {
             "Example \(index + 1) (\(preset.name)):\n" + json(draft(from: preset, pageSetup: pageSetup))
         }.joined(separator: "\n\n")
 
-        let user = PromptTemplates.render(TextPrompts.text("user", set: set), [
+        let user = PromptTemplates.render(PromptTemplates.text(for: "user", set: set) ?? "", [
             "description": description.trimmingCharacters(in: .whitespacesAndNewlines),
             "kind": kind == .spread ? "spread (two facing pages)" : "single page",
             "size": size,
@@ -53,7 +44,7 @@ public enum LayoutPrompt {
             "bleed": bleed,
             "examples": examplesText.isEmpty ? "" : "Examples of the output format:\n\n" + examplesText,
         ]).trimmingCharacters(in: .whitespacesAndNewlines)
-        return LayoutRequest(model: model, system: TextPrompts.text("system", set: set), user: user)
+        return LayoutRequest(model: model, system: PromptTemplates.text(for: "system", set: set) ?? "", user: user)
     }
 
     /// Two presets of the same `kind`, preferring ordinary layouts (no front/back-matter role).

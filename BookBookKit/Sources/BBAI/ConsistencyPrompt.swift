@@ -34,12 +34,12 @@ public enum ConsistencyPrompt {
                 return detail.isEmpty ? "- \(asset.name)" : "- \(asset.name): \(detail)"
             }.joined(separator: "\n")
         let style = styleDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        let user = PromptTemplates.render(TextPrompts.text("user", set: set), [
+        let user = PromptTemplates.render(PromptTemplates.text(for: "user", set: set) ?? "", [
             "images": images,
             "assets": assetLines,
             "style": style.isEmpty ? "(not described)" : style,
         ]).trimmingCharacters(in: .whitespacesAndNewlines)
-        return (TextPrompts.text("system", set: set), user)
+        return (PromptTemplates.text(for: "system", set: set) ?? "", user)
     }
 
     /// The one-click fix message (A §7.8): "Keep everything the same, but: make Pip's scarf red

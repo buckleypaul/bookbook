@@ -2,6 +2,7 @@ import BBAICore
 import BBModel
 import Foundation
 import ImageIO
+import Synchronization
 
 /// An image the assembler needs bytes for, in send order (A §7.3, §7.9).
 public struct PlannedImage: Hashable, Sendable {
@@ -560,10 +561,20 @@ enum ImageHeader {
 enum PromptTemplates {
     static let version = "image-v1"
 
-    static func text(for key: String) -> String? {
-        guard let base = Bundle.module.resourceURL?.appendingPathComponent("Prompts/\(version)/\(key).txt"),
-              let text = try? String(contentsOf: base, encoding: .utf8) else { return nil }
-        return text.trimmingCharacters(in: .newlines)
+    /// Loaded files by `set/key`, misses included. The bundle is read-only, so entries never go stale.
+    private static let cache = Mutex<[String: String?]>([:])
+
+    /// The trimmed text of `Prompts/<set>/<key>.txt`, or nil if the file is missing. Cached.
+    static func text(for key: String, set: String = version) -> String? {
+        let path = "\(set)/\(key)"
+        if let cached = cache.withLock({ $0[path] }) { return cached }
+        var text: String?
+        if let url = Bundle.module.resourceURL?.appendingPathComponent("Prompts/\(path).txt"),
+           let contents = try? String(contentsOf: url, encoding: .utf8) {
+            text = contents.trimmingCharacters(in: .newlines)
+        }
+        cache.withLock { $0[path] = .some(text) }
+        return text
     }
 
     /// One left-to-right scan, so substituted text (a slot label with `{{name}}`) is never re-expanded.

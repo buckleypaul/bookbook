@@ -19,7 +19,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 7 | Style guide and page setup | done | `phase-7-style-page-setup` | — | $0.00 | No live checks. [Log](progress/phase-7-style-page-setup.md) |
 | 8 | Sessions and versions | done | `phase-8-sessions-versions` | — | $0.02 | Live check `SP8_refinementLowQuality` passed. [Log](progress/phase-8-sessions-versions.md) |
 | 9 | Queue, cost, errors and settings (M2) | done | `phase-9-queue-cost-settings` | — | $0.04 | Live check `SP9_twoRequestsAndCancel` passed. [Log](progress/phase-9-queue-cost-settings.md) |
-| 10 | Assets and character sheets | in progress | `phase-10-assets-characters` | — | $0.00 | No live checks listed. |
+| 10 | Assets and character sheets | awaiting hand checks | `phase-10-assets-characters` | — | $0.00 | No live checks listed. Session B 2026-11-08. |
 | 11 | Region editing | not started | | | | |
 | 12 | Consistency check and AI templates (M3) | not started | | | | |
 | 13 | Gemini provider (floating) | not started | | | | Needs the `gemini-api-key` Keychain item |
@@ -59,6 +59,10 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Later
+- Phase 10 review should-fixes: `RealPersonCheck` sets byte counts to 0, so a skipped (missing/too-large) image can hide a later real-person photo from the check; Generate Whole Sheet runs with no primary chosen (warn or block); undoing New Asset after it's mentioned leaves dangling tokens; `AssetEditor` `CommittedTextField` writes a stale draft back over an undo made while focused; where-used ignores mentions in asset-session prompts; synonym inflections over-match ("beams", "glare", "tear"); a slot label containing `{{name}}` is substituted; `SheetRequests.referenceMessageText` unused; the notice isn't re-checked when a queued item actually sends; the batch notice opens while the cost alert is closing (hand-check it); a token whose answered message is gone still renders empty (from Phase 10 review).
+- Asset delete is irreversible (PD §8.10), so undo can't restore rewritten mentions; confirm that's intended (from Phase 10 fixes).
+- `queue.json` lives in `~/Library/Application Support/BookBook/` regardless of `-BookBookLibraryRoot`, so throwaway libraries see and add to the real queue (from Phase 10 hand checks).
+- Pages grid: thumbnails for pages 2 and 3 overlapped after adding a page; double-clicking Add Page added a page before the layout sheet was confirmed (from Phase 10 hand checks).
 - Phase 9 review should-fixes: `queue.json` saves run in a detached task that quit doesn't await (`GenerationQueue.swift:291`); a newer-schema `queue.json` is ignored then overwritten (`QueueFileStore.swift:23`); one corrupt `costs.jsonl` line makes `costRecords` return `[]` so totals read $0 (`OpenBooks.swift:328`); Recent Requests caps at 50 while the total sums all (`Cost.swift:88`); an unknown estimate is ledgered as $0 with `includesEstimates` false (`GenerationQueue.swift:495`); `restoredCount` doesn't shrink as restored items are removed (`GenerationQueue.swift:101`); `.offline` retries (nothing sent) are charged at the estimate (`QueueRetryPolicy.swift:70`); `OpenAIErrorMapper` key-occurrence check misses JSON-escaped keys and the mask stops at `.`; `CostLedger.repair()` runs without the book lock (from Phase 9 review).
 - Cached input tokens are attributed to text first, then image (OpenAI gives one cached count); revisit if image caching matters (from Phase 9).
 - The 16×16 patch rule underestimates large reference images (1536×1024 measured 1536, rule gives 704); measure more sizes or switch the fallback rule (from Phase 9).
@@ -140,7 +144,7 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 10 — Assets and character sheets
 
-**Stage:** B
+**Stage:** B (done; awaiting hand checks)
 
 - Session A 2026-11-08. Contracts (`BBModel/Asset.swift`, new `SessionOwner`/`GenerationTarget` cases, `Version.depictsRealPerson`, `BookContent.assets`, `DirtySet.assets`, `AssemblyReport.assetRevisions`, `BookCommand.addAsset/updateAsset/setAssetChecklist`, BBUI stubs) then four lanes, all merged; `scripts/test.sh all` green.
   - **Model + store:** `MentionText`, incremental `UsageIndex`, `Asset.revised/normalized`, asset-changed flag, `assets/` folder (no schema bump; `Journal` path allow-list extended).
@@ -149,3 +153,8 @@ The running phase writes its log here; when it is marked done, move the entry to
   - **Assets tab:** sidebar tab between Pages and Layouts, list with type filter, editor (name, description, tags, slots/primary), character sheet grid (lock, custom expressions, Generate Whole Sheet with estimate first), where-used links into the page editor, delete confirmation.
 - Decisions: default sheet is 8 items (primary = front view; user, 2026-11-08); locked sheet items are still sent (lock = don't regenerate); revision bumps only on description / primary image change. Recorded in architecture.md §4.2, §7.4.
 - For Session B: no live checks listed. Known gaps: `sendsRealPersonPhoto` applies the image-count cap but not the byte budget (may over-report); `@mention` autocomplete completes only at the end of the prompt (click/Return, no arrow keys); where-used box labels are "image box N". Hand checks need a real generation for Pip (low quality) — confirm spend with the user first if it'd matter.
+- Session B 2026-11-08. `scripts/test.sh all` green before and after fixes; secret scan clean; no live spend.
+  - Review round 1 (must-fix, fixed): Generate Whole Sheet and Draft All skipped the real-person notice (shared `AppModel.realPersonNoticeNeeded(for:in:)` now gates both); `FlagText` had no "Asset changed" entry; delete rewrote tokens only in `Message.text` (now also `Provenance.intent.messageText`, and `ContextAssembler.requestDisplayText` falls back to the answered message's text).
+  - Round 2 (fixed): an item queued before its asset was deleted delivered provenance with the dead token (`BookMutations.resolvingDeletedMentions` on delivery); batch plan cleared when the notice sheet is dismissed. Regression tests for each.
+  - Automated hand checks (no in-app key, so no sends): sheet shows 8 items and the estimate first ("8 requests, about $0.13"); `@Pip` autocomplete inserts a token; rename shows everywhere visible; phone JPEG (Apple EXIF) defaults to "real person: yes", PNG to no; delete confirmation lists where used and removes checklist entries. Needs a key: Version details order, "Pippa" in a sent prompt, asset-changed badge, first-send notice, plain-text mentions after delete. Undo/redo inconclusive under synthetic input (Edit menu stayed "Undo Typing"); recheck by hand.
+

@@ -21,7 +21,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 9 | Queue, cost, errors and settings (M2) | done | `phase-9-queue-cost-settings` | — | $0.04 | Live check `SP9_twoRequestsAndCancel` passed. [Log](progress/phase-9-queue-cost-settings.md) |
 | 10 | Assets and character sheets | done (hand checks deferred) | `phase-10-assets-characters` | — | $0.00 | No live checks listed. [Log](progress/phase-10-assets-characters.md) |
 | 11 | Region editing | done (hand checks deferred) | `phase-11-region-editing` | — | $0.04 | Live check `SP11_maskedEditRealIllustration` passed. [Log](progress/phase-11-region-editing.md) |
-| 12 | Consistency check and AI templates (M3) | not started | | | | |
+| 12 | Consistency check and AI templates (M3) | in progress | `phase-12-consistency-ai-templates` | — | | |
 | 13 | Gemini provider (floating) | not started | | | | Needs the `gemini-api-key` Keychain item |
 | 14 | Export and print | not started | | | | |
 | 15 | Release pipeline (M4) | not started | | | | |
@@ -157,4 +157,19 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
+
+### Phase 12 — Consistency check and AI templates
+
+**Stage:** B
+
+**Session A note:** five lanes merged: L1 BBAI (normalizer, layout/consistency prompts, text estimates, catalog text models, flag), L2 `OpenAIChatProvider` (layout + vision, SP-7 fixtures, live test `SP12_templateAndConsistency` written, not run), L3 consistency follow-ups (queue kind/parent, `queue.json` schema 2, `ConsistencyAssembler`, delivery, estimates incl. follow-ups, `AppModel+Consistency`), L5 AI template sheet (Layouts tab sparkles button, `TemplateGenerationFlow`), L4 consistency UI (strip badge, panel section with Fix/Dismiss/Check, Version details rows, thumbnail flag, Settings ▸ Models "AI helpers", queue row wording). App wires `OpenAIChatProvider` as vision and layout provider. `scripts/test.sh all` was green before L4; L4 reported BBUITests (412) and the app build green. Nothing was looked at in the running app.
+
+**For Session B:** run the live check `SP12_templateAndConsistency` (est. ~$0.02). Known items to look at: the confirm-cost alert button says "Generate" for a check; chat `refusal` maps to stage `.output` (a guess); the SP12 live test hardcodes model IDs; L4 edited `QueueView.swift` (one line) outside its list.
+
+**Contracts (main thread):** `BBModel/Consistency.swift` (`ConsistencyDifference`, `ConsistencyReport`, `ConsistencySent`); `Version.consistency`; `GenerationIntent.checkConsistency` / `.versionSource`; `BBAICore/TextContracts.swift` (`CatalogTextModel`, `ConsistencyThresholds`, `TemplateDraft`, `StructuredSchemas`, `LayoutRequest/Result`, `ConsistencyRequest/Result`, `LayoutProvider`, `VisionProvider`); BBAI stubs `TemplateNormalizer`, `LayoutPrompt`, `ConsistencyPrompt`, `CostEstimator+Text`, `ModelCatalog.textModels`; `AppPreferences` consistency switch and template/consistency default models; `AppModel.layoutProvider`.
+
+**Assumptions:**
+- Template generation runs directly from the Layouts tab (a short request with a progress sheet), not through the generation queue; it writes a `.template` ledger line. Recorded in architecture.md §7.7.
+- Phase 14 isn't merged, so the consistency preflight item is Phase 14's (plan §3).
+- Dismissing a warning isn't undoable (PD §8.10 doesn't list it); "Show Warning Again" reverses it. It's written with `setConsistencyWarningDismissed`, not a `BookCommand`.
 

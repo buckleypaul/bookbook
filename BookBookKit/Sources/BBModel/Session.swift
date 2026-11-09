@@ -101,11 +101,14 @@ public struct Version: Hashable, Codable, Sendable, Identifiable {
     /// Phase 10 (A §11): the import question "Is this a photo of a real person?". nil = not
     /// asked (generated versions, page-box imports, older files) = treated as false.
     public var depictsRealPerson: Bool?
+    /// Phase 12 (A §7.8): the latest consistency check, automatic or on demand. nil = never checked.
+    public var consistency: ConsistencyReport?
 
     public init(id: VersionID = VersionID(), image: ImageRef, pixelSize: PixelSize, source: VersionSource,
                 parent: VersionID? = nil, createdAt: Date, starred: Bool = false, provenance: Provenance? = nil,
-                depictsRealPerson: Bool? = nil) {
+                depictsRealPerson: Bool? = nil, consistency: ConsistencyReport? = nil) {
         self.depictsRealPerson = depictsRealPerson
+        self.consistency = consistency
         self.id = id
         self.image = image
         self.pixelSize = pixelSize
@@ -143,10 +146,18 @@ public struct GenerationIntent: Hashable, Codable, Sendable {
     /// Region edit (Phase 11): the user's 8-bit mask, stored in the book's `images/` at the base
     /// version's pixel size (white = edit area, black = keep). Requires `refines`. nil otherwise.
     public var regionMask: ImageRef?
+    /// Phase 12 (A §7.8): queue a consistency follow-up after this generation succeeds. Captured
+    /// from the Settings switch at enqueue time. nil (older files) = false.
+    public var checkConsistency: Bool?
+    /// Phase 12: the source recorded on the resulting version when it isn't derived (e.g.
+    /// `.consistencyFix` for a one-click fix). nil = `.generated`, or `.regionEdit` with a mask.
+    public var versionSource: VersionSource?
 
     public init(messageText: String, refines: VersionID? = nil, attachedReferences: [VersionRef] = [],
                 provider: ProviderID, model: String, quality: QualityLevel, includeStoryText: Bool = true,
-                regionMask: ImageRef? = nil) {
+                regionMask: ImageRef? = nil, checkConsistency: Bool? = nil, versionSource: VersionSource? = nil) {
+        self.checkConsistency = checkConsistency
+        self.versionSource = versionSource
         self.messageText = messageText
         self.refines = refines
         self.attachedReferences = attachedReferences

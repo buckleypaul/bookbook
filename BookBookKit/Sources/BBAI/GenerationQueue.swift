@@ -13,8 +13,15 @@ import Foundation
 /// - One ledger line per provider request (`GenerationHost.recordCost`), always before the
 ///   delivery it belongs to (A §7.10).
 /// - Every change is published to subscribers and saved through `QueuePersistence`.
+/// - Phase 12 (A §7.8): when an image item whose `intent.checkConsistency` is true succeeds and
+///   its delivery lands (now or on a later redelivery), a consistency-check item for the new
+///   version is inserted before every waiting item, so it runs straight after its parent.
+///   Checks run like any item (retries, timeout, ledger line with `kind: .consistency`); a check
+///   whose version is gone when it starts is dropped quietly.
 public actor GenerationQueue {
     private let providers: [ProviderID: any ImageProvider]
+    private let visionProviders: [ProviderID: any VisionProvider]
+    private var consistencyInstructions: ConsistencyInstructions
     private var catalog: ModelCatalog
     private let host: any GenerationHost
     private var pricing: any CostPricing
@@ -65,8 +72,12 @@ public actor GenerationQueue {
                 now: @escaping @Sendable () -> Date = { Date() },
                 sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
                 jitter: @escaping @Sendable () -> Double = { Double.random(in: 0...1) },
-                requestTimeout: Duration = .seconds(300)) {
+                requestTimeout: Duration = .seconds(300),
+                visionProviders: [ProviderID: any VisionProvider] = [:],
+                consistencyInstructions: @escaping ConsistencyInstructions = ConsistencyPrompt.instructions) {
         self.providers = providers
+        self.visionProviders = visionProviders
+        self.consistencyInstructions = consistencyInstructions
         self.catalog = catalog
         self.host = host
         self.pricing = pricing
@@ -110,10 +121,21 @@ public actor GenerationQueue {
     }
 
     /// Adds items (in order) at the end, or before every waiting item. Returns their IDs.
+    /// Items already queued, and checks of a version already being checked, are skipped.
     @discardableResult
     public func enqueue(_ items: [QueueItem], position: QueuePosition = .end) -> [QueueItemID] {
         let known = Set(entries.map(\.id))
-        let fresh = items.filter { !known.contains($0.id) }
+        // A version is checked once at a time: a check of a version that already has a live
+        // (not failed) check is skipped. A version's image never changes, so the result would too.
+        var checking = Set(entries.compactMap { entry -> VersionID? in
+            if case .failed = entry.state { return nil }
+            return entry.item.kind.checkedVersion
+        })
+        let fresh = items.filter { item in
+            guard !known.contains(item.id) else { return false }
+            guard let version = item.kind.checkedVersion else { return true }
+            return checking.insert(version).inserted
+        }
         let new = fresh.map { QueueEntry(item: $0, state: .waiting) }
         switch position {
         case .end:
@@ -203,6 +225,11 @@ public actor GenerationQueue {
 
     /// Used from the next item that starts.
     public func setCatalog(_ catalog: ModelCatalog) { self.catalog = catalog }
+
+    /// Replaces the consistency prompt builder (tests; the default is `ConsistencyPrompt.instructions`).
+    func setConsistencyInstructions(_ instructions: @escaping ConsistencyInstructions) {
+        consistencyInstructions = instructions
+    }
 
     /// Used for the next ledger line.
     public func setPricing(_ pricing: any CostPricing) { self.pricing = pricing }
@@ -336,34 +363,57 @@ public actor GenerationQueue {
     }
 
     private func run(_ item: QueueItem) async {
+        if case let .consistencyCheck(version) = item.kind { return await runConsistencyCheck(item, version: version) }
         guard let (provider, model, request, report, storedMask) = await prepare(item) else { return }
+        let id = item.id
+        let onProgress: @Sendable (Int, GenerationProgress) -> Void = { [weak self] attempt, progress in
+            Task { await self?.updateProgress(id, attempt: attempt, progress) }
+        }
+        let result = await perform(item, model: model.id, report: report) { attempt async throws(ProviderError) in
+            try await provider.generate(request) { onProgress(attempt, $0) }
+        }
+        guard let result else { return }
+        await finishSuccess(item, model: model, request: request, storedMask: storedMask, result: result, report: report)
+    }
+
+    /// Sends the request with automatic retries (`QueueRetryPolicy`), each attempt raced against
+    /// the timeout, writing the ledger lines for failed and cancelled attempts. Returns the
+    /// result, or nil once the item has been finished as cancelled or failed.
+    private func perform<R: Sendable>(
+        _ item: QueueItem, model: String, report: AssemblyReport?,
+        _ call: @escaping @Sendable (_ attempt: Int) async throws(ProviderError) -> R
+    ) async -> R? {
         var attempt = 1
         while true {
-            if isCancelled(item.id) { return await finishCancelled(item) }
+            if isCancelled(item.id) {
+                await finishCancelled(item)
+                return nil
+            }
             current?.inFlight = true
             setState(item.id, .running(startedAt: now(), progress: nil, attempt: attempt))
-            let id = item.id, thisAttempt = attempt
-            let outcome = await Self.race(provider, request, timeout: requestTimeout) { [weak self] progress in
-                Task { await self?.updateProgress(id, attempt: thisAttempt, progress) }
+            let thisAttempt = attempt
+            let outcome = await Self.race(timeout: requestTimeout) { () async throws(ProviderError) -> R in
+                try await call(thisAttempt)
             }
             current?.inFlight = false
 
             if isCancelled(item.id) {
-                await recordCost(for: item, model: model.id, status: .cancelled, basis: .estimate, actual: nil)
-                return await finishCancelled(item)
+                await recordCost(for: item, model: model, status: .cancelled, basis: .estimate, actual: nil)
+                await finishCancelled(item)
+                return nil
             }
             switch outcome {
             case let .success(result):
-                return await finishSuccess(item, model: model, request: request, storedMask: storedMask,
-                                           result: result, report: report)
+                return result
             case let .failure(error):
                 switch QueueLedgerRule.forFailure(error) {
                 case .none: break
-                case .free: await recordCost(for: item, model: model.id, status: .failed, basis: .actual, actual: 0)
-                case let .estimate(status): await recordCost(for: item, model: model.id, status: status, basis: .estimate, actual: nil)
+                case .free: await recordCost(for: item, model: model, status: .failed, basis: .actual, actual: 0)
+                case let .estimate(status): await recordCost(for: item, model: model, status: status, basis: .estimate, actual: nil)
                 }
                 guard let delay = retryPolicy.delay(after: error, retriesSoFar: attempt - 1, jitter: jitter()) else {
-                    return await finishFailed(item, error, report: report, attempts: attempt)
+                    await finishFailed(item, error, report: report, attempts: attempt)
+                    return nil
                 }
                 attempt += 1
                 setState(item.id, .retrying(attempt: attempt, resumesAt: now().addingTimeInterval(delay.timeInterval),
@@ -420,13 +470,13 @@ public actor GenerationQueue {
     }
 
     /// Races the provider call against the request timeout; the loser is cancelled.
-    private nonisolated static func race(_ provider: any ImageProvider, _ request: ImageRequest, timeout: Duration,
-                                         progress: @escaping @Sendable (GenerationProgress) -> Void)
-        async -> Result<ImageResult, ProviderError> {
-        await withTaskGroup(of: Result<ImageResult, ProviderError>?.self) { group in
+    private nonisolated static func race<R: Sendable>(
+        timeout: Duration, _ call: @escaping @Sendable () async throws(ProviderError) -> R
+    ) async -> Result<R, ProviderError> {
+        await withTaskGroup(of: Result<R, ProviderError>?.self) { group in
             group.addTask {
                 do throws(ProviderError) {
-                    return .success(try await provider.generate(request, progress: progress))
+                    return .success(try await call())
                 } catch {
                     return .failure(error)
                 }
@@ -435,7 +485,7 @@ public actor GenerationQueue {
                 do { try await Task.sleep(for: timeout) } catch { return nil }
                 return .failure(.timeout)
             }
-            var outcome: Result<ImageResult, ProviderError> = .failure(.cancelled)
+            var outcome: Result<R, ProviderError> = .failure(.cancelled)
             for await result in group {
                 if let result {
                     outcome = result
@@ -497,7 +547,85 @@ public actor GenerationQueue {
         entries.removeAll { $0.id == item.id }
         changed()
         await deliver(GenerationDelivery(item: item, outcome: .success(result: delivered, provenance: provenance),
-                                         costRecordID: costID, additionalImages: additionalImages))
+                                         costRecordID: costID, additionalImages: additionalImages,
+                                         versionID: VersionID()))
+    }
+
+    // MARK: - Consistency checks (A §7.8)
+
+    /// After an image delivery lands: queues its consistency follow-up, ahead of every waiting
+    /// item, when the intent asked for one (the Settings switch at enqueue time) and the vision
+    /// provider is wired.
+    private func queueFollowUp(after delivery: GenerationDelivery) {
+        let parent = delivery.item
+        guard case .success = delivery.outcome, parent.kind == .image, parent.intent.checkConsistency == true else { return }
+        let spec = parent.consistencyFollowUp ?? catalog.textModels(kind: .vision).first { $0.status != .retired }.map {
+            ConsistencyFollowUp(provider: $0.provider, model: $0.id, estimate: .unknown)
+        }
+        // No vision provider wired: there's nothing that could run the check.
+        guard let spec, visionProviders[spec.provider] != nil else { return }
+        let intent = GenerationIntent(messageText: "", refines: delivery.versionID, provider: spec.provider,
+                                      model: spec.model, quality: parent.intent.quality,
+                                      includeStoryText: parent.intent.includeStoryText)
+        var display = parent.display
+        display.boxLabel = ConsistencyQueueLabel.label(for: display.boxLabel)
+        let item = QueueItem(bookID: parent.bookID, target: parent.target, messageID: parent.messageID, intent: intent,
+                             estimate: spec.estimate, display: display, enqueuedAt: now(),
+                             kind: .consistencyCheck(delivery.versionID), parent: parent.id)
+        enqueue([item], position: .front)
+    }
+
+    private func runConsistencyCheck(_ item: QueueItem, version: VersionID) async {
+        guard let content = await host.content(for: item.bookID) else {
+            return await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
+        }
+        guard let plan = ConsistencyAssembler.plan(version: version, content: content, provider: item.intent.provider)
+        else { return finishDropped(item) }
+        guard let model = catalog.textModel(provider: item.intent.provider, id: item.intent.model),
+              model.kind == .vision else {
+            return await finishFailed(item, .modelUnavailable(nil), report: nil, attempts: 0)
+        }
+        guard let provider = visionProviders[item.intent.provider] else {
+            return await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
+        }
+        var imageData: [ImageRef: Data] = [:]
+        for image in [plan.checked] + plan.references where imageData[image.ref] == nil {
+            if let data = await host.imageData(for: image.ref, in: item.bookID) { imageData[image.ref] = data }
+        }
+        if isCancelled(item.id) { return await finishCancelled(item) }
+        let assembled: AssembledConsistency
+        do throws(AssemblyError) {
+            assembled = try ConsistencyAssembler.assemble(plan, model: model, imageData: imageData,
+                                                          instructions: consistencyInstructions)
+        } catch {
+            return await finishFailed(item, error.providerError, report: nil, attempts: 0)
+        }
+        let request = assembled.request
+        let result = await perform(item, model: model.id, report: nil) { _ async throws(ProviderError) in
+            try await provider.checkConsistency(request)
+        }
+        guard let result else { return }
+
+        let actual = result.usage.flatMap { pricing.actualCost(of: $0, provider: item.intent.provider, model: model.id) }
+        let costID = await recordCost(for: item, model: model.id, status: .completed,
+                                      basis: actual == nil ? .estimate : .actual, actual: actual)
+        let thresholds = model.consistency ?? .standard
+        let report = ConsistencyReport(
+            checkedAt: now(), provider: item.intent.provider, model: model.id, consistent: result.consistent,
+            differences: result.differences, warns: thresholds.warns(result.differences),
+            sent: ConsistencySent(promptSent: assembled.promptText, imagesSent: assembled.imagesSent,
+                                  parametersSent: result.parametersSent),
+            cost: costID, usage: result.usage)
+        entries.removeAll { $0.id == item.id }
+        changed()
+        await deliver(GenerationDelivery(item: item, outcome: .consistency(report), costRecordID: costID))
+    }
+
+    /// A check whose version (or its page, box, slot or sheet item) is gone: removed without a
+    /// request, a ledger line or a delivery.
+    private func finishDropped(_ item: QueueItem) {
+        entries.removeAll { $0.id == item.id }
+        changed()
     }
 
     /// The content-addressed ref `BookStore.storeImage` gives these bytes (SHA-256, lowercase hex).
@@ -526,8 +654,10 @@ public actor GenerationQueue {
     @discardableResult
     private func recordCost(for item: QueueItem, model: String, status: CostStatus, basis: CostBasis,
                             actual: Decimal?) async -> CostRecordID {
+        let isImage = item.kind == .image
         let record = CostRecord(
-            at: now(), kind: .image, provider: item.intent.provider, model: model, quality: item.intent.quality,
+            at: now(), kind: isImage ? .image : .consistency, provider: item.intent.provider, model: model,
+            quality: isImage ? item.intent.quality : nil,
             target: item.target, status: status, estimated: item.estimate.amount ?? 0, actual: actual, basis: basis,
             priceListAsOf: basis == .actual ? pricing.priceListAsOf : (item.estimate.priceListAsOf ?? pricing.priceListAsOf),
             queueItemID: item.id)
@@ -539,7 +669,9 @@ public actor GenerationQueue {
 
     private func deliver(_ delivery: GenerationDelivery) async {
         switch await host.deliver(delivery) {
-        case .delivered, .bookGone:
+        case .delivered:
+            queueFollowUp(after: delivery)
+        case .bookGone:
             break
         case .bookUnavailable:
             undelivered.append(PendingDelivery(delivery: delivery))
@@ -572,6 +704,7 @@ public actor GenerationQueue {
             undelivered.removeAll { $0.token == pending.token }
             publish()
             persist()
+            if result == .delivered { queueFollowUp(after: pending.delivery) }
         }
     }
 }

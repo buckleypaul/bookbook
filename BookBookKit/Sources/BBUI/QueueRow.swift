@@ -45,14 +45,15 @@ public struct QueueRowModel: Equatable {
 
     /// The state line. `typical` is the model's typical seconds; `headline` is the advice headline
     /// for a failed entry.
-    public static func stateText(_ state: QueueItemState, now: Date, typical: Double?, headline: String?) -> String {
+    public static func stateText(_ state: QueueItemState, now: Date, typical: Double?, headline: String?,
+                                 isConsistencyCheck: Bool = false) -> String {
         switch state {
         case .waiting:
             return "Waiting"
         case let .running(startedAt, _, attempt):
             let time = CostText.elapsedOfTypical(elapsed: now.timeIntervalSince(startedAt), typical: typical)
             let retry = attempt > 1 ? " (attempt \(attempt) of \(maxAttempts))" : ""
-            return "Generating… \(time)\(retry)"
+            return "\(isConsistencyCheck ? "Checking consistency…" : "Generating…") \(time)\(retry)"
         case let .retrying(attempt, resumesAt, _):
             let seconds = max(0, Int(resumesAt.timeIntervalSince(now).rounded(.up)))
             return "Retrying in \(seconds) s (attempt \(attempt) of \(maxAttempts))"

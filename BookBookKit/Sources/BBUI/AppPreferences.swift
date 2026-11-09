@@ -16,6 +16,23 @@ public final class AppPreferences {
         public static let defaultQuality = "defaultQuality"
         public static let confirmThreshold = "costConfirmThreshold"
         public static let customModels = "customModels"
+        public static let consistencyCheckEnabled = "consistencyCheckEnabled"
+        public static let defaultTemplateModel = "defaultTemplateModel"
+        public static let defaultConsistencyModel = "defaultConsistencyModel"
+    }
+
+    /// Phase 12 (PD §8.9, §8.11): the global consistency-check switch. On by default.
+    public var consistencyCheckEnabled: Bool {
+        didSet { defaults.set(consistencyCheckEnabled, forKey: Key.consistencyCheckEnabled) }
+    }
+    /// Phase 12 (PD §8.11): default model for AI templates (a catalog `kind: text` ID; the
+    /// provider is the catalog entry's).
+    public var defaultTemplateModelID: String {
+        didSet { defaults.set(defaultTemplateModelID, forKey: Key.defaultTemplateModel) }
+    }
+    /// Phase 12 (PD §8.11): default model for the consistency check (a catalog `kind: vision` ID).
+    public var defaultConsistencyModelID: String {
+        didSet { defaults.set(defaultConsistencyModelID, forKey: Key.defaultConsistencyModel) }
     }
 
     /// The default image model ID for OpenAI (the only image provider until Phase 13).
@@ -43,8 +60,12 @@ public final class AppPreferences {
     @ObservationIgnored var onDefaultModelChange: () -> Void = {}
     @ObservationIgnored private let defaults: UserDefaults
 
-    public init(defaults: UserDefaults, fallbackModelID: String) {
+    public init(defaults: UserDefaults, fallbackModelID: String, fallbackTemplateModelID: String = "gpt-6-luna",
+                fallbackConsistencyModelID: String = "gpt-6.1-terra") {
         self.defaults = defaults
+        consistencyCheckEnabled = defaults.object(forKey: Key.consistencyCheckEnabled) as? Bool ?? true
+        defaultTemplateModelID = defaults.string(forKey: Key.defaultTemplateModel) ?? fallbackTemplateModelID
+        defaultConsistencyModelID = defaults.string(forKey: Key.defaultConsistencyModel) ?? fallbackConsistencyModelID
         defaultImageModelID = defaults.string(forKey: Key.defaultImageModel) ?? fallbackModelID
         defaultQuality = defaults.string(forKey: Key.defaultQuality).flatMap(QualityLevel.init(rawValue:)) ?? .standard
         confirmThreshold = defaults.string(forKey: Key.confirmThreshold).flatMap { Decimal(string: $0) }

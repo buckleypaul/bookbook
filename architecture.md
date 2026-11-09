@@ -677,6 +677,8 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
   - Ensure at least one box.
 - The result is a new `Template`, opened in the visual editor. Provider refusals (`refusal` content on OpenAI, block reasons on Gemini) use the normal error path.
 
+**As built (Phase 12):** template generation runs directly from the Layouts tab, not through the generation queue (§7.9): it's one short request that the user waits for in a sheet, and its result opens in the editor rather than landing in a session. The sheet shows the estimate first and a "What was sent" disclosure (model, prompts, parameters). Each request writes a `template` ledger line. Draft coordinates are fractions of the trim area (both pages for a spread), origin top-left; text boxes may carry an alignment, a corner radius in points and a `#RRGGBB` background panel.
+
 ### 7.8 Consistency check (§8.9)
 
 - **Trigger:** after each successful image generation (page, cover or sheet item), when the global switch is on. The check is queued as a **follow-up item that runs straight after its parent**, ahead of other waiting items, and its cost is included in the parent's estimate.
@@ -700,6 +702,12 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
   A warning badge appears when there's at least one `major` difference, or three or more `minor` ones. Those thresholds live in the catalog, so they can be tuned.
 - **One-click fix:** turns the differences into a correction message ("Keep everything the same, but: make Pip's scarf red as in the reference; give the castle three towers"). It's sent in the same session as a refinement of that version (`source: .consistencyFix`), and the cost estimate is shown first.
 - **On demand:** any version, including imported ones, can be checked.
+
+**As built (Phase 12):**
+- Queue items carry a kind (image or consistency check) and a `parent`; `queue.json` is schema 2 (schema 1 files still load; older builds ignore schema 2 files). The queue assigns the new version's ID before delivery, and the follow-up is inserted ahead of every waiting item once that delivery lands, including a later redelivery to a locked book. A second check of a version already queued is skipped.
+- Follow-ups and on-demand checks need a wired `VisionProvider` and a catalog vision model; without them nothing is queued or estimated. The switch and the vision model are captured at enqueue time.
+- `ConsistencyAssembler` leaves out the checked image itself from the references and leaves out real-person photos unless the book has acknowledged that provider's notice (§11).
+- A failed check fails like any item and leaves the version untouched; a check whose version (or page box) is gone is dropped quietly. Checks write a `consistency` ledger line; the parent's line prices only its own request.
 
 ### 7.9 Generation queue (§5)
 

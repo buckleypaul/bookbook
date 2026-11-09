@@ -12,9 +12,18 @@ import Foundation
 enum AppWiring {
     static func makeModel() -> AppModel {
         let keychain = KeychainStore()
-        return AppModel(providers: providers(keychain: keychain), libraryRoot: libraryRoot(),
-                        keychainService: keychain.service, listers: listers(keychain: keychain),
-                        network: NetworkMonitor())
+        let chat = chatProvider(keychain: keychain)
+        let model = AppModel(providers: providers(keychain: keychain), libraryRoot: libraryRoot(),
+                             keychainService: keychain.service, listers: listers(keychain: keychain),
+                             network: NetworkMonitor(), visionProviders: [.openai: chat])
+        model.layoutProvider = chat
+        return model
+    }
+
+    /// Phase 12: OpenAI Chat Completions for templates (layout) and the consistency check
+    /// (vision); the app's own Keychain item, read at request time.
+    static func chatProvider(keychain: KeychainStore) -> OpenAIChatProvider {
+        OpenAIChatProvider(http: URLSessionHTTPClient(), apiKey: { keychain.read(.openai) })
     }
 
     /// The library folder: the `-BookBookLibraryRoot /path` launch argument (argument domain

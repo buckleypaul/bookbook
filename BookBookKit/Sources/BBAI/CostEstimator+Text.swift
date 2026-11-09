@@ -1,0 +1,44 @@
+import BBAICore
+import BBModel
+import Foundation
+
+// Phase 12. A §7.10.
+
+extension CostEstimator {
+    /// A template request, from the prompt length and the price list's `typicalTemplateRequest`
+    /// (reasoning tokens count as output).
+    public static func estimate(layout request: LayoutRequest, priceList: PriceList) -> CostEstimate {
+        guard let entry = priceList.entry(provider: request.model.provider, model: request.model.id),
+              let typical = entry.estimation?.typicalTemplateRequest, let output = typical.outputTokens
+        else { return .unknown }
+        let characters = request.system.count + request.user.count
+        let input: Int
+        if let perChar = entry.estimation?.textTokensPerPromptChar {
+            input = Int((Double(characters) * perChar).rounded(.up))
+        } else {
+            input = typical.inputTokens ?? Int((Double(characters) * 0.27).rounded(.up))
+        }
+        let rates = entry.perMillionTokens
+        let total = (rates["textIn"] ?? 0) * Decimal(input) + (rates["textOut"] ?? 0) * Decimal(output)
+        return CostEstimate(amount: total / 1_000_000, priceListAsOf: entry.asOf)
+    }
+
+    /// A consistency check sending `imageCount` low-detail images (checked image + references),
+    /// from the price list's `typicalConsistencyRequest`.
+    public static func estimateConsistency(model: CatalogTextModel, imageCount: Int,
+                                           priceList: PriceList) -> CostEstimate {
+        guard let entry = priceList.entry(provider: model.provider, model: model.id),
+              let typical = entry.estimation?.typicalConsistencyRequest,
+              let twoImages = typical.inputTokensTwoLowDetailImages, let output = typical.outputTokens
+        else { return .unknown }
+        let typicalImages = 2
+        let count = max(0, imageCount)
+        let input = count == typicalImages
+            ? Decimal(twoImages)
+            : Decimal(twoImages) * Decimal(count) / Decimal(typicalImages)
+        let rates = entry.perMillionTokens
+        let inputRate = rates["imageIn"] ?? rates["textIn"] ?? 0
+        let total = inputRate * input + (rates["textOut"] ?? 0) * Decimal(output)
+        return CostEstimate(amount: total / 1_000_000, extrapolated: count != typicalImages, priceListAsOf: entry.asOf)
+    }
+}

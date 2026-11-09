@@ -6,10 +6,19 @@ import Foundation
 public struct ModelCatalog: Sendable {
     public var asOf: String
     public var imageModels: [CatalogModel]
+    /// Phase 12: text (`kind: text`) and vision (`kind: vision`) models.
+    public var textModels: [CatalogTextModel]
 
-    public init(asOf: String, imageModels: [CatalogModel]) {
+    public init(asOf: String, imageModels: [CatalogModel], textModels: [CatalogTextModel] = []) {
         self.asOf = asOf
         self.imageModels = imageModels
+        self.textModels = textModels
+    }
+
+    /// Phase 12: models usable for templates (`kind: text`) or the consistency check (`kind: vision`).
+    public func textModels(kind: TextModelKind) -> [CatalogTextModel] { textModels.filter { $0.kind == kind } }
+    public func textModel(provider: ProviderID, id: String) -> CatalogTextModel? {
+        textModels.first { $0.provider == provider && $0.id == id }
     }
 
     public enum CatalogError: Error, Equatable, Sendable {
@@ -18,7 +27,7 @@ public struct ModelCatalog: Sendable {
         case malformed(String)
     }
 
-    /// Decodes `ModelCatalog.json` data. Non-image entries are skipped in Phase 2.
+    /// Decodes `ModelCatalog.json` data. Image entries become `imageModels`; text and vision entries become `textModels` (Phase 12).
     public init(data: Data) throws {
         let file = try JSONDecoder().decode(RawCatalog.self, from: data)
         let images = file.models.filter { $0.kind == "image" }
@@ -46,7 +55,19 @@ public struct ModelCatalog: Sendable {
                 status: ModelStatus(rawValue: raw.status ?? "current") ?? .current, successor: raw.successor,
                 typicalDurationSeconds: durations, image: image))
         }
-        self.init(asOf: file.asOf, imageModels: resolved)
+        var texts: [CatalogTextModel] = []
+        for raw in file.models {
+            guard let kind = TextModelKind(rawValue: raw.kind) else { continue }
+            texts.append(CatalogTextModel(
+                provider: ProviderID(rawValue: raw.provider), id: raw.id, displayName: raw.displayName, kind: kind,
+                status: ModelStatus(rawValue: raw.status ?? "current") ?? .current, successor: raw.successor,
+                typicalDurationSeconds: raw.typicalDurationSeconds?["default"],
+                imageDetail: kind == .vision ? raw.vision?.detail : nil,
+                consistency: kind == .vision
+                    ? raw.consistency.map { ConsistencyThresholds(warnOnMajor: $0.warnOnMajor ?? 1, warnOnMinor: $0.warnOnMinor ?? 3) }
+                    : nil))
+        }
+        self.init(asOf: file.asOf, imageModels: resolved, textModels: texts)
     }
 
     /// The catalog bundled in BBAI's resources.
@@ -131,6 +152,17 @@ private struct RawModel: Decodable {
     var successor: String?
     var typicalDurationSeconds: [String: Double]?
     var image: RawImage?
+    var vision: RawVision?
+    var consistency: RawConsistency?
+}
+
+private struct RawVision: Decodable {
+    var detail: String?
+}
+
+private struct RawConsistency: Decodable {
+    var warnOnMajor: Int?
+    var warnOnMinor: Int?
 }
 
 private struct RawImage: Decodable {

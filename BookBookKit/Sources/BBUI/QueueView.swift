@@ -95,12 +95,16 @@ struct QueueRowView: View {
 
     @ViewBuilder
     private func stateLine(advice: FailureAdvice?) -> some View {
-        let typical = app.catalog.imageModel(provider: entry.item.intent.provider, id: entry.item.intent.model)?
-            .typicalDurationSeconds[entry.item.intent.quality]
+        let intent = entry.item.intent
+        // Consistency checks (labelled "· Consistency check" through `display`) time against the vision model.
+        let typical = entry.item.kind == .image
+            ? app.catalog.imageModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds[intent.quality]
+            : app.catalog.textModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds
         switch entry.state {
         case .running, .retrying:
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(QueueRowModel.stateText(entry.state, now: context.date, typical: typical, headline: nil))
+                Text(QueueRowModel.stateText(entry.state, now: context.date, typical: typical, headline: nil,
+                                                  isConsistencyCheck: entry.item.kind != .image))
                     .font(.caption).monospacedDigit()
             }
         case .waiting:

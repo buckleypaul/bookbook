@@ -82,7 +82,7 @@ struct AssetGenerationTests {
             #expect(item.intent.refines == nil)
             #expect(item.display.pageLabel == "Pip")
         }
-        #expect(plan.estimate == CostEstimate.total(plan.items.map(\.estimate)))
+        #expect(plan.estimate == CostEstimate.total(plan.items.map(\.estimateIncludingFollowUp)))
         #expect(s.app.sheetBatchPlan(asset: AssetID(), in: s.document).count == 0)
 
         // Planning changed nothing; enqueueing appends one pending message per item.

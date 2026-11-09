@@ -16,7 +16,17 @@ public struct DetailRow: Hashable, Sendable {
 public enum VersionDetailsContent {
     public static func rows(for version: Version, in session: Session? = nil,
                             cost: CostRecord? = nil, assets: [AssetID: Asset] = [:],
+                            checkCost: CostRecord? = nil,
                             dateFormatter: (Date) -> String = defaultDate) -> [DetailRow] {
+        var rows = baseRows(for: version, in: session, cost: cost, assets: assets, dateFormatter: dateFormatter)
+        if let report = version.consistency {
+            rows += ConsistencyPresentation.detailRows(report, cost: checkCost, dateFormatter: dateFormatter)
+        }
+        return rows
+    }
+
+    private static func baseRows(for version: Version, in session: Session?, cost: CostRecord?,
+                                 assets: [AssetID: Asset], dateFormatter: (Date) -> String) -> [DetailRow] {
         var rows: [DetailRow] = []
         if let session, let number = session.versionNumber(version.id) {
             rows.append(DetailRow(label: "Version", value: "v\(number)"))

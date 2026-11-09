@@ -128,7 +128,10 @@ struct RegionEditTests {
         #expect(s.app.regenerate(edit, target: s.target, in: s.document))
         await s.app.queueOperationsSettled()
         await until("snapshot") { s.app.queueSnapshot.entries.count == 1 }
-        #expect(s.app.queueSnapshot.entries.first?.item.intent == intent)
+        // Unchanged, except the consistency follow-up follows today's Settings switch (Phase 12).
+        var replayed = intent
+        replayed.checkConsistency = s.app.preferences.consistencyCheckEnabled
+        #expect(s.app.queueSnapshot.entries.first?.item.intent == replayed)
     }
 
     // MARK: Delivery

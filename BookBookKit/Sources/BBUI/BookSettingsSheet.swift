@@ -243,13 +243,13 @@ final class StorageModel {
             CleanUp.apply(plan, to: &content)
             return DirtySet(sessions: affected)
         }
+        // The versions are already gone from memory, so earlier undo steps may point at them (PD
+        // §8.12: Clean up cannot be undone). Drop the history now, before any await, and end the
+        // open typing step so later typing doesn't join an entry that no longer exists.
+        document.endTypingStep()
+        document.undoManager?.removeAllActions()
         await document.flush()
         var message: String?
-        if document.lastSaveError == nil {
-            // Earlier undo steps may point at the versions and files just deleted (PD §8.12:
-            // Clean up cannot be undone), so the window's undo history goes with them.
-            document.undoManager?.removeAllActions()
-        }
         if document.lastSaveError != nil {
             message = "Couldn't save the cleaned-up book, so no picture files were deleted."
         } else {

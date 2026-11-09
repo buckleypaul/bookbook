@@ -599,9 +599,16 @@ public final class AppModel {
 
     public func status(of message: Message) -> MessageStatus {
         MessageStatus.resolve(message, snapshot: queueSnapshot, pendingThisLaunch: pendingThisLaunch,
-                              deliveryFailures: deliveryFailures) { [catalog] intent in
-            catalog.imageModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds[intent.quality]
-        }
+                              deliveryFailures: deliveryFailures) { typicalDuration(for: $0) }
+    }
+
+    /// The model's typical seconds for a queue item: the image model at its quality, or the
+    /// vision model for a consistency check. Nil when the catalog doesn't say.
+    func typicalDuration(for item: QueueItem) -> Double? {
+        let intent = item.intent
+        return item.kind == .image
+            ? catalog.imageModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds[intent.quality]
+            : catalog.textModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds
     }
 
     /// e.g. "GPT Image 2.5 Sunburst".

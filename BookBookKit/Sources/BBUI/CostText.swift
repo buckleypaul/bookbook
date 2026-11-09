@@ -23,12 +23,6 @@ public enum CostText {
 
     public static func basisLabel(_ basis: CostBasis) -> String { basis == .actual ? "actual" : "estimate" }
 
-    /// `0:42 of ~1:10`, or just `0:42` when the typical duration is unknown.
-    public static func elapsedOfTypical(elapsed: TimeInterval, typical: Double?) -> String {
-        guard let typical, typical > 0 else { return ElapsedTimeText.clock(elapsed) }
-        return "\(ElapsedTimeText.clock(elapsed)) of ~\(ElapsedTimeText.clock(typical))"
-    }
-
     /// The alert text before one request, or nil when neither the threshold nor the budget applies.
     /// Both can apply; the answer never blocks (A §7.10).
     public static func requestAlert(estimate: CostEstimate, decision: CostDecision, spent: Decimal,

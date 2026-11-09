@@ -154,19 +154,20 @@ extension BookContent {
         guard let page = pages[pageID], let template = template(for: page), let box = template.box(boxID),
               let slot = page.images[boxID], let placement = slot.placement else { return [] }
         var flags: ImageFlags = []
-        if let provenance = sessions[slot.sessionID]?.version(placement.versionID)?.provenance,
+        let version = sessions[slot.sessionID]?.version(placement.versionID)
+        if let provenance = version?.provenance,
            provenance.styleRevision != style.visualRevision,
            slot.acknowledged.styleRevision != style.visualRevision {
             flags.insert(.styleChanged)
         }
-        if let revisions = sessions[slot.sessionID]?.version(placement.versionID)?.provenance?.assetRevisions,
+        if let revisions = version?.provenance?.assetRevisions,
            revisions.contains(where: { id, rec in
                guard let asset = assets[id] else { return false }
                return max(rec, slot.acknowledged.assetRevisions[id] ?? 0) < asset.revision
            }) {
             flags.insert(.assetChanged)
         }
-        if sessions[slot.sessionID]?.version(placement.versionID)?.consistency?.showsWarning == true {
+        if version?.consistency?.showsWarning == true {
             flags.insert(.consistencyWarning)
         }
         let baseline = slot.acknowledged.boxAspect ?? placement.boxAspectWhenPlaced

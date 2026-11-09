@@ -2,7 +2,7 @@
 
 Updated by each phase session (see `implementation-plan.md` §2.6). Phases are listed in execution order.
 
-**Statuses:** `not started` · `in progress` · `awaiting hand checks` · `done` · `blocked` · `skipped (floating)`
+**Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `blocked` · `skipped (floating)`
 
 **Live API spend so far:** $0.51 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
@@ -19,7 +19,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 7 | Style guide and page setup | done | `phase-7-style-page-setup` | — | $0.00 | No live checks. [Log](progress/phase-7-style-page-setup.md) |
 | 8 | Sessions and versions | done | `phase-8-sessions-versions` | — | $0.02 | Live check `SP8_refinementLowQuality` passed. [Log](progress/phase-8-sessions-versions.md) |
 | 9 | Queue, cost, errors and settings (M2) | done | `phase-9-queue-cost-settings` | — | $0.04 | Live check `SP9_twoRequestsAndCancel` passed. [Log](progress/phase-9-queue-cost-settings.md) |
-| 10 | Assets and character sheets | awaiting hand checks | `phase-10-assets-characters` | — | $0.00 | No live checks listed. Session B 2026-11-08. |
+| 10 | Assets and character sheets | done (hand checks deferred) | `phase-10-assets-characters` | — | $0.00 | No live checks listed. [Log](progress/phase-10-assets-characters.md) |
 | 11 | Region editing | not started | | | | |
 | 12 | Consistency check and AI templates (M3) | not started | | | | |
 | 13 | Gemini provider (floating) | not started | | | | Needs the `gemini-api-key` Keychain item |
@@ -39,6 +39,18 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 - Gemini spikes (SG-1...SG-8) moved to the start of Phase 13; there is no `gemini-api-key` yet ([Phase 0](progress/phase-0-spikes.md)).
 - Books always reopen at relaunch (decided 2026-11-07; PD §8.1, A §6.1, Phase 3) ([Phase 0](progress/phase-0-spikes.md)).
 - OpenAI masked edits are unreliable; the region-edit approach is chosen in Phase 11 ([Phase 0](progress/phase-0-spikes.md)).
+
+## Deferred hand checks
+
+Hand checks are deferred to the end of the build (decided 2026-11-08). Each phase adds the checks its automated pass couldn't confirm. Run them all after the last phase.
+
+### Phase 10 — Assets and character sheets
+- Page 3 "@Pip yawning by the fire": Version details lists Pip's primary reference, then *sleepy*, then three-quarter view (needs a generation).
+- Rename Pip → Pippa: a sent page 3 prompt shows "Pippa"; changing Pippa's description shows "asset changed" on pages with her placed images.
+- Real-person photo: on first generation the notice appears with OpenAI's policy link and the children's-photos advice; also from Generate Whole Sheet and Draft All.
+- Delete an asset in use: afterwards its mentions are plain text, including in Version details and Regenerate with Same Settings.
+- Undo/redo with a real keyboard for asset create, rename, description edit and checklist toggle (inconclusive under synthetic input).
+- Generate Whole Sheet: real generation of all 8 items at low quality (about $0.13).
 
 ## Open follow-ups
 
@@ -142,19 +154,4 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-### Phase 10 — Assets and character sheets
-
-**Stage:** B (done; awaiting hand checks)
-
-- Session A 2026-11-08. Contracts (`BBModel/Asset.swift`, new `SessionOwner`/`GenerationTarget` cases, `Version.depictsRealPerson`, `BookContent.assets`, `DirtySet.assets`, `AssemblyReport.assetRevisions`, `BookCommand.addAsset/updateAsset/setAssetChecklist`, BBUI stubs) then four lanes, all merged; `scripts/test.sh all` green.
-  - **Model + store:** `MentionText`, incremental `UsageIndex`, `Asset.revised/normalized`, asset-changed flag, `assets/` folder (no schema bump; `Journal` path allow-list extended).
-  - **AI:** `ReferenceSelector` (tiers 1–7, per-type caps, style cap, budget, "Left out" summary), `SheetSynonyms` (`Resources/Prompts/sheet-synonyms.json`, since Package.swift bundles only Prompts/), cast section and `legend-asset.txt`, asset-session prompts (square, no story/composition), `sendsRealPersonPhoto`, `Provenance.assetRevisions`. Attached references now come before style references (A §7.4 order).
-  - **UI core:** asset commands with by-ID inverses (field-wise merge so undo doesn't drop a delivered choice), usage index kept by `BookDocument`, Mark as OK records asset revisions, `deleteAsset`, deliveries/imports into asset sessions (set `chosen` when empty), generic `generate(target:)`, sheet batch, SessionPanel for any owner, `@mention` autocomplete, page asset checklist, Reference another image picker, real-person question (EXIF default) and first-send notice, Version details Assets / Left out / Real person photo.
-  - **Assets tab:** sidebar tab between Pages and Layouts, list with type filter, editor (name, description, tags, slots/primary), character sheet grid (lock, custom expressions, Generate Whole Sheet with estimate first), where-used links into the page editor, delete confirmation.
-- Decisions: default sheet is 8 items (primary = front view; user, 2026-11-08); locked sheet items are still sent (lock = don't regenerate); revision bumps only on description / primary image change. Recorded in architecture.md §4.2, §7.4.
-- For Session B: no live checks listed. Known gaps: `sendsRealPersonPhoto` applies the image-count cap but not the byte budget (may over-report); `@mention` autocomplete completes only at the end of the prompt (click/Return, no arrow keys); where-used box labels are "image box N". Hand checks need a real generation for Pip (low quality) — confirm spend with the user first if it'd matter.
-- Session B 2026-11-08. `scripts/test.sh all` green before and after fixes; secret scan clean; no live spend.
-  - Review round 1 (must-fix, fixed): Generate Whole Sheet and Draft All skipped the real-person notice (shared `AppModel.realPersonNoticeNeeded(for:in:)` now gates both); `FlagText` had no "Asset changed" entry; delete rewrote tokens only in `Message.text` (now also `Provenance.intent.messageText`, and `ContextAssembler.requestDisplayText` falls back to the answered message's text).
-  - Round 2 (fixed): an item queued before its asset was deleted delivered provenance with the dead token (`BookMutations.resolvingDeletedMentions` on delivery); batch plan cleared when the notice sheet is dismissed. Regression tests for each.
-  - Automated hand checks (no in-app key, so no sends): sheet shows 8 items and the estimate first ("8 requests, about $0.13"); `@Pip` autocomplete inserts a token; rename shows everywhere visible; phone JPEG (Apple EXIF) defaults to "real person: yes", PNG to no; delete confirmation lists where used and removes checklist entries. Needs a key: Version details order, "Pippa" in a sent prompt, asset-changed badge, first-send notice, plain-text mentions after delete. Undo/redo inconclusive under synthetic input (Edit menu stayed "Undo Typing"); recheck by hand.
-
+None running.

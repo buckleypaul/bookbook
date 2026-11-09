@@ -71,7 +71,7 @@ Sizes: **S** is a few focused days, **M** about a week, **L** about two weeks (a
 ### 2.1 Definition of done (applies to every phase)
 
 1. `scripts/test.sh all` passes locally (the same steps as CI): unit and snapshot tests, the app build, and the secret scan. CI isn't a gate (no PRs).
-2. The phase's **hand acceptance checks** have been run by you on macOS 27, in a Debug build launched from Xcode, or from the release build once Phase 15 is done.
+2. The phase's **hand acceptance checks** are run by you on macOS 27, from the release build once Phase 15 is done. They are deferred to the end of the build (decided 2026-11-08): each phase's automated pass confirms what it can, and the rest go into "Deferred hand checks" in PROGRESS.md.
 3. Every new edit that PD §8.10 says is undoable goes through a `BookCommand`, and its undo/redo has been checked by hand.
 4. Anything new that's sent to a provider is visible in Version details. That's the privacy rule in A §11.
 5. Any design change found while building is written back into `architecture.md` in the same change. Product-level changes go into `product-description.md`, after asking you.
@@ -122,8 +122,8 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
 ### 2.6 Phase workflow and progress tracking
 
 - **`PROGRESS.md`** at the repo root is the single record of where the build is. It has one row per phase (in the order 1a, 0, 1b, 2, 3 … 17), with a status, branch, PR (none from Phase 5 on), live spend and notes. Each phase session updates it. It also holds the open follow-ups (grouped by target phase) and the current phase's log. When a phase is `done`, its log moves to `progress/phase-<id>-<slug>.md` and its spec to `plan/done/`, so PROGRESS.md stays small.
-- **Statuses:** `not started` → `in progress` → `awaiting hand checks` (code is done, local tests are green, merged into main and pushed) → `done` (you've confirmed the hand checks). `blocked` and `skipped (floating)` are also allowed.
-- **One phase per pair of sessions.** Session A (build: contracts, lanes, merge) and Session B (verify: tests, hand checks, review) work on a branch called `phase-<id>-<slug>`, with git worktrees for parallel lanes. A **Stage** line in the current phase log tells the next session where to resume. **No PRs or CI waits:** every session ends by merging the phase branch into `main` (`--no-ff`) and pushing `main` directly to `origin`, so main always has the latest work. Session B stops at `awaiting hand checks`. The **next** session starts by asking whether the previous phase's hand checks passed. If they did, it marks the phase `done`, merges into main again and deletes the phase branch before starting the next one.
+- **Statuses:** `not started` → `in progress` → `done (hand checks deferred)` (code is done, local tests are green, review fixes merged, merged into main and pushed; counts as `done` for dependencies) → `done` (you've confirmed the hand checks). Hand checks are deferred to the end of the build (decided 2026-11-08): unconfirmed ones are listed under "Deferred hand checks" in PROGRESS.md and you run them after the last phase. `awaiting hand checks` is the older status. `blocked` and `skipped (floating)` are also allowed.
+- **One phase per pair of sessions.** Session A (build: contracts, lanes, merge) and Session B (verify: tests, hand checks, review) work on a branch called `phase-<id>-<slug>`, with git worktrees for parallel lanes. A **Stage** line in the current phase log tells the next session where to resume. **No PRs or CI waits:** every session ends by merging the phase branch into `main` (`--no-ff`) and pushing `main` directly to `origin`, so main always has the latest work. Session B closes the phase as `done (hand checks deferred)`, archives it, merges into main and deletes the phase branch.
 - **Which phase is next:** the first phase in `PROGRESS.md` order that isn't `done` and whose solid dependencies (§3) are all `done`. Phase 13 is skipped while no `gemini-api-key` Keychain item exists. To check, run `security find-generic-password -s gemini-api-key >/dev/null 2>&1`; this checks the item exists without reading the key.
 - **Git identity** is set in the repo config (`Paul Buckley <paul@paulbuckley.me>`). Don't override it.
 
@@ -215,7 +215,7 @@ Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve 
 | §5 Phase 7 | `plan/done/phase-07-style-guide.md` |
 | §5 Phase 8 | `plan/done/phase-08-sessions-versions.md` |
 | §5 Phase 9 | `plan/done/phase-09-queue-cost-settings.md` |
-| §5 Phase 10 | `plan/phase-10-assets-characters.md` |
+| §5 Phase 10 | `plan/done/phase-10-assets-characters.md` |
 | §5 Phase 11 | `plan/phase-11-region-editing.md` |
 | §5 Phase 12 | `plan/phase-12-consistency-ai-templates.md` |
 | §5 Phase 13 | `plan/phase-13-gemini.md` |

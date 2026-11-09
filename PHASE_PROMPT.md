@@ -22,9 +22,8 @@ Implement the next BookBook phase. Work out which phase and which session (A or 
 ## 0. Orient (you, the main thread)
 1. Read PROGRESS.md, implementation-plan.md (the core: §0–§3) and the phase's own file, `plan/phase-NN-*.md`. CLAUDE.md is already loaded. Don't read other phase files, `plan/done/` or `progress/` unless you need something specific from them. Read only the architecture.md / product-description.md sections that phase cites.
 2. Find the current state: PROGRESS.md on main (it's merged after every session, so it's current; `git pull --ff-only` first), plus `git branch --list '*phase-*'`.
-3. If a phase is awaiting hand checks, ask me (AskUserQuestion) whether its hand checks passed, unless I've already said so below.
-   - Passed: on the phase branch, mark it `done` in PROGRESS.md (status, merge date, ticked hand checks). Then archive it: move the "Current phase log" entry to `progress/phase-<id>-<slug>.md` and link it from the status table; move its still-open follow-ups into "Open follow-ups" (under their target phase), and drop any follow-ups this phase finished; and `git mv` its spec to `plan/done/`, updating the mapping table in implementation-plan.md. Commit, then merge the phase branch into main (`git checkout main && git merge --no-ff phase-<id>-<slug>`), push main, and confirm main's PROGRESS.md shows the phase as `done`. Never record it only on the next phase's branch. Remove the phase branch (locally and on `origin` if it's there), its lane worktrees and lane branches once you've confirmed their commits are in main. Then tell me the next phase and the effort it needs (table above), and stop, so the next phase starts in a fresh session.
-   - Failed: fix what I describe on that branch, verify again (§4), merge it into main and push, and stop at `awaiting hand checks` again. Don't start a new phase.
+3. **Hand checks are deferred to the end of the build (decided 2026-11-08).** Don't ask me about them. A phase's unconfirmed hand checks go into "Deferred hand checks" in PROGRESS.md, and I run them all after the last phase. If a phase is still `awaiting hand checks` (older flow), close it out as below without asking. If I report a failed hand check, fix it on a branch for that, verify again (§4), merge into main and push.
+   - Closing a phase: on the phase branch, mark it `done (hand checks deferred)` in PROGRESS.md (status, merge date). Then archive it: move the "Current phase log" entry to `progress/phase-<id>-<slug>.md` and link it from the status table; move its still-open follow-ups into "Open follow-ups" (under their target phase), and drop any follow-ups this phase finished; and `git mv` its spec to `plan/done/`, updating the mapping table in implementation-plan.md. Commit, then merge the phase branch into main (`git checkout main && git merge --no-ff phase-<id>-<slug>`), push main, and confirm main's PROGRESS.md shows the phase as `done`. Never record it only on the next phase's branch. Remove the phase branch (locally and on `origin` if it's there), its lane worktrees and lane branches once you've confirmed their commits are in main.
 4. If a phase is `in progress`, resume it from its branch and the **Stage** line in its "Current phase log":
    - `Stage: A` (or no stage line): carry on with Session A (§1–§2).
    - `Stage: B`: this is Session B. Go straight to §4.
@@ -77,16 +76,18 @@ Delegate the steps; you merge the fixes and make the calls. Don't pull full logs
 2. **Live checks:** run this phase's planned live checks, if it has any, within the budget.
 3. **Hand checks:** a sonnet subagent launches and uses the app (run skill, throwaway library) for as many of the phase's hand checks as it can, and reports a ticked/unticked list with one line per check. Don't drive the app or take screenshots in the main thread.
 4. **Review:** a fresh opus subagent reviews the phase diff. Give it the diff range and the phase file, not your conclusions. Ask for **must-fix issues only**, as a short list with file:line and a one-line failure scenario. Should-fix items and nits go straight to "Open follow-ups".
-5. **Cap the fix loop at two rounds** (fix → re-test → re-review of only the fixed areas). Anything still open after that goes to "Open follow-ups", or to me if it blocks a hand check.
+5. **Cap the fix loop at two rounds** (fix → re-test → re-review of only the fixed areas). Anything still open after that goes to "Open follow-ups".
 6. Run the secret scan over the whole diff.
 7. If a test looks flaky (fails once, passes on a re-run), re-run once and log it as a follow-up. Don't open a PR.
 
 ## 5. Session B: hand back and stop
-- Update PROGRESS.md on the branch: status `awaiting hand checks`, branch, spend, and finish the "Current phase log" entry (what was built, deviations, docs changed, follow-ups). Keep it concise: it moves to `progress/` when the phase is done. Commit, then merge the phase branch into main (`--no-ff`) and push main. Keep the branch for any hand-check fixes.
+- Update PROGRESS.md on the branch: spend, and finish the "Current phase log" entry (what was built, deviations, docs changed, follow-ups). Keep it concise. Add every hand check not confirmed by the automated pass to "Deferred hand checks" under the phase, one line each, saying what's left to check.
+- Close the phase as in §0 step 3 (mark `done (hand checks deferred)`, archive, merge into main, push, remove branches and worktrees).
 - Reply with:
   - what was built;
-  - the plan's hand checks as a checkbox list, ticking the ones confirmed;
+  - the plan's hand checks as a checkbox list, ticking the ones the automated pass confirmed (the rest are deferred);
   - live spend;
   - decisions and deviations I should know about;
   - follow-ups.
+  - the next phase and the effort it needs (table above).
 - Then stop. Don't start the next phase.

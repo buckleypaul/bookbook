@@ -401,7 +401,7 @@ struct SessionPanel: View {
                     .disabled(!document.isEditable)
                 }
                 Button(version.consistency == nil ? "Check Consistency" : "Check Again") {
-                    confirmCostThenPerform(.checkConsistency(session: session.id, version: version.id))
+                    checkThenPerform(.checkConsistency(session: session.id, version: version.id))
                 }
                 .disabled(reason != nil)
                 .help(reason ?? "Compare this picture with the references of the assets in it.")

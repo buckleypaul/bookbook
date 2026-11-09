@@ -54,7 +54,7 @@ public struct DirtySet: Hashable, Sendable {
 
     public init(book: Bool = false, style: Bool = false, templates: Set<TemplateID> = [], pages: Set<PageID> = [],
                 sessions: Set<SessionID> = [], deletedPages: Set<PageID> = [],
-                deletedTemplates: Set<TemplateID> = []) {
+                deletedTemplates: Set<TemplateID> = [], assets: Set<AssetID> = [], deletedAssets: Set<AssetID> = []) {
         self.book = book
         self.style = style
         self.templates = templates
@@ -62,6 +62,8 @@ public struct DirtySet: Hashable, Sendable {
         self.sessions = sessions
         self.deletedPages = deletedPages
         self.deletedTemplates = deletedTemplates
+        self.assets = assets
+        self.deletedAssets = deletedAssets
     }
 
     public var isEmpty: Bool {
@@ -92,7 +94,7 @@ public struct DirtySet: Hashable, Sendable {
     /// Everything in `content` (used when creating a book).
     public static func all(_ content: BookContent) -> DirtySet {
         DirtySet(book: true, style: true, templates: Set(content.templates.keys), pages: Set(content.pages.keys),
-                 sessions: Set(content.sessions.keys)).with { $0.assets = Set(content.assets.keys) }
+                 sessions: Set(content.sessions.keys), assets: Set(content.assets.keys))
     }
 }
 

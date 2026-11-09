@@ -115,36 +115,130 @@ public struct Asset: Hashable, Codable, Sendable, Identifiable {
             + (sheet?.items ?? []).map { ($0.sessionID, SessionOwner.sheetItem(id, $0.id)) }
     }
 
-    /// Lane: model. Exactly one primary slot (the first if none or several), no sheet unless
-    /// `type == .character`.
-    public func normalized() -> Asset { self }
+    /// Exactly one primary slot (the first if none or several; a "Primary" slot is added if
+    /// there are no slots), no sheet unless `type == .character`.
+    public func normalized() -> Asset {
+        var copy = self
+        if copy.references.isEmpty {
+            copy.references = [ReferenceSlot(label: "Primary", isPrimary: true)]
+        } else {
+            let first = copy.references.firstIndex { $0.isPrimary } ?? 0
+            for i in copy.references.indices { copy.references[i].isPrimary = (i == first) }
+        }
+        if copy.type != .character { copy.sheet = nil }
+        return copy
+    }
 
-    /// Lane: model. `self` as edited from `old`: when the description or the primary slot's
-    /// `chosen` differs (or a different slot is primary), `revision = max(old.revisionHighWater,
+    /// `self` as edited from `old`: when the description or the primary slot's `chosen` differs
+    /// (or a different slot is primary), `revision = max(old.revisionHighWater,
     /// revisionHighWater) + 1` and the high water follows; otherwise revision fields come from
     /// `old` unchanged.
-    public func revised(from old: Asset) -> Asset { self }
+    public func revised(from old: Asset) -> Asset {
+        var copy = self
+        let changed = description != old.description || primary?.id != old.primary?.id
+            || primary?.chosen != old.primary?.chosen
+        if changed {
+            let next = max(old.revisionHighWater, revisionHighWater) + 1
+            copy.revision = next
+            copy.revisionHighWater = next
+        } else {
+            copy.revision = old.revision
+            copy.revisionHighWater = old.revisionHighWater
+        }
+        return copy
+    }
 }
 
 // MARK: Mention tokens (A §4.3)
 
-/// `⟦asset:<uuid>⟧` tokens in message text. Lane: model.
+/// `⟦asset:<uuid>⟧` tokens in message text.
 public enum MentionText {
+    private static let open = "⟦asset:"
+    private static let close: Character = "⟧"
+
     public static func token(for id: AssetID) -> String { "⟦asset:\(id.rawValue.uuidString)⟧" }
 
+    /// Well-formed tokens found in text: range and asset.
+    private static func tokens(in text: String) -> [(range: Range<String.Index>, id: AssetID)] {
+        var out: [(range: Range<String.Index>, id: AssetID)] = []
+        var from = text.startIndex
+        while let start = text.range(of: open, range: from..<text.endIndex) {
+            guard let end = text[start.upperBound...].firstIndex(of: close) else { break }
+            if let uuid = UUID(uuidString: String(text[start.upperBound..<end])) {
+                let after = text.index(after: end)
+                out.append((range: start.lowerBound..<after, id: AssetID(rawValue: uuid)))
+                from = after
+            } else {
+                from = start.upperBound
+            }
+        }
+        return out
+    }
+
     /// Asset IDs mentioned in `text`, in first-occurrence order, no duplicates.
-    public static func mentionedAssets(in text: String) -> [AssetID] { [] }
+    public static func mentionedAssets(in text: String) -> [AssetID] {
+        var seen: Set<AssetID> = []
+        return tokens(in: text).map(\.id).filter { seen.insert($0).inserted }
+    }
+
+    /// Replaces each token for which `replacement` returns non-nil.
+    private static func replacing(_ text: String, _ replacement: (AssetID) -> String?) -> String {
+        var out = ""
+        var from = text.startIndex
+        for (range, id) in tokens(in: text) {
+            guard let r = replacement(id) else { continue }
+            out += text[from..<range.lowerBound]
+            out += r
+            from = range.upperBound
+        }
+        out += text[from...]
+        return out
+    }
 
     /// Tokens replaced by the asset's current name (unknown IDs: by `fallback`, default "").
-    public static func displayText(_ text: String, assets: [AssetID: Asset], fallback: String = "") -> String { text }
+    public static func displayText(_ text: String, assets: [AssetID: Asset], fallback: String = "") -> String {
+        replacing(text) { assets[$0]?.name ?? fallback }
+    }
 
     /// Every token for `id` replaced by `plainText` (asset deletion turns mentions into plain text).
-    public static func replacingMentions(of id: AssetID, with plainText: String, in text: String) -> String { text }
+    public static func replacingMentions(of id: AssetID, with plainText: String, in text: String) -> String {
+        replacing(text) { $0 == id ? plainText : nil }
+    }
 
-    /// Typed text → stored text: each `@Name` that exactly matches an asset name
-    /// (case-insensitive, longest match first) becomes its token. Used when a typed prompt is
-    /// sent without autocomplete picks.
-    public static func tokenizing(_ typed: String, assets: [Asset]) -> String { typed }
+    /// Typed text -> stored text: each `@Name` that exactly matches an asset name
+    /// (case-insensitive, longest match first, ending at a word boundary) becomes its token.
+    /// Used when a typed prompt is sent without autocomplete picks.
+    public static func tokenizing(_ typed: String, assets: [Asset]) -> String {
+        let candidates = assets.filter { !$0.name.isEmpty }.sorted { $0.name.count > $1.name.count }
+        guard !candidates.isEmpty, typed.contains("@") else { return typed }
+        var out = ""
+        var i = typed.startIndex
+        while i < typed.endIndex {
+            let ch = typed[i]
+            let afterAt = typed.index(after: i)
+            if ch == "@", i == typed.startIndex || !isWordCharacter(typed[typed.index(before: i)]),
+               let (asset, end) = match(candidates, in: typed, from: afterAt) {
+                out += token(for: asset.id)
+                i = end
+                continue
+            }
+            out.append(ch)
+            i = afterAt
+        }
+        return out
+    }
+
+    private static func isWordCharacter(_ c: Character) -> Bool { c.isLetter || c.isNumber || c == "_" }
+
+    private static func match(_ candidates: [Asset], in text: String, from start: String.Index) -> (Asset, String.Index)? {
+        for asset in candidates {
+            guard let end = text.index(start, offsetBy: asset.name.count, limitedBy: text.endIndex) else { continue }
+            guard text[start..<end].compare(asset.name, options: [.caseInsensitive]) == .orderedSame else { continue }
+            if end < text.endIndex, isWordCharacter(text[end]) { continue }
+            return (asset, end)
+        }
+        return nil
+    }
 }
 
 // MARK: Where used (A §4.4)
@@ -170,18 +264,71 @@ public struct UsageSite: Hashable, Sendable {
     }
 }
 
-/// `[AssetID: Set<UsageSite>]`, rebuilt incrementally. Lane: model.
+/// `[AssetID: Set<UsageSite>]`, rebuilt incrementally.
 public struct UsageIndex: Hashable, Sendable {
+    /// Per page: asset -> (box, nil for page level) -> reasons. Only non-empty entries are kept,
+    /// so an incrementally refreshed index equals a freshly built one.
+    private var byPage: [PageID: [AssetID: [BoxID?: Set<UsageReason>]]] = [:]
+
     public init() {}
-    public init(content: BookContent) {}
+
+    public init(content: BookContent) {
+        for id in content.pages.keys { rederive(id, in: content) }
+    }
 
     /// Re-derive the entries for the listed pages (and the page boxes owning the listed
     /// sessions); pages no longer in `content` are dropped.
-    public mutating func refresh(_ content: BookContent, pages: Set<PageID>, sessions: Set<SessionID>) {}
+    public mutating func refresh(_ content: BookContent, pages: Set<PageID>, sessions: Set<SessionID>) {
+        var affected = pages
+        for sid in sessions {
+            if case let .pageBox(page, _)? = content.sessions[sid]?.owner { affected.insert(page) }
+        }
+        for id in affected { rederive(id, in: content) }
+    }
+
+    private mutating func rederive(_ id: PageID, in content: BookContent) {
+        guard let page = content.pages[id] else {
+            byPage[id] = nil
+            return
+        }
+        var found: [AssetID: [BoxID?: Set<UsageReason>]] = [:]
+        for asset in page.assetChecklist { found[asset, default: [:]][nil, default: []].insert(.checklist) }
+        for (boxID, slot) in page.images {
+            guard let session = content.sessions[slot.sessionID] else { continue }
+            for message in session.messages where message.epoch == session.resetEpoch {
+                for asset in MentionText.mentionedAssets(in: message.text) {
+                    found[asset, default: [:]][boxID, default: []].insert(.mention)
+                }
+            }
+            if let placement = slot.placement,
+               let revisions = session.version(placement.versionID)?.provenance?.assetRevisions {
+                for asset in revisions.keys { found[asset, default: [:]][boxID, default: []].insert(.placedImage) }
+            }
+        }
+        byPage[id] = found.isEmpty ? nil : found
+    }
 
     /// Sites for `asset`, merged per (page, box), cover first then reading order, page-level
     /// entry before its boxes, boxes in template layer order.
-    public func sites(for asset: AssetID, in content: BookContent) -> [UsageSite] { [] }
+    public func sites(for asset: AssetID, in content: BookContent) -> [UsageSite] {
+        var order: [PageID] = [content.book.coverPageID]
+        order += content.book.pageOrder.filter { $0 != content.book.coverPageID }
+        let known = Set(order)
+        order += byPage.keys.filter { !known.contains($0) }.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
+        var out: [UsageSite] = []
+        for pageID in order {
+            guard let entry = byPage[pageID]?[asset] else { continue }
+            if let reasons = entry[nil] { out.append(UsageSite(page: pageID, box: nil, reasons: reasons)) }
+            let layers = content.pages[pageID].flatMap { content.template(for: $0) }?.boxes.map(\.id) ?? []
+            let boxes = entry.keys.compactMap { $0 }
+            let ordered = layers.filter { boxes.contains($0) }
+                + boxes.filter { !layers.contains($0) }.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
+            for box in ordered { out.append(UsageSite(page: pageID, box: box, reasons: entry[box] ?? [])) }
+        }
+        return out
+    }
 
-    public func isUsed(_ asset: AssetID) -> Bool { false }
+    public func isUsed(_ asset: AssetID) -> Bool {
+        byPage.values.contains { $0[asset] != nil }
+    }
 }

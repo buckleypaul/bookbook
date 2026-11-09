@@ -211,6 +211,8 @@ struct SheetItem {
 }
 ```
 
+**As built (Phase 10):** `Asset` also stores `revisionHighWater` (like `StyleGuide.visualRevisionHighWater`). Only a description change or a change of the primary reference's chosen image (or which slot is primary) bumps `revision` to `highWater + 1`; undo restores the old revision, and numbers are never reused. Renames, tags and sheet edits don't bump. A new character's sheet has 8 items: three-quarter, side and back views plus happy, sad, surprised, angry and sleepy (the primary reference serves as the front view; decided 2026-11-08). `Version.depictsRealPerson: Bool?` holds the import answer (§11). Asset edits are `BookCommand.addAsset` / `updateAsset` (wholesale replace) / `setAssetChecklist`; deletion is irreversible (`BookDocument.deleteAsset`).
+
 **RichText** is BookBook's own `Codable` attributed-run model. It isn't RTF and it isn't an archived `NSAttributedString`, so it stays diffable, version-proof and limited to the formatting the product supports:
 
 ```swift
@@ -608,7 +610,7 @@ This is deterministic, with no AI call, so it adds no cost or latency and its de
   - **Expressions:** the current message, plus the story text when it's included, is tokenized and matched against expression names and a bundled synonym table (e.g. *grin, giggle, beaming* → happy; *tears, crying* → sad; *yawn* → sleepy). User-defined expressions match on their own name and its simple inflections.
   - **Views:** *from behind, walking away* → back; *profile, side-on* → side; *turning, over her shoulder* → three-quarter. With no match, the default is three-quarter.
   - **Per-asset caps:** a character gets primary + 1 expression + 1 view; a place gets primary + 1; an object gets the primary only.
-  - Locked or unchosen sheet items are skipped.
+  - Unchosen sheet items are skipped. **Phase 10 decision:** locked items are *not* skipped; "lock" means "don't regenerate" (Generate whole sheet skips it), and a locked, chosen item is still sent.
 - **Budget.** Selection stops when the model's reference limit or byte budget is reached. Whatever is cut gets listed: "Left out: Granny Oak – sleepy expression; style reference 3."
 - **Payload prep.** References are downscaled to a 1536 px long edge and sent as JPEG (quality 0.9), or PNG when they have alpha. The base image is sent at its native size, because a mask has to match it.
 

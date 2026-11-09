@@ -115,8 +115,7 @@ struct LibraryLocationSettings: View {
     }
 
     private var pendingCount: Int {
-        // TODO(16b-merge): pass the app's undelivered-pictures count once AppModel has it.
-        LibrarySwitchWarning.pendingCount(app.queueSnapshot, undelivered: 0)
+        LibrarySwitchWarning.pendingCount(app.queueSnapshot, undelivered: app.undeliveredCount)
     }
 
     private func change(to url: URL, move: Bool) {

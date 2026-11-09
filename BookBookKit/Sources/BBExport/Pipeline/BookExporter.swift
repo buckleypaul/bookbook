@@ -114,13 +114,10 @@ public final class BookExporter {
         let story = content.storyPages
         let entries = story.map { SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread) }
         let layout = PageSequencer.layout(entries, cover: content.book.coverPageID)
-        return zip(story, layout.pages).compactMap { page, position in
-            if let range {
-                let positions = position.position...(position.position + position.span - 1)
-                guard positions.overlaps(range) else { return nil }
-            }
-            return (page, position)
-        }
+        let pairs = Array(zip(story, layout.pages))
+        let selected = PageRangeWidening.selected(pairs.map { (position: $0.1.position, span: $0.1.span) }, in: range)
+        let keep = Set(selected.map(\.position))
+        return pairs.filter { keep.contains($0.1.position) }.map { (page: $0.0, position: $0.1) }
     }
 
     /// Output pages for standard and print-shop exports.

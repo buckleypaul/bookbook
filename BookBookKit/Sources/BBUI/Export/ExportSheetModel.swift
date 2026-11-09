@@ -111,20 +111,27 @@ public final class ExportSheetModel {
         !limitsRange || (rangeFrom >= 1 && rangeFrom <= rangeTo && rangeTo <= totalPositions)
     }
 
+    /// Story pages the export will include: a range that cuts a spread is widened to the
+    /// whole spread, exactly as `BookExporter` does.
+    private var selectedStory: [(position: Int, span: Int)] {
+        let layout = PagesOverviewModel.layout(content()).pages.map { (position: $0.position, span: $0.span) }
+        return PageRangeWidening.selected(layout, in: limitsRange ? rangeFrom...max(rangeFrom, rangeTo) : nil)
+    }
+
+    /// Whether a cover page will be exported (`BookExporter` needs one to exist).
+    private var exportsCover: Bool { includeCover && content().coverPage != nil }
+
     /// Pages that go into the PDF (a booklet counts each position as one page).
     public var selectedPageCount: Int {
-        let positions = limitsRange ? max(0, min(rangeTo, totalPositions) - max(rangeFrom, 1) + 1) : totalPositions
-        return positions + (includeCover ? 1 : 0)
+        selectedStory.reduce(0) { $0 + $1.span } + (exportsCover ? 1 : 0)
     }
 
     /// Booklet only: blank pages the export will add (the inside front cover or a parity
     /// blank before an even-starting range, plus padding to a multiple of 4).
     public var predictedBlanks: Int? {
         guard outputType == .booklet, selectedPageCount > 0 else { return nil }
-        let storyPages = selectedPageCount - (includeCover ? 1 : 0)
-        let first: Int? = storyPages > 0 ? (limitsRange ? max(rangeFrom, 1) : 1) : nil
-        let blanks = BookletImposition.blanks(contentPages: selectedPageCount,
-                                              includeCover: includeCover, firstStoryPosition: first)
+        let blanks = BookletImposition.blanks(contentPages: selectedPageCount, includeCover: exportsCover,
+                                              firstStoryPosition: selectedStory.first?.position)
         return blanks.leading + blanks.trailing
     }
 

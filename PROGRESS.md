@@ -23,7 +23,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 11 | Region editing | done (hand checks deferred) | `phase-11-region-editing` | — | $0.04 | Live check `SP11_maskedEditRealIllustration` passed. [Log](progress/phase-11-region-editing.md) |
 | 12 | Consistency check and AI templates (M3) | done (hand checks deferred) | `phase-12-consistency-ai-templates` | — | $0.007 | Live check `SP12_templateAndConsistency` passed. [Log](progress/phase-12-consistency-ai-templates.md) |
 | 13 | Gemini provider | post-MVP | | | | Out of scope for v1.0 (decided 2026-11-08). Spec kept in `plan/post-mvp/phase-13-gemini.md`. |
-| 14 | Export and print | not started | | | | |
+| 14 | Export and print | in progress | `phase-14-export-print` | — | $0.00 | No live checks listed. |
 | 15 | Release pipeline (M4) | not started | | | | |
 | 16 | Import, book settings, onboarding, sample | not started | | | | |
 | 17 | Hardening and v1.0 (M5) | not started | | | | |
@@ -180,4 +180,8 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-_No phase in progress._
+### Phase 14 — Export and print
+
+**Stage:** A
+
+- Started 2026-11-08. Follow-ups picked up: consistency-warning preflight item; export off the main actor.

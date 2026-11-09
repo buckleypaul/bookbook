@@ -314,7 +314,9 @@ struct SessionPanel: View {
         let base = baseID(session)
         return VStack(alignment: .leading, spacing: 6) {
             Text("Versions").font(.headline)
-            VersionStrip(session: session, placedID: placedID, selectedID: base, store: document.store,
+            VersionStrip(session: session, placedID: placedID,
+                         placedHelp: owner.assetID == nil ? "On the page" : "Chosen", selectedID: base,
+                         store: document.store,
                          onChoose: { choose($0) },
                          onToggleStar: { document.setStarred(!$0.starred, version: $0.id, owner: owner) },
                          onExport: { export($0, in: session) },

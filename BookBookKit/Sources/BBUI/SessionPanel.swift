@@ -733,12 +733,11 @@ struct SessionPanel: View {
             current = app.consistencyCheckEstimate(bookID: document.id, sessionID: sessionID, versionID: versionID)
         }
         Task {
-            let decision = await app.costDecision(for: current, in: document)
+            let (decision, spent) = await app.costDecisionAndSpent(for: current, in: document)
             guard decision.needsConfirmation || decision.overBudget else {
                 perform(action)
                 return
             }
-            let spent = decision.overBudget ? await app.ledgerSummary(for: document.id).total : 0
             if let text = CostText.requestAlert(estimate: current, decision: decision, spent: spent,
                                                 budget: document.content.book.budget) {
                 pendingAction = action
@@ -867,11 +866,10 @@ private struct VersionDetailsGrid: View {
         }
         .font(.caption)
         .padding(.top, 6)
-        .task(id: version.provenance?.cost) {
-            if let id = version.provenance?.cost { cost = await app.costRecord(id, in: bookID) } else { cost = nil }
-        }
-        .task(id: version.consistency?.cost) {
-            if let id = version.consistency?.cost { checkCost = await app.costRecord(id, in: bookID) } else { checkCost = nil }
+        .task(id: [version.provenance?.cost, version.consistency?.cost]) {
+            let records = await app.costRecords([version.provenance?.cost, version.consistency?.cost], in: bookID)
+            cost = records[0]
+            checkCost = records[1]
         }
     }
 }

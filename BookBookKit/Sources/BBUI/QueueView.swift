@@ -194,8 +194,7 @@ struct DraftAllFlow: ViewModifier {
             showNothing = true
             return
         }
-        let decision = await app.costDecision(for: plan.estimate, in: document)
-        let spent = await app.ledgerSummary(for: document.id).total
+        let (decision, spent) = await app.costDecisionAndSpent(for: plan.estimate, in: document)
         message = CostText.batchAlert(count: plan.count, estimate: plan.estimate, decision: decision, spent: spent,
                                       budget: document.content.book.budget,
                                       coverIncluded: plan.targets.contains { $0.page == document.content.book.coverPageID })

@@ -27,7 +27,7 @@ public struct ModelCatalog: Sendable {
         case malformed(String)
     }
 
-    /// Decodes `ModelCatalog.json` data. Non-image entries are skipped in Phase 2.
+    /// Decodes `ModelCatalog.json` data. Image entries become `imageModels`; text and vision entries become `textModels` (Phase 12).
     public init(data: Data) throws {
         let file = try JSONDecoder().decode(RawCatalog.self, from: data)
         let images = file.models.filter { $0.kind == "image" }
@@ -55,7 +55,19 @@ public struct ModelCatalog: Sendable {
                 status: ModelStatus(rawValue: raw.status ?? "current") ?? .current, successor: raw.successor,
                 typicalDurationSeconds: durations, image: image))
         }
-        self.init(asOf: file.asOf, imageModels: resolved)
+        var texts: [CatalogTextModel] = []
+        for raw in file.models {
+            guard let kind = TextModelKind(rawValue: raw.kind) else { continue }
+            texts.append(CatalogTextModel(
+                provider: ProviderID(rawValue: raw.provider), id: raw.id, displayName: raw.displayName, kind: kind,
+                status: ModelStatus(rawValue: raw.status ?? "current") ?? .current, successor: raw.successor,
+                typicalDurationSeconds: raw.typicalDurationSeconds?["default"],
+                imageDetail: kind == .vision ? raw.vision?.detail : nil,
+                consistency: kind == .vision
+                    ? raw.consistency.map { ConsistencyThresholds(warnOnMajor: $0.warnOnMajor ?? 1, warnOnMinor: $0.warnOnMinor ?? 3) }
+                    : nil))
+        }
+        self.init(asOf: file.asOf, imageModels: resolved, textModels: texts)
     }
 
     /// The catalog bundled in BBAI's resources.
@@ -140,6 +152,17 @@ private struct RawModel: Decodable {
     var successor: String?
     var typicalDurationSeconds: [String: Double]?
     var image: RawImage?
+    var vision: RawVision?
+    var consistency: RawConsistency?
+}
+
+private struct RawVision: Decodable {
+    var detail: String?
+}
+
+private struct RawConsistency: Decodable {
+    var warnOnMajor: Int?
+    var warnOnMinor: Int?
 }
 
 private struct RawImage: Decodable {

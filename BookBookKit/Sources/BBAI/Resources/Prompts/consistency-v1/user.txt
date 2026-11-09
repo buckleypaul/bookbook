@@ -1,0 +1,10 @@
+{{images}}
+
+Compare the first image with the references. For each asset that appears in it, check that it still matches its reference.
+
+Assets:
+{{assets}}
+
+Art style: {{style}}
+
+For every difference give: the asset name (null for style or general differences), the aspect that differs, what you observed, what the reference shows (expected), and the severity.

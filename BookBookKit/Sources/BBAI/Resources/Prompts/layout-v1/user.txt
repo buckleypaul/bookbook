@@ -1,0 +1,11 @@
+Design a layout for this description:
+{{description}}
+
+Page setup:
+- Layout type: {{kind}}
+- Page size: {{size}}
+- Orientation: {{orientation}}
+- Margins: {{margins}}
+- Bleed: {{bleed}}
+
+{{examples}}

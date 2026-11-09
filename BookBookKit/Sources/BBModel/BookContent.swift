@@ -128,7 +128,7 @@ public enum PageStatus: String, Sendable {
 }
 
 /// Out-of-date flags on a placed image (A §4.4, PD §8.5). Asset changed is set from Phase 10;
-/// consistency warning (Phase 12) is reserved and never set yet.
+/// consistency warning (Phase 12) is set while the placed version's latest check shows a warning.
 public struct ImageFlags: OptionSet, Hashable, Sendable {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
@@ -146,6 +146,7 @@ extension BookContent {
     /// - asset changed (Phase 10): for any `(asset, rec)` in the placed version's
     ///   `provenance.assetRevisions` whose asset still exists,
     ///   `max(rec, acknowledged.assetRevisions[asset] ?? 0) < assets[asset].revision`;
+    /// - consistency warning (Phase 12): the placed version's `consistency?.showsWarning` is true;
     /// - layout changed: `abs(log(boxAspect(box, in: template) / (acknowledged.boxAspect ?? placement.boxAspectWhenPlaced))) > 0.05`.
     /// Empty for an empty box.
     public func imageFlags(page pageID: PageID, box boxID: BoxID) -> ImageFlags {
@@ -162,6 +163,9 @@ extension BookContent {
                return max(rec, slot.acknowledged.assetRevisions[id] ?? 0) < asset.revision
            }) {
             flags.insert(.assetChanged)
+        }
+        if sessions[slot.sessionID]?.version(placement.versionID)?.consistency?.showsWarning == true {
+            flags.insert(.consistencyWarning)
         }
         let baseline = slot.acknowledged.boxAspect ?? placement.boxAspectWhenPlaced
         let current = boxAspect(box, in: template)

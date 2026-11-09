@@ -12,11 +12,14 @@ extension Library {
     /// it is in the group; else the one with the earliest folder creation date; ties go to the
     /// shorter, then lexicographically smaller, folder name ("Fox.bookbook" beats "Fox copy.bookbook").
     ///
-    /// Packages in `open` (open in this process, whose lock is re-entrant here) are never
-    /// rewritten: an open package is always the keeper, and a group with more than one open
-    /// package is left alone until they close.
+    /// Packages in `open` (open in this process) are preferred as the keeper, and a group with
+    /// more than one open package is left alone until they close. `open` is only a hint: every
+    /// rewrite takes the lock with `acquireLockExclusively()`, so a package whose lock any store
+    /// in this process holds (open, still opening, or being written headlessly, e.g. a delivery
+    /// to a closed book) is never rewritten (#3b, #3c).
     ///
-    /// A package locked by another process, or unreadable, is skipped and retried on the next call.
+    /// A package locked by another process or in this process, or unreadable, is skipped and
+    /// retried on the next call.
     /// `modifiedAt` is left alone. Returns the entries that were reassigned, with their new ids.
     @discardableResult
     public func resolveDuplicateBookIDs(preferring known: [BookID: URL] = [:],
@@ -31,7 +34,7 @@ extension Library {
             for entry in group where !Self.samePackage(entry.url, keeper.url) {
                 let store = BookStore(packageURL: entry.url)
                 do throws(StoreError) {
-                    if case .heldByOther = try await store.acquireLock() { continue }
+                    if case .heldByOther = try await store.acquireLockExclusively() { continue }
                     var content = try await store.load()
                     if content.book.id == id {
                         content.book.id = BookID()

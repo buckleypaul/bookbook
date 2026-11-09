@@ -69,14 +69,13 @@ public struct PageRenderer {
             if options.previewSampleContent, text?.paragraphs.isEmpty ?? true {
                 text = Self.sampleText
             }
-            drawTextBox(box, style: style, text: text,
-                        typography: typography.resolved(for: box.role).applying(style),
-                        geometry: geometry, ctx: ctx)
+            drawTextBox(box, style: style, text: text, typography: typography, geometry: geometry, ctx: ctx)
         }
 
         // 4. Page numbers.
         for mark in options.pageNumbers {
-            PageNumberDrawing.draw(mark, content: content, template: template, geometry: geometry, ctx: ctx)
+            PageNumberDrawing.draw(mark, content: content, template: template, geometry: geometry,
+                                   layouts: layouts, ctx: ctx)
         }
 
         // 5. Guides, on screen only.
@@ -95,11 +94,9 @@ public struct PageRenderer {
                   let text = CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id],
                   !text.paragraphs.isEmpty
             else { continue }
-            let rect = geometry.renderRect(for: box).insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
-            let typography = content.style.typography.resolved(for: box.role).applying(style)
+            let rect = Self.textRect(box, style: style, geometry: geometry)
             let size = CGSize(width: max(0, rect.width), height: max(0, rect.height))
-            let layout = layouts?.layout(text: text, typography: typography, containerSize: size)
-                ?? TextBoxLayout(text: text, typography: typography, containerSize: size)
+            let layout = textLayout(text, box: box, style: style, typography: content.style.typography, size: size)
             if layout.isOverflowing { result.insert(box.id) }
         }
         return result
@@ -155,6 +152,21 @@ public struct PageRenderer {
         }
     }
 
+    /// The rect a text box's text is laid out in: its render rect inset by the padding.
+    private static func textRect(_ box: Box, style: TextBoxStyle, geometry: PageGeometry) -> CGRect {
+        geometry.renderRect(for: box).insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
+    }
+
+    /// The text box's layout at `size`, with the book typography resolved for the box's role and
+    /// style, from `layouts` when set. Shared by drawing and overflow checks so they agree.
+    private func textLayout(_ text: RichText, box: Box, style: TextBoxStyle, typography: Typography,
+                            size: CGSize) -> TextBoxLayout {
+        let resolved = typography.resolved(for: box.role).applying(style)
+        return layouts?.layout(text: text, typography: resolved, containerSize: size)
+            ?? TextBoxLayout(text: text, typography: resolved, containerSize: size)
+    }
+
+    /// `typography` is the book's, unresolved.
     private func drawTextBox(_ box: Box, style: TextBoxStyle, text: RichText?, typography: Typography,
                              geometry: PageGeometry, ctx: CGContext) {
         let rect = geometry.renderRect(for: box)
@@ -170,11 +182,10 @@ public struct PageRenderer {
             ctx.fillPath()
         }
         guard let text, !text.paragraphs.isEmpty else { return }
-        let inner = rect.insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
+        let inner = Self.textRect(box, style: style, geometry: geometry)
         guard inner.width > 0, inner.height > 0 else { return }
-        let layout = layouts?.layout(text: text, typography: typography, containerSize: inner.size)
-            ?? TextBoxLayout(text: text, typography: typography, containerSize: inner.size)
-        layout.draw(in: ctx, origin: inner.origin)
+        textLayout(text, box: box, style: style, typography: typography, size: inner.size)
+            .draw(in: ctx, origin: inner.origin)
     }
 
     /// Screen-only overlays (A §8.4 step 5): the trim line when bleed is on (the area outside

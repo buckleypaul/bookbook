@@ -76,7 +76,8 @@ public struct CostLedger: Sendable {
     /// Cuts a truncated last line (no trailing newline) off the file. Returns true if it changed anything.
     @discardableResult
     public func repair() throws(StoreError) -> Bool {
-        guard let data = try readData(), let last = data.last, last != 0x0A else { return false }
+        // Check the final byte alone first; a healthy ledger needs no full read.
+        guard let last = try lastByte(), last != 0x0A, let data = try readData() else { return false }
         let keep = data.lastIndex(of: 0x0A).map { data.distance(from: data.startIndex, to: $0) + 1 } ?? 0
         try PackageCoding.io("repair ledger") {
             let fd = open(fileURL.path(percentEncoded: false), O_WRONLY)
@@ -86,6 +87,19 @@ public struct CostLedger: Sendable {
             _ = fcntl(fd, F_FULLFSYNC)
         }
         return true
+    }
+
+    /// The ledger's final byte, or nil if the file is missing or empty.
+    private func lastByte() throws(StoreError) -> UInt8? {
+        guard FileManager.default.fileExists(atPath: fileURL.path(percentEncoded: false)) else { return nil }
+        return try PackageCoding.io("read ledger") {
+            let handle = try FileHandle(forReadingFrom: fileURL)
+            defer { try? handle.close() }
+            let end = try handle.seekToEnd()
+            guard end > 0 else { return nil }
+            try handle.seek(toOffset: end - 1)
+            return try handle.read(upToCount: 1)?.first
+        }
     }
 
     private func readData() throws(StoreError) -> Data? {

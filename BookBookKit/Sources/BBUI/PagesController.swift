@@ -43,13 +43,11 @@ public enum PagesOverviewModel {
     /// The sequencer's entries for the book's story pages (a page is a spread when its
     /// template is `.spread`).
     public static func entries(_ content: BookContent) -> [SequenceEntry] {
-        content.storyPages.map {
-            SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread)
-        }
+        PageSequencer.entries(for: content)
     }
 
     public static func layout(_ content: BookContent) -> SequenceLayout {
-        PageSequencer.layout(entries(content), cover: content.book.coverPageID)
+        PageSequencer.layout(for: content)
     }
 
     /// The overview's rows from `SequenceLayout.openings`.

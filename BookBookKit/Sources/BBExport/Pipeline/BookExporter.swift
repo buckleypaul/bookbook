@@ -115,8 +115,7 @@ public final class BookExporter {
     public nonisolated static func storyPositions(_ content: BookContent,
                                                   range: ClosedRange<Int>?) -> [(page: Page, position: PagePosition)] {
         let story = content.storyPages
-        let entries = story.map { SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread) }
-        let layout = PageSequencer.layout(entries, cover: content.book.coverPageID)
+        let layout = PageSequencer.layout(for: content)
         let pairs = Array(zip(story, layout.pages))
         let selected = PageRangeWidening.selected(pairs.map { (position: $0.1.position, span: $0.1.span) }, in: range)
         let keep = Set(selected.map(\.position))
@@ -127,14 +126,18 @@ public final class BookExporter {
     func pageSlots(_ options: ExportOptions) -> [OutputSlot] {
         var slots: [OutputSlot] = []
         if options.includeCover, let cover = content.coverPage { slots.append(OutputSlot(page: cover, half: nil)) }
-        for (page, _) in Self.storyPositions(content, range: options.pageRange) {
-            if content.template(for: page)?.kind == .spread, options.spreads == .singlePages {
-                slots += [OutputSlot(page: page, half: 0), OutputSlot(page: page, half: 1)]
-            } else {
-                slots.append(OutputSlot(page: page, half: nil))
+        let pages = Self.storyPositions(content, range: options.pageRange).map(\.page)
+        return slots + storySlots(pages, splitSpreads: options.spreads == .singlePages)
+    }
+
+    /// One slot per page, or two halves for a spread page when `splitSpreads`.
+    private func storySlots(_ pages: [Page], splitSpreads: Bool) -> [OutputSlot] {
+        pages.flatMap { page -> [OutputSlot] in
+            if splitSpreads, content.template(for: page)?.kind == .spread {
+                return [OutputSlot(page: page, half: 0), OutputSlot(page: page, half: 1)]
             }
+            return [OutputSlot(page: page, half: nil)]
         }
-        return slots
     }
 
     /// Booklet pages in folded reading order, padded (A §9.3): cover first when included,
@@ -144,15 +147,8 @@ public final class BookExporter {
     func bookletPages(_ options: ExportOptions) -> [OutputSlot] {
         var head: [OutputSlot] = []
         if options.includeCover, let cover = content.coverPage { head.append(OutputSlot(page: cover, half: nil)) }
-        var story: [OutputSlot] = []
         let positions = Self.storyPositions(content, range: options.pageRange)
-        for (page, _) in positions {
-            if content.template(for: page)?.kind == .spread {
-                story += [OutputSlot(page: page, half: 0), OutputSlot(page: page, half: 1)]
-            } else {
-                story.append(OutputSlot(page: page, half: nil))
-            }
-        }
+        let story = storySlots(positions.map(\.page), splitSpreads: true)
         guard !head.isEmpty || !story.isEmpty else { return [] }
         let blanks = BookletImposition.blanks(contentPages: head.count + story.count, includeCover: !head.isEmpty,
                                               firstStoryPosition: positions.first?.position.position)

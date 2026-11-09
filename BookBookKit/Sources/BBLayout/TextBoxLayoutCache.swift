@@ -16,9 +16,14 @@ public final class TextBoxLayoutCache {
         var height: CGFloat
     }
 
-    private var entries: [Key: TextBoxLayout] = [:]
-    /// Least recently used first.
-    private var order: [Key] = []
+    private struct Entry {
+        var layout: TextBoxLayout
+        /// The `clock` value at the last use; the smallest is least recently used.
+        var lastUse: UInt64
+    }
+
+    private var entries: [Key: Entry] = [:]
+    private var clock: UInt64 = 0
 
     public init(capacity: Int = 64) {
         self.capacity = max(1, capacity)
@@ -30,22 +35,22 @@ public final class TextBoxLayoutCache {
     public func layout(text: RichText, typography: Typography, containerSize: CGSize) -> TextBoxLayout {
         let key = Key(text: text, typography: typography,
                       width: max(0, containerSize.width), height: max(0, containerSize.height))
-        if let hit = entries[key] {
-            if let index = order.firstIndex(of: key) { order.remove(at: index) }
-            order.append(key)
+        clock += 1
+        if let hit = entries[key]?.layout {
+            entries[key]?.lastUse = clock
             return hit
         }
         let layout = TextBoxLayout(text: text, typography: typography, containerSize: containerSize)
-        entries[key] = layout
-        order.append(key)
-        while order.count > capacity {
-            entries.removeValue(forKey: order.removeFirst())
+        entries[key] = Entry(layout: layout, lastUse: clock)
+        // Only one entry is added per call, so at most one needs evicting.
+        if entries.count > capacity,
+           let oldest = entries.min(by: { $0.value.lastUse < $1.value.lastUse })?.key {
+            entries.removeValue(forKey: oldest)
         }
         return layout
     }
 
     public func removeAll() {
         entries.removeAll()
-        order.removeAll()
     }
 }

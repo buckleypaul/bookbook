@@ -20,45 +20,16 @@ extension Library {
     /// Copies a read-only sample package (`SampleBook.bundledURL`) into the library under a new
     /// `Book.id`, keeping its title. Needs no API key.
     public func installSample(from source: URL, now: Date = Date()) throws(StoreError) -> LibraryEntry {
-        let fm = FileManager.default
         let sourceData = try PackageCoding.io("read sample") {
             try Data(contentsOf: source.appending(path: PackageCoding.bookPath))
         }
-        var book = try PackageCoding.decode(Book.self, from: sourceData, what: "book.json")
-        try PackageCoding.io("create library") { try fm.createDirectory(at: root, withIntermediateDirectories: true) }
-        let dest = Self.uniquePackageURL(in: root, title: book.title)
-        do {
-            try PackageCoding.io("copy sample") {
-                try fm.copyItem(at: source, to: dest)
-                for skipped in [".lock", ".journal"] {
-                    let item = dest.appending(path: skipped)
-                    if fm.fileExists(atPath: item.path(percentEncoded: false)) { try fm.removeItem(at: item) }
-                }
-                // A bundled copy can be read-only; the library copy must be writable.
-                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path(percentEncoded: false))
-                if let walker = fm.enumerator(atPath: dest.path(percentEncoded: false)) {
-                    for case let rel as String in walker {
-                        let p = dest.appending(path: rel).path(percentEncoded: false)
-                        var isDir: ObjCBool = false
-                        fm.fileExists(atPath: p, isDirectory: &isDir)
-                        try fm.setAttributes([.posixPermissions: isDir.boolValue ? 0o755 : 0o644], ofItemAtPath: p)
-                    }
-                }
-            }
-            book.id = BookID()
-            book.modifiedAt = now
-            let data = try PackageCoding.encode(book)
-            try PackageCoding.io("write book.json") {
-                try data.write(to: dest.appending(path: PackageCoding.bookPath), options: .atomic)
-            }
-        } catch {
-            try? fm.removeItem(at: dest)
-            throw error
+        let book = try PackageCoding.decode(Book.self, from: sourceData, what: "book.json")
+        // A bundled copy can be read-only; the library copy must be writable.
+        return try copyPackage(from: source, book: book, title: book.title, what: "copy sample",
+                               makeWritable: true) {
+            $0.id = BookID()
+            $0.modifiedAt = now
         }
-        let thumb = dest.appending(path: "thumbnail.png", directoryHint: .notDirectory)
-        let hasThumb = fm.fileExists(atPath: thumb.path(percentEncoded: false))
-        return LibraryEntry(id: book.id, title: book.title, url: dest, modifiedAt: now,
-                            thumbnailURL: hasThumb ? thumb : nil)
     }
 }
 

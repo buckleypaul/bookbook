@@ -95,8 +95,9 @@ public enum Preflight {
                 (.layoutChanged, .layoutChanged, "Box shape changed since this image was placed"),
                 (.consistencyWarning, .consistencyWarning, "Consistency check found a problem"),
             ]
+            let boxFlags = imageBoxes.map { content.imageFlags(page: page.id, box: $0.id) }
             for (flag, kind, detail) in flagKinds {
-                for box in imageBoxes where content.imageFlags(page: page.id, box: box.id).contains(flag) {
+                for (box, flags) in zip(imageBoxes, boxFlags) where flags.contains(flag) {
                     issues.append(PreflightIssue(kind: kind, page: page.id, box: box.id, detail: detail))
                 }
             }

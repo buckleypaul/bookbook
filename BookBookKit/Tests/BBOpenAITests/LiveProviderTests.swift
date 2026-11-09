@@ -264,6 +264,61 @@ import Testing
         #expect(outcome == .cancelled)
     }
 
+    /// Phase 12: one layout request and one consistency request (two tiny synthetic images, low
+    /// detail) through Chat Completions with `store: false`. About $0.02. No fixture is recorded.
+    @Test(.enabled(if: LiveProviderTests.enabled, "needs BOOKBOOK_LIVE_TESTS=1, OPENAI_API_KEY and budget left"))
+    func SP12_templateAndConsistency() async throws {
+        let apiKey = try #require(ProcessInfo.processInfo.environment["OPENAI_API_KEY"].flatMap(APIKey.init))
+        let provider = OpenAIChatProvider(http: URLSessionHTTPClient(), apiKey: { apiKey })
+        func spend(_ usage: TokenUsage?, _ name: String, model: String) {
+            LiveSpendGuard.record(
+                test: name, provider: "openai", model: model,
+                usage: usage.map {
+                    LiveSpendGuard.Usage(inputTextTokens: $0.inputTextTokens, inputImageTokens: $0.inputImageTokens,
+                                         outputTextTokens: $0.outputTextTokens, outputImageTokens: $0.outputImageTokens)
+                },
+                estimateUSD: 0.01)
+        }
+
+        let textModel = CatalogTextModel(provider: .openai, id: "gpt-6-luna", displayName: "GPT-6 Luna", kind: .text)
+        let layout = LayoutRequest(
+            model: textModel,
+            system: "You design page layouts for children's picture books. Reply only with the requested JSON.",
+            user: "Page: 8.5 x 8.5 inch square, single page. Design a template with a big picture on the top two thirds and the text below. Use fractions 0 to 1 of the page.")
+        var layoutUsage: TokenUsage?
+        do {
+            let result = try await provider.generateLayout(layout)
+            layoutUsage = result.usage
+            #expect(!result.draft.boxes.isEmpty)
+            #expect(result.parametersSent["store"] == "false")
+        } catch {
+            spend(nil, "SP12_templateAndConsistency.layout", model: textModel.id)
+            throw error
+        }
+        spend(layoutUsage, "SP12_templateAndConsistency.layout", model: textModel.id)
+
+        let visionModel = CatalogTextModel(provider: .openai, id: "gpt-6.1-terra", displayName: "GPT-6.1 Terra",
+                                           kind: .vision, imageDetail: "low")
+        let first = try #require(Self.syntheticPNG(width: 256, height: 256))
+        let second = try #require(Self.syntheticPNG(width: 256, height: 128))
+        let check = ConsistencyRequest(
+            model: visionModel,
+            system: "You compare picture-book illustrations for visual consistency. Reply only with the requested JSON.",
+            user: "Image 1 is the version being checked; image 2 is the reference. Report any differences.",
+            image: LabeledImage(label: "Version", payload: ImagePayload(data: first, contentType: "public.png")),
+            references: [LabeledImage(label: "Reference", payload: ImagePayload(data: second, contentType: "public.png"))])
+        var visionUsage: TokenUsage?
+        do {
+            let result = try await provider.checkConsistency(check)
+            visionUsage = result.usage
+            #expect(result.parametersSent["detail"] == "low")
+        } catch {
+            spend(nil, "SP12_templateAndConsistency.consistency", model: visionModel.id)
+            throw error
+        }
+        spend(visionUsage, "SP12_templateAndConsistency.consistency", model: visionModel.id)
+    }
+
     /// A plain two-tone PNG, built at runtime.
     private static func syntheticPNG(width: Int, height: Int) -> Data? {
         guard let context = CGContext(

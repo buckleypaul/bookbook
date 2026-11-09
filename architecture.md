@@ -3,6 +3,8 @@
 **Status:** Draft v1.1, reviewed (2026-11-07: decisions in `architecture-decisions.md` accepted; minimum OS raised to macOS 27; toolchain Xcode 27; public repo)
 **Date:** 2026-11-07
 **Inputs:** `product-description.md` (the source of truth for requirements, cited as §n), `architecture-notes.md` (non-binding suggestions; since removed, see git history), plus research on the current OpenAI, Gemini, macOS and Homebrew documentation, done on 2026-11-07.
+
+> **Gemini is post-MVP (decided 2026-11-08):** v1.0 ships with OpenAI as the only provider. Everything about Gemini in this document describes a later release. It stays here so the design keeps room for a second provider. `BBGemini` and the provider-neutral protocols stay in the design, but no v1.0 phase builds the Gemini adapter (see `implementation-plan.md` §1 and `plan/post-mvp/phase-13-gemini.md`).
 **Next document:** `implementation-plan.md`. This document covers *how* BookBook is built. It does not set the order of work.
 
 ---
@@ -16,7 +18,7 @@
 | D3 | Crash safety | Atomic per-file replacement, plus a **write-ahead staging journal** for saves that touch several files. Images are written before the JSON that refers to them. | Single-file manifest |
 | D4 | Dependencies | Apple SDKs first; **a few vetted packages** allowed (swift-collections, plus swift-snapshot-testing in tests only). **No vendor AI SDKs.** *(Your choice.)* | Community OpenAI/Gemini SDKs |
 | D5 | AI abstraction | Three capability protocols (`ImageProvider`, `LayoutProvider`, `VisionProvider`) with a provider-neutral request model, a **data-driven model catalog** and a separate **price list**. | One protocol per provider |
-| D6 | Session context | **The app owns the conversation.** Requests are rebuilt from local state every time. Gemini gets native multi-turn history when it's safe; otherwise requests are stateless "edit this image" calls. OpenAI always uses the stateless Images API. | OpenAI Responses API with `previous_response_id`. It keeps state on the server and makes branching from older versions harder. |
+| D6 | Session context | **The app owns the conversation.** Requests are rebuilt from local state every time. Gemini (post-MVP) gets native multi-turn history when it's safe; otherwise requests are stateless "edit this image" calls. OpenAI always uses the stateless Images API. | OpenAI Responses API with `previous_response_id`. It keeps state on the server and makes branching from older versions harder. |
 | D7 | Text layout | **TextKit 2 for both editing and final rendering.** The same `NSTextLayoutManager` layout is drawn on screen, in thumbnails, in PDFs and in print. | Core Text for output and TextKit for editing. Small layout differences would break WYSIWYG. |
 | D8 | Rendering | A single `PageRenderer` that draws into any `CGContext`: screen, bitmap, PDF or print. | Separate on-screen and export paths |
 | D9 | Undo | One `UndoManager` per book window (from SwiftUI). All undoable edits go through a command layer that captures value-type snapshots. NSTextView's own undo is **disabled**, and text undo is coalesced at the model level. | NSTextView-native undo. It breaks when the view goes away. |
@@ -471,6 +473,8 @@ The image file is always written before the session JSON (§5.2).
 ---
 
 ## 7. AI subsystem (BBAI, BBOpenAI, BBGemini, BBNet)
+
+*Gemini parts of this section (`BBGemini`, Gemini quality mapping, fixed ratios, native history, signals) are post-MVP. v1.0 implements only the OpenAI paths.*
 
 ### 7.1 Model catalog (data-driven)
 

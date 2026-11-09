@@ -2,6 +2,8 @@
 
 **Status:** Draft v4, in review (v3 adds findings from the architecture research, `architecture-decisions.md` §15; v4 raises the minimum to macOS 27, 2026-11-07)
 
+> **Gemini is post-MVP (decided 2026-11-08):** v1.0 ships with OpenAI as the only provider. Everything about Gemini in this document describes a later release. It stays here so the design keeps room for a second provider.
+
 > **Scope of this document:** *what* BookBook does and for whom. It deliberately leaves out *how* it's built.
 > Documents to follow, each written in its own session:
 > 1. `architecture.md`: technical design, based on this document (inputs: `architecture-notes.md`, since removed)
@@ -26,7 +28,7 @@ BookBook is a native macOS app for making illustrated children's books with AI i
 - AI-written story text. The user writes all text. Text/vision AI is used only for template generation and the consistency check.
 - Print-on-demand publishing: KDP/Lulu-specific specs, spines, wraparound covers, back covers. (Simple bleed and crop marks for local print shops *are* in scope, §8.8.)
 - Cloud sync, collaboration, accounts.
-- AI providers other than OpenAI and Gemini, including Anthropic. Claude has no image generation API, and two providers are enough for v1.
+- AI providers other than OpenAI and Gemini, including Anthropic. Claude has no image generation API. Gemini itself is post-MVP: v1.0 is OpenAI only, and Gemini follows in a later release.
 - Windows, iPad, web.
 - Languages other than English, for both the app interface and story text. Non-Latin scripts and right-to-left text aren't supported.
 
@@ -34,7 +36,7 @@ BookBook is a native macOS app for making illustrated children's books with AI i
 
 - **Platform:** macOS 27 and later only.
 - **Technology:** native Swift app.
-- **AI access:** bring your own API keys (OpenAI and/or Google Gemini). There is no BookBook server or account.
+- **AI access:** bring your own API keys (OpenAI in v1.0; Google Gemini is post-MVP). There is no BookBook server or account.
 - **Data:** everything is stored locally on the user's Mac. API keys are stored in the macOS Keychain and never in book files. Everything except AI features works offline.
 - **Privacy:** the only data that leaves the Mac is what a request sends to the user's chosen AI provider: the prompt, the style guide, the references of the assets used, and the page's story text (when included). There is no analytics or telemetry. The first time the user imports a photo of a real person as a reference, the app explains that it will be sent to the provider and links to that provider's data policy. The notice also points out that providers restrict photos of children. For example, OpenAI's guidance says personal data of children under 13 shouldn't be sent without a zero-data-retention arrangement, which individual users don't normally have. So the notice recommends describing the child in words, or using a drawing, instead of a photo.
 - **Distribution:** signed with an Apple Developer ID, notarized, and published on GitHub Releases. Installed with `brew install --cask bookbook` (a personal tap first; submitted to homebrew-cask once it qualifies). Updates come only through `brew upgrade`. There is no in-app updater. A DMG download may be added later (§9).
@@ -49,11 +51,11 @@ Parents and hobbyists making personal books to read at home, give as gifts, or p
 
 | Purpose | Providers (v1) | Behaviour |
 |---|---|---|
-| Image generation and editing | OpenAI (GPT Image models), Google Gemini (image models) | Default provider chosen in Settings; model and quality level are configurable. |
-| Template generation (description → layout) | OpenAI or Gemini text model | Returns a layout that opens in the visual template editor (§8.4). |
-| Consistency check (image vs references) | OpenAI or Gemini vision model | Runs automatically after each image generation (§8.9). |
+| Image generation and editing | OpenAI (GPT Image models); Google Gemini image models post-MVP | Default provider chosen in Settings; model and quality level are configurable. |
+| Template generation (description → layout) | OpenAI text model (Gemini post-MVP) | Returns a layout that opens in the visual template editor (§8.4). |
+| Consistency check (image vs references) | OpenAI vision model (Gemini post-MVP) | Runs automatically after each image generation (§8.9). |
 
-- **Quality levels:** Draft, Standard and High, where the model supports them. Draft is cheap and fast for blocking out the whole book; final images are made at a higher level. The level is shown in the cost estimate and recorded on each version. Providers implement levels differently: OpenAI has native quality settings, while for Gemini a level means a combination of output resolution and model effort. Settings explains what each level means for the chosen provider.
+- **Quality levels:** Draft, Standard and High, where the model supports them. Draft is cheap and fast for blocking out the whole book; final images are made at a higher level. The level is shown in the cost estimate and recorded on each version. Providers implement levels differently: OpenAI has native quality settings, while for Gemini (post-MVP) a level means a combination of output resolution and model effort. Settings explains what each level means for the chosen provider.
 - **Cost visibility:** an estimated cost is shown next to Generate before every generation (including the consistency check, when it's on). The app asks for confirmation only when a single request or a batch costs more than a threshold set in Settings. Each book keeps a running total that uses the actual cost when the provider reports usage, and the estimate (marked as such) otherwise. Prices come from a built-in price list that the user can edit.
 - **Budget (optional, per book):** once a book's total passes its budget, the app warns before each further generation. It never blocks.
 - **Generation queue:** AI requests run one at a time across the app, and more can be queued behind them. The queue shows each request's book, page and box, its estimated cost and its progress. Waiting items can be reordered or removed, and the running one can be cancelled. Batch actions (for example "Generate whole character sheet" or "Draft all empty boxes") add many items at once, with the total estimate shown first. While requests run, the rest of the app stays fully usable. The queue survives quitting the app: waiting and failed items come back **paused** at the next launch, with an offer to resume them. A request that was running when the app quit counts as cancelled (see below).
@@ -181,7 +183,7 @@ The page editor shows the page canvas, with the session panel alongside it.
 - **Version strip:** every generated or imported image is kept. Click a version to put it on the page. Versions can be starred, deleted, or exported as image files.
 - **Version details:** the prompt, the assets and references sent, provider, model, quality level, cost, date and consistency result, with **Regenerate with same settings**.
 - **Refining:** follow-up prompts refine the currently selected version. The thread stays a single conversation, and each message shows which version it refined, so refining an older version never removes later ones.
-- **Region editing:** select an area of the selected version (brush or lasso) and describe the change. Only that area is altered. If the model doesn't support region edits, the option is unavailable, with a short explanation. In v1 only OpenAI's GPT Image models support it. With Gemini, changes are made by describing them in a follow-up prompt.
+- **Region editing:** select an area of the selected version (brush or lasso) and describe the change. Only that area is altered. If the model doesn't support region edits, the option is unavailable, with a short explanation. In v1 only OpenAI's GPT Image models support it. With Gemini (post-MVP), changes will be made by describing them in a follow-up prompt.
 - **Reset session:** clears that box's conversation and starts fresh with the same base context. The user chooses whether to keep or discard existing versions. Reset can't be undone, so it asks for confirmation.
 - Sessions are fully **separate**. Nothing from one box or page reaches another unless the user explicitly attaches it as a reference.
 
@@ -215,7 +217,7 @@ The page editor shows the page canvas, with the session panel alongside it.
 - Undo history is kept separately for each open book window and lasts until the book is closed.
 
 ### 8.11 Settings (app-wide)
-- **API keys:** OpenAI and Gemini, each with a "test connection" button. The guided setup (§8.13) can be reopened from here.
+- **API keys:** OpenAI in v1.0 (Gemini post-MVP), with a "test connection" button. The guided setup (§8.13) can be reopened from here.
 - **Default providers, models and quality level:** for images, templates and the consistency check.
 - **Consistency check:** on/off.
 - **Cost:** confirmation threshold, and the price list (view and edit the per-model prices used for estimates).
@@ -227,9 +229,9 @@ The page editor shows the page canvas, with the session panel alongside it.
 - **Storage:** the book's size on disk. **Clean up** deletes unstarred versions that aren't used on any page, the cover, or an asset. It shows how many will go and how much space it will free, and asks for confirmation, because it can't be undone.
 
 ### 8.13 First run and new books
-- **Guided setup (first run):** explains what an API key is, gives step-by-step instructions for getting an OpenAI or Gemini key, lets the user paste and test it, and shows typical costs (per image and for a whole book) from the price list. It also covers each provider's requirements:
+- **Guided setup (first run):** explains what an API key is, gives step-by-step instructions for getting an OpenAI key (a Gemini key once Gemini lands, post-MVP), lets the user paste and test it, and shows typical costs (per image and for a whole book) from the price list. It also covers each provider's requirements:
   - **OpenAI** may ask the user to verify their organization before its image models can be used.
-  - **Gemini** requires users to be 18 or over. In the EEA, Switzerland and the UK it needs a paid account (its image models have no free tier anywhere). Every Gemini image carries an invisible SynthID watermark.
+  - **Gemini** (post-MVP) requires users to be 18 or over. In the EEA, Switzerland and the UK it needs a paid account (its image models have no free tier anywhere). Every Gemini image carries an invisible SynthID watermark.
   
   It can be skipped.
 - **Sample book:** a small bundled example book to open and explore, no API key needed.

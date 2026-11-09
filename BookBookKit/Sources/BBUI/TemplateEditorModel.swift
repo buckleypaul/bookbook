@@ -47,7 +47,7 @@ public final class TemplateEditorModel {
     /// The open template, read live from the document.
     /// A bundled preset the book hasn't copied yet reads through until its first edit.
     public var template: Template? {
-        templateID.flatMap { id in document.content.templates[id] ?? Presets.bundledTemplates.first { $0.id == id } }
+        templateID.flatMap { Presets.template($0, in: document.content) }
     }
 
     /// True while the open template is a bundled preset not (yet) in the book.
@@ -87,7 +87,7 @@ public final class TemplateEditorModel {
     /// step. Clears the selection.
     public func open(_ id: TemplateID) {
         finishContinuousEdit()
-        guard document.content.templates[id] != nil || Presets.bundledTemplates.contains(where: { $0.id == id })
+        guard Presets.template(id, in: document.content) != nil
         else { return }
         templateID = id
         selection = []
@@ -108,7 +108,7 @@ public final class TemplateEditorModel {
     /// Copies a template (book or preset) with new template and box IDs, named "<name> Copy",
     /// adds it and opens it.
     public func duplicate(_ id: TemplateID) {
-        guard let source = document.content.templates[id] ?? Presets.bundledTemplates.first(where: { $0.id == id })
+        guard let source = Presets.template(id, in: document.content)
         else { return }
         var copy = source
         copy.id = TemplateID()

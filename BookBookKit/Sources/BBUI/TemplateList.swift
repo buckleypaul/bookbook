@@ -108,7 +108,7 @@ struct TemplateList: View {
 
     @ViewBuilder
     private func menu(_ id: TemplateID) -> some View {
-        Button("Rename") { if let t = content.templates[id] ?? Presets.bundledTemplates.first(where: { $0.id == id }) { beginRename(t) } }
+        Button("Rename") { if let t = Presets.template(id, in: content) { beginRename(t) } }
         Button("Duplicate") { model.duplicate(id) }
         Divider()
         Button("Delete…", role: .destructive) { requestDelete(id) }
@@ -134,7 +134,7 @@ struct TemplateList: View {
         guard renaming == id else { return }
         renaming = nil
         let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, name != (content.templates[id]?.name ?? Presets.bundledTemplates.first { $0.id == id }?.name)
+        guard !name.isEmpty, name != Presets.template(id, in: content)?.name
         else { return }
         if model.templateID != id { model.open(id) }  // a preset copies in with this edit's undo step
         model.update(actionName: "Rename Layout") { $0.name = name }

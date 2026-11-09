@@ -36,14 +36,8 @@ public enum Preflight {
     /// The pages `options` will put in the PDF: the cover when included, and the story pages
     /// the range selects (a range that cuts a spread widens to the whole spread).
     public static func exportedPageIDs(_ content: BookContent, options: ExportOptions) -> Set<PageID> {
-        var ids: Set<PageID> = []
+        var ids = Set(BookExporter.storyPositions(content, range: options.pageRange).map(\.page.id))
         if options.includeCover, let cover = content.coverPage { ids.insert(cover.id) }
-        let story = content.storyPages
-        let entries = story.map { SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread) }
-        let layout = PageSequencer.layout(entries, cover: content.book.coverPageID)
-        let keep = Set(PageRangeWidening.selected(layout.pages.map { (position: $0.position, span: $0.span) },
-                                                  in: options.pageRange).map(\.position))
-        for (page, slot) in zip(story, layout.pages) where keep.contains(slot.position) { ids.insert(page.id) }
         return ids
     }
 

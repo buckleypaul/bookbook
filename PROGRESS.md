@@ -40,6 +40,7 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 - Gemini (Phase 13, including spikes SG-1...SG-8) is post-MVP (decided 2026-11-08). v1.0 ships with OpenAI only ([Phase 0](progress/phase-0-spikes.md)).
 - Books always reopen at relaunch (decided 2026-11-07; PD §8.1, A §6.1, Phase 3) ([Phase 0](progress/phase-0-spikes.md)).
 - OpenAI masked edits are unreliable; the region-edit approach is chosen in Phase 11 ([Phase 0](progress/phase-0-spikes.md)).
+- Phase 16b product calls (decided 2026-11-09): an imported style guide keeps the target's page-number style; switching library folders with queued requests asks first; a lock from another Mac offers "Open Anyway", and Macs are identified by hardware UUID; undeliverable pictures are saved to disk, listed in `queue.json` and redelivered at launch; Draft All keeps counting the cover's box and says "cover + N pages"; after Reset Session → Keep Versions the next prompt makes a new picture until a version is clicked (PD §8.6); choosing a different version clears the old "style changed" acknowledgement (undo restores it; A §4.4); landscape booklets stay top-bound for v1.0 with "binds at the top" in the caption (left-bound layout is v1.x); imported RTF drops font family and size but keeps bold/italic/underline/alignment; cancelling story import keeps the new empty book; asset delete stays irreversible as PD §8.10 says.
 
 ## Deferred hand checks
 

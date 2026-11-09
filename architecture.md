@@ -677,6 +677,8 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
   - Ensure at least one box.
 - The result is a new `Template`, opened in the visual editor. Provider refusals (`refusal` content on OpenAI, block reasons on Gemini) use the normal error path.
 
+**As built (Phase 12):** template generation runs directly from the Layouts tab, not through the generation queue (§7.9): it's one short request that the user waits for in a sheet, and its result opens in the editor rather than landing in a session. The sheet shows the estimate first and a "What was sent" disclosure (model, prompts, parameters). Each request writes a `template` ledger line. Draft coordinates are fractions of the trim area (both pages for a spread), origin top-left; text boxes may carry an alignment, a corner radius in points and a `#RRGGBB` background panel.
+
 ### 7.8 Consistency check (§8.9)
 
 - **Trigger:** after each successful image generation (page, cover or sheet item), when the global switch is on. The check is queued as a **follow-up item that runs straight after its parent**, ahead of other waiting items, and its cost is included in the parent's estimate.

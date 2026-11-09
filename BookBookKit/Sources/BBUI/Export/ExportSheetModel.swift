@@ -13,6 +13,8 @@ public protocol ExportServices: AnyObject {
     func export(_ options: ExportOptions, to url: URL,
                 progress: @MainActor (ExportProgress) -> Void) async throws -> ExportResult
     func coverPDF() async throws -> Data
+    /// Builds the PDF with `options` and runs the system print dialog.
+    func print(_ options: ExportOptions) async throws
     /// The encoded, upscaled image for a soft-image issue (nil if it has no box).
     func upscaledPreviewURL(for issue: PreflightIssue) async throws -> URL?
 }
@@ -139,6 +141,8 @@ public final class ExportSheetModel {
 
     public var primaryTitle: String { issues.isEmpty ? "Export…" : "Export Anyway…" }
 
+    public var printTitle: String { issues.isEmpty ? "Print…" : "Print Anyway…" }
+
     public func runPreflight() async {
         isCheckingPreflight = true
         issues = await services.runPreflight()
@@ -182,6 +186,26 @@ public final class ExportSheetModel {
                 result = outcome
             } catch is CancellationError {
                 // Cancelled by the user: nothing to report.
+            } catch {
+                errorMessage = Self.message(for: error)
+            }
+            isExporting = false
+            progress = nil
+            task = nil
+        }
+    }
+
+    /// Prints with the sheet's current options (any output type), after the same checks as export.
+    public func startPrint() {
+        guard canExport else { return }
+        let options = options
+        isExporting = true
+        progress = ExportProgress(completedUnits: 0, totalUnits: 1)
+        task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await services.print(options)
+            } catch is CancellationError {
             } catch {
                 errorMessage = Self.message(for: error)
             }

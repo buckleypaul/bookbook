@@ -43,7 +43,7 @@ Targets are defined in `BookBookKit/Package.swift` (architecture.md §3). Depend
 
 ## API key hygiene (implementation-plan.md §2.2): mandatory for everyone, including subagents
 
-The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, account `$USER`). A Gemini key will be added later as `gemini-api-key` the same way.
+The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, account `$USER`). A Gemini key (`gemini-api-key`) is only needed for the post-MVP Gemini phase; it is not part of the v1.0 plan.
 
 - **The only allowed way to use a dev key** is through `scripts/live-tests.sh [--package DIR] [openai|gemini] [filter]` or `scripts/record-fixtures.sh` (same arguments; it runs the live tests in record mode). These scripts inline the key into the environment of a single `swift test --skip-build` command, after building without it:
   ```sh

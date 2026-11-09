@@ -46,8 +46,7 @@ Part of implementation-plan.md; read the core file (§0–§3) first.
 - App Sandbox and the Mac App Store.
 - OpenAI Responses API, server-side conversation state, background mode and server-side cancel.
 - Partial-image streaming, and progress beyond elapsed time.
-- Region edits for Gemini (outline plus local composite).
-- Gemini Files API.
+- **The Gemini provider (Phase 13) as a whole** (moved to post-MVP 2026-11-08; spec in `plan/post-mvp/phase-13-gemini.md`). v1.0 is OpenAI only. This includes "Retry with Gemini", the Gemini spikes (SG-1 to SG-8), region edits for Gemini and the Gemini Files API.
 - OpenAI `xhigh`/`max` quality levels (in the catalog, not exposed).
 - A Core ML upscaler (the protocol is ready).
 - AI-ranked reference selection.
@@ -61,6 +60,5 @@ Part of implementation-plan.md; read the core file (§0–§3) first.
 | Item | Needed by |
 |---|---|
 | Apple team ID and the release secrets listed in Phase 15 | Phase 15 |
-| When the Gemini key arrives | Phase 13 start |
 | Homebrew `depends_on macos:` symbol for macOS 27 | Phase 15 |
 | Whether to bring Phase 15 forward for household brew installs | After M2 |

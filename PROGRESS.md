@@ -2,7 +2,7 @@
 
 Updated by each phase session (see `implementation-plan.md` §2.6). Phases are listed in execution order.
 
-**Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `blocked` · `skipped (floating)`
+**Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `blocked` · `post-MVP`
 
 **Live API spend so far:** $0.56 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
@@ -22,7 +22,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 10 | Assets and character sheets | done (hand checks deferred) | `phase-10-assets-characters` | — | $0.00 | No live checks listed. [Log](progress/phase-10-assets-characters.md) |
 | 11 | Region editing | done (hand checks deferred) | `phase-11-region-editing` | — | $0.04 | Live check `SP11_maskedEditRealIllustration` passed. [Log](progress/phase-11-region-editing.md) |
 | 12 | Consistency check and AI templates (M3) | done (hand checks deferred) | `phase-12-consistency-ai-templates` | — | $0.007 | Live check `SP12_templateAndConsistency` passed. [Log](progress/phase-12-consistency-ai-templates.md) |
-| 13 | Gemini provider (floating) | not started | | | | Needs the `gemini-api-key` Keychain item |
+| 13 | Gemini provider | post-MVP | | | | Out of scope for v1.0 (decided 2026-11-08). Spec kept in `plan/post-mvp/phase-13-gemini.md`. |
 | 14 | Export and print | not started | | | | |
 | 15 | Release pipeline (M4) | not started | | | | |
 | 16 | Import, book settings, onboarding, sample | not started | | | | |
@@ -36,7 +36,7 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 - The app accepts a `-BookBookLibraryRoot <path>` launch argument (argument domain only, never saved) for throwaway libraries in automated runs ([Phase 2](progress/phase-2-thin-slice.md)).
 - BBAITests prompt snapshots live in `Tests/BBAISnapshots/`; BBLayoutTests excludes `__Snapshots__` ([Phase 2](progress/phase-2-thin-slice.md)).
 - Page commands never touch sessions; TextKit 2 layout, rendering and export are `@MainActor` for now ([Phase 2](progress/phase-2-thin-slice.md)).
-- Gemini spikes (SG-1...SG-8) moved to the start of Phase 13; there is no `gemini-api-key` yet ([Phase 0](progress/phase-0-spikes.md)).
+- Gemini (Phase 13, including spikes SG-1...SG-8) is post-MVP (decided 2026-11-08). v1.0 ships with OpenAI only ([Phase 0](progress/phase-0-spikes.md)).
 - Books always reopen at relaunch (decided 2026-11-07; PD §8.1, A §6.1, Phase 3) ([Phase 0](progress/phase-0-spikes.md)).
 - OpenAI masked edits are unreliable; the region-edit approach is chosen in Phase 11 ([Phase 0](progress/phase-0-spikes.md)).
 
@@ -55,7 +55,6 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 ### Phase 11 — Region editing
 - Brush Pip's scarf, "make the scarf yellow": only the scarf changes; flipping old/new versions shows identical pixels outside the mask (needs a generation).
 - Lasso the sky and replace it: feathered edge, no hard seam (needs a generation).
-- A model without `supportsMask` (Gemini row, Phase 13): region tool greyed out with an explanation (covered by tests only).
 
 ### Phase 12 — Consistency check and AI templates
 - Pip with "a blue scarf" (reference red): the warning badge reads "scarf is blue; reference is red"; the one-click fix shows its estimate first, then gives a red scarf (needs a generation).
@@ -68,8 +67,6 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
-### Phase 13
-- Run SG-1...SG-8 first (from Phase 0).
 
 ### Phase 14
 - Consistency-warning preflight item (Phase 12 deferred it to Phase 14, plan §3).
@@ -81,6 +78,7 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Phase 17
+- v1.0 is OpenAI only: make sure no Gemini choice shows in the app (there's a Gemini mention in `ModelCatalog.json`, plus Gemini text in `RealPersonNotice.swift` and `VersionDetailsContent.swift`), and that the final live pass covers only OpenAI (Gemini moved to post-MVP 2026-11-08).
 - Flaky: `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` failed once (NSCocoaError 512 / POSIX 22 saving `.journal/<id>/staged`) and passed on the re-run (seen in Phase 12 Session B).
 - Confirm-cost alert's button says "Generate" for a consistency check (from Phase 12).
 - Chat `refusal` maps to stage `.output`, which is a guess; confirm it against a real refusal (from Phase 12).
@@ -120,7 +118,7 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - After Reset Session → Keep Versions the next prompt still refines the placed version; confirm against PD §8.6 "starts fresh" (from Phase 8 review).
 - `SessionPanel.swift` drop handler returns true even when no file URLs survive the filter (from Phase 8 review).
 - `baseImageTooLarge` / a refine on a deleted base (`baseVersionGone`) only fail at request time; the panel could warn or disable Refine (from Phase 8 review and lanes).
-- `AspectFitter.snap` returns nil for fixed-ratio models (no snapping; matters once Gemini lands) and ignores its `quality` parameter (from Phase 8 fixes; Phase 13).
+- `AspectFitter.snap` returns nil for fixed-ratio models (no snapping; matters once Gemini lands, post-MVP) and ignores its `quality` parameter (from Phase 8 fixes; post-MVP Gemini).
 - `ContextAssembler.resolve`: if no slot holds the session and the target box ID now belongs to another session's box, that box's shape is used (from Phase 8 re-review).
 - The safe area uses `box.bleedEdges` without checking that the box reaches the trim; deleting a mid-lineage version leaves children's `parent` dangling, so their lineage stops at the gap (from Phase 8 lanes).
 - No two-image-box template preset; new image boxes in the template editor stack on top of each other (from Phase 8 hand checks).

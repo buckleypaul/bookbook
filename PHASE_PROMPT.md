@@ -9,7 +9,9 @@ Use this prompt to run one implementation phase in two sessions: **A (build)** a
 | Effort | Phases |
 |---|---|
 | low | 3, 4, 6, 7, 15, 16 |
-| medium | 5, 8, 9, 10, 11, 12, 13, 14, 17 |
+| medium | 5, 8, 9, 10, 11, 12, 14, 17 |
+
+Phase 13 (Gemini) is post-MVP and not part of this plan.
 
 Session B can use the same effort as A, or low.
 
@@ -27,7 +29,7 @@ Implement the next BookBook phase. Work out which phase and which session (A or 
 4. If a phase is `in progress`, resume it from its branch and the **Stage** line in its "Current phase log":
    - `Stage: A` (or no stage line): carry on with Session A (§1–§2).
    - `Stage: B`: this is Session B. Go straight to §4.
-5. Otherwise pick the next phase using implementation-plan.md §2.6, and run Session A. If no phase is ready (dependencies not met, blocked, or Phase 13 without a Gemini key), say why and stop.
+5. Otherwise pick the next phase using implementation-plan.md §2.6, and run Session A. Skip phases marked `post-MVP` (Phase 13, Gemini). If no phase is ready (dependencies not met or blocked), say why and stop.
 6. Ask any blocking questions in ONE batched AskUserQuestion, with a recommended default for each. Don't ask about anything the plan or architecture already decides. For anything else, use the plan's defaults and record the assumption in PROGRESS.md.
 
 ## 1. Session A: plan the phase

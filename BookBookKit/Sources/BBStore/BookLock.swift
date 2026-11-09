@@ -228,17 +228,11 @@ struct BookLock {
     /// The package folder's `realpath(3)` (so a symlinked and a direct URL share one count, #105b),
     /// falling back to the standardized path if it can't be resolved.
     var holderKey: String {
-        let package = url.deletingLastPathComponent()
-        if let resolved = realpath(package.path(percentEncoded: false), nil) {
-            defer { free(resolved) }
-            return String(cString: resolved)
-        }
-        var p = package.standardizedFileURL.path(percentEncoded: false)
-        while p.count > 1, p.hasSuffix("/") { p.removeLast() }
-        return p
+        CanonicalPath.real(url.deletingLastPathComponent())
     }
 
-    /// `acquire()` for a `BookStore`: on `.wrote` or `.reentrant`, counts one more holder.
+    /// `acquire()` for a `BookStore`: on `.wrote` or `.reentrant`, counts one more holder under
+    /// `key` (the caller's `holderKey`, kept for `releaseHold(key:)`).
     /// `exclusiveInProcess`: also report `.heldByOther` (naming this process) when another store
     /// in this process already holds the lock, or the file already names this process, so a
     /// background job (duplicate-ID resolution) never works on a book this process has open or

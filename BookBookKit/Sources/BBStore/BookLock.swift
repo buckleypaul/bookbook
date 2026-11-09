@@ -237,9 +237,8 @@ struct BookLock {
     /// in this process already holds the lock, or the file already names this process, so a
     /// background job (duplicate-ID resolution) never works on a book this process has open or
     /// is opening or writing (#3b, #3c).
-    func acquireHold(now: Date = Date(), exclusiveInProcess: Bool = false) throws -> Outcome {
+    func acquireHold(key: String, now: Date = Date(), exclusiveInProcess: Bool = false) throws -> Outcome {
         try Self.holders.withLock { holders throws -> Outcome in
-            let key = holderKey
             if exclusiveInProcess, (holders[key] ?? 0) > 0 {
                 return .heldByOther(read().owner ?? Self.currentOwner(acquiredAt: now))
             }
@@ -256,11 +255,12 @@ struct BookLock {
         }
     }
 
-    /// `takeOver(expected:as:)` for a `BookStore`, as this process: on success counts one holder.
-    func takeOverHold(expected: LockOwner, now: Date = Date()) throws -> TakeoverOutcome {
+    /// `takeOver(expected:as:)` for a `BookStore`, as this process: on success counts one holder
+    /// under `key` (the caller's `holderKey`).
+    func takeOverHold(key: String, expected: LockOwner, now: Date = Date()) throws -> TakeoverOutcome {
         try Self.holders.withLock { holders throws -> TakeoverOutcome in
             let outcome = try takeOver(expected: expected, as: Self.currentOwner(acquiredAt: now))
-            if case .tookOver = outcome { holders[holderKey, default: 0] += 1 }
+            if case .tookOver = outcome { holders[key, default: 0] += 1 }
             return outcome
         }
     }
@@ -271,10 +271,9 @@ struct BookLock {
         return Self.holders.withLock { ($0[key] ?? 0) > 0 }
     }
 
-    /// Drops one holder; the last one removes the file if it still names this process.
-    func releaseHold(key: String? = nil) {
+    /// Drops one holder from `key` (the `holderKey` taken at acquire); the last one removes the file if it still names this process.
+    func releaseHold(key: String) {
         Self.holders.withLock { holders in
-            let key = key ?? holderKey
             let count = (holders[key] ?? 1) - 1
             holders[key] = count > 0 ? count : nil
             if count <= 0 {

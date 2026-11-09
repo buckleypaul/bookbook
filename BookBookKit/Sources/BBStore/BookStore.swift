@@ -12,11 +12,10 @@ public actor BookStore {
     private var timerToken = 0
     private var autosaveResultHandler: (@Sendable (StoreError?) -> Void)?
     private var readOnly = false
-    /// Set while this store holds `.lock` (wrote it, or found this process's own lock); counted
-    /// in `BookLock`'s per-process holders.
-    private var holdsLock = false
-    /// The per-process holder key taken at acquire (the package's real path then), so a release
-    /// after the package moved (e.g. trashed) still drops the right count.
+    /// Set while this store holds `.lock` (wrote it, or found this process's own lock): the
+    /// per-process holder key taken at acquire (the package's real path then), counted in
+    /// `BookLock`'s holders, so a release after the package moved (e.g. trashed) still drops the
+    /// right count.
     private var lockKey: String?
     /// Test hook (fault injection): see `SaveStep`.
     private var saveFaultHook: SaveFaultHook?
@@ -272,13 +271,14 @@ public actor BookStore {
     }
 
     private func acquireLock(exclusiveInProcess: Bool) throws(StoreError) -> LockAcquisition {
-        if holdsLock { return exclusiveInProcess ? .heldByOther(BookLock.currentOwner()) : .acquired }
+        if lockKey != nil { return exclusiveInProcess ? .heldByOther(BookLock.currentOwner()) : .acquired }
         let lock = BookLock(packageURL: packageURL)
         let key = lock.holderKey
-        let outcome = try PackageCoding.io("acquire lock") { try lock.acquireHold(exclusiveInProcess: exclusiveInProcess) }
+        let outcome = try PackageCoding.io("acquire lock") {
+            try lock.acquireHold(key: key, exclusiveInProcess: exclusiveInProcess)
+        }
         switch outcome {
         case .wrote, .reentrant:
-            holdsLock = true
             lockKey = key
             return .acquired
         case .heldByOther(let owner):
@@ -296,13 +296,12 @@ public actor BookStore {
     /// succeeded; release it with `releaseLock()`. The other process is not told: if it is
     /// still running, both may write (the user accepted that risk).
     public func takeOverLock(expectedOwner: LockOwner) throws(StoreError) -> LockAcquisition {
-        if holdsLock { return .acquired }
+        if lockKey != nil { return .acquired }
         let lock = BookLock(packageURL: packageURL)
         let key = lock.holderKey
-        let outcome = try PackageCoding.io("take over lock") { try lock.takeOverHold(expected: expectedOwner) }
+        let outcome = try PackageCoding.io("take over lock") { try lock.takeOverHold(key: key, expected: expectedOwner) }
         switch outcome {
         case .tookOver:
-            holdsLock = true
             lockKey = key
             return .acquired
         case .ownerChanged(let owner):
@@ -314,16 +313,15 @@ public actor BookStore {
     /// process: the file is removed only when the last store in this process holding it releases,
     /// whichever store wrote it.
     public func releaseLock() {
-        guard holdsLock else { return }
-        holdsLock = false
-        BookLock(packageURL: packageURL).releaseHold(key: lockKey)
+        guard let key = lockKey else { return }
         lockKey = nil
+        BookLock(packageURL: packageURL).releaseHold(key: key)
     }
 
     /// A store dropped without `releaseLock()` gives up its hold, so `.lock` doesn't stay until
     /// the process exits (#105c).
     deinit {
-        if holdsLock { BookLock(packageURL: packageURL).releaseHold(key: lockKey) }
+        if let key = lockKey { BookLock(packageURL: packageURL).releaseHold(key: key) }
     }
 
     /// After this, `load()` never writes (no journal replay, migration, sweep or ledger repair) and

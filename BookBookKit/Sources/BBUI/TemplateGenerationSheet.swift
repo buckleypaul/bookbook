@@ -6,7 +6,6 @@ import SwiftUI
 /// "New with AI…" (PD §8.4): describe a layout, see the cost, send, and open the result in the
 /// visual editor. All logic is in `TemplateGenerationFlow`.
 struct TemplateGenerationSheet: View {
-    @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var flow: TemplateGenerationFlow
     @State private var estimate: CostEstimate?
@@ -78,18 +77,7 @@ struct TemplateGenerationSheet: View {
             }
             .font(.callout)
         case let .failed(advice):
-            VStack(alignment: .leading, spacing: 4) {
-                Text(advice.headline).font(.callout.bold())
-                if !advice.explanation.isEmpty { Text(advice.explanation).font(.callout) }
-                ForEach(advice.fixes, id: \.self) { Text("• \($0)").font(.callout) }
-                if let link = advice.link { Link("Open provider page", destination: link) }
-                if let details = advice.details {
-                    DisclosureGroup("Details") {
-                        Text(details).font(.caption.monospaced()).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }
+            FailureAdviceView(advice: advice)
         case .idle, .finished:
             EmptyView()
         }

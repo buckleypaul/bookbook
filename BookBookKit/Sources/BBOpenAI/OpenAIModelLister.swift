@@ -24,15 +24,7 @@ public struct OpenAIModelLister: ModelLister {
         let request = HTTPRequest(
             method: "GET", url: baseURL.appending(path: "models"),
             headers: ["Authorization": "Bearer \(key.revealForTransport())"], timeout: 60)
-        let response: HTTPResponse
-        do {
-            response = try await http.send(request)
-        } catch {
-            throw OpenAIErrorMapper.map(error)
-        }
-        guard (200..<300).contains(response.status) else {
-            throw OpenAIErrorMapper.map(response, key: key)
-        }
+        let response = try await OpenAIErrorMapper.send(request, via: http, key: key)
         guard let root = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
               let data = root["data"] as? [[String: Any]] else {
             throw .unknown(OpenAIErrorMapper.raw(response, code: nil, key: key))

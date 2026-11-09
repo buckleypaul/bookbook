@@ -13,6 +13,13 @@ enum CanonicalPath {
         trimmed(url.resolvingSymlinksInPath().path(percentEncoded: false))
     }
 
+    /// True if `child` resolves (following symlinks) to a path strictly inside `parent`.
+    /// Used to refuse a package subfolder that is a symlink leading out of the package.
+    static func isInside(_ child: URL, _ parent: URL) -> Bool {
+        let parentPath = symlinksResolved(parent)
+        return symlinksResolved(child).hasPrefix(parentPath == "/" ? "/" : parentPath + "/")
+    }
+
     /// The `realpath(3)` canonical path (keeps `/private`, as FSEvents reports it), falling back
     /// to the standardized path if it can't be resolved (e.g. it doesn't exist).
     static func real(_ url: URL) -> String {

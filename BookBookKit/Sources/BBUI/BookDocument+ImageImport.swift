@@ -24,6 +24,11 @@ public enum ImageImportFailure: Error, Hashable, Sendable {
         case let .store(text): "The picture couldn't be saved: \(text)"
         }
     }
+
+    /// The plain-language line for any error an image import throws.
+    public static func message(for error: any Error) -> String {
+        (error as? ImageImportFailure)?.message ?? error.localizedDescription
+    }
 }
 
 extension BookDocument {

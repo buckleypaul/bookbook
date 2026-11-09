@@ -57,7 +57,7 @@ struct ElapsedTimeTextTests {
     }
 
     @Test func progress() {
-        #expect(ElapsedTimeText.progress(elapsed: 7, typical: 14) == "0:07 of about 0:14")
+        #expect(ElapsedTimeText.progress(elapsed: 7, typical: 14) == "0:07 of ~0:14")
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: nil) == "0:07")
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: 0) == "0:07")
     }
@@ -181,12 +181,9 @@ struct PageListingTests {
         #expect(PageListing.storyTemplateID(in: empty, preset: { nil }) == nil)
     }
 
-    @Test func insertionAndSelection() {
+    @Test func selectionAfterDeleting() {
         let content = Fixtures.book(pages: 3)
         let order = content.book.pageOrder
-        #expect(PageListing.insertionIndex(after: order[0], in: content) == 1)
-        #expect(PageListing.insertionIndex(after: order[2], in: content) == 3)
-        #expect(PageListing.insertionIndex(after: nil, in: content) == 3)
         #expect(PageListing.selectionAfterDeleting(order[1], in: content) == order[2])
         #expect(PageListing.selectionAfterDeleting(order[2], in: content) == order[1])
         let single = Fixtures.book(pages: 1)

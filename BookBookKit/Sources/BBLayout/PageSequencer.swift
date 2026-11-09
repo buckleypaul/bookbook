@@ -55,6 +55,19 @@ public struct SequenceLayout: Hashable, Sendable {
 
 /// Maps `Book.pageOrder` to physical positions (A §8.1). Pure; no AppKit.
 public enum PageSequencer {
+    /// The entries for `content`'s story pages in reading order (a page is a spread when its
+    /// template is `.spread`).
+    public static func entries(for content: BookContent) -> [SequenceEntry] {
+        content.storyPages.map {
+            SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread)
+        }
+    }
+
+    /// `layout(_:cover:)` for `content`'s story pages after its cover.
+    public static func layout(for content: BookContent) -> SequenceLayout {
+        layout(entries(for: content), cover: content.book.coverPageID)
+    }
+
     /// Lays out `order` (story pages only) after a cover with ID `cover`.
     public static func layout(_ order: [SequenceEntry], cover: PageID) -> SequenceLayout {
         var pages: [PagePosition] = []

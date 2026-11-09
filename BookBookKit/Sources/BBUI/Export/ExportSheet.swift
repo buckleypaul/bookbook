@@ -92,10 +92,11 @@ struct ExportSheet: View {
         }
         Toggle("Only some pages", isOn: $model.limitsRange)
         if model.limitsRange {
+            let total = model.totalPositions
             HStack {
-                Stepper("From \(model.rangeFrom)", value: $model.rangeFrom, in: 1...max(1, model.totalPositions))
-                Stepper("to \(model.rangeTo)", value: $model.rangeTo, in: 1...max(1, model.totalPositions))
-                Text("of \(model.totalPositions)").foregroundStyle(.secondary)
+                Stepper("From \(model.rangeFrom)", value: $model.rangeFrom, in: 1...max(1, total))
+                Stepper("to \(model.rangeTo)", value: $model.rangeTo, in: 1...max(1, total))
+                Text("of \(total)").foregroundStyle(.secondary)
             }
             if !model.isRangeValid { Text("The first page must come before the last.").foregroundStyle(.red) }
         }
@@ -162,6 +163,7 @@ struct ExportSheet: View {
 
     @ViewBuilder
     private func footer(_ model: ExportSheetModel) -> some View {
+        let canExport = model.canExport
         HStack {
             if model.isExporting, let progress = model.progress {
                 ProgressView(value: progress.fraction).frame(maxWidth: 220)
@@ -176,10 +178,10 @@ struct ExportSheet: View {
                 .keyboardShortcut(.cancelAction)
                 .disabled(model.isExporting)
             Button(model.printTitle) { model.startPrint() }
-                .disabled(!model.canExport)
+                .disabled(!canExport)
             Button(model.primaryTitle) { model.startExport() }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!model.canExport)
+                .disabled(!canExport)
         }
         .padding(16)
     }

@@ -95,11 +95,7 @@ struct QueueRowView: View {
 
     @ViewBuilder
     private func stateLine(advice: FailureAdvice?) -> some View {
-        let intent = entry.item.intent
-        // Consistency checks (labelled "· Consistency check" through `display`) time against the vision model.
-        let typical = entry.item.kind == .image
-            ? app.catalog.imageModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds[intent.quality]
-            : app.catalog.textModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds
+        let typical = app.typicalDuration(for: entry.item)
         switch entry.state {
         case .running, .retrying:
             TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -128,86 +124,5 @@ struct QueueRowView: View {
             }
         }
         .controlSize(.small)
-    }
-}
-
-/// Draft All Empty Boxes… (PD §8.5): plan, always confirm with count and cost, then enqueue.
-struct DraftAllFlow: ViewModifier {
-    @Environment(AppModel.self) private var app
-    let document: BookDocument
-    @Binding var trigger: Bool
-    @State private var plan: DraftAllPlan?
-    @State private var message = ""
-    @State private var showConfirm = false
-    @State private var showNothing = false
-    @State private var notice: ProviderID?
-
-    func body(content: Content) -> some View {
-        content
-            .onChange(of: trigger) { _, requested in
-                guard requested else { return }
-                trigger = false
-                Task { await start() }
-            }
-            .alert("Nothing to Draft", isPresented: $showNothing) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("Every image box already has a picture.")
-            }
-            .sheet(isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } }),
-                   onDismiss: { if notice == nil { plan = nil } }) {
-                if let provider = notice {
-                    RealPersonNoticeSheet(provider: provider,
-                                          onContinue: {
-                                              notice = nil
-                                              app.acknowledgeRealPersonNotice(provider, in: document)
-                                              checkNoticeThenEnqueue()
-                                          },
-                                          onCancel: { notice = nil; plan = nil })
-                }
-            }
-            .alert("Draft All Empty Boxes?", isPresented: $showConfirm) {
-                Button("Draft All") {
-                    checkNoticeThenEnqueue()
-                }
-                Button("Cancel", role: .cancel) { plan = nil }
-            } message: {
-                Text(message)
-            }
-    }
-
-    /// The real-person notice (once per provider and book, A §11) comes after the cost
-    /// confirmation and before anything is queued.
-    private func checkNoticeThenEnqueue() {
-        guard let plan else { return }
-        if let provider = app.realPersonNoticeNeeded(for: plan.items, in: document) {
-            notice = provider
-            return
-        }
-        app.enqueueDraftAll(plan, in: document)
-        self.plan = nil
-    }
-
-    private func start() async {
-        let plan = app.draftAllPlan(in: document)
-        guard plan.count > 0 else {
-            showNothing = true
-            return
-        }
-        let decision = await app.costDecision(for: plan.estimate, in: document)
-        let spent = await app.ledgerSummary(for: document.id).total
-        message = CostText.batchAlert(count: plan.count, estimate: plan.estimate, decision: decision, spent: spent,
-                                      budget: document.content.book.budget,
-                                      coverIncluded: plan.targets.contains { $0.page == document.content.book.coverPageID })
-            + (decision.needsConfirmation ? " That is above your confirmation limit." : "")
-            + " Draft quality, queued one after another."
-        self.plan = plan
-        showConfirm = true
-    }
-}
-
-extension View {
-    func draftAllFlow(document: BookDocument, trigger: Binding<Bool>) -> some View {
-        modifier(DraftAllFlow(document: document, trigger: trigger))
     }
 }

@@ -394,8 +394,7 @@ struct BookEditor: View {
                                onDropImageFiles: { page, box, urls in importDroppedImages(urls, page: page, box: box) })
                         // Read-only: no text editing or box selection (the canvas is AppKit).
                         .allowsHitTesting(document.isEditable)
-                        .alert("Couldn't Use That Image", isPresented: Binding(
-                            get: { canvasImportError != nil }, set: { if !$0 { canvasImportError = nil } })) {
+                        .alert("Couldn't Use That Image", isPresented: $canvasImportError.isPresent()) {
                             Button("OK", role: .cancel) {}
                         } message: { Text(canvasImportError ?? "") }
                 } else {
@@ -416,10 +415,8 @@ struct BookEditor: View {
             for url in urls {
                 do {
                     _ = try await document.importImage(from: url, page: page, box: box)
-                } catch let failure as ImageImportFailure {
-                    canvasImportError = failure.message
                 } catch {
-                    canvasImportError = error.localizedDescription
+                    canvasImportError = ImageImportFailure.message(for: error)
                 }
             }
         }

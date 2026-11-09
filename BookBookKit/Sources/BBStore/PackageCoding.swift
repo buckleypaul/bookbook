@@ -1,4 +1,5 @@
 import BBModel
+import CryptoKit
 import Foundation
 
 /// JSON coding and small file helpers shared by the store (A §5.1).
@@ -105,6 +106,24 @@ enum PackageCoding {
     static func writeSynced(_ data: Data, to url: URL) throws {
         try data.write(to: url)
         try fsync(url)
+    }
+
+    /// Writes `data` to a synced temp file in `dir` (named `<tempPrefix><uuid>`), then renames it
+    /// over `dest`. The temp file is removed if either step fails.
+    static func writeAtomically(_ data: Data, to dest: URL, tempIn dir: URL, tempPrefix: String = ".tmp-") throws {
+        let tmp = dir.appending(path: "\(tempPrefix)\(UUID().uuidString)")
+        do {
+            try writeSynced(data, to: tmp)
+            try rename(tmp, to: dest)
+        } catch {
+            try? FileManager.default.removeItem(at: tmp)
+            throw error
+        }
+    }
+
+    /// Lowercase hex SHA-256 of `data`, as used for content-addressed file names.
+    static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     /// Test hook: false makes `fsync` use plain `fsync(2)` instead of `F_FULLFSYNC` for the

@@ -51,7 +51,7 @@ public struct QueueRowModel: Equatable {
         case .waiting:
             return "Waiting"
         case let .running(startedAt, _, attempt):
-            let time = CostText.elapsedOfTypical(elapsed: now.timeIntervalSince(startedAt), typical: typical)
+            let time = ElapsedTimeText.progress(elapsed: now.timeIntervalSince(startedAt), typical: typical)
             let retry = attempt > 1 ? " (attempt \(attempt) of \(maxAttempts))" : ""
             return "\(isConsistencyCheck ? "Checking consistency…" : "Generating…") \(time)\(retry)"
         case let .retrying(attempt, resumesAt, _):

@@ -40,26 +40,14 @@ public enum BookMutations {
     /// ("Regenerate with same settings": same text, same `refines`, same references).
     public static func makeGeneration(intent: GenerationIntent, bookID: BookID, page: PageID, box: BoxID,
                                       now: Date) -> (message: Message, item: QueueItem) {
-        let itemID = QueueItemID()
-        let message = Message(role: .user, text: intent.messageText, refines: intent.refines,
-                              attachedReferences: intent.attachedReferences, queueItemID: itemID, createdAt: now)
-        let item = QueueItem(id: itemID, bookID: bookID, target: .pageBox(page, box), messageID: message.id,
-                             intent: intent)
-        return (message, item)
+        makeGeneration(intent: intent, bookID: bookID, target: .pageBox(page, box), now: now)
     }
 
     /// Appends a pending user message to the box's session (in the session's current epoch).
     /// Returns an empty set if the page, box or session is gone.
     public static func appendPendingMessage(_ message: Message, page: PageID, box: BoxID,
                                             to content: inout BookContent) -> DirtySet {
-        guard let slot = content.pages[page]?.images[box], var session = content.sessions[slot.sessionID] else {
-            return DirtySet()
-        }
-        var message = message
-        message.epoch = session.resetEpoch
-        session.messages.append(message)
-        content.sessions[slot.sessionID] = session
-        return DirtySet(sessions: [slot.sessionID])
+        appendPendingMessage(message, target: .pageBox(page, box), to: &content)
     }
 
     /// Writes a finished generation into the book (A §6.4).
@@ -88,13 +76,7 @@ public enum BookMutations {
             return DirtySet()
         }
         guard case let .pageBox(pageID, boxID) = delivery.item.target else {
-            var dirty = applyAssetDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID,
-                                           now: now)
-            if case let .success(_, provenance) = delivery.outcome, let source = provenance.intent.versionSource,
-               let changed = setSource(source, of: versionID, in: &content) {
-                dirty.sessions.insert(changed)
-            }
-            return dirty
+            return applyAssetDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID, now: now)
         }
         let page = content.pages[pageID]
         let slot = page?.images[boxID]
@@ -105,22 +87,11 @@ public enum BookMutations {
               var session = content.sessions[sessionID] else { return DirtySet() }
 
         var dirty = DirtySet()
-        let messageIndex = session.messages.firstIndex { $0.id == delivery.item.messageID }
-        if let messageIndex, session.messages[messageIndex].queueItemID != nil {
-            session.messages[messageIndex].queueItemID = nil
-            dirty.sessions.insert(session.id)
-        }
+        let (changed, delivered) = record(delivery, storedImage: storedImage, versionID: versionID, now: now,
+                                          in: &session, content: content)
+        if changed { dirty.sessions.insert(session.id) }
 
-        if case let .success(result, provenance) = delivery.outcome, let storedImage {
-            let provenance = resolvingDeletedMentions(provenance, message: messageIndex.map { session.messages[$0] },
-                                                      in: content)
-            let version = Version(id: versionID, image: storedImage, pixelSize: result.pixelSize,
-                                  source: versionSource(for: provenance.intent),
-                                  parent: provenance.intent.refines, createdAt: now, provenance: provenance)
-            session.versions.append(version)
-            if let messageIndex { session.messages[messageIndex].producedVersion = version.id }
-            dirty.sessions.insert(session.id)
-
+        if let version = delivered {
             // The box may have moved since the request: place into whichever box holds the session.
             var home: (PageID, BoxID)? = slot?.sessionID == session.id ? (pageID, boxID) : nil
             if home == nil {
@@ -146,14 +117,26 @@ public enum BookMutations {
         intent.versionSource ?? (intent.regionMask == nil ? .generated : .regionEdit)
     }
 
-    /// Sets a version's source; returns its session if anything changed.
-    private static func setSource(_ source: VersionSource, of versionID: VersionID,
-                                  in content: inout BookContent) -> SessionID? {
-        guard let session = content.sessions.values.first(where: { $0.version(versionID) != nil }),
-              let index = session.versions.firstIndex(where: { $0.id == versionID }),
-              session.versions[index].source != source else { return nil }
-        content.sessions[session.id]?.versions[index].source = source
-        return session.id
+    /// The shared part of a delivery into `session`: clears the message's `queueItemID` and, for
+    /// a success with a stored image, appends the version (and sets the message's
+    /// `producedVersion`). Returns whether the session changed and the version added.
+    static func record(_ delivery: GenerationDelivery, storedImage: ImageRef?, versionID: VersionID, now: Date,
+                       in session: inout Session, content: BookContent) -> (changed: Bool, version: Version?) {
+        var changed = false
+        let messageIndex = session.messages.firstIndex { $0.id == delivery.item.messageID }
+        if let messageIndex, session.messages[messageIndex].queueItemID != nil {
+            session.messages[messageIndex].queueItemID = nil
+            changed = true
+        }
+        guard case let .success(result, provenance) = delivery.outcome, let storedImage else { return (changed, nil) }
+        let resolved = resolvingDeletedMentions(provenance, message: messageIndex.map { session.messages[$0] },
+                                                in: content)
+        let version = Version(id: versionID, image: storedImage, pixelSize: result.pixelSize,
+                              source: versionSource(for: resolved.intent),
+                              parent: resolved.intent.refines, createdAt: now, provenance: resolved)
+        session.versions.append(version)
+        if let messageIndex { session.messages[messageIndex].producedVersion = version.id }
+        return (true, version)
     }
 
     // MARK: Phase 12 consistency checks (A §7.8; not undoable)

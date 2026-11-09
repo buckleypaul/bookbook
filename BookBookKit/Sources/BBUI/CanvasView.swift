@@ -37,6 +37,9 @@ protocol CanvasController: AnyObject {
     var canvas: CanvasView? { get set }
     /// What to draw; nil leaves the canvas empty.
     var scene: CanvasScene? { get }
+    /// The scene's `sheetRect`, for the fit-to-view transform. A controller can supply it without
+    /// building the whole scene.
+    var sheetRect: CGRect? { get }
     /// Called before each draw (observation, cache upkeep).
     func willDraw()
     /// Draws over the rendered page, in page space (the context is already transformed).
@@ -58,6 +61,7 @@ protocol CanvasController: AnyObject {
 }
 
 extension CanvasController {
+    var sheetRect: CGRect? { scene?.sheetRect }
     func willDraw() {}
     func drawOverlay(in ctx: CGContext, transform: CanvasTransform) {}
     func mouseDown(with event: NSEvent, at point: CGPoint) {}
@@ -123,8 +127,8 @@ final class CanvasView: NSView {
     /// View ↔ page transform. Page points stay trim space (origin at the trim's top-left) even
     /// when the bleed is shown: the bleed only widens the fitted area.
     var transform: CanvasTransform? {
-        guard let scene = controller?.scene else { return nil }
-        return CanvasTransform(viewSize: bounds.size, fitting: scene.sheetRect)
+        guard let sheetRect = controller?.sheetRect else { return nil }
+        return CanvasTransform(viewSize: bounds.size, fitting: sheetRect)
     }
 
     private var lastPagePoint: CGPoint?
@@ -314,14 +318,10 @@ extension CanvasView {
                          imageSource: imageSource, fontsRevision: fontsRevision)
     }
 
-    var content: BookContent? { placement.content }
-    var pageID: PageID? { placement.pageID }
     /// The page's numbers, drawn on screen as in the PDF (PD §8.2).
     var pageNumberMarks: [PageNumberMark] { placement.pageNumberMarks }
     /// Every box on the page with its render rect, in layer order.
     var boxRects: [(box: Box, rect: CGRect)] { placement.boxRects }
-    func overflowingTextBoxes() -> [(box: Box, rect: CGRect)] { placement.overflowingTextBoxes() }
-    var editingBoxID: BoxID? { placement.textEditing.editingBoxID }
     func endEditing() { placement.textEditing.end() }
 
     var onSelectImageBox: (BoxID?) -> Void {

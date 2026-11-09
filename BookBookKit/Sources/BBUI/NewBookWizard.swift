@@ -36,7 +36,7 @@ final class NewBookWizardModel {
     static var pageSizes: [PageSizePreset] { PageSizePreset.allCases.filter { $0 != .custom } }
 
     /// Square sizes have no orientation choice.
-    var orientationApplies: Bool { pageSize.map { $0 != .square8 && $0 != .square8_5 } ?? false }
+    var orientationApplies: Bool { pageSize.map { !$0.isSquarePreset } ?? false }
 
     func next() {
         if let after = Step(rawValue: step.rawValue + 1) { step = after }

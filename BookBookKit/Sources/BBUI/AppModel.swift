@@ -515,14 +515,8 @@ public final class AppModel {
     }
 
     /// "Regenerate with same settings": a new pending message and queue item built from the
-    /// version's stored intent, unchanged (same text, same `refines`). False for versions with
-    /// no provenance (imported) or a box that's gone.
-    @discardableResult
-    public func regenerate(_ version: Version, page: PageID, box: BoxID, in document: BookDocument) -> Bool {
-        return regenerate(version, target: .pageBox(page, box), in: document)
-    }
-
-    /// "Regenerate with same settings" for any target (asset slots and sheet items included).
+    /// version's stored intent, unchanged (same text, same `refines`), for any target. False for
+    /// versions with no provenance (imported) or a target that's gone.
     @discardableResult
     public func regenerate(_ version: Version, target: GenerationTarget, in document: BookDocument) -> Bool {
         guard let intent = (version.provenance?.intent).map(replayed) else { return false }
@@ -605,9 +599,16 @@ public final class AppModel {
 
     public func status(of message: Message) -> MessageStatus {
         MessageStatus.resolve(message, snapshot: queueSnapshot, pendingThisLaunch: pendingThisLaunch,
-                              deliveryFailures: deliveryFailures) { [catalog] intent in
-            catalog.imageModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds[intent.quality]
-        }
+                              deliveryFailures: deliveryFailures) { typicalDuration(for: $0) }
+    }
+
+    /// The model's typical seconds for a queue item: the image model at its quality, or the
+    /// vision model for a consistency check. Nil when the catalog doesn't say.
+    func typicalDuration(for item: QueueItem) -> Double? {
+        let intent = item.intent
+        return item.kind == .image
+            ? catalog.imageModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds[intent.quality]
+            : catalog.textModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds
     }
 
     /// e.g. "GPT Image 2.5 Sunburst".

@@ -14,12 +14,7 @@ enum AssetEditing {
     static func title(of kind: SheetItemKind) -> String {
         switch kind {
         case let .view(view):
-            switch view {
-            case .front: "Front view"
-            case .threeQuarter: "Three-quarter view"
-            case .side: "Side view"
-            case .back: "Back view"
-            }
+            SheetItemText.viewName(view) + " view"
         case let .expression(name):
             name.prefix(1).uppercased() + name.dropFirst()
         }

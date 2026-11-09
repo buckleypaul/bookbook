@@ -1,5 +1,4 @@
 import BBModel
-import CryptoKit
 import Foundation
 
 /// Imported fonts live in `fonts/<sha256>.<ext>` (A §5.1, §8.3). Importing a font isn't
@@ -15,28 +14,18 @@ extension BookStore {
         guard Self.fontExtensions.contains(ext) else {
             throw StoreError.io("unsupported font file extension: \(fileExtension)")
         }
-        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         let dir = fontsDirectory
-        let dest = dir.appending(path: "\(hash).\(ext)")
+        let dest = dir.appending(path: "\(PackageCoding.sha256Hex(data)).\(ext)")
         let package = packageURL
         try PackageCoding.io("storeFont") {
             let fm = FileManager.default
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
             // Refuse if `fonts/` (or the package) is a symlink leading outside the package.
-            let root = package.resolvingSymlinksInPath().path(percentEncoded: false)
-            let fonts = dir.resolvingSymlinksInPath().path(percentEncoded: false)
-            guard fonts.hasPrefix(root.hasSuffix("/") ? root : root + "/") else {
+            guard CanonicalPath.isInside(dir, package) else {
                 throw StoreError.io("fonts folder is outside the package")
             }
             if fm.fileExists(atPath: dest.path(percentEncoded: false)) { return }
-            let tmp = dir.appending(path: ".tmp-\(UUID().uuidString)")
-            do {
-                try PackageCoding.writeSynced(data, to: tmp)
-                try PackageCoding.rename(tmp, to: dest)
-            } catch {
-                try? fm.removeItem(at: tmp)
-                throw error
-            }
+            try PackageCoding.writeAtomically(data, to: dest, tempIn: dir)
         }
         return dest
     }

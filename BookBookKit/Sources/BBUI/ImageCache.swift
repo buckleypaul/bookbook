@@ -36,9 +36,23 @@ public final class ImageCache: PageImageSource {
         return image
     }
 
-    static func load(_ url: URL, maxPixelSize: Int?) -> CGImage? {
+    /// Decodes the image at `url`, downsampled to `maxPixelSize` on its longest side (nil = full
+    /// resolution). Safe off the main actor.
+    nonisolated static func load(_ url: URL, maxPixelSize: Int?) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary)
         else { return nil }
+        return load(source, maxPixelSize: maxPixelSize)
+    }
+
+    /// `load(_:maxPixelSize:)` for in-memory image `data`.
+    nonisolated static func load(_ data: Data, maxPixelSize: Int?) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return load(source, maxPixelSize: maxPixelSize)
+    }
+
+    /// The first image of `source`: whole, or a thumbnail (orientation applied) at most
+    /// `maxPixelSize` on its longest side.
+    nonisolated private static func load(_ source: CGImageSource, maxPixelSize: Int?) -> CGImage? {
         guard let maxPixelSize else {
             return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
         }

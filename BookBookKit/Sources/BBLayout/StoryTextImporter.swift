@@ -92,11 +92,8 @@ public enum StoryTextImporter {
     private static func richText(from attributed: NSAttributedString, typography: Typography) -> RichText {
         let mutable = NSMutableAttributedString(attributedString: attributed)
         for pattern in ["\r\n", "\r", "\u{2028}", "\u{2029}"] {
-            while true {
-                let range = (mutable.string as NSString).range(of: pattern)
-                if range.location == NSNotFound { break }
-                mutable.replaceCharacters(in: range, with: "\n")
-            }
+            mutable.mutableString.replaceOccurrences(of: pattern, with: "\n", options: [],
+                                                     range: NSRange(location: 0, length: mutable.length))
         }
         return usingBodyFont(RichTextBridge.richText(from: mutable, typography: typography), typography: typography)
     }

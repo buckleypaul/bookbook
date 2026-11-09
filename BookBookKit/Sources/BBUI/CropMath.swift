@@ -65,17 +65,13 @@ enum CropMath {
     /// `point` mapped into the unrotated frame of a box drawn rotated by `degrees` about
     /// `rect`'s centre (the inverse of `CanvasView.applyRotation`).
     static func unrotated(_ point: CGPoint, about rect: CGRect, degrees: Double) -> CGPoint {
-        guard degrees != 0, degrees.isFinite else { return point }
-        let delta = unrotated(CGSize(width: point.x - rect.midX, height: point.y - rect.midY), degrees: degrees)
-        return CGPoint(x: rect.midX + delta.width, y: rect.midY + delta.height)
+        BoxHitTesting.unrotate(point, rect: rect, rotationDegrees: degrees)
     }
 
     /// A page-space vector expressed in the frame of a box rotated by `degrees`.
     static func unrotated(_ vector: CGSize, degrees: Double) -> CGSize {
-        guard degrees != 0, degrees.isFinite else { return vector }
-        let angle = -CGFloat(degrees) * .pi / 180
-        return CGSize(width: vector.width * cos(angle) - vector.height * sin(angle),
-                      height: vector.width * sin(angle) + vector.height * cos(angle))
+        let p = BoxHitTesting.unrotate(CGPoint(x: vector.width, y: vector.height), rect: .zero, rotationDegrees: degrees)
+        return CGSize(width: p.x, height: p.y)
     }
 
     /// True when two crops are the same within rounding.

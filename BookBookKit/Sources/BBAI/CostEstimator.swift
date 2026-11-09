@@ -80,8 +80,9 @@ public enum CostEstimator {
     public static func estimateInput(intent: GenerationIntent, target: GenerationTarget, content: BookContent,
                                      catalog: ModelCatalog) -> ImageEstimateInput? {
         guard let model = catalog.imageModel(provider: intent.provider, id: intent.model),
-              let planned = ContextAssembler.plan(intent: intent, target: target, content: content)
+              let prepared = ContextAssembler.prepare(intent: intent, target: target, messageID: nil, content: content)
         else { return nil }
+        let planned = ContextAssembler.plan(prepared)
         var data: [ImageRef: Data] = [:]
         for image in planned { data[image.ref] = Data([0]) }
         if let maskRef = intent.regionMask {
@@ -95,7 +96,7 @@ public enum CostEstimator {
             if let base, base.pixelSize == nil { data[base.ref] = blank }
         }
         guard let (request, report) = try? ContextAssembler.assemble(
-            intent: intent, target: target, content: content, model: model, imageData: data)
+            prepared: prepared, intent: intent, content: content, model: model, imageData: data)
         else { return nil }
 
         var knownSizes: [ImageRef: PixelSize] = [:]

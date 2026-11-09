@@ -1,13 +1,44 @@
+import BBAI
 import BBModel
 import SwiftUI
 
-/// Generate whole sheet (PD §8.3): the estimate is always shown first, like Draft all.
-struct SheetBatchFlow: ViewModifier {
+/// A planned batch ready to confirm: its queue items, the alert text, and how to enqueue it.
+struct BatchProposal {
+    var items: [QueueItem]
+    var message: String
+    var enqueue: @MainActor () -> Void
+
+    /// The confirmation text for `items` (count, cost, budget and the confirmation limit), then
+    /// `suffix`. Nil when there's nothing to queue.
+    @MainActor
+    static func make(items: [QueueItem], estimate: CostEstimate, coverIncluded: Bool = false,
+                     app: AppModel, document: BookDocument, suffix: @MainActor () -> String,
+                     enqueue: @escaping @MainActor () -> Void) async -> BatchProposal? {
+        guard !items.isEmpty else { return nil }
+        let (decision, spent) = await app.costDecisionAndSpent(for: estimate, in: document)
+        let message = CostText.batchAlert(count: items.count, estimate: estimate, decision: decision, spent: spent,
+                                          budget: document.content.book.budget, coverIncluded: coverIncluded)
+            + (decision.needsConfirmation ? " That is above your confirmation limit." : "")
+            + suffix()
+        return BatchProposal(items: items, message: message, enqueue: enqueue)
+    }
+}
+
+/// Draft All Empty Boxes (PD §8.5) and Generate Whole Sheet (PD §8.3): plan, always confirm
+/// with count and cost, show the real-person notice if needed, then enqueue.
+struct BatchConfirmFlow<Trigger: Equatable>: ViewModifier {
     @Environment(AppModel.self) private var app
     let document: BookDocument
-    @Binding var trigger: AssetID?
-    @State private var plan: SheetBatchPlan?
-    @State private var message = ""
+    @Binding var trigger: Trigger
+    /// The trigger's resting value; any other value starts the flow.
+    let idle: Trigger
+    let title: String
+    let confirmLabel: String
+    let nothingTitle: String
+    let nothingMessage: String
+    /// Plans the batch for a request; nil when there is nothing to queue.
+    let propose: @MainActor (AppModel, Trigger) async -> BatchProposal?
+    @State private var plan: BatchProposal?
     @State private var showConfirm = false
     @State private var showNothing = false
     @State private var notice: ProviderID?
@@ -15,17 +46,16 @@ struct SheetBatchFlow: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: trigger) { _, requested in
-                guard let requested else { return }
-                trigger = nil
+                guard requested != idle else { return }
+                trigger = idle
                 Task { await start(requested) }
             }
-            .alert("Nothing to Generate", isPresented: $showNothing) {
+            .alert(nothingTitle, isPresented: $showNothing) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text("Every item on this sheet is locked or already being generated.")
+                Text(nothingMessage)
             }
-            .sheet(isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } }),
-                   onDismiss: { if notice == nil { plan = nil } }) {
+            .sheet(isPresented: $notice.isPresent(), onDismiss: { if notice == nil { plan = nil } }) {
                 if let provider = notice {
                     RealPersonNoticeSheet(provider: provider,
                                           onContinue: {
@@ -36,13 +66,13 @@ struct SheetBatchFlow: ViewModifier {
                                           onCancel: { notice = nil; plan = nil })
                 }
             }
-            .alert("Generate Whole Sheet?", isPresented: $showConfirm) {
-                Button("Generate") {
+            .alert(title, isPresented: $showConfirm) {
+                Button(confirmLabel) {
                     checkNoticeThenEnqueue()
                 }
                 Button("Cancel", role: .cancel) { plan = nil }
             } message: {
-                Text(message)
+                Text(plan?.message ?? "")
             }
     }
 
@@ -54,24 +84,16 @@ struct SheetBatchFlow: ViewModifier {
             notice = provider
             return
         }
-        app.enqueueSheetBatch(plan, in: document)
+        plan.enqueue()
         self.plan = nil
     }
 
-    private func start(_ asset: AssetID) async {
-        let plan = app.sheetBatchPlan(asset: asset, in: document)
-        guard plan.count > 0 else {
+    private func start(_ request: Trigger) async {
+        guard let proposal = await propose(app, request) else {
             showNothing = true
             return
         }
-        let decision = await app.costDecision(for: plan.estimate, in: document)
-        let spent = await app.ledgerSummary(for: document.id).total
-        message = CostText.batchAlert(count: plan.count, estimate: plan.estimate, decision: decision, spent: spent,
-                                      budget: document.content.book.budget)
-            + (decision.needsConfirmation ? " That is above your confirmation limit." : "")
-            + " Locked items are skipped. Queued one after another."
-            + (SheetBatchWarning.primaryHasNoImage(document.content.assets[asset]) ? SheetBatchWarning.text : "")
-        self.plan = plan
+        plan = proposal
         showConfirm = true
     }
 }
@@ -87,7 +109,37 @@ enum SheetBatchWarning {
 }
 
 extension View {
+    /// Draft All Empty Boxes… (PD §8.5).
+    func draftAllFlow(document: BookDocument, trigger: Binding<Bool>) -> some View {
+        modifier(BatchConfirmFlow(document: document, trigger: trigger, idle: false,
+                                  title: "Draft All Empty Boxes?", confirmLabel: "Draft All",
+                                  nothingTitle: "Nothing to Draft",
+                                  nothingMessage: "Every image box already has a picture.") { app, _ in
+            let plan = app.draftAllPlan(in: document)
+            return await BatchProposal.make(
+                items: plan.items, estimate: plan.estimate,
+                coverIncluded: plan.targets.contains { $0.page == document.content.book.coverPageID },
+                app: app, document: document, suffix: { " Draft quality, queued one after another." },
+                enqueue: { _ = app.enqueueDraftAll(plan, in: document) })
+        })
+    }
+
+    /// Generate Whole Sheet (PD §8.3): the estimate is always shown first, like Draft all.
     func sheetBatchFlow(document: BookDocument, trigger: Binding<AssetID?>) -> some View {
-        modifier(SheetBatchFlow(document: document, trigger: trigger))
+        modifier(BatchConfirmFlow(document: document, trigger: trigger, idle: nil,
+                                  title: "Generate Whole Sheet?", confirmLabel: "Generate",
+                                  nothingTitle: "Nothing to Generate",
+                                  nothingMessage: "Every item on this sheet is locked or already being generated.") {
+            app, requested in
+            guard let asset = requested else { return nil }
+            let plan = app.sheetBatchPlan(asset: asset, in: document)
+            return await BatchProposal.make(
+                items: plan.items, estimate: plan.estimate, app: app, document: document,
+                suffix: {
+                    " Locked items are skipped. Queued one after another."
+                        + (SheetBatchWarning.primaryHasNoImage(document.content.assets[asset]) ? SheetBatchWarning.text : "")
+                },
+                enqueue: { _ = app.enqueueSheetBatch(plan, in: document) })
+        })
     }
 }

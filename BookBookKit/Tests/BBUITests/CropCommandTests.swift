@@ -220,6 +220,26 @@ struct CropCommandTests {
         #expect(abs(p.x - 100) < 1e-9 && abs(p.y - 25) < 1e-9)
     }
 
+    @Test func unrotatedVector_signConventions() {
+        // Positive degrees are clockwise on screen (y down): a page vector pointing down the page
+        // is the +x axis of a box rotated 90°.
+        let down = CropMath.unrotated(CGSize(width: 0, height: 10), degrees: 90)
+        #expect(abs(down.width - 10) < 1e-9 && abs(down.height) < 1e-9)
+        let right = CropMath.unrotated(CGSize(width: 10, height: 0), degrees: 90)
+        #expect(abs(right.width) < 1e-9 && abs(right.height + 10) < 1e-9)
+        // Negating the angle rotates the other way (what the resize maths uses to map back).
+        let back = CropMath.unrotated(CGSize(width: 10, height: 0), degrees: -90)
+        #expect(abs(back.width) < 1e-9 && abs(back.height - 10) < 1e-9)
+        // Zero and non-finite angles leave the vector alone.
+        #expect(CropMath.unrotated(CGSize(width: 3, height: 4), degrees: 0) == CGSize(width: 3, height: 4))
+        #expect(CropMath.unrotated(CGSize(width: 3, height: 4), degrees: .nan) == CGSize(width: 3, height: 4))
+        // Matches the point form about a rect's centre.
+        let rect = CGRect(x: 10, y: 20, width: 40, height: 30)
+        let p = CropMath.unrotated(CGPoint(x: 37, y: 41), about: rect, degrees: 33)
+        let v = CropMath.unrotated(CGSize(width: 37 - rect.midX, height: 41 - rect.midY), degrees: 33)
+        #expect(abs(p.x - (rect.midX + v.width)) < 1e-9 && abs(p.y - (rect.midY + v.height)) < 1e-9)
+    }
+
     // MARK: Canvas gestures
 
     final class NoImages: PageImageSource {

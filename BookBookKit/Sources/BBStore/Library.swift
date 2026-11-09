@@ -22,10 +22,7 @@ public struct Library: Sendable {
         for url in urls where url.pathExtension == "bookbook" {
             guard let data = try? Data(contentsOf: url.appending(path: PackageCoding.bookPath)),
                   let book = try? PackageCoding.decoder().decode(Book.self, from: data) else { continue }
-            let thumb = url.appending(path: "thumbnail.png", directoryHint: .notDirectory)
-            let hasThumb = FileManager.default.fileExists(atPath: thumb.path(percentEncoded: false))
-            entries.append(LibraryEntry(id: book.id, title: book.title, url: url, modifiedAt: book.modifiedAt,
-                                        thumbnailURL: hasThumb ? thumb : nil))
+            entries.append(Self.entry(for: book, at: url))
         }
         return entries.sorted {
             $0.modifiedAt != $1.modifiedAt
@@ -35,17 +32,62 @@ public struct Library: Sendable {
     }
 
     /// Creates `<title>.bookbook` (a unique name if taken) from the built-in presets, with one
-    /// story page (decided 2026-11-08), creating `root` if needed.
+    /// story page (decided 2026-11-08), creating `root` if needed. The title is trimmed and an
+    /// empty one becomes "Untitled" (`NewBookSpec.resolvedTitle`).
     public func createBook(title: String, now: Date = Date()) throws(StoreError) -> LibraryEntry {
+        try createBook(spec: NewBookSpec(title: title), now: now)
+    }
+
+    /// An entry for `book` stored at `url`, with its thumbnail if `thumbnail.png` exists.
+    static func entry(for book: Book, at url: URL) -> LibraryEntry {
+        let thumb = url.appending(path: "thumbnail.png", directoryHint: .notDirectory)
+        let hasThumb = FileManager.default.fileExists(atPath: thumb.path(percentEncoded: false))
+        return LibraryEntry(id: book.id, title: book.title, url: url, modifiedAt: book.modifiedAt,
+                            thumbnailURL: hasThumb ? thumb : nil)
+    }
+
+    /// Copies the package at `source` into `root` as `<title>.bookbook` (unique name if taken),
+    /// leaving out `.lock` and `.journal`, then rewrites its `book.json` as `book` after `edit`.
+    /// `makeWritable` resets permissions (a bundled copy can be read-only). Removes the partial
+    /// copy on failure. `what` labels the copy step in errors.
+    func copyPackage(from source: URL, book: Book, title: String, what: String, makeWritable: Bool = false,
+                     edit: (inout Book) -> Void) throws(StoreError) -> LibraryEntry {
         let fm = FileManager.default
+        var book = book
         try PackageCoding.io("create library") { try fm.createDirectory(at: root, withIntermediateDirectories: true) }
-        let story = try Presets.storyTemplate()
-        let cover = try Presets.coverTemplate()
-        let content = BookContent.makeNew(title: title, storyTemplate: story, coverTemplate: cover,
-                                          storyPageCount: 1, now: now)
-        let url = Self.uniquePackageURL(in: root, title: title)
-        try BookStore.create(content, at: url)
-        return LibraryEntry(id: content.book.id, title: title, url: url, modifiedAt: now)
+        let dest = Self.uniquePackageURL(in: root, title: title)
+        do {
+            try PackageCoding.io(what) {
+                try fm.copyItem(at: source, to: dest)
+                for skipped in [".lock", ".journal"] {
+                    let item = dest.appending(path: skipped)
+                    if fm.fileExists(atPath: item.path(percentEncoded: false)) { try fm.removeItem(at: item) }
+                }
+                if makeWritable { try Self.makeWritable(dest) }
+            }
+            edit(&book)
+            let data = try PackageCoding.encode(book)
+            try PackageCoding.io("write book.json") {
+                try data.write(to: dest.appending(path: PackageCoding.bookPath), options: .atomic)
+            }
+        } catch {
+            try? fm.removeItem(at: dest)
+            throw error
+        }
+        return Self.entry(for: book, at: dest)
+    }
+
+    /// Sets 0755 on `url` and every folder inside it, and 0644 on every file.
+    private static func makeWritable(_ url: URL) throws {
+        let fm = FileManager.default
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path(percentEncoded: false))
+        guard let walker = fm.enumerator(atPath: url.path(percentEncoded: false)) else { return }
+        for case let rel as String in walker {
+            let p = url.appending(path: rel).path(percentEncoded: false)
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: p, isDirectory: &isDir)
+            try fm.setAttributes([.posixPermissions: isDir.boolValue ? 0o755 : 0o644], ofItemAtPath: p)
+        }
     }
 
     /// `<sanitized title>.bookbook` in `folder`, or with " 2", " 3"... if the name is taken.
@@ -90,7 +132,6 @@ extension Library {
     }
 
     private func duplicateLocked(_ entry: LibraryEntry, now: Date) throws(StoreError) -> LibraryEntry {
-        let fm = FileManager.default
         let titles = Set(scan().map(\.title))
         var title = "\(entry.title) copy"
         var n = 2
@@ -101,31 +142,12 @@ extension Library {
         let sourceData = try PackageCoding.io("read book") {
             try Data(contentsOf: entry.url.appending(path: PackageCoding.bookPath))
         }
-        var book = try PackageCoding.decode(Book.self, from: sourceData, what: "book.json")
-        try PackageCoding.io("create library") { try fm.createDirectory(at: root, withIntermediateDirectories: true) }
-        let dest = Self.uniquePackageURL(in: root, title: title)
-        do {
-            try PackageCoding.io("duplicate book") {
-                try fm.copyItem(at: entry.url, to: dest)
-                for skipped in [".lock", ".journal"] {
-                    let item = dest.appending(path: skipped)
-                    if fm.fileExists(atPath: item.path(percentEncoded: false)) { try fm.removeItem(at: item) }
-                }
-            }
-            book.id = BookID()
-            book.title = title
-            book.modifiedAt = now
-            let data = try PackageCoding.encode(book)
-            try PackageCoding.io("write book.json") {
-                try data.write(to: dest.appending(path: PackageCoding.bookPath), options: .atomic)
-            }
-        } catch {
-            try? fm.removeItem(at: dest)
-            throw error
+        let book = try PackageCoding.decode(Book.self, from: sourceData, what: "book.json")
+        return try copyPackage(from: entry.url, book: book, title: title, what: "duplicate book") {
+            $0.id = BookID()
+            $0.title = title
+            $0.modifiedAt = now
         }
-        let thumb = dest.appending(path: "thumbnail.png", directoryHint: .notDirectory)
-        let hasThumb = fm.fileExists(atPath: thumb.path(percentEncoded: false))
-        return LibraryEntry(id: book.id, title: title, url: dest, modifiedAt: now, thumbnailURL: hasThumb ? thumb : nil)
     }
 
     /// Moves the package to the Trash (`FileManager.trashItem`). Returns its URL in the Trash.

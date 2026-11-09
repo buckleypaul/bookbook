@@ -31,3 +31,11 @@
   - The other three should-fixes went to Open follow-ups › Phase 17.
 - App pass (throwaway library, no key): ticked Book Settings in the File menu, the Page-menu toggles, the overview grid (no overlap; double-click opens the page), the export sheet's preflight and "binds at the top" caption, story import with cancel keeping the empty book, Open Anyway on a fake foreign lock, and no crashes. Inconclusive: Guided Setup relaunch, the colour burst, Draft All's text, and the wizard's 10 × 8 orientation (all under Deferred hand checks).
 - Secret scan clean. Live spend $0.00.
+
+## Whole-codebase simplify pass (2026-11-09, after close)
+
+`/simplify` over all of `BookBookKit/Sources` and `App/` on branch `phase-16b-simplify`: four review agents (one per module slice), then four worktree lanes with disjoint files. 53 findings applied in 46 commits; `scripts/test.sh all` green. Highlights: book open no longer reads the package twice (migration probe), cost-ledger repair reads only the last byte, prompt files are cached, one shared `URLSession`, `ContextAssembler.prepare` runs once per plan-then-assemble, image and consistency assembly run off the queue actor, missing-font refresh only on text/style edits, placement rects cached per update, page-number layouts use the layout cache.
+
+Small visible changes: template-generation failures use `FailureAdviceView`; the page-number font list is sorted; the session timer reads "of ~0:14" (matches the queue); the sidebar badge times consistency checks; `Library.createBook(title:)` trims and defaults to "Untitled"; package-containment checks refuse a subfolder symlinked to the package root.
+
+Skipped: deleting `PDFExporter` (tests use it), removing public `ProviderError.isTransient` (doc fixed instead), a mask-encode flag just for cost estimates, merging `CommitTextEditor` (styling differs), changing the page-number family→face rule. Leftovers are under Phase 17 in `PROGRESS.md`.

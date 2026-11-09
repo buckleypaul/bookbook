@@ -1,5 +1,4 @@
 import BBModel
-import CryptoKit
 import Foundation
 
 /// Import from another book (A §5.4, PD §8.1). Pure logic over two `BookContent` values plus the
@@ -179,8 +178,7 @@ public enum BookImporter {
                 throw StoreError.notFound("images/\(ref.fileName)")
             }
             let data = try PackageCoding.io("read source image") { try Data(contentsOf: url) }
-            let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            guard hash == ref.sha256 else { throw StoreError.corrupt("images/\(ref.fileName)") }
+            guard PackageCoding.sha256Hex(data) == ref.sha256 else { throw StoreError.corrupt("images/\(ref.fileName)") }
             _ = try await target.storeImage(data, contentType: ref.contentType)
             report.copied += 1
         }

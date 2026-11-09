@@ -128,4 +128,9 @@ struct TemplatePickerSheet: View {
 extension Presets {
     /// The bundled templates (read once), or none if they can't be read.
     static let bundledTemplates: [Template] = (try? templates()) ?? []
+
+    /// The book's template `id`, else the bundled preset with that ID.
+    static func template(_ id: TemplateID, in content: BookContent) -> Template? {
+        content.templates[id] ?? bundledTemplates.first { $0.id == id }
+    }
 }

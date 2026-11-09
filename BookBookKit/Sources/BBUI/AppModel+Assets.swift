@@ -70,12 +70,9 @@ extension AppModel {
     public func generate(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID?,
                          attachedReferences: [VersionRef], target: GenerationTarget,
                          in document: BookDocument) -> Bool {
-        let intent = generationIntent(prompt: prompt, quality: quality, includeStoryText: includeStoryText,
-                                      refines: refines, attachedReferences: attachedReferences)
-        guard !intent.messageText.isEmpty else { return false }
-        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, target: target,
-                                                           now: now())
-        return enqueue(message, prepared(item, content: document.content), in: document)
+        enqueueGeneration(generationIntent(prompt: prompt, quality: quality, includeStoryText: includeStoryText,
+                                           refines: refines, attachedReferences: attachedReferences),
+                          target: target, in: document)
     }
 
     /// Unlocked sheet items with nothing pending (empty or not), planned like Draft all.
@@ -104,27 +101,14 @@ extension AppModel {
     /// Items locked, removed or already queued from this plan since it was made are skipped.
     @discardableResult
     public func enqueueSheetBatch(_ plan: SheetBatchPlan, in document: BookDocument) -> Bool {
-        guard !plan.items.isEmpty, plan.items.count == plan.sheetItems.count else { return false }
-        var queued: [QueueItem] = []
-        document.performIrreversible { content in
-            var dirty = DirtySet()
-            for (item, id) in zip(plan.items, plan.sheetItems) {
-                guard let sheetItem = content.assets[plan.asset]?.sheet?.items.first(where: { $0.id == id }),
-                      !sheetItem.locked, content.session(containing: item.messageID) == nil else { continue }
-                let message = Message(id: item.messageID, role: .user, text: item.intent.messageText,
-                                      queueItemID: item.id, createdAt: item.enqueuedAt)
-                let changed = BookMutations.appendPendingMessage(message, target: item.target, to: &content)
-                guard !changed.isEmpty else { continue }
-                dirty.formUnion(changed)
-                queued.append(item)
+        guard plan.items.count == plan.sheetItems.count else { return false }
+        return enqueuePlanned(plan.items, in: document) { index, content in
+            let id = plan.sheetItems[index]
+            guard let sheetItem = content.assets[plan.asset]?.sheet?.items.first(where: { $0.id == id }) else {
+                return false
             }
-            return dirty
+            return !sheetItem.locked
         }
-        guard !queued.isEmpty else { return false }
-        notePending(queued.map(\.id))
-        let items = queued
-        queueOperation { await $0.enqueue(items, position: .end) }
-        return true
     }
 
     /// The provider this request would send a real-person photo to, when the book hasn't

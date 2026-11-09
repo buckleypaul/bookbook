@@ -95,6 +95,123 @@ import Testing
         #expect(refined.parametersSent["size"] == "1024x1024")
     }
 
+    /// Phase 11: does a masked edit on a real 1024x1024 illustration still return black fills (SP-4)?
+    /// Three Draft calls (masked, masked again, unmasked), about $0.06. No fixture, no files written.
+    @Test(.enabled(if: LiveProviderTests.enabled, "needs BOOKBOOK_LIVE_TESTS=1, OPENAI_API_KEY and budget left"))
+    func SP11_maskedEditRealIllustration() async throws {
+        let apiKey = try #require(ProcessInfo.processInfo.environment["OPENAI_API_KEY"].flatMap(APIKey.init))
+        let provider = OpenAIImageProvider(http: URLSessionHTTPClient(), apiKey: { apiKey })
+        let size = PixelSize(width: 1024, height: 1024)
+        let baseData = try Self.sp2BaseImage()
+        let base = ImagePayload(data: baseData, contentType: "public.png", pixelSize: size)
+        let maskRect = (x0: 341, y0: 341, x1: 682, y1: 682)  // top-left origin, half-open
+        let maskPNG = try #require(Self.maskPNG(size: 1024, hole: maskRect))
+        let mask = MaskPayload(pngData: maskPNG, pixelSize: size)
+        let baseRGBA = try #require(Self.rgba(baseData))
+
+        func call(_ run: String, prompt: String, mask: MaskPayload?) async throws {
+            var request = ImageRequest(
+                model: TestSupport.model, quality: .draft, output: OutputShape(boxAspect: 1, exactSize: size),
+                instruction: ComposedPrompt(sections: [.init(key: "request", text: prompt)]),
+                baseImage: base)
+            request.mask = mask
+            let result = try await provider.generate(request, progress: { _ in })
+            LiveSpendGuard.record(
+                test: "SP11_maskedEditRealIllustration.\(run)", provider: "openai", model: TestSupport.model.id,
+                usage: result.usage.map {
+                    LiveSpendGuard.Usage(inputTextTokens: $0.inputTextTokens, inputImageTokens: $0.inputImageTokens,
+                                         outputTextTokens: $0.outputTextTokens, outputImageTokens: $0.outputImageTokens)
+                },
+                estimateUSD: 0.02)
+            #expect(!result.imageData.isEmpty)
+            print("SPIKE-RESULT SP11 \(run) sizeIs1024: \(result.pixelSize == size)")
+            guard let out = Self.rgba(result.imageData), out.width == 1024, out.height == 1024 else {
+                print("SPIKE-RESULT SP11 \(run) decode: failed or not 1024x1024")
+                return
+            }
+            var inCount = 0, black = 0, outCount = 0
+            var inDiff = 0.0, outDiff = 0.0
+            for y in 0..<1024 {
+                for x in 0..<1024 {
+                    let inside = x >= maskRect.x0 && x < maskRect.x1 && y >= maskRect.y0 && y < maskRect.y1
+                    let farOutside = x < maskRect.x0 - 16 || x >= maskRect.x1 + 16 || y < maskRect.y0 - 16 || y >= maskRect.y1 + 16
+                    guard inside || farOutside else { continue }
+                    let i = (y * 1024 + x) * 4
+                    let dr = abs(Int(out.bytes[i]) - Int(baseRGBA.bytes[i]))
+                    let dg = abs(Int(out.bytes[i + 1]) - Int(baseRGBA.bytes[i + 1]))
+                    let db = abs(Int(out.bytes[i + 2]) - Int(baseRGBA.bytes[i + 2]))
+                    let diff = Double(dr + dg + db) / 3
+                    if inside {
+                        inCount += 1; inDiff += diff
+                        if max(out.bytes[i], out.bytes[i + 1], out.bytes[i + 2]) <= 16 { black += 1 }
+                    } else {
+                        outCount += 1; outDiff += diff
+                    }
+                }
+            }
+            print("SPIKE-RESULT SP11 \(run) inMaskNearBlackFraction: \(Double(black) / Double(inCount))")
+            print("SPIKE-RESULT SP11 \(run) meanAbsChangeInsideMask: \(inDiff / Double(inCount))")
+            print("SPIKE-RESULT SP11 \(run) meanAbsChangeOutsideMask: \(outDiff / Double(outCount))")
+        }
+
+        let maskedPrompt = "Within the masked area only, add a bright yellow sun. Keep everything else exactly as it is."
+        try await call("a-masked", prompt: maskedPrompt, mask: mask)
+        try await call("b-masked-repeat", prompt: maskedPrompt, mask: mask)
+        try await call("c-unmasked",
+                       prompt: "Add a bright yellow sun in the centre of the picture. Keep everything else exactly as it is.",
+                       mask: nil)
+    }
+
+    /// The real 1024x1024 SP-2 illustration, decoded from its recorded response.
+    private static func sp2BaseImage(file: String = #filePath) throws -> Data {
+        let url = URL(fileURLWithPath: file).deletingLastPathComponent()
+            .appending(path: "Fixtures/openai/SP-2/generations-low-1024x1024.json")
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+        let json = try #require(object as? [String: Any])
+        let item = try #require((json["data"] as? [[String: Any]])?.first)
+        let encoded = try #require(item["b64_json"] as? String)
+        return try #require(Data(base64Encoded: encoded))
+    }
+
+    /// RGBA mask: alpha 0 inside `hole` (top-left origin), opaque white elsewhere.
+    private static func maskPNG(size: Int, hole: (x0: Int, y0: Int, x1: Int, y1: Int)) -> Data? {
+        var bytes = [UInt8](repeating: 255, count: size * size * 4)
+        for y in hole.y0..<hole.y1 {
+            for x in hole.x0..<hole.x1 {
+                let i = (y * size + x) * 4
+                bytes[i] = 0; bytes[i + 1] = 0; bytes[i + 2] = 0; bytes[i + 3] = 0
+            }
+        }
+        let image: CGImage? = bytes.withUnsafeMutableBytes { buffer in
+            CGContext(
+                data: buffer.baseAddress, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage()
+        }
+        guard let image else { return nil }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return data as Data
+    }
+
+    /// Decode to 8-bit RGBA (premultiplied last, sRGB) with top-left row order.
+    private static func rgba(_ data: Data) -> (bytes: [UInt8], width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let width = image.width, height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return drawn ? (bytes, width, height) : nil
+    }
+
     /// Phase 9: two Draft 1024x1024 calls (the second an edit with one 1536x1024 reference, to
     /// measure its input image tokens) and a third cancelled about 2 s after it is sent. About $0.10.
     /// Usage goes to the test output; the spend log holds no prompt text or key.

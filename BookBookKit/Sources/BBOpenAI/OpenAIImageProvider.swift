@@ -33,7 +33,11 @@ public struct OpenAIImageProvider: ImageProvider {
     ) async throws(ProviderError) -> ImageResult {
         let images = [request.baseImage].compactMap { $0 } + request.references.map(\.payload)
         let isEdit = !images.isEmpty
-        let parameters = try Self.parameters(for: request)
+        var parameters = try Self.parameters(for: request)
+        if let mask = request.mask {
+            try Self.validate(mask: mask, base: request.baseImage, limit: request.model.image.maxImageBytes)
+            parameters["mask"] = "\(mask.pixelSize.width)x\(mask.pixelSize.height) png"
+        }
         if isEdit {
             try Self.validate(images, limit: request.model.image.maxImageBytes)
             // Edits send the request's size (`exactSize`, snapped to the model's rules by the assembler),
@@ -52,8 +56,11 @@ public struct OpenAIImageProvider: ImageProvider {
                 guard let type = Self.imageType(image.contentType) else { throw .invalidRequest(param: "image", nil) }
                 form.addFile(name: "image[]", filename: "image\(index + 1).\(type.ext)", mimeType: type.mime, data: image.data)
             }
+            if let mask = request.mask {
+                form.addFile(name: "mask", filename: "mask.png", mimeType: "image/png", data: mask.pngData)
+            }
             form.addField(name: "prompt", value: prompt)
-            for (name, value) in parameters.sorted(by: { $0.key < $1.key }) { form.addField(name: name, value: "\(value)") }
+            for (name, value) in parameters.sorted(by: { $0.key < $1.key }) where name != "mask" { form.addField(name: name, value: "\(value)") }
             let encoded = form.encoded()
             url = baseURL.appending(path: "images/edits")
             contentType = encoded.contentType
@@ -111,6 +118,21 @@ public struct OpenAIImageProvider: ImageProvider {
                     status: nil, code: "file_above_max_size",
                     body: "image[\(index)] is \(image.data.count) bytes; the limit is \(limit)."))
             }
+        }
+    }
+
+    /// A mask needs a base image of the same pixel size and must fit the upload limit.
+    static func validate(mask: MaskPayload, base: ImagePayload?, limit: Int) throws(ProviderError) {
+        guard let base, let baseSize = base.pixelSize else { throw .invalidRequest(param: "mask", nil) }
+        guard mask.pixelSize == baseSize else {
+            throw .invalidRequest(param: "mask", ProviderErrorRaw(
+                status: nil, code: "mask_size_mismatch",
+                body: "mask is \(mask.pixelSize.width)x\(mask.pixelSize.height); the image is \(baseSize.width)x\(baseSize.height)."))
+        }
+        guard mask.pngData.count <= limit else {
+            throw .invalidRequest(param: "mask", ProviderErrorRaw(
+                status: nil, code: "file_above_max_size",
+                body: "mask is \(mask.pngData.count) bytes; the limit is \(limit)."))
         }
     }
 

@@ -158,9 +158,13 @@ public struct GenerationDelivery: Sendable {
     /// The ledger entry already recorded for this request (via `GenerationHost.recordCost`),
     /// stored as `Provenance.cost` on success.
     public var costRecordID: CostRecordID?
+    /// Images the host stores (before the session JSON) alongside the version image, keyed by
+    /// their content-addressed ref: a region edit's raw provider output (`Provenance.rawOutput`).
+    public var additionalImages: [ImageRef: Data]
 
     public enum Outcome: Sendable {
-        /// The host stores `result.imageData`, creates a `.generated` Version with
+        /// The host stores `result.imageData`, creates a `.generated` (`.regionEdit` when the
+        /// intent has a `regionMask`; then `result` is the local composite) Version with
         /// `provenance`, sets the message's `producedVersion`, clears its `queueItemID`, and
         /// places the version if the box is empty.
         case success(result: ImageResult, provenance: Provenance)
@@ -170,10 +174,12 @@ public struct GenerationDelivery: Sendable {
         case failure(ProviderError)
     }
 
-    public init(item: QueueItem, outcome: Outcome, costRecordID: CostRecordID? = nil) {
+    public init(item: QueueItem, outcome: Outcome, costRecordID: CostRecordID? = nil,
+                additionalImages: [ImageRef: Data] = [:]) {
         self.item = item
         self.outcome = outcome
         self.costRecordID = costRecordID
+        self.additionalImages = additionalImages
     }
 }
 

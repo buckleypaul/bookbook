@@ -140,9 +140,13 @@ public struct GenerationIntent: Hashable, Codable, Sendable {
     public var model: String
     public var quality: QualityLevel
     public var includeStoryText: Bool
+    /// Region edit (Phase 11): the user's 8-bit mask, stored in the book's `images/` at the base
+    /// version's pixel size (white = edit area, black = keep). Requires `refines`. nil otherwise.
+    public var regionMask: ImageRef?
 
     public init(messageText: String, refines: VersionID? = nil, attachedReferences: [VersionRef] = [],
-                provider: ProviderID, model: String, quality: QualityLevel, includeStoryText: Bool = true) {
+                provider: ProviderID, model: String, quality: QualityLevel, includeStoryText: Bool = true,
+                regionMask: ImageRef? = nil) {
         self.messageText = messageText
         self.refines = refines
         self.attachedReferences = attachedReferences
@@ -150,6 +154,7 @@ public struct GenerationIntent: Hashable, Codable, Sendable {
         self.model = model
         self.quality = quality
         self.includeStoryText = includeStoryText
+        self.regionMask = regionMask
     }
 }
 
@@ -177,12 +182,23 @@ public struct Provenance: Hashable, Codable, Sendable {
     /// Every wire parameter sent besides the prompt and images (e.g. `size`, `quality`,
     /// `output_format`, `moderation`, `n`), so Version details shows everything sent.
     public var parametersSent: [String: String]
+    /// Region edit (Phase 11): the mask sent with the request (the user's 8-bit mask image).
+    public var maskSent: ImageRef?
+    /// Region edit (Phase 11): the provider's raw output before the local composite. The version's
+    /// own image is the composite; Version details shows both.
+    public var rawOutput: ImageRef?
+    /// Region edit (Phase 11): the feather width of the local composite, in pixels.
+    public var featherPixels: Double?
 
     public init(provider: ProviderID, model: String, quality: QualityLevel, outputSize: PixelSize, promptSent: String,
                 referencesSent: [SentReference] = [], referencesOmitted: [SentReference] = [], styleRevision: Int,
                 assetRevisions: [AssetID: Int] = [:], storyTextIncluded: Bool, intent: GenerationIntent,
                 cost: CostRecordID? = nil, usage: TokenUsage? = nil, revisedPrompt: String? = nil,
-                parametersSent: [String: String] = [:]) {
+                parametersSent: [String: String] = [:], maskSent: ImageRef? = nil, rawOutput: ImageRef? = nil,
+                featherPixels: Double? = nil) {
+        self.maskSent = maskSent
+        self.rawOutput = rawOutput
+        self.featherPixels = featherPixels
         self.provider = provider
         self.model = model
         self.quality = quality

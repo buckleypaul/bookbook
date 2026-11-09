@@ -34,6 +34,9 @@ public enum VersionDetailsContent {
             rows.append(DetailRow(label: "Date", value: dateFormatter(version.createdAt)))
             return rows
         }
+        if version.source != .generated {
+            rows.append(DetailRow(label: "Source", value: sourceName(version.source)))
+        }
         rows.append(DetailRow(label: "Provider", value: providerName(p.provider)))
         rows.append(DetailRow(label: "Model", value: p.model))
         rows.append(DetailRow(label: "Quality", value: qualityName(p.quality)))
@@ -51,6 +54,18 @@ public enum VersionDetailsContent {
         rows.append(DetailRow(label: "References sent", value: references(p.referencesSent)))
         if !p.referencesOmitted.isEmpty {
             rows.append(DetailRow(label: "Left out", value: references(p.referencesOmitted)))
+        }
+        if p.maskSent != nil || p.intent.regionMask != nil {
+            // Region edit (A §7.6): the mask went with the base image; the version is the local composite.
+            rows.append(DetailRow(label: "Mask sent",
+                                  value: "\(version.pixelSize.width)x\(version.pixelSize.height) mask (transparent = edit area)"))
+        }
+        if p.rawOutput != nil {
+            rows.append(DetailRow(label: "Raw provider output",
+                                  value: "\(p.outputSize.width)x\(p.outputSize.height) image, before blending into the original"))
+        }
+        if let feather = p.featherPixels {
+            rows.append(DetailRow(label: "Feather", value: "\(featherText(feather)) px"))
         }
         rows.append(DetailRow(label: "Story text included", value: p.storyTextIncluded ? "Yes" : "No"))
         rows.append(DetailRow(label: "Cost", value: cost.map(CostText.record) ?? "—"))
@@ -82,6 +97,10 @@ public enum VersionDetailsContent {
         case .standard: "Standard"
         case .high: "High"
         }
+    }
+
+    static func featherText(_ pixels: Double) -> String {
+        pixels.rounded() == pixels ? String(Int(pixels)) : String(format: "%.1f", pixels)
     }
 
     static func sourceName(_ source: VersionSource) -> String {

@@ -1,5 +1,6 @@
 import BBAICore
 import BBModel
+import CryptoKit
 import Foundation
 
 /// The app-wide serial generation queue (A §7.9).
@@ -335,7 +336,7 @@ public actor GenerationQueue {
     }
 
     private func run(_ item: QueueItem) async {
-        guard let (provider, model, request, report) = await prepare(item) else { return }
+        guard let (provider, model, request, report, storedMask) = await prepare(item) else { return }
         var attempt = 1
         while true {
             if isCancelled(item.id) { return await finishCancelled(item) }
@@ -353,7 +354,8 @@ public actor GenerationQueue {
             }
             switch outcome {
             case let .success(result):
-                return await finishSuccess(item, model: model, result: result, report: report)
+                return await finishSuccess(item, model: model, request: request, storedMask: storedMask,
+                                           result: result, report: report)
             case let .failure(error):
                 switch QueueLedgerRule.forFailure(error) {
                 case .none: break
@@ -372,8 +374,10 @@ public actor GenerationQueue {
         }
     }
 
-    /// Resolves the provider, model and request. On failure the item is finished and nil returned.
-    private func prepare(_ item: QueueItem) async -> (any ImageProvider, CatalogModel, ImageRequest, AssemblyReport)? {
+    /// Resolves the provider, model and request, plus the stored region-edit mask's bytes (nil when
+    /// not a region edit). On failure the item is finished and nil returned.
+    private func prepare(_ item: QueueItem) async
+        -> (any ImageProvider, CatalogModel, ImageRequest, AssemblyReport, Data?)? {
         guard let content = await host.content(for: item.bookID) else {
             await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
             return nil
@@ -395,6 +399,11 @@ public actor GenerationQueue {
         for image in planned {
             if let data = await host.imageData(for: image.ref, in: item.bookID) { imageData[image.ref] = data }
         }
+        // Region edit (A §7.6): the user's mask is read with the other images.
+        if let mask = item.intent.regionMask, imageData[mask] == nil,
+           let data = await host.imageData(for: mask, in: item.bookID) {
+            imageData[mask] = data
+        }
         if isCancelled(item.id) {
             await finishCancelled(item)
             return nil
@@ -403,7 +412,7 @@ public actor GenerationQueue {
             let (request, report) = try ContextAssembler.assemble(
                 intent: item.intent, target: item.target, messageID: item.messageID, content: content,
                 model: model, imageData: imageData)
-            return (provider, model, request, report)
+            return (provider, model, request, report, item.intent.regionMask.flatMap { imageData[$0] })
         } catch {
             await finishFailed(item, error.providerError, report: nil, attempts: 0)
             return nil
@@ -449,14 +458,15 @@ public actor GenerationQueue {
         }
     }
 
-    private func finishSuccess(_ item: QueueItem, model: CatalogModel, result: ImageResult,
-                               report: AssemblyReport) async {
+    private func finishSuccess(_ item: QueueItem, model: CatalogModel, request: ImageRequest, storedMask: Data?,
+                               result: ImageResult, report: AssemblyReport) async {
         let actual = result.usage.flatMap {
             pricing.actualCost(of: $0, provider: item.intent.provider, model: model.pricingModelID)
         }
+        // The call happened, so it's charged even if a region edit's output is then rejected.
         let costID = await recordCost(for: item, model: model.id, status: .completed,
                                       basis: actual == nil ? .estimate : .actual, actual: actual)
-        let provenance = Provenance(
+        var provenance = Provenance(
             provider: item.intent.provider, model: model.id, quality: item.intent.quality,
             outputSize: result.pixelSize, promptSent: report.promptText,
             referencesSent: report.referencesSent, referencesOmitted: report.referencesOmitted,
@@ -464,10 +474,35 @@ public actor GenerationQueue {
             storyTextIncluded: report.storyTextIncluded,
             intent: item.intent, cost: costID, usage: result.usage, revisedPrompt: result.revisedPrompt,
             parametersSent: result.parametersSent)
+        var delivered = result
+        var additionalImages: [ImageRef: Data] = [:]
+        if let maskRef = item.intent.regionMask {
+            // Region edit (A §7.6): the provider's output is composited locally through the user's
+            // mask; the composite becomes the version and the raw output is kept for Version details.
+            switch await RegionEditCompositor.composite(raw: result.imageData, base: request.baseImage?.data,
+                                                        storedMask: storedMask) {
+            case let .failure(error):
+                return await finishFailed(item, error, report: report, attempts: 1)
+            case let .success(edit):
+                let rawRef = Self.imageRef(for: result.imageData, contentType: result.contentType)
+                additionalImages[rawRef] = result.imageData
+                delivered.imageData = edit.png
+                delivered.contentType = "public.png"
+                delivered.pixelSize = edit.pixelSize
+                provenance.maskSent = maskRef
+                provenance.rawOutput = rawRef
+                provenance.featherPixels = edit.featherPixels
+            }
+        }
         entries.removeAll { $0.id == item.id }
         changed()
-        await deliver(GenerationDelivery(item: item, outcome: .success(result: result, provenance: provenance),
-                                         costRecordID: costID))
+        await deliver(GenerationDelivery(item: item, outcome: .success(result: delivered, provenance: provenance),
+                                         costRecordID: costID, additionalImages: additionalImages))
+    }
+
+    /// The content-addressed ref `BookStore.storeImage` gives these bytes (SHA-256, lowercase hex).
+    nonisolated static func imageRef(for data: Data, contentType: String) -> ImageRef {
+        ImageRef(sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), contentType: contentType)
     }
 
     private func finishFailed(_ item: QueueItem, _ error: ProviderError, report: AssemblyReport?, attempts: Int) async {

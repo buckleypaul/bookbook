@@ -18,6 +18,8 @@ struct VersionStrip: View {
     let onChoose: (Version) -> Void
     let onToggleStar: (Version) -> Void
     let onExport: (Version) -> Void
+    let onEditRegion: (Version) -> Void
+    let regionEditReason: (Version) -> String?
     let onDelete: (Version) -> Void
 
     var body: some View {
@@ -61,6 +63,8 @@ struct VersionStrip: View {
         .contextMenu {
             Button(version.starred ? "Remove Star" : "Star") { onToggleStar(version) }
             Button("Export Image…") { onExport(version) }
+            Button("Edit Region…") { onEditRegion(version) }
+                .disabled(regionEditReason(version) != nil)
             Divider()
             Button("Delete Version…", role: .destructive) { onDelete(version) }
         }

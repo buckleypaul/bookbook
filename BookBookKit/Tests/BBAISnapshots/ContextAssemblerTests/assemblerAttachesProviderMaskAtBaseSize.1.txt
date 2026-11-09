@@ -1,0 +1,14 @@
+Illustration for a children's picture book.
+
+Style: Soft watercolor, warm light.
+
+Avoid: no text, letters or words in the image
+
+Composition: landscape, about 5:4.
+
+Region edit: the mask sent with the current illustration marks the area to change as transparent. Change only that area, blend it smoothly into its surroundings, and keep everything outside it exactly as it is.
+
+make the scarf yellow
+
+Reference images:
+Image 1: the current illustration to edit. Apply the request to it and keep everything else the same.

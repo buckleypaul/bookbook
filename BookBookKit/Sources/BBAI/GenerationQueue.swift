@@ -495,11 +495,18 @@ public actor GenerationQueue {
             await finishCancelled(item)
             return nil
         }
-        do throws(AssemblyError) {
-            let (request, report) = try ContextAssembler.assemble(
-                prepared: prepared, intent: item.intent, content: content, model: model, imageData: imageData)
+        // Off the actor: a region edit decodes and re-encodes its mask here (A §7.6).
+        let intent = item.intent
+        let assembled = await Task.detached(priority: .userInitiated) { [imageData] in
+            Result { () throws(AssemblyError) in
+                try ContextAssembler.assemble(prepared: prepared, intent: intent, content: content, model: model,
+                                              imageData: imageData)
+            }
+        }.value
+        switch assembled {
+        case let .success((request, report)):
             return (provider, model, request, report, item.intent.regionMask.flatMap { imageData[$0] })
-        } catch {
+        case let .failure(error):
             await finishFailed(item, error.providerError, report: nil, attempts: 0)
             return nil
         }
@@ -630,12 +637,17 @@ public actor GenerationQueue {
             if let data = await host.imageData(for: image.ref, in: item.bookID) { imageData[image.ref] = data }
         }
         if isCancelled(item.id) { return await finishCancelled(item) }
+        // Off the actor: every image may be decoded and downscaled.
+        let instructions = consistencyInstructions
+        let assembling = await Task.detached(priority: .userInitiated) { [imageData] in
+            Result { () throws(AssemblyError) in
+                try ConsistencyAssembler.assemble(plan, model: model, imageData: imageData, instructions: instructions)
+            }
+        }.value
         let assembled: AssembledConsistency
-        do throws(AssemblyError) {
-            assembled = try ConsistencyAssembler.assemble(plan, model: model, imageData: imageData,
-                                                          instructions: consistencyInstructions)
-        } catch {
-            return await finishFailed(item, error.providerError, report: nil, attempts: 0)
+        switch assembling {
+        case let .success(value): assembled = value
+        case let .failure(error): return await finishFailed(item, error.providerError, report: nil, attempts: 0)
         }
         let request = assembled.request
         let result = await perform(item, model: model.id, report: nil) { _ async throws(ProviderError) in

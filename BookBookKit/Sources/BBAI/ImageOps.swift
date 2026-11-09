@@ -325,7 +325,10 @@ public enum ImageOps {
     /// Separable box blur (window `2r + 1`, `r = floor(featherPixels / 2)`, edge-replicated) in
     /// integer arithmetic. A pixel is non-zero only if an edit pixel lies within `r` along both
     /// axes (so within `r * sqrt 2 <= featherPixels`), and it is exactly 255 deep inside the mask.
-    private static func feather(_ src: [UInt8], width w: Int, height h: Int, featherPixels: Double) -> [UInt8] {
+    ///
+    /// Each pass keeps a running window sum (add the entering tap, drop the leaving one), so the
+    /// cost is per pixel, not per pixel per tap; the integer sums are the same as summing each window.
+    static func feather(_ src: [UInt8], width w: Int, height h: Int, featherPixels: Double) -> [UInt8] {
         let r = Int((max(0, featherPixels) / 2).rounded(.down))
         guard r > 0, w > 0, h > 0 else { return src }
         let n = 2 * r + 1
@@ -334,18 +337,20 @@ public enum ImageOps {
         // Horizontal: sums (unnormalised, up to 255 * n).
         for y in 0..<h {
             let row = y * w
+            var sum: Int32 = 0
+            for k in -r...r { sum += Int32(src[row + min(max(k, 0), w - 1)]) }
             for x in 0..<w {
-                var sum: Int32 = 0
-                for k in -r...r { sum += Int32(src[row + min(max(x + k, 0), w - 1)]) }
                 tmp[row + x] = sum
+                sum += Int32(src[row + min(x + r + 1, w - 1)]) - Int32(src[row + max(x - r, 0)])
             }
         }
         let div = Int32(n * n)
         for x in 0..<w {
+            var sum: Int32 = 0
+            for k in -r...r { sum += tmp[min(max(k, 0), h - 1) * w + x] }
             for y in 0..<h {
-                var sum: Int32 = 0
-                for k in -r...r { sum += tmp[min(max(y + k, 0), h - 1) * w + x] }
                 out[y * w + x] = UInt8((sum + div / 2) / div)
+                sum += tmp[min(y + r + 1, h - 1) * w + x] - tmp[max(y - r, 0) * w + x]
             }
         }
         return out

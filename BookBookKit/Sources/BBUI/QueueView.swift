@@ -103,7 +103,8 @@ struct QueueRowView: View {
         switch entry.state {
         case .running, .retrying:
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(QueueRowModel.stateText(entry.state, now: context.date, typical: typical, headline: nil))
+                Text(QueueRowModel.stateText(entry.state, now: context.date, typical: typical, headline: nil,
+                                                  isConsistencyCheck: entry.item.kind != .image))
                     .font(.caption).monospacedDigit()
             }
         case .waiting:

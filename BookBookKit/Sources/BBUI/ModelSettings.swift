@@ -47,6 +47,23 @@ struct ModelSettings: View {
                 Text(ModelSettings.qualityExplanation).font(.caption).foregroundStyle(.secondary)
             }
             Section {
+                Picker("Templates", selection: $prefs.defaultTemplateModelID) {
+                    ForEach(textChoices(.text, selected: prefs.defaultTemplateModelID), id: \.id) {
+                        Text($0.displayName).tag($0.id)
+                    }
+                }
+                Picker("Consistency check", selection: $prefs.defaultConsistencyModelID) {
+                    ForEach(textChoices(.vision, selected: prefs.defaultConsistencyModelID), id: \.id) {
+                        Text($0.displayName).tag($0.id)
+                    }
+                }
+                Toggle("Check each picture for consistency", isOn: $prefs.consistencyCheckEnabled)
+            } header: {
+                Text("AI helpers")
+            } footer: {
+                Text(ModelSettings.consistencyNote).font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
                 ForEach(prefs.customModels) { spec in
                     HStack {
                         Text(spec.id).font(.callout.monospaced())
@@ -84,6 +101,15 @@ struct ModelSettings: View {
     static let qualityExplanation = "Draft is fast and the cheapest, good for trying ideas. Standard suits most pages. "
         + "High takes longer and costs the most, for final art. For OpenAI these map to the low, medium and high "
         + "quality settings."
+
+    static let consistencyNote = "After each picture is made, a small vision model compares it with your characters, "
+        + "props and places and warns about differences. It adds a small cost to each picture, a fraction of a cent "
+        + "at the default model. You can also check any picture by hand."
+
+    /// Non-retired catalog models of `kind` (plus the current choice, so the picker never shows blank).
+    private func textChoices(_ kind: TextModelKind, selected: String) -> [CatalogTextModel] {
+        app.catalog.textModels(kind: kind).filter { $0.status != .retired || $0.id == selected }
+    }
 
     @ViewBuilder
     private func badge(for model: CatalogModel) -> some View {

@@ -172,6 +172,10 @@ enum FlagText {
             out.append(Entry(symbol: "rectangle.dashed", color: .orange, title: "Layout changed",
                              help: "This box's shape changed since the image was placed."))
         }
+        if flags.contains(.consistencyWarning) {
+            out.append(Entry(symbol: "person.2.slash.fill", color: .red, title: "Consistency warning",
+                             help: "A consistency check found this picture differs from the references. Open the session to fix or dismiss it."))
+        }
         return out
     }
 

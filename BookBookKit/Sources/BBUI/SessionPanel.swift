@@ -332,8 +332,10 @@ struct SessionPanel: View {
                          onExport: { export($0, in: session) },
                          onEditRegion: { startRegionEdit($0) },
                          regionEditReason: { regionEditReason(for: $0) },
-                         onDelete: { pendingDelete = $0.id })
+                         onDelete: { pendingDelete = $0.id },
+                         isChecking: { app.isConsistencyCheckPending(versionID: $0.id) })
             if let base, let version = session.version(base) {
+                consistencySection(version, session: session)
                 let reason = regionEditReason(for: version)
                 HStack {
                     Button("Export Image…") { export(version, in: session) }
@@ -349,6 +351,72 @@ struct SessionPanel: View {
                 }
             }
         }
+    }
+
+    // MARK: Consistency (PD §8.9)
+
+    @ViewBuilder
+    private func consistencySection(_ version: Version, session: Session) -> some View {
+        let checking = app.isConsistencyCheckPending(versionID: version.id)
+        let reason = ConsistencyPresentation.checkUnavailableReason(
+            canCheck: app.canCheckConsistency, isEditable: document.isEditable, isOnline: app.isOnline,
+            hasKey: app.hasOpenAIKey, isPending: checking)
+        VStack(alignment: .leading, spacing: 6) {
+            if checking {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Checking consistency…")
+                }
+                .font(.caption).foregroundStyle(.secondary)
+            } else if let report = version.consistency, report.warns, !report.dismissed {
+                Label("Consistency warning", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption.bold()).foregroundStyle(.orange)
+                ForEach(Array(ConsistencyPresentation.lines(report).enumerated()), id: \.offset) { _, line in
+                    Text(line).font(.caption).fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            } else if let report = version.consistency {
+                Label(ConsistencyPresentation.resultText(report), systemImage: "checkmark.seal")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if !checking, let entry = app.consistencyCheckEntry(versionID: version.id),
+               case .failed = entry.state, let advice = app.advice(for: entry) {
+                FailureAdviceView(advice: advice)
+            }
+            HStack {
+                if let report = version.consistency, report.showsWarning {
+                    Button("Fix") { startConsistencyFix(version, sessionID: session.id) }
+                        .disabled(!document.isEditable || !app.hasOpenAIKey || !app.isOnline)
+                        .help("Refine this picture to match the references.")
+                    Button("Dismiss") {
+                        _ = app.setConsistencyWarningDismissed(true, sessionID: session.id, versionID: version.id,
+                                                               in: document)
+                    }
+                    .disabled(!document.isEditable)
+                } else if let report = version.consistency, report.warns, report.dismissed {
+                    Button("Show Warning Again") {
+                        _ = app.setConsistencyWarningDismissed(false, sessionID: session.id, versionID: version.id,
+                                                               in: document)
+                    }
+                    .disabled(!document.isEditable)
+                }
+                Button(version.consistency == nil ? "Check Consistency" : "Check Again") {
+                    confirmCostThenPerform(.checkConsistency(session: session.id, version: version.id))
+                }
+                .disabled(reason != nil)
+                .help(reason ?? "Compare this picture with the references of the assets in it.")
+            }
+            .controlSize(.small)
+            if let reason, !checking {
+                Text(reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func startConsistencyFix(_ version: Version, sessionID: SessionID) {
+        guard let intent = app.consistencyFixIntent(bookID: document.id, sessionID: sessionID, versionID: version.id)
+        else { return }
+        checkThenPerform(.fixConsistency(intent))
     }
 
     /// Why "Edit Region…" is unavailable for `version`, or nil when it can run.
@@ -618,7 +686,9 @@ struct SessionPanel: View {
 
     /// The real-person notice first (once per provider and book, A §11), then the cost decision.
     private func checkThenPerform(_ action: PendingGeneration) {
-        if let provider = app.realPersonNoticeNeeded(intent: action.intent, target: target, in: document) {
+        if case .checkConsistency = action {
+            confirmCostThenPerform(action)
+        } else if let provider = app.realPersonNoticeNeeded(intent: action.intent, target: target, in: document) {
             notice = PendingNotice(provider: provider, action: action)
         } else {
             confirmCostThenPerform(action)
@@ -639,6 +709,10 @@ struct SessionPanel: View {
             current = app.estimate(prompt: request.prompt, quality: request.quality,
                                    includeStoryText: request.includeStoryText, refines: request.version.id,
                                    attachedReferences: request.attached, target: target, in: document)
+        case let .fixConsistency(intent):
+            current = app.estimate(for: intent, target: target, in: document)
+        case let .checkConsistency(sessionID, versionID):
+            current = app.consistencyCheckEstimate(bookID: document.id, sessionID: sessionID, versionID: versionID)
         }
         Task {
             let decision = await app.costDecision(for: current, in: document)
@@ -669,6 +743,10 @@ struct SessionPanel: View {
             }
         case let .regenerate(version):
             app.regenerate(version, target: target, in: document)
+        case let .fixConsistency(intent):
+            app.enqueueGeneration(intent, target: target, in: document)
+        case let .checkConsistency(sessionID, versionID):
+            app.checkConsistency(bookID: document.id, sessionID: sessionID, versionID: versionID)
         case let .regionEdit(request):
             let target = target
             let document = document
@@ -707,12 +785,20 @@ struct SessionPanel: View {
         case generate(GenerationIntent)
         case regenerate(Version)
         case regionEdit(RegionEditRequest)
+        /// Phase 12: the one-click consistency fix (a refinement with its correction message).
+        case fixConsistency(GenerationIntent)
+        /// Phase 12: an on-demand check of one version.
+        case checkConsistency(session: SessionID, version: VersionID)
 
         var intent: GenerationIntent {
             switch self {
             case let .generate(intent): intent
             case let .regionEdit(request):
                 request.intent
+            case let .fixConsistency(intent):
+                intent
+            case .checkConsistency:
+                GenerationIntent(messageText: "", provider: .openai, model: "", quality: .standard)
             case let .regenerate(version):
                 version.provenance?.intent ?? GenerationIntent(messageText: "", provider: .openai, model: "",
                                                                quality: .standard)
@@ -741,10 +827,11 @@ private struct VersionDetailsGrid: View {
     let bookID: BookID
     let assets: [AssetID: Asset]
     @State private var cost: CostRecord?
+    @State private var checkCost: CostRecord?
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
-            ForEach(VersionDetailsContent.rows(for: version, in: session, cost: cost, assets: assets), id: \.self) { row in
+            ForEach(VersionDetailsContent.rows(for: version, in: session, cost: cost, assets: assets, checkCost: checkCost), id: \.self) { row in
                 GridRow {
                     Text(row.label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
                     Text(row.value).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
@@ -755,6 +842,9 @@ private struct VersionDetailsGrid: View {
         .padding(.top, 6)
         .task(id: version.provenance?.cost) {
             if let id = version.provenance?.cost { cost = await app.costRecord(id, in: bookID) } else { cost = nil }
+        }
+        .task(id: version.consistency?.cost) {
+            if let id = version.consistency?.cost { checkCost = await app.costRecord(id, in: bookID) } else { checkCost = nil }
         }
     }
 }

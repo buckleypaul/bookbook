@@ -20,8 +20,8 @@ public enum BookImporter {
         name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    private static func clashes(source: BookContent, target: BookContent, selection: BookImportSelection,
-                                renames: [BookImportItem: String]) -> [BookImportClash] {
+    public static func clashes(source: BookContent, target: BookContent, selection: BookImportSelection,
+                               renames: [BookImportItem: String]) -> [BookImportClash] {
         func effective(_ item: BookImportItem, _ name: String) -> String { renames[item] ?? name }
 
         let assets: [(BookImportItem, String)] = selection.assets.compactMap { id in
@@ -40,6 +40,26 @@ public enum BookImporter {
         }
         return find(assets, existing: Set(target.assets.values.map { key($0.name) }))
             + find(templates, existing: Set(target.templates.values.map { key($0.name) }))
+    }
+
+    /// Source IDs of selected templates whose `pageRole` the import clears because the target, or a
+    /// template imported before it (same order as `build`), already has that role. The sheet shows
+    /// these as "kept as a regular template".
+    public static func roleDemotions(source: BookContent, target: BookContent,
+                                     selection: BookImportSelection) -> Set<TemplateID> {
+        var taken = Set(target.templates.values.compactMap(\.pageRole))
+        var demoted: Set<TemplateID> = []
+        for old in orderedTemplates(source: source, selection: selection) {
+            guard let role = old.pageRole else { continue }
+            if taken.contains(role) { demoted.insert(old.id) } else { taken.insert(role) }
+        }
+        return demoted
+    }
+
+    private static func orderedTemplates(source: BookContent, selection: BookImportSelection) -> [Template] {
+        selection.templates.compactMap { source.templates[$0] }.sorted {
+            (key($0.name), $0.id.rawValue.uuidString) < (key($1.name), $1.id.rawValue.uuidString)
+        }
     }
 
     // MARK: Build
@@ -119,11 +139,10 @@ public enum BookImporter {
             result.assets.append(asset)
         }
 
-        let sortedTemplates = selection.templates.compactMap { source.templates[$0] }.sorted {
-            (key($0.name), $0.id.rawValue.uuidString) < (key($1.name), $1.id.rawValue.uuidString)
-        }
-        for old in sortedTemplates {
+        let demoted = roleDemotions(source: source, target: target, selection: selection)
+        for old in orderedTemplates(source: source, selection: selection) {
             var template = old
+            if demoted.contains(old.id) { template.pageRole = nil }
             template.id = TemplateID()
             template.name = (renames[.template(old.id)] ?? old.name).trimmingCharacters(in: .whitespacesAndNewlines)
             for i in template.boxes.indices { template.boxes[i].id = BoxID() }

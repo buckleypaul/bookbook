@@ -61,14 +61,14 @@ final class ImportFromBookModel {
     /// Clashes after the current renames, from `BookImporter.build`'s own check.
     var remainingClashes: [BookImportClash] {
         guard let source else { return [] }
-        do {
-            _ = try BookImporter.build(source: source, target: document.content, selection: selection, renames: renames)
-            return []
-        } catch let BookImportError.unresolvedClashes(list) {
-            return list
-        } catch {
-            return []
-        }
+        return BookImporter.clashes(source: source, target: document.content, selection: selection, renames: renames)
+    }
+
+    /// Selected templates whose front/back-matter role is dropped because the book already has it.
+    var demotedTemplates: [Template] {
+        guard let source else { return [] }
+        let ids = BookImporter.roleDemotions(source: source, target: document.content, selection: selection)
+        return sourceTemplates.filter { ids.contains($0.id) }
     }
 
     var hasNameClashes: Bool { !remainingClashes.isEmpty }
@@ -146,6 +146,13 @@ final class ImportFromBookModel {
             let imported = try BookImporter.build(source: source, target: document.content,
                                                   selection: selection, renames: trimmed)
             _ = try await BookImporter.copyImages(imported.images, from: sourceURL, into: document.store)
+            if selection.styleGuide {
+                // The style guide's typography names fonts; bring their files along (not undoable,
+                // like any font import). A font that can't be read doesn't stop the import.
+                for url in BookStore(packageURL: sourceURL).fontFileURLs() {
+                    _ = try? await document.importFont(from: url)
+                }
+            }
             guard document.perform(.importFromBook(imported)) else {
                 error = "Nothing was imported."
                 return
@@ -257,6 +264,10 @@ struct ImportFromBookSheet: View {
                     Toggle("Style guide", isOn: Binding(
                         get: { model.selection.styleGuide },
                         set: { model.selection.styleGuide = $0 }))
+                    ForEach(model.demotedTemplates) { template in
+                        Text("\(template.name) will be kept as a regular template: this book already has a page with that role.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if model.selection.styleGuide {
                         Text("Replaces this book's style guide (page size is kept). You can undo it.")
                             .font(.caption).foregroundStyle(.secondary)

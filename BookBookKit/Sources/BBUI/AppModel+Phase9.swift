@@ -58,7 +58,8 @@ extension AppModel {
 
     /// The book's ledger totals (Book Settings → Cost, PD §8.12). Read off the main actor.
     public func ledgerSummary(for bookID: BookID) async -> LedgerSummary {
-        LedgerSummary(records: await openBooks.costRecords(for: bookID))
+        let read = await openBooks.costLedgerRead(for: bookID)
+        return LedgerSummary(records: read.records, skippedLines: read.skipped)
     }
 
     /// The ledger line for `Provenance.cost` (Version details).

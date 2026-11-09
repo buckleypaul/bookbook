@@ -5,12 +5,14 @@ import Foundation
 public enum CleanUp {
     /// Unstarred versions not referenced by any page placement (cover included), reference slot
     /// `chosen` or sheet item `chosen`, and not an ancestor (via `parent`) of a kept or starred version. Versions
-    /// that queued or running requests refer to are not known here, so they are not protected.
+    /// that queued or running requests refer to are passed as `protecting`: they are kept like
+    /// `chosen` versions, lineage included.
     /// `fileNames` are the image files used only by those versions
     /// (including their provenance images), computed as `ImageSweep.referencedFileNames` before
     /// minus after. `fileSize` returns a file's size in bytes by name (nil = missing, counts 0).
-    public static func plan(for content: BookContent, fileSize: (String) -> Int64?) -> CleanUpPlan {
-        var keep: Set<VersionID> = []
+    public static func plan(for content: BookContent, protecting: Set<VersionID> = [],
+                            fileSize: (String) -> Int64?) -> CleanUpPlan {
+        var keep: Set<VersionID> = protecting
         for page in content.pages.values {
             for slot in page.images.values {
                 if let p = slot.placement { keep.insert(p.versionID) }

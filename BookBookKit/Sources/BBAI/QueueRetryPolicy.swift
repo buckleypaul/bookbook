@@ -63,11 +63,12 @@ enum QueueLedgerRule: Hashable, Sendable {
 
     static func forFailure(_ error: ProviderError) -> QueueLedgerRule {
         switch error {
-        case .missingKey:
+        case .missingKey, .offline:
+            // `.offline` means nothing was sent (no usable network), so nothing can be billed.
             return .none
         case .cancelled:
             return .estimate(.cancelled)
-        case .timeout, .offline:
+        case .timeout:
             return .estimate(.failed)
         case .invalidKey, .verificationRequired, .regionUnsupported, .billing, .rateLimited, .refused,
              .invalidRequest, .modelUnavailable:

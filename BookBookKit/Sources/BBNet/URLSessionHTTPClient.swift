@@ -51,7 +51,7 @@ public struct URLSessionHTTPClient: HTTPClient {
 
     /// URLError codes that mean "no usable network".
     static let offlineCodes: Set<URLError.Code> = [
-        .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed, .internationalRoamingOff,
+        .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff,
         .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
     ]
 

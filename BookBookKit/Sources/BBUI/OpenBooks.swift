@@ -328,9 +328,14 @@ public final class OpenBooks {
 
     /// Every ledger line of a book, read off the main actor. Empty if the book or file is gone.
     public func costRecords(for id: BookID) async -> [CostRecord] {
-        guard let url = await packageURL(for: id) else { return [] }
+        await costLedgerRead(for: id).records
+    }
+
+    /// The readable ledger lines plus how many couldn't be read (a corrupt line is skipped, not fatal).
+    public func costLedgerRead(for id: BookID) async -> (records: [CostRecord], skipped: Int) {
+        guard let url = await packageURL(for: id) else { return ([], 0) }
         let ledger = CostLedger(packageURL: url)
-        return await Task.detached { (try? ledger.records(CostRecord.self)) ?? [] }.value
+        return await Task.detached { (try? ledger.lenientRecords(CostRecord.self)) ?? ([], 0) }.value
     }
 
     /// Stores the image of a successful delivery; nil for failures or if the write failed (the

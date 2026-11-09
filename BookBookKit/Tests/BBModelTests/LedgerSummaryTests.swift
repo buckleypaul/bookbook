@@ -35,10 +35,10 @@ import Testing
         #expect(!s.includesEstimates)
     }
 
-    @Test func zeroDollarEstimateDoesNotCount() {
-        // A failed request recorded at $0 is not an estimate in the total.
+    @Test func zeroDollarEstimateCounts() {
+        // An unknown price is ledgered as a $0 estimate; it still makes the total an estimate (16b #34e).
         let s = LedgerSummary(records: [record(1, estimated: 0), record(2, estimated: 1, actual: 1, basis: .actual)])
-        #expect(!s.includesEstimates)
+        #expect(s.includesEstimates)
     }
 
     @Test func recentIsNewestFirstAndLimited() {

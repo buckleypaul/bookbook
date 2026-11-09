@@ -21,7 +21,7 @@ private actor FakeLayoutProvider: LayoutProvider {
 
 /// The "Generate layout with AI" flow (A §7.7). Uses a fake backend for the prompt, estimate and
 /// normalizer, so these tests don't depend on the BBAI lane's implementations; the last test
-/// exercises the real ones and runs only when `BOOKBOOK_PHASE12_BBAI=1` (after the lanes merge).
+/// exercises the real ones.
 @MainActor
 struct TemplateGenerationFlowTests {
     private static let draft = TemplateDraft(name: "Top picture", boxes: [
@@ -183,7 +183,7 @@ struct TemplateGenerationFlowTests {
         #expect(await provider.requests.count == 1)
     }
 
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["BOOKBOOK_PHASE12_BBAI"] == "1"))
+    @Test
     func realBackend_buildsRequestAndTemplate() async throws {
         let provider = FakeLayoutProvider(.success(LayoutResult(draft: Self.draft)))
         let s = try await setup(provider)

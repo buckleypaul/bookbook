@@ -244,7 +244,9 @@ public enum PrintResolution {
     public static let softShortSidePixels: Int = 600
 
     public static func isSoft(upscaleFactor: Double, cropShortSidePixels: Int) -> Bool {
-        upscaleFactor > softUpscaleFactor || cropShortSidePixels < softShortSidePixels
+        // The short-side rule only matters when the image is enlarged: a small crop that is
+        // downsampled into a small box is fine.
+        upscaleFactor > softUpscaleFactor || (upscaleFactor > 1 && cropShortSidePixels < softShortSidePixels)
     }
 }
 

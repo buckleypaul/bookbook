@@ -1,6 +1,7 @@
 import BBExport
 import BBLayout
 import BBModel
+import AppKit
 import Foundation
 import Observation
 
@@ -10,6 +11,8 @@ import Observation
 public protocol ExportServices: AnyObject {
     /// Plans and assesses images, then runs preflight on the current book.
     func runPreflight() async -> [PreflightIssue]
+    /// Preflight limited to the pages `options` will export. Defaults to the whole book.
+    func runPreflight(for options: ExportOptions) async -> [PreflightIssue]
     func export(_ options: ExportOptions, to url: URL,
                 progress: @MainActor (ExportProgress) -> Void) async throws -> ExportResult
     func coverPDF() async throws -> Data
@@ -17,6 +20,28 @@ public protocol ExportServices: AnyObject {
     func print(_ options: ExportOptions) async throws
     /// The encoded, upscaled image for a soft-image issue (nil if it has no box).
     func upscaledPreviewURL(for issue: PreflightIssue) async throws -> URL?
+}
+
+extension ExportServices {
+    public func runPreflight(for options: ExportOptions) async -> [PreflightIssue] { await runPreflight() }
+}
+
+/// Save-panel setup shared by every export-style panel: its own remembered folder (not the
+/// font-import panel's), starting in Documents the first time.
+@MainActor
+enum ExportPanel {
+    private static let key = "ExportPanel.lastDirectory"
+
+    static func configure(_ panel: NSSavePanel) {
+        panel.identifier = NSUserInterfaceItemIdentifier("export")
+        panel.canCreateDirectories = true
+        let remembered = UserDefaults.standard.string(forKey: key).map { URL(filePath: $0, directoryHint: .isDirectory) }
+        panel.directoryURL = remembered ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    }
+
+    static func remember(_ url: URL) {
+        UserDefaults.standard.set(url.deletingLastPathComponent().path(percentEncoded: false), forKey: key)
+    }
 }
 
 /// State and rules behind the export sheet. No views; every outside effect goes through
@@ -36,13 +61,13 @@ public final class ExportSheetModel {
     }
 
     // Options
-    public var outputType: OutputType = .standard
-    public var sheetSize: SheetSize = .letter
-    public var includeCover = true
-    public var limitsRange = false
-    public var rangeFrom = 1
-    public var rangeTo = 1
-    public var spreads: SpreadOutput = .singlePages
+    public var outputType: OutputType = .standard { didSet { result = nil } }
+    public var sheetSize: SheetSize = .letter { didSet { result = nil } }
+    public var includeCover = true { didSet { result = nil; schedulePreflight() } }
+    public var limitsRange = false { didSet { result = nil; schedulePreflight() } }
+    public var rangeFrom = 1 { didSet { result = nil; schedulePreflight() } }
+    public var rangeTo = 1 { didSet { result = nil; schedulePreflight() } }
+    public var spreads: SpreadOutput = .singlePages { didSet { result = nil } }
 
     // Preflight
     public private(set) var issues: [PreflightIssue] = []
@@ -61,6 +86,10 @@ public final class ExportSheetModel {
     /// Asks for the destination (the view runs an NSSavePanel). Nil = cancelled.
     @ObservationIgnored public var chooseDestination: @MainActor (_ suggestedName: String) -> URL? = { _ in nil }
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private var preflightTask: Task<Void, Never>?
+    @ObservationIgnored private var preflightGeneration = 0
+    /// Wait after a range or cover change before re-checking.
+    @ObservationIgnored var preflightDelay: Duration = .milliseconds(300)
 
     public init(content: @escaping @MainActor () -> BookContent,
                 perform: @escaping @MainActor (BookCommand) -> Bool,
@@ -137,6 +166,21 @@ public final class ExportSheetModel {
 
     public var canExport: Bool {
         !isExporting && !needsBleed && isRangeValid && selectedPageCount > 0
+            && hasCheckedPreflight && !isCheckingPreflight
+    }
+
+    /// Booklet only: landscape pages stack two to a sheet, so the fold (and the binding) is at the top.
+    public var bookletBindsAtTop: Bool {
+        let size = content().style.pageSetup.trimSize
+        return size.width > size.height
+    }
+
+    /// "Cover" or "Page N" for a preflight row.
+    public func pageLabel(for issue: PreflightIssue) -> String {
+        let c = content()
+        if issue.page == c.book.coverPageID { return "Cover" }
+        guard let slot = PagesOverviewModel.layout(c).position(of: issue.page) else { return "Page" }
+        return slot.span > 1 ? "Pages \(slot.position)–\(slot.position + slot.span - 1)" : "Page \(slot.position)"
     }
 
     public var offersSeparateCover: Bool { outputType == .booklet && !includeCover }
@@ -156,11 +200,31 @@ public final class ExportSheetModel {
     public var printTitle: String { issues.isEmpty ? "Print…" : "Print Anyway…" }
 
     public func runPreflight() async {
+        preflightGeneration += 1
+        let mine = preflightGeneration
         isCheckingPreflight = true
-        issues = await services.runPreflight()
+        let found = await services.runPreflight(for: options)
+        guard mine == preflightGeneration else { return }   // a newer check owns the state
+        issues = found
         isCheckingPreflight = false
         hasCheckedPreflight = true
     }
+
+    /// Re-checks after a short wait, so dragging a stepper doesn't start a check per step. The
+    /// sheet counts as checking meanwhile, which keeps Export off until the list is current.
+    func schedulePreflight() {
+        preflightTask?.cancel()
+        isCheckingPreflight = true
+        let delay = preflightDelay
+        preflightTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            await runPreflight()
+        }
+    }
+
+    /// Waits for a scheduled re-check (tests).
+    func waitForPreflight() async { await preflightTask?.value }
 
     // MARK: Actions
 
@@ -170,7 +234,9 @@ public final class ExportSheetModel {
         var setup = content().style.pageSetup
         guard !setup.bleedEnabled else { return false }
         setup.bleedEnabled = true
-        return performCommand(.setPageSetup(setup))
+        let done = performCommand(.setPageSetup(setup))
+        if done { schedulePreflight() }   // soft-image sizes change with bleed
+        return done
     }
 
     public func suggestedFileName(base: String) -> String {

@@ -156,10 +156,11 @@ enum VersionExport {
     /// Returns an error text, or nil if the copy happened or the user cancelled.
     static func run(ref: ImageRef, from source: URL, suggestedName: String) -> String? {
         let panel = NSSavePanel()
+        ExportPanel.configure(panel)
         panel.nameFieldStringValue = suggestedName
-        panel.canCreateDirectories = true
         if let type = UTType(ref.contentType) { panel.allowedContentTypes = [type] }
         guard panel.runModal() == .OK, let destination = panel.url else { return nil }
+        ExportPanel.remember(destination)
         do {
             let fm = FileManager.default
             if fm.fileExists(atPath: destination.path(percentEncoded: false)) {

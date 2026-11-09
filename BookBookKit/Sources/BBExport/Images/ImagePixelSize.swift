@@ -25,15 +25,18 @@ func renderingColorSpace(for image: CGImage) -> CGColorSpace {
 }
 
 enum ImageFiles {
+    /// Decode now, not lazily on first draw (which would land on the main actor).
+    static var immediate: CFDictionary { [kCGImageSourceShouldCacheImmediately: true] as CFDictionary }
+
     static func decode(url: URL) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+        return CGImageSourceCreateImageAtIndex(source, 0, immediate)
     }
 
     /// Decodes and applies the EXIF orientation, if any.
     static func decodeOriented(url: URL) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+              let image = CGImageSourceCreateImageAtIndex(source, 0, immediate) else { return nil }
         let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
         let orientation = (props?[kCGImagePropertyOrientation] as? NSNumber)?.int32Value ?? 1
         guard orientation != 1 else { return image }

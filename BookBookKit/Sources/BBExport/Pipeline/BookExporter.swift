@@ -275,7 +275,11 @@ public final class BookExporter {
     /// Crop marks in media space (y down), black hairlines.
     private func drawCropMarks(trim: CGRect, bleed: CGFloat, ctx: CGContext) {
         ctx.saveGState()
-        ctx.setStrokeColor(CGColor(gray: 0, alpha: 1))
+        // "Registration" colour: 100 percent of every CMYK ink. A true Separation "All" colour
+        // can't be made through CGColor, so this is the closest a CGContext offers.
+        let cmyk = CGColorSpace(name: CGColorSpace.genericCMYK)
+        let registration = cmyk.flatMap { CGColor(colorSpace: $0, components: [1, 1, 1, 1, 1]) }
+        ctx.setStrokeColor(registration ?? CGColor(gray: 0, alpha: 1))
         ctx.setLineWidth(CropMarks.lineWidth)
         for segment in CropMarks.segments(trim: trim, bleed: bleed) {
             ctx.move(to: segment.start)

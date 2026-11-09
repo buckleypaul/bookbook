@@ -76,7 +76,15 @@ struct Phase16bTextEditingTests {
         let h = try Harness()
         h.editor.textView.setSelectedRange(boom)
         h.step { h.editor.apply(.setColor(red)) }
-        try await Task.sleep(for: .milliseconds(900))
+        #expect(h.editor.isColorBurstOpen)
+        // The idle timer closes the burst (wait for it, however busy the machine is).
+        // Counted polls, not a deadline: a main thread blocked by another test can't use them up.
+        var polls = 0
+        while h.editor.isColorBurstOpen, polls < 400 {
+            polls += 1
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(!h.editor.isColorBurstOpen)
         h.step { h.editor.apply(.setColor(blue)) }
         h.editor.finishColorBurst()
         h.undo.undo()

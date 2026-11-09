@@ -313,6 +313,9 @@ extension InlineTextEditor {
         commitFormatted(edited, selection: selection)
     }
 
+    /// True while consecutive colour changes join one undo step.
+    var isColorBurstOpen: Bool { colorBurst != nil }
+
     /// Closes the open colour burst now (any other edit, a new selection, the editor closing).
     func finishColorBurst() {
         guard let burst = colorBurst else { return }

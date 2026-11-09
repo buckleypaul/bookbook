@@ -26,7 +26,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 14 | Export and print | done (hand checks deferred) | `phase-14-export-print` | — | $0.00 | No live checks listed. [Log](progress/phase-14-export-print.md) |
 | 15 | Release pipeline (M4) | deferred | | | | Deferred by you on 2026-11-08: finish the product work first, then do the tap. Phase 16 runs before it. Not picked as "next" until you un-defer it; Phase 17 still needs it. |
 | 16 | Import, book settings, onboarding, sample | done (hand checks deferred) | `phase-16-import-onboarding` | — | $0.00 | No live checks listed. Sample book and preset samples are placeholders until you make them. [Log](progress/phase-16-import-onboarding.md) |
-| 16b | Bug fixes and edge cases | in progress | `phase-16b-bug-fixes` | — | | Added 2026-11-09: triage and fix the Phase 17 and Later follow-ups. No live checks. |
+| 16b | Bug fixes and edge cases | done (hand checks deferred) | `phase-16b-bug-fixes` | — | $0.00 | Merged 2026-11-09. 181 follow-ups triaged; 92 fixed. No live checks. [Log](progress/phase-16b-bug-fixes.md) |
 | 17 | Hardening and v1.0 (M5) | not started | | | | |
 
 ## Standing decisions
@@ -88,7 +88,10 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Importing a style guide copies its fonts into the book (#3d; no automated test).
 - Reset Session → Keep Versions, then a prompt, makes a new picture (#48); undoing Choose Version clears the session panel's selection (#47). No automated tests.
 - "Book Settings…" shows in the File menu (#5).
-- Guided Setup closed with the close button doesn't reappear on the next launch (#4a).
+- Guided Setup closed with the close button doesn't reappear on the next launch (#4a). The app pass saw `onboardingCompleted` set, but `-BookBookLibraryRoot` suppresses Guided Setup, so relaunch with the default library.
+- Draft All's cost text says "cover + N pages" (needs a key; the menu item is disabled without one).
+- Open Anyway: the app pass saw the lock prompt and the book open editable, but not the extra confirm alert; check it shows.
+- New Book wizard: choosing 10 × 8 in gave a portrait book in the app pass (possibly a synthetic-input miss); check that it comes out landscape.
 
 ## Open follow-ups
 
@@ -115,7 +118,10 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - App icon and `UTTypeIcons` for `.bookbook` documents are placeholders (Finder shows a generic package icon) (from Phase 1b).
 - The `xcode-27` runner image is "preview", and Xcode 27.2 is an RC there; the `xcode-select` path may change (from Phase 1b).
 - `actions/checkout` v4.2.2 / `actions/cache` v4.2.0 are Node 20 actions; bump them when GitHub retires Node 20 (from Phase 1b).
-- Flaky: `LibraryActionsTests.duplicate_flushesAnOpenSourceFirst` failed in several lane runs ("Operation not permitted" removing `.journal`, or the duplicate not found); being investigated in Session B (from Phase 16b).
+- Flaky: `LibraryActionsTests.duplicate_flushesAnOpenSourceFirst` failed in several lane runs ("Operation not permitted" removing `.journal`, or the duplicate not found); it passed in both Session B full runs, so keep watching it (from Phase 16b).
+- `Library.duplicate` now takes the source's lock, so duplicating a book in a read-only location (or one open read-only here) fails; it worked before (from Phase 16b review).
+- `BookLock.isLive` compares wall-clock times (`started > acquiredAt + 5`); a clock jump back can make a live lock on this Mac look stale and get taken over (from Phase 16b review).
+- A stale `.lock` from an earlier boot whose PID matches this process reads as held by another holder, so closed-book deliveries stay `.bookUnavailable` until the book is opened (from Phase 16b review).
 
 ### v1.x
 - Preflight spelling uses `language: nil`, so macOS auto-detects the language and accepts "teh" (a Malay word); real English typos are still flagged. Pinning the book's language is a product call (from Phase 16b).
@@ -184,29 +190,4 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-### Phase 16b — Bug fixes and edge cases
-
-**Stage:** B
-
-**Session A done (2026-11-09):** lanes L1–L8 all merged into `phase-16b-bug-fixes`. The main thread also switched closed-book deliveries to `acquireLockExclusively()` (#3c), wired the #76a colour undo group through `TextEditingController`/`CanvasView`, and wired the undelivered count into the library-switch warning. `scripts/test.sh all` is green after a test-only fix (`SystemSpellingCheckerTests` trapped in `MainActor.assumeIsolated` inside an `.enabled(if:)` condition). For Session B: the review covers the whole phase diff (`main..phase-16b-bug-fixes`). Watch `LibraryActionsTests.duplicate_flushesAnOpenSourceFirst`, which flaked in some lane runs. "Open Anyway" relies on the per-process lock hold count (a temporary store holds the lock while `BookDocument.open` re-enters it). #47 and #48 have no automated tests. The app pass should re-check the menus, Guided Setup, the overview, the export sheet and the Open Anyway alert.
-
-- 2026-11-09: Session A started. Triage of the Phase 17 and Later follow-ups in progress.
-- Triage: 181 rows in 4 batches. Product calls are under Standing decisions ("Phase 16b product calls"). `architecture.md` updated (§4.4, §5.5, §7.7, §7.9).
-- Lanes (wave 1: L1-L3; wave 2: L4-L8). New tests per lane:
-  - L1 Store (opus): journal race, lock liveness and takeover, sweep protection, library actions on foreign locks. Phase16bStoreTests, Phase16bLockTests, FaultInjectionTests additions.
-  - L2 Queue and app model (opus): queue.json per library root and durable saves, undeliverable pictures redelivered at launch, retry order, quiet drop for gone books. Phase16bQueueTests, Phase16bQueueFileTests, Phase16bAppModelTests, Phase16bAppSupportTests, AppSmokeTests additions.
-  - L3 Book Settings, cost and import (sonnet): ledger and cost summary fixes, retry policy, offline codes, import clash handling, Clean Up protecting queued versions. Phase16bCostImportTests, Phase16bLedgerSummaryTests, Phase16bRetryPolicyTests, Phase16bOfflineCodesTests, Phase16bBookSettingsTests.
-  - L4 BookDocument (sonnet): flags and acknowledgements, split warning, mark-as-OK, font refresh, normalizer fallback box. Phase16bBookDocumentTests, Phase16bStyleFlagTests.
-  - L5 Sessions, assets and AI (sonnet): session panel, cost-alert wording, context resolution, asset editor, Draft All count, queue badge. Phase16bSessionTests, Phase16bContextTests, PromptTemplateKeysTests.
-  - L6 Export (sonnet): export cache and preflight, export sheet, save panel, crop marks, booklet caption. Phase16bExportTests, SystemSpellingCheckerTests, Phase16bExportSheetTests.
-  - L7 Text, fonts and template editor (opus): colour undo burst, pasted attributes, fold bleed, new-box cascade, story import types, reassignment. Phase16bTextEditingTests, Phase16bLayoutEditingTests, Phase16bTextImportTests, Phase16bReassignmentTests.
-  - L8 App shell (sonnet): Guided Setup, File menu, Book menu toggle, Open Anyway UI, style-drop URLs, live-tests.sh zero-match guard. Phase16bAppShellTests, test-bootstrap.sh checks.
-
-| Status | Rows |
-|---|---|
-| Fix now (fixed; includes duplicates #68 and #32a) | 92 |
-| Decision only (#72a, in Standing decisions) | 1 |
-| Dropped | 13 |
-| v1.x (still open) | 55 + 4 new (60 lines incl. the #9 follow-on) |
-| Phase 17 (still open) | 20 + 1 new (the `duplicate_flushesAnOpenSourceFirst` flake) |
-| **Total triage rows** | **181** |
+_No phase running._

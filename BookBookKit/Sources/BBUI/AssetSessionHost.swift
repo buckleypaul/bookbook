@@ -1,9 +1,11 @@
 import BBModel
 import SwiftUI
 
-// Phase 10 contract (main thread). The UI-core lane implements it on top of the generalized
-// SessionPanel (chat, version strip, details, import with the real-person question). The
-// Assets-tab lane embeds it for each reference slot and sheet item.
+/// The session for an asset reference slot or character-sheet item (PD §8.3: asset images are
+/// made in sessions like pages): the generalized `SessionPanel` with chosen-version semantics
+/// (clicking a version makes it the reference, undoable), no story-text toggle and no page
+/// checklist, and the real-person question on import. The Assets tab embeds one per slot and
+/// sheet item.
 struct AssetSessionHost: View {
     let document: BookDocument
     let content: BookContent
@@ -12,6 +14,11 @@ struct AssetSessionHost: View {
     let images: ImageCache
 
     var body: some View {
-        Text("Session").foregroundStyle(.secondary)
+        if owner.assetID != nil {
+            SessionPanel(document: document, content: content, owner: owner, images: images)
+                .id(owner)
+        } else {
+            ContentUnavailableView("Not an Asset Session", systemImage: "photo")
+        }
     }
 }

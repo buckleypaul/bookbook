@@ -451,4 +451,21 @@ func pngData(width: Int, height: Int, alpha: Bool = false) throws -> Data {
         let with = try #require(ConsistencyAssembler.plan(version: version.id, content: content, provider: .openai))
         #expect(with.references.map(\.label).contains("Grandma – primary reference"))
     }
+
+    @Test func checkingARealPersonPhotoIsBlockedUntilAcknowledged() throws {
+        var (content, version, _, _) = makeBook()
+        let sessionID = try #require(content.sessions.first { $0.value.version(version.id) != nil }?.key)
+        let index = try #require(content.sessions[sessionID]?.versions.firstIndex { $0.id == version.id })
+        content.sessions[sessionID]?.versions[index].depictsRealPerson = true
+        #expect(ConsistencyAssembler.sendsRealPersonPhoto(versionID: version.id, content: content, provider: .openai))
+        #expect(ConsistencyAssembler.plan(version: version.id, content: content, provider: .openai) == nil)
+        content.book.acknowledgements.realPersonPhotoNotice = [.openai]
+        #expect(!ConsistencyAssembler.sendsRealPersonPhoto(versionID: version.id, content: content, provider: .openai))
+        #expect(ConsistencyAssembler.plan(version: version.id, content: content, provider: .openai) != nil)
+    }
+
+    @Test func ordinaryVersionsNeedNoNotice() {
+        let (content, version, _, _) = makeBook()
+        #expect(!ConsistencyAssembler.sendsRealPersonPhoto(versionID: version.id, content: content, provider: .openai))
+    }
 }

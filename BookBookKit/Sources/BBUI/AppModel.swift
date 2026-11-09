@@ -515,14 +515,8 @@ public final class AppModel {
     }
 
     /// "Regenerate with same settings": a new pending message and queue item built from the
-    /// version's stored intent, unchanged (same text, same `refines`). False for versions with
-    /// no provenance (imported) or a box that's gone.
-    @discardableResult
-    public func regenerate(_ version: Version, page: PageID, box: BoxID, in document: BookDocument) -> Bool {
-        return regenerate(version, target: .pageBox(page, box), in: document)
-    }
-
-    /// "Regenerate with same settings" for any target (asset slots and sheet items included).
+    /// version's stored intent, unchanged (same text, same `refines`), for any target. False for
+    /// versions with no provenance (imported) or a target that's gone.
     @discardableResult
     public func regenerate(_ version: Version, target: GenerationTarget, in document: BookDocument) -> Bool {
         guard let intent = (version.provenance?.intent).map(replayed) else { return false }

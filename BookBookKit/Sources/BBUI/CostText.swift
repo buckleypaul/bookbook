@@ -29,14 +29,6 @@ public enum CostText {
         return "\(ElapsedTimeText.clock(elapsed)) of ~\(ElapsedTimeText.clock(typical))"
     }
 
-    public static func requestConfirmation(_ estimate: CostEstimate) -> String {
-        "This request is \(Self.estimate(estimate)). Generate?"
-    }
-
-    public static func budgetWarning(spent: Decimal, budget: Decimal) -> String {
-        "This book has spent \(amount(spent)) of its \(amount(budget)) budget. Generate anyway?"
-    }
-
     /// The alert text before one request, or nil when neither the threshold nor the budget applies.
     /// Both can apply; the answer never blocks (A §7.10).
     public static func requestAlert(estimate: CostEstimate, decision: CostDecision, spent: Decimal,

@@ -40,26 +40,14 @@ public enum BookMutations {
     /// ("Regenerate with same settings": same text, same `refines`, same references).
     public static func makeGeneration(intent: GenerationIntent, bookID: BookID, page: PageID, box: BoxID,
                                       now: Date) -> (message: Message, item: QueueItem) {
-        let itemID = QueueItemID()
-        let message = Message(role: .user, text: intent.messageText, refines: intent.refines,
-                              attachedReferences: intent.attachedReferences, queueItemID: itemID, createdAt: now)
-        let item = QueueItem(id: itemID, bookID: bookID, target: .pageBox(page, box), messageID: message.id,
-                             intent: intent)
-        return (message, item)
+        makeGeneration(intent: intent, bookID: bookID, target: .pageBox(page, box), now: now)
     }
 
     /// Appends a pending user message to the box's session (in the session's current epoch).
     /// Returns an empty set if the page, box or session is gone.
     public static func appendPendingMessage(_ message: Message, page: PageID, box: BoxID,
                                             to content: inout BookContent) -> DirtySet {
-        guard let slot = content.pages[page]?.images[box], var session = content.sessions[slot.sessionID] else {
-            return DirtySet()
-        }
-        var message = message
-        message.epoch = session.resetEpoch
-        session.messages.append(message)
-        content.sessions[slot.sessionID] = session
-        return DirtySet(sessions: [slot.sessionID])
+        appendPendingMessage(message, target: .pageBox(page, box), to: &content)
     }
 
     /// Writes a finished generation into the book (A §6.4).

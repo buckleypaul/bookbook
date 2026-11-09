@@ -185,3 +185,6 @@ The running phase writes its log here; when it is marked done, move the entry to
 **Stage:** A
 
 - Started 2026-11-08. Follow-ups picked up: consistency-warning preflight item; export off the main actor.
+- Contracts (main thread): `BBExport/ExportContracts.swift` (options, results, booklet imposition formula, crop marks, image prep, preflight, `ImagePreparing`), `BBLayout/Contracts.swift` (`BoxImageKey`, `PreparedImageSource`, `RenderOptions.Target.pdfBleed/.print`), with compiling stubs per lane.
+- Decision: page drawing stays on the main actor (TextKit 2), one page per step with suspensions; image preparation runs off it in the `ExportImagePreparer` actor. Written into A §9.1.
+- Lanes: **images** (sonnet: upscaler, planner, preparer, cache); **preflight** (sonnet); **pipeline** (opus: renderer prepared images, booklet/marks, `BookExporter`, PDF boxes, bitmaps); **ui** (sonnet: export sheet, preflight list, Print ⌘P, page-as-image, menus; owns `BookDocument` this phase).

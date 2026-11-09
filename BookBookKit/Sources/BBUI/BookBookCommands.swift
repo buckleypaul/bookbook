@@ -78,6 +78,8 @@ public struct BookBookCommands: Commands {
             Button("Import Story Text…") { pages?.sheet = .importStory }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(pages?.isEditable != true)
+            Button("Import from Book…") { pages?.sheet = .importFromBook }
+                .disabled(pages?.isEditable != true)
             Button("Export…") { showExport?.wrappedValue = true }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(book == nil || showExport == nil)

@@ -128,7 +128,7 @@ extension BookMutations {
     }
 
     /// Deletes an asset (PD §8.3, §8.10): off every checklist, its mention tokens in every
-    /// session's messages become its name as plain text, `assets/<id>.json` goes. Images and
+    /// session's messages and version intents become its name as plain text, `assets/<id>.json` goes. Images and
     /// sessions stay. Empty if unknown.
     public static func deleteAsset(_ id: AssetID, from content: inout BookContent) -> DirtySet {
         guard let asset = content.assets[id] else { return DirtySet() }
@@ -138,14 +138,19 @@ extension BookMutations {
             content.pages[pageID]?.assetChecklist.removeAll { $0 == id }
             dirty.pages.insert(pageID)
         }
-        let token = MentionText.token(for: id)
-        for (sessionID, session) in content.sessions
-        where session.messages.contains(where: { $0.text.contains(token) }) {
-            var session = session
+        for (sessionID, old) in content.sessions {
+            var session = old
             for i in session.messages.indices {
                 session.messages[i].text = MentionText.replacingMentions(of: id, with: asset.name,
                                                                          in: session.messages[i].text)
             }
+            // Regenerate with Same Settings and Version details keep the name too.
+            for i in session.versions.indices {
+                guard let text = session.versions[i].provenance?.intent.messageText else { continue }
+                session.versions[i].provenance?.intent.messageText = MentionText.replacingMentions(
+                    of: id, with: asset.name, in: text)
+            }
+            guard session != old else { continue }
             content.sessions[sessionID] = session
             dirty.sessions.insert(sessionID)
         }

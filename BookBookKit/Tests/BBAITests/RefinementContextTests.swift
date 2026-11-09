@@ -73,7 +73,8 @@ import Testing
         #expect(!request.instruction.sections.contains { $0.key == "history" })
     }
 
-    @Test func orderIsBaseThenStyleThenAttached() throws {
+    /// Phase 10: A §7.4 tiers put attached references (tier 2) before style references (tier 5).
+    @Test func orderIsBaseThenAttachedThenStyle() throws {
         var walk = RefinementBook.make()
         let style = ImageRef(sha256: "style1", contentType: "public.png")
         walk.book.content.style.styleReferences = [style]
@@ -82,13 +83,14 @@ import Testing
         data[style] = Data("s".utf8)
         let plan = try #require(ContextAssembler.plan(intent: walk.refine(0, attached: [attached]), target: walk.book.target,
                                                       messageID: walk.pendingMessage, content: walk.book.content))
-        #expect(plan.map(\.role) == ["base", "style", "reference"])
-        #expect(plan.map(\.ref) == [walk.versions[0].image, style, walk.versions[3].image])
+        #expect(plan.map(\.role) == ["base", "reference", "style"])
+        #expect(plan.map(\.ref) == [walk.versions[0].image, walk.versions[3].image, style])
         let (request, report) = try assembleBook(walk.book, walk.refine(0, attached: [attached]),
                                                  messageID: walk.pendingMessage, imageData: data)
-        #expect(report.referencesSent.map(\.role) == ["base", "style", "reference"])
-        #expect(request.references.map(\.sent.role) == ["style", "reference"])
-        #expect(request.instruction.rendered.contains("Image 3: reference image"))
+        #expect(report.referencesSent.map(\.role) == ["base", "reference", "style"])
+        #expect(request.references.map(\.sent.role) == ["reference", "style"])
+        #expect(request.instruction.rendered.contains("Image 2: reference image"))
+        #expect(request.instruction.rendered.contains("Image 3 is a style reference"))
     }
 
     @Test func attachedReferenceEqualToBaseIsNotRepeated() throws {

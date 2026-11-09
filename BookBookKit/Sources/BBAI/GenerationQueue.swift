@@ -460,7 +460,8 @@ public actor GenerationQueue {
             provider: item.intent.provider, model: model.id, quality: item.intent.quality,
             outputSize: result.pixelSize, promptSent: report.promptText,
             referencesSent: report.referencesSent, referencesOmitted: report.referencesOmitted,
-            styleRevision: report.styleRevision, storyTextIncluded: report.storyTextIncluded,
+            styleRevision: report.styleRevision, assetRevisions: report.assetRevisions,
+            storyTextIncluded: report.storyTextIncluded,
             intent: item.intent, cost: costID, usage: result.usage, revisedPrompt: result.revisedPrompt,
             parametersSent: result.parametersSent)
         entries.removeAll { $0.id == item.id }

@@ -1,0 +1,1 @@
+Draw another reference image of {{name}}: {{label}}. Use a plain, simple, light background unless the request says otherwise.

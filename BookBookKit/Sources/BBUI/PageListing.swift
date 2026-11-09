@@ -11,14 +11,6 @@ public struct PageListItem: Hashable, Sendable, Identifiable {
     public var flags: ImageFlags = []
 
     public var title: String { "Page \(number)" }
-
-    public var statusText: String {
-        switch status {
-        case .empty: "Empty"
-        case .inProgress: "In progress"
-        case .done: "Done"
-        }
-    }
 }
 
 /// Pure helpers behind the page list's selection, add and delete.
@@ -37,13 +29,6 @@ public enum PageListing {
         if let id = content.storyPages.first?.templateID, content.templates[id] != nil { return id }
         if let id = preset(), content.templates[id]?.kind == .single { return id }
         return content.templates.values.filter { $0.kind == .single }.map(\.id).min { $0.rawValue.uuidString < $1.rawValue.uuidString }
-    }
-
-    /// Index in `pageOrder` for a page added after `selection` (at the end with no selection).
-    public static func insertionIndex(after selection: PageID?, in content: BookContent) -> Int {
-        let order = content.book.pageOrder
-        guard let selection, let index = order.firstIndex(of: selection) else { return order.count }
-        return index + 1
     }
 
     /// What to select after deleting `pageID`: the next page, else the previous, else nil.

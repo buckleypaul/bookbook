@@ -1,5 +1,4 @@
 import BBModel
-import CryptoKit
 import Foundation
 
 /// Serializes all I/O for one book package (A §5.1–5.3). One per open book.
@@ -190,8 +189,7 @@ public actor BookStore {
     /// returns the ref. Called before the JSON that refers to it is saved.
     public func storeImage(_ data: Data, contentType: String) throws(StoreError) -> ImageRef {
         guard !readOnly else { throw StoreError.readOnly }
-        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        let ref = ImageRef(sha256: hash, contentType: contentType)
+        let ref = ImageRef(sha256: PackageCoding.sha256Hex(data), contentType: contentType)
         guard ref.isValid else { throw StoreError.io("unsupported image content type: \(contentType)") }
         let dest = imageURL(for: ref)
         try PackageCoding.io("storeImage") {
@@ -199,9 +197,7 @@ public actor BookStore {
             let dir = dest.deletingLastPathComponent()
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
             // Refuse if `images/` (or the package) is a symlink leading outside the package.
-            let package = packageURL.resolvingSymlinksInPath().path(percentEncoded: false)
-            let images = dir.resolvingSymlinksInPath().path(percentEncoded: false)
-            guard images.hasPrefix(package.hasSuffix("/") ? package : package + "/") else {
+            guard CanonicalPath.isInside(dir, packageURL) else {
                 throw StoreError.io("images folder is outside the package")
             }
             if fm.fileExists(atPath: dest.path(percentEncoded: false)) {
@@ -210,14 +206,7 @@ public actor BookStore {
                 try fm.setAttributes([.modificationDate: Date()], ofItemAtPath: dest.path(percentEncoded: false))
                 return
             }
-            let tmp = dir.appending(path: ".tmp-\(UUID().uuidString)")
-            do {
-                try PackageCoding.writeSynced(data, to: tmp)
-                try PackageCoding.rename(tmp, to: dest)
-            } catch {
-                try? fm.removeItem(at: tmp)
-                throw error
-            }
+            try PackageCoding.writeAtomically(data, to: dest, tempIn: dir)
         }
         return ref
     }
@@ -345,15 +334,8 @@ public actor BookStore {
     public func writeThumbnail(_ png: Data) throws(StoreError) {
         guard !readOnly else { throw StoreError.readOnly }
         let dest = thumbnailURL
-        let tmp = packageURL.appending(path: ".thumbnail.png.tmp-\(UUID().uuidString)")
         try PackageCoding.io("writeThumbnail") {
-            do {
-                try PackageCoding.writeSynced(png, to: tmp)
-                try PackageCoding.rename(tmp, to: dest)
-            } catch {
-                try? FileManager.default.removeItem(at: tmp)
-                throw error
-            }
+            try PackageCoding.writeAtomically(png, to: dest, tempIn: packageURL, tempPrefix: ".thumbnail.png.tmp-")
         }
     }
 

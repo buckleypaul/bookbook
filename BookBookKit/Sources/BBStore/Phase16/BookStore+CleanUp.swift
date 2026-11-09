@@ -21,9 +21,7 @@ extension BookStore {
         let fm = FileManager.default
         let dir = packageURL.appending(path: "images", directoryHint: .isDirectory)
         return try PackageCoding.io("delete images") {
-            let package = packageURL.resolvingSymlinksInPath().path(percentEncoded: false)
-            let images = dir.resolvingSymlinksInPath().path(percentEncoded: false)
-            guard images.hasPrefix(package.hasSuffix("/") ? package : package + "/") else {
+            guard CanonicalPath.isInside(dir, packageURL) else {
                 throw StoreError.io("images folder is outside the package")
             }
             var removed = 0

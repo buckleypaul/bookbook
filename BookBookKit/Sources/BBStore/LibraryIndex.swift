@@ -195,8 +195,20 @@ private final class FSEventsWatcher {
 
     init(root: URL, onRelevant: @escaping @Sendable () -> Void) {
         let box = Box(root: root, onRelevant: onRelevant)
+        // The stream owns a +1 on the box (#97): FSEvents calls `retain` when it copies the
+        // context and `release` when the stream is released, so a callback still in flight on
+        // the stream's queue during `stop()` never sees a freed box.
+        let retainBox: CFAllocatorRetainCallBack = { info in
+            guard let info else { return nil }
+            _ = Unmanaged<Box>.fromOpaque(info).retain()
+            return info
+        }
+        let releaseBox: CFAllocatorReleaseCallBack = { info in
+            guard let info else { return }
+            Unmanaged<Box>.fromOpaque(info).release()
+        }
         var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(box).toOpaque(),
-                                           retain: nil, release: nil, copyDescription: nil)
+                                           retain: retainBox, release: releaseBox, copyDescription: nil)
         let callback: FSEventStreamCallback = { _, info, count, eventPaths, _, _ in
             guard let info else { return }
             let box = Unmanaged<Box>.fromOpaque(info).takeUnretainedValue()

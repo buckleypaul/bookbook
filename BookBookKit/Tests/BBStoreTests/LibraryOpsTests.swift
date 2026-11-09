@@ -14,7 +14,9 @@ import Testing
         defer { try? FileManager.default.removeItem(at: dir) }
         let a = try lib.createBook(title: "Fox", now: testNow)
         // Pretend the source is open: lock and journal must not be copied.
-        try Data("{}".utf8).write(to: a.url.appending(path: ".lock"))
+        // (A real hold by this process: duplicate takes the lock since Phase 16b, #103.)
+        let open = BookStore(packageURL: a.url)
+        #expect(try await open.acquireLock() == .acquired)
         try FileManager.default.createDirectory(at: a.url.appending(path: ".journal"), withIntermediateDirectories: true)
         try Data([1]).write(to: a.url.appending(path: "thumbnail.png"))
 
@@ -35,6 +37,7 @@ import Testing
         #expect(loaded.book.id == b.id)
         #expect(loaded.book.title == "Fox copy")
         #expect(lib.scan().count == 3)
+        await open.releaseLock()
     }
 
     @Test func renameKeepsFolder() async throws {

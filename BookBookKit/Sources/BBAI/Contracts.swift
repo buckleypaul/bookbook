@@ -17,6 +17,9 @@ public struct AssemblyReport: Hashable, Codable, Sendable {
     /// Phase 9: the page's story text as included in the prompt (nil when not included), so
     /// `RefusalAdvisor` can tell prompt words from story words.
     public var storyText: String?
+    /// Phase 10: the revision of every asset in play (A §7.3 step 1), for
+    /// `Provenance.assetRevisions` and the asset-changed flag.
+    public var assetRevisions: [AssetID: Int] = [:]
 
     public init(promptText: String, referencesSent: [SentReference] = [], referencesOmitted: [SentReference] = [],
                 storyTextIncluded: Bool, styleRevision: Int, estimatedInputBytes: Int = 0, storyText: String? = nil) {

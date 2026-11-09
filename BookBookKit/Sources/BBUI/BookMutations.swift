@@ -77,7 +77,9 @@ public enum BookMutations {
     public static func applyDelivery(_ delivery: GenerationDelivery, storedImage: ImageRef?,
                                      to content: inout BookContent, versionID: VersionID = VersionID(),
                                      now: Date) -> DirtySet {
-        guard case let .pageBox(pageID, boxID) = delivery.item.target else { return DirtySet() }
+        guard case let .pageBox(pageID, boxID) = delivery.item.target else {
+            return applyAssetDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID, now: now)
+        }
         let page = content.pages[pageID]
         let slot = page?.images[boxID]
         let owner = SessionOwner.pageBox(pageID, boxID)
@@ -156,6 +158,7 @@ public enum BookMutations {
         content.sessions[sessionID] = session
         var dirty = DirtySet(sessions: [sessionID])
         dirty.pages = clearPlacements(of: [version], in: &content)
+        dirty.assets = clearAssetChoices(of: [version], in: &content)
         return dirty
     }
 
@@ -170,6 +173,7 @@ public enum BookMutations {
             let removed = Set(session.versions.map(\.id))
             session.versions = []
             dirty.pages = clearPlacements(of: removed, in: &content)
+            dirty.assets = clearAssetChoices(of: removed, in: &content)
         }
         content.sessions[sessionID] = session
         return dirty

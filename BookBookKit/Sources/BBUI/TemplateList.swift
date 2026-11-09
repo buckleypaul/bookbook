@@ -2,13 +2,13 @@ import BBModel
 import BBStore
 import SwiftUI
 
-/// The sidebar's tabs. Assets joins in Phase 10.
+/// The sidebar's tabs.
 enum SidebarTab: String, CaseIterable, Identifiable {
-    case pages, layouts, style
+    case pages, assets, layouts, style
     var id: String { rawValue }
-    var title: String { switch self { case .pages: "Pages"; case .layouts: "Layouts"; case .style: "Style" } }
+    var title: String { switch self { case .pages: "Pages"; case .assets: "Assets"; case .layouts: "Layouts"; case .style: "Style" } }
     var symbol: String {
-        switch self { case .pages: "doc.on.doc"; case .layouts: "rectangle.3.group"; case .style: "paintpalette" }
+        switch self { case .pages: "doc.on.doc"; case .assets: "person.2"; case .layouts: "rectangle.3.group"; case .style: "paintpalette" }
     }
 }
 

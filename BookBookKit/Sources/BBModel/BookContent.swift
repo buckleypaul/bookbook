@@ -8,9 +8,12 @@ public struct BookContent: Hashable, Sendable {
     public var templates: [TemplateID: Template]
     public var pages: [PageID: Page]
     public var sessions: [SessionID: Session]
+    /// Phase 10: `assets/<id>.json`.
+    public var assets: [AssetID: Asset]
 
     public init(book: Book, style: StyleGuide, templates: [TemplateID: Template],
-                pages: [PageID: Page], sessions: [SessionID: Session]) {
+                pages: [PageID: Page], sessions: [SessionID: Session], assets: [AssetID: Asset] = [:]) {
+        self.assets = assets
         self.book = book
         self.style = style
         self.templates = templates
@@ -124,8 +127,8 @@ public enum PageStatus: String, Sendable {
     case empty, inProgress, done
 }
 
-/// Out-of-date flags on a placed image (A §4.4, PD §8.5). Asset changed (Phase 10) and
-/// consistency warning (Phase 12) are reserved and never set in Phase 7.
+/// Out-of-date flags on a placed image (A §4.4, PD §8.5). Asset changed is set from Phase 10;
+/// consistency warning (Phase 12) is reserved and never set yet.
 public struct ImageFlags: OptionSet, Hashable, Sendable {
     public let rawValue: Int
     public init(rawValue: Int) { self.rawValue = rawValue }
@@ -140,6 +143,9 @@ extension BookContent {
     /// - style changed: the placed version has provenance and
     ///   `max(provenance.styleRevision, acknowledged.styleRevision) < style.visualRevision`;
     ///   imported versions (no provenance) never get it;
+    /// - asset changed (Phase 10): for any `(asset, rec)` in the placed version's
+    ///   `provenance.assetRevisions` whose asset still exists,
+    ///   `max(rec, acknowledged.assetRevisions[asset] ?? 0) < assets[asset].revision`;
     /// - layout changed: `abs(log(boxAspect(box, in: template) / (acknowledged.boxAspect ?? placement.boxAspectWhenPlaced))) > 0.05`.
     /// Empty for an empty box.
     public func imageFlags(page pageID: PageID, box boxID: BoxID) -> ImageFlags {
@@ -149,6 +155,13 @@ extension BookContent {
         if let provenance = sessions[slot.sessionID]?.version(placement.versionID)?.provenance,
            max(provenance.styleRevision, slot.acknowledged.styleRevision) < style.visualRevision {
             flags.insert(.styleChanged)
+        }
+        if let revisions = sessions[slot.sessionID]?.version(placement.versionID)?.provenance?.assetRevisions,
+           revisions.contains(where: { id, rec in
+               guard let asset = assets[id] else { return false }
+               return max(rec, slot.acknowledged.assetRevisions[id] ?? 0) < asset.revision
+           }) {
+            flags.insert(.assetChanged)
         }
         let baseline = slot.acknowledged.boxAspect ?? placement.boxAspectWhenPlaced
         let current = boxAspect(box, in: template)

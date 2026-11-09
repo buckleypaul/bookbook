@@ -31,6 +31,9 @@ public final class BookDocument {
     /// Bumped after a font import, so cached text layouts that resolved
     /// a font before it was registered can be thrown away (the canvas watches this).
     public private(set) var fontsRevision = 0
+    /// Phase 10: where each asset is used (A §4.4), refreshed incrementally with every change
+    /// (`scheduleSave` sees every edit, delivery and undo). Read through `usageSites(of:)`.
+    public private(set) var usageIndex: UsageIndex
 
     @ObservationIgnored public let store: BookStore
     /// The window's undo manager (SwiftUI `@Environment(\.undoManager)`), set by the window.
@@ -88,6 +91,7 @@ public final class BookDocument {
         self.thumbnailInterval = thumbnailInterval
         self.now = now
         self.typing = TypingCoalescer(clock: now)
+        self.usageIndex = UsageIndex(content: content)
         // Report every autosave result (timer-fired or flushed) so the window's banner shows a
         // failure within about a second, not only at close. First link of the save chain, so
         // it's installed before any save is scheduled.
@@ -314,7 +318,8 @@ public final class BookDocument {
         case let .importStoryText(texts, templateID, index, _):
             unfixed = .importStoryText(texts, templateID: templateID, index: index)
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop:
+             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
+             .addAsset, .updateAsset, .setAssetChecklist:
             return false
         }
         guard let prepared = prepare(unfixed) else { return false }
@@ -390,6 +395,7 @@ public final class BookDocument {
     }
 
     private func scheduleSave(_ dirty: DirtySet) {
+        refreshUsage(dirty)
         generation += 1
         let snapshot = content, gen = generation, store = store
         let previous = saveChain
@@ -399,6 +405,15 @@ public final class BookDocument {
             await store.scheduleSave(snapshot, dirty: dirty, generation: gen)
         }
         markThumbnailDirty()
+    }
+
+    /// Re-derives the usage entries for what `dirty` touched (deleted pages drop out).
+    private func refreshUsage(_ dirty: DirtySet) {
+        let pages = dirty.pages.union(dirty.deletedPages)
+        guard !pages.isEmpty || !dirty.sessions.isEmpty else { return }
+        var index = usageIndex
+        index.refresh(content, pages: pages, sessions: dirty.sessions)
+        if index != usageIndex { usageIndex = index }
     }
 
     // MARK: Thumbnail
@@ -470,6 +485,17 @@ public final class BookDocument {
         case removeTemplate(TemplateID)
         /// Replace an existing template of the same kind. Inverse: the old template.
         case setTemplate(Template)
+        /// Phase 10: add an asset (no-op if the ID exists). Inverse: `removeAsset`.
+        case insertAsset(Asset)
+        /// Remove an asset (no-op if it's gone). Inverse: `insertAsset`.
+        case removeAsset(AssetID)
+        /// Phase 10: change an existing asset from `from` to `to`, field by field: fields the
+        /// edit doesn't change keep their live value, so a reference image a delivery chose in
+        /// between survives the undo of a rename (see `BookDocument.mergeAsset`). No-op if the
+        /// asset is gone (a deleted asset is never resurrected).
+        case updateAsset(from: Asset, to: Asset)
+        /// Phase 10: replace a page's asset checklist (IDs of assets that are gone are dropped).
+        case setChecklist(page: PageID, [AssetID])
         /// Several edits as one undo step, applied in order; the inverse is the reversed
         /// inverses. A sub-edit whose target has gone is skipped.
         case compound([Edit])
@@ -510,9 +536,14 @@ public final class BookDocument {
             guard let page = content.pages[pageID], let template = content.template(for: page) else { return nil }
             var baselines: [BoxID: FlagBaseline] = [:]
             for box in template.imageBoxes where boxID == nil || box.id == boxID {
-                guard var slot = page.images[box.id], slot.placement != nil else { continue }
+                guard var slot = page.images[box.id], let placement = slot.placement else { continue }
                 slot.acknowledged.styleRevision = content.style.visualRevision
                 slot.acknowledged.boxAspect = content.boxAspect(box, in: template)
+                // Phase 10: accept the current revision of every asset the image was made with.
+                let used = content.sessions[slot.sessionID]?.version(placement.versionID)?.provenance?.assetRevisions
+                for asset in (used ?? [:]).keys {
+                    if let revision = content.assets[asset]?.revision { slot.acknowledged.assetRevisions[asset] = revision }
+                }
                 if slot.acknowledged != page.images[box.id]?.acknowledged { baselines[box.id] = slot.acknowledged }
             }
             guard !baselines.isEmpty else { return nil }
@@ -600,6 +631,29 @@ public final class BookDocument {
             if CropMath.isSame(crop, (placement.zoom, placement.center)) { return nil }
             edit = .setCrop(page: pageID, box: boxID, version: placement.versionID, zoom: crop.zoom, center: crop.center)
 
+        case let .addAsset(asset):
+            guard content.assets[asset.id] == nil else { return nil }
+            let normalized = asset.normalized()
+            addMissingSessions(of: normalized, to: &created)
+            edit = .insertAsset(normalized)
+
+        case let .updateAsset(asset, _):
+            guard let old = content.assets[asset.id] else { return nil }
+            var proposed = asset
+            proposed.id = old.id
+            proposed.type = old.type
+            let stored = proposed.normalized().revised(from: old)
+            guard stored != old else { return nil }
+            addMissingSessions(of: stored, to: &created)
+            edit = .updateAsset(from: old, to: stored)
+
+        case let .setAssetChecklist(pageID, ids):
+            guard let page = content.pages[pageID] else { return nil }
+            var seen: Set<AssetID> = []
+            let list = ids.filter { content.assets[$0] != nil && seen.insert($0).inserted }
+            guard list != page.assetChecklist else { return nil }
+            edit = .setChecklist(page: pageID, list)
+
         case let .setTypography(typography):
             edit = .setTypography(typography)
 
@@ -664,6 +718,13 @@ public final class BookDocument {
         guard let preset = try? Presets.template(id) else { return nil }
         prepared.templates[id] = preset
         return preset
+    }
+
+    /// Empty sessions (irreversible) for the asset's slots and sheet items that have none yet.
+    private func addMissingSessions(of asset: Asset, to prepared: inout Prepared) {
+        for (sessionID, owner) in asset.ownedSessions where content.sessions[sessionID] == nil {
+            prepared.sessions[sessionID] = Session(id: sessionID, owner: owner)
+        }
     }
 
     private func clamped(_ index: Int) -> Int { min(max(0, index), content.book.pageOrder.count) }
@@ -889,6 +950,29 @@ public final class BookDocument {
             content.templates[template.id] = template
             return (.setTemplate(old), DirtySet(templates: [template.id]))
 
+        case let .insertAsset(asset):
+            guard content.assets[asset.id] == nil else { return nil }
+            content.assets[asset.id] = asset
+            return (.removeAsset(asset.id), DirtySet(assets: [asset.id]))
+
+        case let .removeAsset(id):
+            guard let old = content.assets[id] else { return nil }
+            content.assets[id] = nil
+            return (.insertAsset(old), DirtySet(deletedAssets: [id]))
+
+        case let .updateAsset(from, to):
+            guard let current = content.assets[to.id] else { return nil }
+            let merged = mergeAsset(current: current, from: from, to: to)
+            guard merged != current else { return nil }
+            content.assets[to.id] = merged
+            return (.updateAsset(from: merged, to: current), DirtySet(assets: [to.id]))
+
+        case let .setChecklist(pageID, ids):
+            guard let old = content.pages[pageID]?.assetChecklist else { return nil }
+            let list = ids.filter { content.assets[$0] != nil }
+            content.pages[pageID]?.assetChecklist = list
+            return (.setChecklist(page: pageID, old), DirtySet(pages: [pageID]))
+
         case let .compound(edits):
             var inverses: [Edit] = []
             var dirty = DirtySet()
@@ -900,6 +984,51 @@ public final class BookDocument {
             guard !inverses.isEmpty else { return nil }
             return (.compound(inverses.reversed()), dirty)
         }
+    }
+
+    /// Three-way merge for `Edit.updateAsset`: start from the live asset and take every field
+    /// the edit changes (`from` → `to`). Slot and sheet-item lists follow `to`, but a `chosen`
+    /// the edit didn't change keeps its live value (set by a delivery since). Revision: `to`'s
+    /// when the result matches `to` in description and primary choice (undo restores it), else
+    /// bumped past the high water; the high water never goes down.
+    static func mergeAsset(current: Asset, from: Asset, to: Asset) -> Asset {
+        var out = current
+        if to.name != from.name { out.name = to.name }
+        if to.description != from.description { out.description = to.description }
+        if to.tags != from.tags { out.tags = to.tags }
+        if to.references != from.references {
+            out.references = to.references.map { slot in
+                var slot = slot
+                if let before = from.references.first(where: { $0.id == slot.id }), before.chosen == slot.chosen,
+                   let live = current.references.first(where: { $0.id == slot.id }) {
+                    slot.chosen = live.chosen
+                }
+                return slot
+            }
+        }
+        if to.sheet != from.sheet {
+            out.sheet = to.sheet.map { sheet in
+                CharacterSheet(items: sheet.items.map { item in
+                    var item = item
+                    if let before = from.sheet?.items.first(where: { $0.id == item.id }), before.chosen == item.chosen,
+                       let live = current.sheet?.items.first(where: { $0.id == item.id }) {
+                        item.chosen = live.chosen
+                    }
+                    return item
+                })
+            }
+        }
+        let highWater = max(current.revisionHighWater, from.revisionHighWater, to.revisionHighWater)
+        if out.description == to.description, out.primary?.id == to.primary?.id,
+           out.primary?.chosen == to.primary?.chosen {
+            out.revision = to.revision
+            out.revisionHighWater = highWater
+        } else {
+            // Something the edit didn't touch moved meanwhile: a fresh number past the high water.
+            out.revisionHighWater = highWater
+            out = out.revised(from: current)
+        }
+        return out
     }
 
     /// Gives every image box of the page's template that has no slot an empty slot and session

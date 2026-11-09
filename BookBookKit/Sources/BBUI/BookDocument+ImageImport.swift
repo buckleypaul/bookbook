@@ -8,6 +8,8 @@ public enum ImageImportFailure: Error, Hashable, Sendable {
     case unreadable
     case notAnImage
     case boxGone
+    /// Phase 10: the asset, reference slot or sheet item is gone.
+    case assetGone
     case readOnly
     case store(String)
 
@@ -17,6 +19,7 @@ public enum ImageImportFailure: Error, Hashable, Sendable {
         case .unreadable: "BookBook couldn't read that file."
         case .notAnImage: "That file isn't a picture BookBook can use."
         case .boxGone: "That image box is no longer on the page."
+        case .assetGone: "That asset or sheet item no longer exists."
         case .readOnly: "This book is open in another BookBook window, so it can't be changed here."
         case let .store(text): "The picture couldn't be saved: \(text)"
         }
@@ -33,6 +36,23 @@ extension BookDocument {
         guard isEditable else { throw ImageImportFailure.readOnly }
         guard content.pages[page]?.images[box] != nil else { throw ImageImportFailure.boxGone }
 
+        let (ref, normalized) = try await readAndStore(url)
+        // Re-check after the awaits: the box may have gone, or the book closed.
+        let versionID = VersionID()
+        var appended = false
+        let stamp = Date()
+        performIrreversible { content in
+            let dirty = BookMutations.appendImportedVersion(image: ref, pixelSize: normalized.pixelSize, page: page,
+                                                            box: box, to: &content, versionID: versionID, now: stamp)
+            appended = !dirty.isEmpty
+            return dirty
+        }
+        guard appended else { throw ImageImportFailure.boxGone }
+        return versionID
+    }
+
+    /// Reads and normalizes the file off the main actor, then stores it in the package.
+    func readAndStore(_ url: URL) async throws -> (ImageRef, ImageImportNormalizer.Result) {
         let normalized = try await Task.detached(priority: .userInitiated) { () throws -> ImageImportNormalizer.Result in
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -52,17 +72,6 @@ extension BookDocument {
         } catch {
             throw ImageImportFailure.store(StoreErrorText.message(for: error))
         }
-        // Re-check after the awaits: the box may have gone, or the book closed.
-        let versionID = VersionID()
-        var appended = false
-        let stamp = Date()
-        performIrreversible { content in
-            let dirty = BookMutations.appendImportedVersion(image: ref, pixelSize: normalized.pixelSize, page: page,
-                                                            box: box, to: &content, versionID: versionID, now: stamp)
-            appended = !dirty.isEmpty
-            return dirty
-        }
-        guard appended else { throw ImageImportFailure.boxGone }
-        return versionID
+        return (ref, normalized)
     }
 }

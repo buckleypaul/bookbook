@@ -23,9 +23,31 @@ extension BookDocument {
         mutateSession(page: page, box: box) { BookMutations.resetSession($0, keepVersions: keepVersions, to: &$1) }
     }
 
+    // Phase 10: the same for any session owner (asset slots and sheet items included).
+    // Deleting an asset's chosen version clears that choice too.
+
+    @discardableResult
+    public func setStarred(_ starred: Bool, version: VersionID, owner: SessionOwner) -> Bool {
+        mutateSession(owner) { BookMutations.setStarred(starred, version: version, in: $0, to: &$1) }
+    }
+
+    @discardableResult
+    public func deleteVersion(_ version: VersionID, owner: SessionOwner) -> Bool {
+        mutateSession(owner) { BookMutations.deleteVersion(version, in: $0, to: &$1) }
+    }
+
+    @discardableResult
+    public func resetSession(owner: SessionOwner, keepVersions: Bool) -> Bool {
+        mutateSession(owner) { BookMutations.resetSession($0, keepVersions: keepVersions, to: &$1) }
+    }
+
     private func mutateSession(page: PageID, box: BoxID,
                                _ body: (SessionID, inout BookContent) -> DirtySet) -> Bool {
-        guard let sessionID = content.pages[page]?.images[box]?.sessionID else { return false }
+        mutateSession(.pageBox(page, box), body)
+    }
+
+    private func mutateSession(_ owner: SessionOwner, _ body: (SessionID, inout BookContent) -> DirtySet) -> Bool {
+        guard let sessionID = BookMutations.sessionID(for: owner, in: content) else { return false }
         var changed = false
         performIrreversible { content in
             let dirty = body(sessionID, &content)

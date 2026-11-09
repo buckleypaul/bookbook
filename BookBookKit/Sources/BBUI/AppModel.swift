@@ -82,7 +82,7 @@ public final class AppModel {
     @ObservationIgnored private var reopenDone = false
     @ObservationIgnored private let indexCacheURL: URL
     @ObservationIgnored private let userDefaults: UserDefaults
-    @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored let now: @Sendable () -> Date
 
     /// - Parameters:
     ///   - providers: the concrete image providers (the app wires OpenAI; tests pass fakes).
@@ -429,14 +429,8 @@ public final class AppModel {
     @discardableResult
     public func generate(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID?,
                          page: PageID, box: BoxID, in document: BookDocument) -> Bool {
-        let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return false }
-        var settings = defaults
-        settings.quality = quality
-        settings.includeStoryText = includeStoryText
-        let (message, item) = BookMutations.makeGeneration(prompt: text, refines: refines, defaults: settings,
-                                                           bookID: document.id, page: page, box: box, now: now())
-        return enqueue(message, prepared(item, content: document.content), page: page, box: box, in: document)
+        generate(prompt: prompt, quality: quality, includeStoryText: includeStoryText, refines: refines,
+                 attachedReferences: [], target: .pageBox(page, box), in: document)
     }
 
     /// "Regenerate with same settings": a new pending message and queue item built from the
@@ -444,18 +438,27 @@ public final class AppModel {
     /// no provenance (imported) or a box that's gone.
     @discardableResult
     public func regenerate(_ version: Version, page: PageID, box: BoxID, in document: BookDocument) -> Bool {
+        return regenerate(version, target: .pageBox(page, box), in: document)
+    }
+
+    /// "Regenerate with same settings" for any target (asset slots and sheet items included).
+    @discardableResult
+    public func regenerate(_ version: Version, target: GenerationTarget, in document: BookDocument) -> Bool {
         guard let intent = version.provenance?.intent else { return false }
-        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, page: page, box: box,
+        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, target: target,
                                                            now: now())
-        return enqueue(message, prepared(item, content: document.content), page: page, box: box, in: document)
+        return enqueue(message, prepared(item, content: document.content), in: document)
     }
 
     /// Fills in the item's estimate, display labels and enqueue time (A §7.9, §7.10).
     func prepared(_ item: QueueItem, content: BookContent) -> QueueItem {
         var item = item
         item.estimate = estimate(item.intent, target: item.target, content: content)
-        if case let .pageBox(page, box) = item.target {
+        switch item.target {
+        case let .pageBox(page, box):
             item.display = DraftAllPlanner.display(page: page, box: box, in: content)
+        case .assetReference, .sheetItem:
+            item.display = AssetQueueDisplay.display(item.target.owner, in: content)
         }
         item.enqueuedAt = now()
         return item
@@ -483,11 +486,10 @@ public final class AppModel {
         pendingThisLaunch.formUnion(ids)
     }
 
-    private func enqueue(_ message: Message, _ item: QueueItem, page: PageID, box: BoxID,
-                         in document: BookDocument) -> Bool {
+    func enqueue(_ message: Message, _ item: QueueItem, in document: BookDocument) -> Bool {
         var appended = false
         document.performIrreversible { content in
-            let dirty = BookMutations.appendPendingMessage(message, page: page, box: box, to: &content)
+            let dirty = BookMutations.appendPendingMessage(message, target: item.target, to: &content)
             appended = !dirty.isEmpty
             return dirty
         }

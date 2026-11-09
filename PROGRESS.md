@@ -19,7 +19,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 7 | Style guide and page setup | done | `phase-7-style-page-setup` | — | $0.00 | No live checks. [Log](progress/phase-7-style-page-setup.md) |
 | 8 | Sessions and versions | done | `phase-8-sessions-versions` | — | $0.02 | Live check `SP8_refinementLowQuality` passed. [Log](progress/phase-8-sessions-versions.md) |
 | 9 | Queue, cost, errors and settings (M2) | done | `phase-9-queue-cost-settings` | — | $0.04 | Live check `SP9_twoRequestsAndCancel` passed. [Log](progress/phase-9-queue-cost-settings.md) |
-| 10 | Assets and character sheets | not started | | | | |
+| 10 | Assets and character sheets | in progress | `phase-10-assets-characters` | — | $0.00 | No live checks listed. |
 | 11 | Region editing | not started | | | | |
 | 12 | Consistency check and AI templates (M3) | not started | | | | |
 | 13 | Gemini provider (floating) | not started | | | | Needs the `gemini-api-key` Keychain item |
@@ -137,3 +137,15 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
+
+### Phase 10 — Assets and character sheets
+
+**Stage:** B
+
+- Session A 2026-11-08. Contracts (`BBModel/Asset.swift`, new `SessionOwner`/`GenerationTarget` cases, `Version.depictsRealPerson`, `BookContent.assets`, `DirtySet.assets`, `AssemblyReport.assetRevisions`, `BookCommand.addAsset/updateAsset/setAssetChecklist`, BBUI stubs) then four lanes, all merged; `scripts/test.sh all` green.
+  - **Model + store:** `MentionText`, incremental `UsageIndex`, `Asset.revised/normalized`, asset-changed flag, `assets/` folder (no schema bump; `Journal` path allow-list extended).
+  - **AI:** `ReferenceSelector` (tiers 1–7, per-type caps, style cap, budget, "Left out" summary), `SheetSynonyms` (`Resources/Prompts/sheet-synonyms.json`, since Package.swift bundles only Prompts/), cast section and `legend-asset.txt`, asset-session prompts (square, no story/composition), `sendsRealPersonPhoto`, `Provenance.assetRevisions`. Attached references now come before style references (A §7.4 order).
+  - **UI core:** asset commands with by-ID inverses (field-wise merge so undo doesn't drop a delivered choice), usage index kept by `BookDocument`, Mark as OK records asset revisions, `deleteAsset`, deliveries/imports into asset sessions (set `chosen` when empty), generic `generate(target:)`, sheet batch, SessionPanel for any owner, `@mention` autocomplete, page asset checklist, Reference another image picker, real-person question (EXIF default) and first-send notice, Version details Assets / Left out / Real person photo.
+  - **Assets tab:** sidebar tab between Pages and Layouts, list with type filter, editor (name, description, tags, slots/primary), character sheet grid (lock, custom expressions, Generate Whole Sheet with estimate first), where-used links into the page editor, delete confirmation.
+- Decisions: default sheet is 8 items (primary = front view; user, 2026-11-08); locked sheet items are still sent (lock = don't regenerate); revision bumps only on description / primary image change. Recorded in architecture.md §4.2, §7.4.
+- For Session B: no live checks listed. Known gaps: `sendsRealPersonPhoto` applies the image-count cap but not the byte budget (may over-report); `@mention` autocomplete completes only at the end of the prompt (click/Return, no arrow keys); where-used box labels are "image box N". Hand checks need a real generation for Pip (low quality) — confirm spend with the user first if it'd matter.

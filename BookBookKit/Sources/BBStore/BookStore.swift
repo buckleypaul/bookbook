@@ -40,7 +40,7 @@ public actor BookStore {
         try PackageCoding.io("create") {
             defer { try? fm.removeItem(at: tmp) }
             try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
-            for dir in ["templates", "pages", "sessions", "images"] {
+            for dir in ["templates", "pages", "sessions", "assets", "images"] {
                 try fm.createDirectory(at: tmp.appending(path: dir, directoryHint: .isDirectory),
                                        withIntermediateDirectories: true)
             }
@@ -88,7 +88,10 @@ public actor BookStore {
         for p in try readAll("pages", Page.self) { pages[p.id] = p }
         var sessions: [SessionID: Session] = [:]
         for s in try readAll("sessions", Session.self) { sessions[s.id] = s.droppingInvalidImageRefs() }
-        return BookContent(book: book, style: style, templates: templates, pages: pages, sessions: sessions)
+        // Older packages have no `assets/` folder (readAll tolerates that); no schema bump.
+        var assets: [AssetID: Asset] = [:]
+        for a in try readAll("assets", Asset.self) { assets[a.id] = a }
+        return BookContent(book: book, style: style, templates: templates, pages: pages, sessions: sessions, assets: assets)
     }
 
     /// Saves the dirty entities of `content` as one journaled transaction (A §5.2).
@@ -97,6 +100,7 @@ public actor BookStore {
         let files = try PackageCoding.files(for: content, dirty: dirty)
         let deletions = dirty.deletedPages.map { PackageCoding.pagePath($0) }
             + dirty.deletedTemplates.map { PackageCoding.templatePath($0) }.filter { files[$0] == nil }
+            + dirty.deletedAssets.map { PackageCoding.assetPath($0) }.filter { files[$0] == nil }
         guard !files.isEmpty || !deletions.isEmpty else { return }
         let fault = saveFaultHook
         try PackageCoding.io("save") {

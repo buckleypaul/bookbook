@@ -139,7 +139,7 @@ struct Journal {
     }
 
     private static var pathPattern: Regex<(Substring, Substring, Substring?)> {
-        /^(book\.json|style\.json|(templates|pages|sessions)\/[0-9A-Fa-f-]{36}\.json)$/
+        /^(book\.json|style\.json|(templates|pages|sessions|assets)\/[0-9A-Fa-f-]{36}\.json)$/
     }
 
     /// `<20-digit wall-clock nanoseconds>-<UUID>`: names sort by creation time, so recovery

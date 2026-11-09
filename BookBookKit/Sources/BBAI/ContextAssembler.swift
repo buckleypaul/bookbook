@@ -6,7 +6,7 @@ import ImageIO
 /// An image the assembler needs bytes for, in send order (A §7.3, §7.9).
 public struct PlannedImage: Hashable, Sendable {
     public var ref: ImageRef
-    /// `base`, `style` or `reference`.
+    /// `base`, `reference` (attached), `asset` or `style`.
     public var role: String
     public var label: String
     /// Known for versions; nil for style references until the bytes are read.
@@ -15,7 +15,7 @@ public struct PlannedImage: Hashable, Sendable {
 
 /// Why assembly could not produce a request.
 public enum AssemblyError: Error, Hashable, Sendable {
-    /// The page, box, template or session is gone.
+    /// The page, box, template, asset or session is gone.
     case targetGone
     /// The version to refine no longer exists.
     case baseVersionGone
@@ -44,8 +44,33 @@ public enum ContextAssembler {
         var session: Session
     }
 
+    /// An asset session's target, resolved (Phase 10).
+    struct AssetResolved {
+        enum Kind {
+            case slot(ReferenceSlot)
+            case sheetItem(SheetItem)
+        }
+
+        var asset: Asset
+        var kind: Kind
+        var session: Session
+    }
+
+    /// What the request is for.
+    enum Context {
+        case page(Resolved)
+        case asset(AssetResolved)
+
+        var session: Session {
+            switch self {
+            case let .page(resolved): resolved.session
+            case let .asset(resolved): resolved.session
+            }
+        }
+    }
+
     /// Resolves the session by the queue item's message first (box IDs can move), then by the
-    /// target's slot.
+    /// target's slot. Page-box targets only.
     static func resolve(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> Resolved? {
         guard case let .pageBox(targetPage, targetBox) = target else { return nil }
         var pageID = targetPage, boxID = targetBox
@@ -75,80 +100,156 @@ public enum ContextAssembler {
         return Resolved(page: page, template: template, box: box, session: session)
     }
 
-    /// The images this request needs, in send order: base, style references, attached references.
-    /// Not yet capped; `assemble` applies the model's limits. Nil if the target is gone.
-    public static func plan(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
-                            content: BookContent) -> [PlannedImage]? {
-        guard let resolved = resolve(target: target, messageID: messageID, content: content) else { return nil }
-        let session = resolved.session
-        var planned: [PlannedImage] = []
-        var seen = Set<ImageRef>()
-        func add(_ image: PlannedImage) {
-            if seen.insert(image.ref).inserted { planned.append(image) }
+    /// Asset-session targets: the session holding the message (if it's an asset session) decides
+    /// the owner, else the target does; the session is the slot's / item's `sessionID`.
+    static func resolveAsset(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> AssetResolved? {
+        let messageSession = messageID.flatMap { content.session(containing: $0) }.flatMap { session in
+            session.owner.assetID == nil ? nil : session
         }
+        let owner = messageSession?.owner ?? target.owner
+        switch owner {
+        case .pageBox:
+            return nil
+        case let .assetReference(assetID, slotID):
+            guard let asset = content.assets[assetID], let slot = asset.references.first(where: { $0.id == slotID }),
+                  let session = messageSession ?? content.sessions[slot.sessionID] else { return nil }
+            return AssetResolved(asset: asset, kind: .slot(slot), session: session)
+        case let .sheetItem(assetID, itemID):
+            guard let asset = content.assets[assetID], let item = asset.sheet?.items.first(where: { $0.id == itemID }),
+                  let session = messageSession ?? content.sessions[item.sessionID] else { return nil }
+            return AssetResolved(asset: asset, kind: .sheetItem(item), session: session)
+        }
+    }
+
+    static func context(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> Context? {
+        switch target {
+        case .pageBox: resolve(target: target, messageID: messageID, content: content).map(Context.page)
+        case .assetReference, .sheetItem: resolveAsset(target: target, messageID: messageID, content: content).map(Context.asset)
+        }
+    }
+
+    // MARK: Assets in play (A §7.3 step 1)
+
+    /// The assets in play, in order: an asset session's owner, then assets mentioned in the
+    /// current message, then mentions in earlier current-epoch messages along the refined
+    /// version's lineage, then the page's checklist. Deleted or unknown IDs are ignored. Empty if
+    /// the target is gone.
+    public static func assetsInPlay(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
+                                    content: BookContent) -> [AssetID] {
+        guard let context = context(target: target, messageID: messageID, content: content) else { return [] }
+        return assetsInPlay(intent: intent, context: context, content: content).map(\.asset.id)
+    }
+
+    static func assetsInPlay(intent: GenerationIntent, context: Context,
+                             content: BookContent) -> [ReferenceSelector.AssetInPlay] {
+        var out: [ReferenceSelector.AssetInPlay] = []
+        var seen = Set<AssetID>()
+        func add(_ id: AssetID, mentioned: Bool, primaryOnly: Bool = false, excludedSlot: UUID? = nil) {
+            guard let asset = content.assets[id], seen.insert(id).inserted else { return }
+            out.append(.init(asset: asset, mentioned: mentioned, primaryOnly: primaryOnly, excludedSlot: excludedSlot))
+        }
+        if case let .asset(resolved) = context {
+            switch resolved.kind {
+            case let .slot(slot): add(resolved.asset.id, mentioned: true, primaryOnly: true, excludedSlot: slot.id)
+            case .sheetItem: add(resolved.asset.id, mentioned: true, primaryOnly: true)
+            }
+        }
+        for id in MentionText.mentionedAssets(in: intent.messageText) { add(id, mentioned: true) }
+        if let refines = intent.refines {
+            for message in context.session.lineageInstructions(of: refines) {
+                for id in MentionText.mentionedAssets(in: message.text) { add(id, mentioned: true) }
+            }
+        }
+        if case let .page(resolved) = context {
+            for id in resolved.page.assetChecklist { add(id, mentioned: false) }
+        }
+        return out
+    }
+
+    // MARK: Planning
+
+    /// Everything decided before bytes are loaded.
+    struct Prepared {
+        var context: Context
+        var assets: [ReferenceSelector.AssetInPlay]
+        var candidates: [ReferenceSelector.Candidate]
+        var storyText: String
+        var includeStory: Bool
+    }
+
+    static func prepare(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID?,
+                        content: BookContent) -> Prepared? {
+        guard let context = context(target: target, messageID: messageID, content: content) else { return nil }
+        let session = context.session
+        var storyText = ""
+        if case let .page(resolved) = context { storyText = resolved.page.storyText(in: resolved.template) }
+        let includeStory = intent.includeStoryText && !storyText.isEmpty
+
+        var base: ReferenceSelector.Candidate?
         if let refines = intent.refines, let version = session.version(refines) {
             let number = session.versionNumber(refines).map { " (v\($0))" } ?? ""
-            add(PlannedImage(ref: version.image, role: "base", label: "Current illustration\(number)",
-                             pixelSize: version.pixelSize))
+            base = .init(ref: version.image, role: "base", label: "Current illustration\(number)", tier: .base,
+                         pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
         }
-        for (index, ref) in content.style.styleReferences.enumerated() {
-            add(PlannedImage(ref: ref, role: "style", label: "Style reference \(index + 1)", pixelSize: nil))
-        }
-        for attached in intent.attachedReferences {
+        let attached = intent.attachedReferences.compactMap { attached -> ReferenceSelector.Candidate? in
             guard let other = content.sessions[attached.sessionID],
-                  let version = other.version(attached.versionID) else { continue }
+                  let version = other.version(attached.versionID) else { return nil }
             let number = other.versionNumber(attached.versionID).map { " v\($0)" } ?? ""
-            add(PlannedImage(ref: version.image, role: "reference", label: "Reference\(number)",
-                             pixelSize: version.pixelSize))
+            return .init(ref: version.image, role: "reference", label: "Reference\(number)", tier: .attached,
+                         pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
         }
-        return planned
+        let assets = assetsInPlay(intent: intent, context: context, content: content)
+        let request = MentionText.displayText(intent.messageText, assets: content.assets)
+        let matchText = includeStory ? request + "\n" + storyText : request
+        let candidates = ReferenceSelector.candidates(.init(
+            base: base, attached: attached, assets: assets, styleReferences: content.style.styleReferences,
+            matchText: matchText, sessions: content.sessions))
+        return Prepared(context: context, assets: assets, candidates: candidates, storyText: storyText,
+                        includeStory: includeStory)
     }
+
+    /// The images this request needs, in send order (A §7.4 tiers). Not yet capped by the
+    /// model's budget; `assemble` applies it. Nil if the target is gone.
+    public static func plan(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
+                            content: BookContent) -> [PlannedImage]? {
+        prepare(intent: intent, target: target, messageID: messageID, content: content)?.candidates.map {
+            PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize)
+        }
+    }
+
+    static func limits(_ model: CatalogModel) -> ReferenceSelector.Limits {
+        .init(maxImages: model.image.maxReferenceImages, maxImageBytes: model.image.maxImageBytes,
+              maxTotalBytes: model.image.maxRequestBytes)
+    }
+
+    // MARK: Assembly
 
     /// `imageData` holds the bytes the queue managed to load for `plan`'s refs.
     public static func assemble(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
                                 content: BookContent, model: CatalogModel,
                                 imageData: [ImageRef: Data] = [:]) throws(AssemblyError) -> (ImageRequest, AssemblyReport) {
-        guard let resolved = resolve(target: target, messageID: messageID, content: content),
-              let planned = plan(intent: intent, target: target, messageID: messageID, content: content)
+        guard let prepared = prepare(intent: intent, target: target, messageID: messageID, content: content)
         else { throw .targetGone }
-        let (page, template, box, session) = (resolved.page, resolved.template, resolved.box, resolved.session)
+        let session = prepared.context.session
         if let refines = intent.refines, session.version(refines) == nil { throw .baseVersionGone }
-
         let style = content.style
-        let storyText = page.storyText(in: template)
-        let includeStory = intent.includeStoryText && !storyText.isEmpty
-        let aspect = content.boxAspect(box, in: template)
-        let caps = model.image
+        let includeStory = prepared.includeStory
 
         // Pick what fits. The base goes first; overflow and missing bytes are omitted, never dropped silently.
-        var sent: [(plan: PlannedImage, payload: ImagePayload)] = []
-        var omitted: [SentReference] = []
-        var bytes = 0
-        for image in planned {
-            func omit(_ reason: String) {
-                omitted.append(SentReference(image: image.ref, role: image.role, label: "\(image.label) (\(reason))"))
-            }
-            guard let data = imageData[image.ref] else {
-                if image.role == "base" { throw .baseImageMissing }
-                omit("file missing")
-                continue
-            }
-            if data.count > caps.maxImageBytes {
-                if image.role == "base" { throw .baseImageTooLarge }
-                omit("too large")
-                continue
-            }
-            if sent.count >= caps.maxReferenceImages || bytes + data.count > caps.maxRequestBytes {
-                if image.role == "base" { throw .baseImageTooLarge }
-                omit("over the limit")
-                continue
-            }
-            bytes += data.count
-            var entry = image
-            entry.pixelSize = image.pixelSize ?? ImageHeader.pixelSize(of: data)
-            sent.append((entry, ImagePayload(data: data, contentType: image.ref.contentType, ref: image.ref,
-                                             pixelSize: entry.pixelSize)))
+        let selection = ReferenceSelector.select(prepared.candidates, byteCounts: imageData.mapValues(\.count),
+                                                 limits: limits(model))
+        if let base = selection.omitted.first(where: { $0.candidate.role == "base" }) {
+            throw base.reason == .fileMissing ? .baseImageMissing : .baseImageTooLarge
         }
+        let sent: [(plan: ReferenceSelector.Candidate, payload: ImagePayload)] = selection.sent.map { candidate in
+            var entry = candidate
+            let data = imageData[candidate.ref] ?? Data()
+            entry.pixelSize = candidate.pixelSize ?? ImageHeader.pixelSize(of: data)
+            return (entry, ImagePayload(data: data, contentType: candidate.ref.contentType, ref: candidate.ref,
+                                        pixelSize: entry.pixelSize))
+        }
+        let numbers = Dictionary(sent.enumerated().map { ($0.element.plan.ref, $0.offset + 1) },
+                                 uniquingKeysWith: { first, _ in first })
 
         // Prompt sections (A §7.3).
         let styleIndexes = sent.enumerated().filter { $0.element.plan.role == "style" }.map { $0.offset + 1 }
@@ -161,26 +262,45 @@ public enum ContextAssembler {
         let isRefinement = sent.first?.plan.role == "base"
         var earlier: [String] = []
         if isRefinement, let refines = intent.refines {
-            earlier = session.lineageInstructions(of: refines).map { $0.text.trimmed }.filter { !$0.isEmpty }
+            earlier = session.lineageInstructions(of: refines)
+                .map { MentionText.displayText($0.text, assets: content.assets).trimmed }.filter { !$0.isEmpty }
         }
         let history = earlier.enumerated().map { "\($0.offset + 1)) \($0.element)" }.joined(separator: "; ")
-        let composition = ["aspect": describeAspect(aspect),
-                           "calm": calmGuidance(box: box, template: template),
-                           "fold": foldGuidance(box: box, template: template),
-                           "safe": safeAreaGuidance(box: box, template: template, content: content)]
+        let requestText = MentionText.displayText(intent.messageText, assets: content.assets).trimmed
         let legend = sent.enumerated().map { index, entry in
-            PromptTemplates.render(PromptTemplates.text(for: "legend-\(entry.plan.role)") ?? "Image {{n}}.",
-                                   ["n": "\(index + 1)"])
+            let name = entry.plan.asset.flatMap { content.assets[$0]?.name } ?? ""
+            return PromptTemplates.render(PromptTemplates.text(for: "legend-\(entry.plan.role)") ?? "Image {{n}}.",
+                                          ["n": "\(index + 1)", "name": name, "detail": entry.plan.detail ?? ""])
         }.joined(separator: "\n")
+        let cast = castLines(prepared.assets, sent: sent.map(\.plan), numbers: numbers)
+
+        var composition: [String: String] = [:]
+        var subject = ""
+        let aspect: Double
+        switch prepared.context {
+        case let .page(resolved):
+            aspect = content.boxAspect(resolved.box, in: resolved.template)
+            composition = ["aspect": describeAspect(aspect),
+                           "calm": calmGuidance(box: resolved.box, template: resolved.template),
+                           "fold": foldGuidance(box: resolved.box, template: resolved.template),
+                           "safe": safeAreaGuidance(box: resolved.box, template: resolved.template, content: content)]
+        case let .asset(resolved):
+            // Asset images have no page geometry: square by default (the fitter snaps it per model).
+            aspect = 1
+            subject = assetSubject(resolved, numbers: numbers, sent: sent.map(\.plan))
+        }
+        let isPage = !composition.isEmpty
 
         let values: [(key: String, placeholders: [String: String], required: Bool)] = [
             ("role", [:], true),
             ("style", ["style": styleText], !styleText.isEmpty),
             ("avoid", ["avoid": style.negativeGuidance.trimmed], !style.negativeGuidance.trimmed.isEmpty),
-            ("composition", composition, true),
-            ("story", ["story": storyText], includeStory),
+            ("cast", ["entries": cast], !cast.isEmpty),
+            ("subject", ["subject": subject], !subject.isEmpty),
+            ("composition", composition, isPage),
+            ("story", ["story": prepared.storyText], includeStory),
             ("history", ["earlier": history], !history.isEmpty),
-            ("request", ["request": intent.messageText.trimmed], !intent.messageText.trimmed.isEmpty),
+            ("request", ["request": requestText], !requestText.isEmpty),
             ("legend", ["lines": legend], !legend.isEmpty),
         ]
         let sections = values.compactMap { entry -> ComposedPrompt.Section? in
@@ -200,13 +320,68 @@ public enum ContextAssembler {
         let request = ImageRequest(model: model, quality: intent.quality,
                                    output: OutputShape(boxAspect: aspect, exactSize: exactSize),
                                    instruction: prompt, baseImage: baseImage, references: references)
-        let report = AssemblyReport(
+        var report = AssemblyReport(
             promptText: prompt.rendered,
             referencesSent: sent.map { SentReference(image: $0.plan.ref, role: $0.plan.role, label: $0.plan.label) },
-            referencesOmitted: omitted, storyTextIncluded: includeStory, styleRevision: style.visualRevision,
-            estimatedInputBytes: prompt.rendered.utf8.count + bytes,
-            storyText: includeStory ? storyText : nil)
+            referencesOmitted: selection.omitted.map(\.sentReference), storyTextIncluded: includeStory,
+            styleRevision: style.visualRevision,
+            estimatedInputBytes: prompt.rendered.utf8.count + selection.bytes,
+            storyText: includeStory ? prepared.storyText : nil)
+        report.assetRevisions = Dictionary(prepared.assets.map { ($0.asset.id, $0.asset.revision) },
+                                           uniquingKeysWith: { first, _ in first })
         return (request, report)
+    }
+
+    // MARK: Cast and subject wording
+
+    /// One "- Pip (character): … Image 2 shows Pip (primary reference)." line per asset in play.
+    static func castLines(_ assets: [ReferenceSelector.AssetInPlay], sent: [ReferenceSelector.Candidate],
+                          numbers: [ImageRef: Int]) -> String {
+        let entryTemplate = PromptTemplates.text(for: "cast-entry") ?? "- {{name}} ({{type}}){{description}}{{images}}"
+        let imageTemplate = PromptTemplates.text(for: "cast-image") ?? "Image {{n}} shows {{name}} ({{detail}})."
+        return assets.map { entry in
+            let asset = entry.asset
+            let description = asset.description.trimmed
+            var describing = description.isEmpty ? "." : ": " + description
+            if let last = describing.last, !".!?".contains(last) { describing += "." }
+            let images = sent.filter { $0.asset == asset.id }.compactMap { candidate -> String? in
+                guard let n = numbers[candidate.ref] else { return nil }
+                return " " + PromptTemplates.render(imageTemplate, ["n": "\(n)", "name": asset.name,
+                                                                    "detail": candidate.detail ?? ""])
+            }.joined()
+            return PromptTemplates.render(entryTemplate, ["name": asset.name, "type": asset.type.rawValue,
+                                                          "description": describing, "images": images])
+        }.joined(separator: "\n")
+    }
+
+    /// What to draw in an asset session: a reference image of the asset, or a sheet item drawn
+    /// from the asset's primary reference.
+    static func assetSubject(_ resolved: AssetResolved, numbers: [ImageRef: Int],
+                             sent: [ReferenceSelector.Candidate]) -> String {
+        let asset = resolved.asset
+        let values = ["name": asset.name, "type": asset.type.rawValue]
+        var text: String
+        switch resolved.kind {
+        case let .slot(slot) where slot.isPrimary:
+            text = PromptTemplates.text(for: "asset-reference-\(asset.type.rawValue)") ?? "A reference image of {{name}}."
+        case let .slot(slot):
+            text = PromptTemplates.render(PromptTemplates.text(for: "asset-reference-slot") ?? "{{label}}",
+                                          ["label": slot.label.trimmed])
+        case let .sheetItem(item):
+            switch item.kind {
+            case let .view(view):
+                text = PromptTemplates.text(for: "sheet-view-\(view.rawValue)") ?? "{{name}}, \(view.rawValue) view."
+            case let .expression(name):
+                text = PromptTemplates.render(PromptTemplates.text(for: "sheet-expression") ?? "{{name}}, {{expression}}.",
+                                              ["expression": ReferenceSelector.displayName(expression: name)])
+            }
+        }
+        // The primary reference, when it's sent, anchors the look.
+        if let primary = sent.first(where: { $0.asset == asset.id && $0.tier == .mentionedPrimary }),
+           let n = numbers[primary.ref], let same = PromptTemplates.text(for: "asset-same") {
+            text += " " + PromptTemplates.render(same, ["n": "\(n)"])
+        }
+        return PromptTemplates.render(text, values)
     }
 
     // MARK: Composition wording

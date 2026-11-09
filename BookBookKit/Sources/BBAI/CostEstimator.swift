@@ -84,6 +84,16 @@ public enum CostEstimator {
         else { return nil }
         var data: [ImageRef: Data] = [:]
         for image in planned { data[image.ref] = Data([0]) }
+        if let maskRef = intent.regionMask {
+            // Region edit (A §7.6): the assembler decodes the mask and checks it against the base's
+            // pixel size, so give it a blank mask at that size (and a base header to match when the
+            // book doesn't know the base's size).
+            let base = planned.first { $0.role == "base" }
+            let size = base?.pixelSize ?? assumedImageSize
+            guard let blank = try? placeholderMaskPNG(size) else { return nil }
+            data[maskRef] = blank
+            if let base, base.pixelSize == nil { data[base.ref] = blank }
+        }
         guard let (request, report) = try? ContextAssembler.assemble(
             intent: intent, target: target, content: content, model: model, imageData: data)
         else { return nil }
@@ -108,5 +118,11 @@ public enum CostEstimator {
         }
         return ImageEstimateInput(model: model, quality: intent.quality, outputSize: outputSize,
                                   inputImageSizes: sizes, promptCharacters: report.promptText.count)
+    }
+
+    /// An all-keep grayscale mask PNG at `size` (it compresses to a few hundred bytes).
+    static func placeholderMaskPNG(_ size: PixelSize) throws(ImageOpsError) -> Data {
+        try ImageOps.grayscalePNG(RegionMask(pixelSize: size,
+                                             bytes: [UInt8](repeating: 0, count: size.width * size.height)))
     }
 }

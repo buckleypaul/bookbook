@@ -1,0 +1,13 @@
+# Phase 11 — Region editing
+
+**Stage:** done (hand checks deferred), merged 2026-11-08
+
+- Started 2026-11-08 on `phase-11-region-editing`.
+- Contracts: `MaskPayload` + `ImageRequest.mask` (BBAICore); `GenerationIntent.regionMask`, `Provenance.maskSent/rawOutput/featherPixels` (BBModel); `ImageOps` API (BBAI).
+- Live re-check `SP11_maskedEditRealIllustration` (3 low 1024² edits on the SP-2 illustration, $0.043): no black fill in any run; change inside the mask 26–34 vs about 2.1 outside. **Decision:** masked edit + mandatory local composite + black-fill safety net (>60% near-black under the mask → `.noImage`, no version). architecture.md §7.6 updated.
+- Decision: no Gemini catalog row is added before Phase 13 (it would be selectable but unusable); the "Gemini model → region tool greyed out" hand check is covered by tests with a non-`supportsMask` model and is deferred.
+- Lanes (all merged into the phase branch; `scripts/test.sh all` green): 1 OpenAI mask part + `SP11_maskedEditRealIllustration`; 2 `ImageOps` (rasterise, PNG encodings, box-blur feathered composite, black-fill fraction); 3 region editor sheet/canvas/model (`BBUI/RegionEditor/`); 4 pipeline (`AppModel.generateRegionEdit`, assembler mask + `region` prompt section, `RegionEditCompositor`, `.regionEdit` delivery, Version details rows, sweep keeps mask/raw images; adds `GenerationDelivery.additionalImages`); 5 "Edit Region…" button + strip context menu with disabled reason, routed through the notice/cost flow.
+- **For Session B:** the phase's live check (one masked edit) was already run as SP11 in Session A; re-run only if the review changes the wire request. Known open items to triage: a region edit waiting in the queue >24 h can lose its mask to the open-time image sweep (mask is referenced only by `queue.json` until delivery); the sheet captures ⌘Z/⇧⌘Z for drawing undo, so the prompt field loses text undo; the shared cost alert's button says "Generate" for region edits; no zoom/pan in the editor; Version details shows mask/raw output as text only; the cost estimate ignores mask bytes.
+- Session B: `scripts/test.sh all` green, no source warnings, secret scan clean. Live check not re-run (wire request unchanged; SP11 in Session A covers it). Automated app pass: Edit Region entry points, disabled reason (no key), brush/size/erase/invert/clear/lasso and the cost confirm all confirmed with no spend.
+- Review round 1 must-fixes, fixed: region edits always estimated `.unknown` (estimator now adds a blank mask at the base's size); composite altered outside pixels for P3/16-bit/alpha bases (now blends via vImage in the base's colour space, depth and alpha). Re-review: none. Gray/CMYK bases still fall back to sRGB.
+- Spend: $0.04 (SP11).

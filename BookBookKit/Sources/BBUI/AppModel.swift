@@ -224,7 +224,10 @@ public final class AppModel {
             return
         }
         let index = index
+        let openBooks = openBooks
         let task = Task { [weak self] in
+            // Duplicate-id resolution never rewrites a package that has a window open.
+            await index.setOpenPackages { Set(openBooks.documents.values.map(\.store.packageURL)) }
             let cached = await index.loadCache()
             self?.apply(cached, from: index)
             let fresh = await index.refresh()

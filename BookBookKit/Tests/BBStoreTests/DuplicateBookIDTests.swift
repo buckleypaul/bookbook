@@ -75,4 +75,62 @@ import Testing
         #expect(entries.first { $0.url.lastPathComponent == a.url.lastPathComponent }?.id == a.id)
         #expect(entries.first { $0.url.lastPathComponent == copyURL.lastPathComponent }?.id != a.id)
     }
+
+    private func bookJSON(_ url: URL) throws -> Data {
+        try Data(contentsOf: url.appending(path: "book.json"))
+    }
+
+    @Test func freshIndexKeepsTheIDOnTheOriginal() async throws {
+        let (lib, dir) = try makeLibrary()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = try lib.createBook(title: "Fox", now: testNow)
+        var copyURL = try finderCopy(a, as: "Fox copy")
+        // Same creation date and modifiedAt: only the name tie-break decides.
+        var values = URLResourceValues()
+        values.creationDate = try a.url.resourceValues(forKeys: [.creationDateKey]).creationDate
+        try copyURL.setResourceValues(values)
+        let index = LibraryIndex(root: lib.root, cacheURL: dir.appending(path: "index.json"))
+        await index.refresh() // as AppModel.start(): both duplicates loaded before any resolution
+        let entries = await index.refreshResolvingDuplicates()
+        #expect(entries.count == 2 && Set(entries.map(\.id)).count == 2)
+        #expect(entries.first { $0.url.lastPathComponent == "Fox.bookbook" }?.id == a.id)
+        #expect(entries.first { $0.url.lastPathComponent == "Fox copy.bookbook" }?.id != a.id)
+    }
+
+    @Test func openPackageIsNeverRewritten() async throws {
+        let (lib, dir) = try makeLibrary()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = try lib.createBook(title: "Zebra", now: testNow)
+        let copyURL = try finderCopy(a, as: "Aardvark")
+        let before = try bookJSON(copyURL)
+        // The index prefers Zebra, but Aardvark is open: Zebra is reassigned instead.
+        let changed = await lib.resolveDuplicateBookIDs(preferring: [a.id: a.url], open: [copyURL])
+        #expect(changed.map { $0.url.lastPathComponent } == [a.url.lastPathComponent])
+        #expect(try bookJSON(copyURL) == before)
+        #expect(lib.scan().first { $0.url.lastPathComponent == copyURL.lastPathComponent }?.id == a.id)
+    }
+
+    @Test func groupWithTwoOpenPackagesIsLeftAlone() async throws {
+        let (lib, dir) = try makeLibrary()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = try lib.createBook(title: "Fox", now: testNow)
+        let copyURL = try finderCopy(a, as: "Fox copy")
+        let (beforeA, beforeCopy) = (try bookJSON(a.url), try bookJSON(copyURL))
+        #expect(await lib.resolveDuplicateBookIDs(open: [a.url, copyURL]).isEmpty)
+        #expect(try bookJSON(a.url) == beforeA && bookJSON(copyURL) == beforeCopy)
+    }
+
+    @Test func indexSkipsPackagesOpenInThisProcess() async throws {
+        let (lib, dir) = try makeLibrary()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = try lib.createBook(title: "Fox", now: testNow)
+        let copyURL = try finderCopy(a, as: "Fox copy")
+        let before = try bookJSON(copyURL)
+        let index = LibraryIndex(root: lib.root, cacheURL: dir.appending(path: "index.json"))
+        await index.setOpenPackages { [copyURL] }
+        let entries = await index.refreshResolvingDuplicates()
+        #expect(Set(entries.map(\.id)).count == 2)
+        #expect(try bookJSON(copyURL) == before)
+        #expect(entries.first { $0.url.lastPathComponent == copyURL.lastPathComponent }?.id == a.id)
+    }
 }

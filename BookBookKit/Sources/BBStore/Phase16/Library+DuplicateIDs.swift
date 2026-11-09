@@ -12,16 +12,23 @@ extension Library {
     /// it is in the group; else the one with the earliest folder creation date; ties go to the
     /// shorter, then lexicographically smaller, folder name ("Fox.bookbook" beats "Fox copy.bookbook").
     ///
+    /// Packages in `open` (open in this process, whose lock is re-entrant here) are never
+    /// rewritten: an open package is always the keeper, and a group with more than one open
+    /// package is left alone until they close.
+    ///
     /// A package locked by another process, or unreadable, is skipped and retried on the next call.
     /// `modifiedAt` is left alone. Returns the entries that were reassigned, with their new ids.
     @discardableResult
-    public func resolveDuplicateBookIDs(preferring known: [BookID: URL] = [:]) async -> [LibraryEntry] {
+    public func resolveDuplicateBookIDs(preferring known: [BookID: URL] = [:],
+                                        open: Set<URL> = []) async -> [LibraryEntry] {
         let groups = Dictionary(grouping: scan(), by: \.id).filter { $0.value.count > 1 }
         guard !groups.isEmpty else { return [] }
         var changed: [LibraryEntry] = []
         for (id, group) in groups.sorted(by: { $0.key.rawValue.uuidString < $1.key.rawValue.uuidString }) {
-            let keeper = Self.keeper(in: group, preferred: known[id])
-            for entry in group where entry.url != keeper.url {
+            let opened = group.filter { e in open.contains { Self.samePackage($0, e.url) } }
+            if opened.count > 1 { continue }
+            let keeper = opened.first ?? Self.keeper(in: group, preferred: known[id])
+            for entry in group where !Self.samePackage(entry.url, keeper.url) {
                 let store = BookStore(packageURL: entry.url)
                 do throws(StoreError) {
                     if case .heldByOther = try await store.acquireLock() { continue }
@@ -43,8 +50,7 @@ extension Library {
     }
 
     static func keeper(in group: [LibraryEntry], preferred: URL?) -> LibraryEntry {
-        if let preferred,
-           let match = group.first(where: { $0.url.standardizedFileURL.path == preferred.standardizedFileURL.path }) {
+        if let preferred, let match = group.first(where: { samePackage($0.url, preferred) }) {
             return match
         }
         func created(_ e: LibraryEntry) -> Date {
@@ -56,5 +62,10 @@ extension Library {
             let (na, nb) = (a.url.lastPathComponent, b.url.lastPathComponent)
             return na.count != nb.count ? na.count < nb.count : na < nb
         }!
+    }
+
+    static func samePackage(_ a: URL, _ b: URL) -> Bool {
+        a.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
+            == b.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
     }
 }

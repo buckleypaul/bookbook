@@ -13,6 +13,12 @@ public actor LibraryIndex {
     private var watcher: FSEventsWatcher?
     private var debounceTask: Task<Void, Never>?
     private var resolving = false
+    /// For each id, the package that owned it before the latest scan. Updated by every scan: an
+    /// id seen once is owned by its package; a duplicated id keeps its earlier owner if that
+    /// package is still in the group, else has none (the keeper rule then decides).
+    private var owners: [BookID: URL] = [:]
+    /// Package URLs open in this process; `refreshResolvingDuplicates` never rewrites these.
+    private var openPackages: @Sendable @MainActor () -> Set<URL> = { [] }
 
     /// `~/Library/Application Support/BookBook/library-index.json`.
     public static var defaultCacheURL: URL {
@@ -34,6 +40,7 @@ public actor LibraryIndex {
               let file = try? PackageCoding.decoder().decode(CacheFile.self, from: data),
               file.root == root.path(percentEncoded: false) else { return current }
         current = file.entries
+        updateOwners(from: current)
         return current
     }
 
@@ -41,19 +48,27 @@ public actor LibraryIndex {
     @discardableResult
     public func refresh() -> [LibraryEntry] {
         current = Library(root: root).scan()
+        updateOwners(from: current)
         writeCache()
         return current
     }
 
+    /// Tells the index which packages are open in this process (the app passes its open
+    /// documents' URLs). Duplicate resolution never rewrites them.
+    public func setOpenPackages(_ provider: @escaping @Sendable @MainActor () -> Set<URL>) {
+        openPackages = provider
+    }
+
     /// `refresh()` after giving every duplicate `Book.id` (a Finder copy) a fresh one; see
-    /// `Library.resolveDuplicateBookIDs`. The package already in the index keeps its id. A call
-    /// that overlaps a run in progress just refreshes.
+    /// `Library.resolveDuplicateBookIDs`. The package that owned the id before (see `owners`)
+    /// keeps it, and open packages are never rewritten. A call that overlaps a run in progress
+    /// just refreshes.
     @discardableResult
     public func refreshResolvingDuplicates() async -> [LibraryEntry] {
         if !resolving {
             resolving = true
-            let known = Dictionary(current.map { ($0.id, $0.url) }, uniquingKeysWith: { first, _ in first })
-            await Library(root: root).resolveDuplicateBookIDs(preferring: known)
+            let open = await openPackages()
+            await Library(root: root).resolveDuplicateBookIDs(preferring: owners, open: open)
             resolving = false
         }
         return refresh()
@@ -93,6 +108,18 @@ public actor LibraryIndex {
     private struct CacheFile: Codable {
         var root: String
         var entries: [LibraryEntry]
+    }
+
+    private func updateOwners(from entries: [LibraryEntry]) {
+        let previous = owners
+        owners = [:]
+        for (id, group) in Dictionary(grouping: entries, by: \.id) {
+            if group.count == 1 {
+                owners[id] = group[0].url
+            } else if let before = previous[id], group.contains(where: { Library.samePackage($0.url, before) }) {
+                owners[id] = before
+            }
+        }
     }
 
     private func removeContinuation(_ id: UUID) {

@@ -83,6 +83,10 @@ public enum BookMutations {
                                      now: Date) -> DirtySet {
         guard delivery.item.kind == .image else { return applyConsistencyDelivery(delivery, to: &content) }
         let versionID = versionID ?? delivery.versionID
+        // Idempotent (Phase 16b): a redelivery of a picture already in the book changes nothing.
+        if case .success = delivery.outcome, content.sessions.values.contains(where: { $0.version(versionID) != nil }) {
+            return DirtySet()
+        }
         guard case let .pageBox(pageID, boxID) = delivery.item.target else {
             var dirty = applyAssetDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID,
                                            now: now)

@@ -13,6 +13,9 @@ final class TextEditingController {
     var onTextChange: (PageID, BoxID, RichText, Bool) -> Void = { _, _, _, _ in }
     /// Ends the document's typing undo step (formatting with no text change, editor closing).
     var onEndTypingStep: () -> Void = {}
+    /// Opens / closes a document undo group for a burst of colour changes (`InlineTextEditor`).
+    var onBeginUndoGroup: (String, @escaping @MainActor () -> Void) -> Void = { _, _ in }
+    var onEndUndoGroup: (String) -> Void = { _ in }
     var undoManagerProvider: () -> UndoManager? = { nil }
     /// The window's format bar / Format menu controller; the editor drives it.
     weak var formatting: TextFormatController?
@@ -31,6 +34,8 @@ final class TextEditingController {
             onChange: { [weak self] text, coalescing in self?.onTextChange(pageID, boxID, text, coalescing) })
         editor.onCancel = { [weak self] in self?.end() }
         editor.onEndTypingStep = { [weak self] in self?.onEndTypingStep() }
+        editor.onBeginUndoGroup = { [weak self] name, onClosed in self?.onBeginUndoGroup(name, onClosed) }
+        editor.onEndUndoGroup = { [weak self] name in self?.onEndUndoGroup(name) }
         self.editor = editor
         canvas.addSubview(editor.host)
         place(textRect: textRect)

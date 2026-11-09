@@ -329,11 +329,9 @@ public final class BookDocument {
     /// registers undo. `body` returns what it changed. Does nothing if read-only or closed.
     public func performIrreversible(_ body: (inout BookContent) -> DirtySet) {
         guard isEditable else { return }
-        var dirty = body(&content)
+        let dirty = body(&content)
         guard !dirty.isEmpty else { return }
-        content.book.modifiedAt = now()
-        dirty.book = true
-        scheduleSave(dirty)
+        didApply(dirty)
     }
 
     /// True when performing `command` (with `fixSplits: false`) would leave a spread split
@@ -679,9 +677,9 @@ public final class BookDocument {
             let result = TemplateReassignment.reassign(page, from: old, to: new)
             var changed = result.page
             for boxID in result.unassignedImageBoxes {
-                let session = Session(owner: .pageBox(pageID, boxID))
+                let (session, slot) = Self.emptySlot(page: pageID, box: boxID)
                 created.sessions[session.id] = session
-                changed.images[boxID] = ImageSlot(sessionID: session.id)
+                changed.images[boxID] = slot
             }
             edit = .setPageLayout(changed)
             fixSplits = fix
@@ -755,9 +753,9 @@ public final class BookDocument {
             for box in template.imageBoxes where !oldBoxes.contains(box.id) {
                 for pageID in content.pages(using: template.id) {
                     guard content.pages[pageID]?.images[box.id] == nil else { continue }
-                    let session = Session(owner: .pageBox(pageID, box.id))
+                    let (session, slot) = Self.emptySlot(page: pageID, box: box.id)
                     created.sessions[session.id] = session
-                    created.slots[pageID, default: [:]][box.id] = ImageSlot(sessionID: session.id)
+                    created.slots[pageID, default: [:]][box.id] = slot
                 }
             }
             edit = .setTemplate(template)
@@ -882,7 +880,8 @@ public final class BookDocument {
     private func applyAndSave(_ edit: Edit) -> Edit? {
         guard isEditable, let (inverse, dirty) = applyEdit(edit) else { return nil }
         didApply(dirty)
-        refreshMissingFonts()
+        // Only text (pages, including deleted and restored ones) and the style's typography name fonts.
+        if dirty.style || !dirty.pages.isEmpty || !dirty.deletedPages.isEmpty { refreshMissingFonts() }
         return inverse
     }
 
@@ -1137,12 +1136,18 @@ public final class BookDocument {
         guard let page = content.pages[pageID], let template = content.template(for: page) else { return [] }
         var created: Set<SessionID> = []
         for box in template.imageBoxes where page.images[box.id] == nil {
-            let session = Session(owner: .pageBox(pageID, box.id))
+            let (session, slot) = emptySlot(page: pageID, box: box.id)
             content.sessions[session.id] = session
-            content.pages[pageID]?.images[box.id] = ImageSlot(sessionID: session.id)
+            content.pages[pageID]?.images[box.id] = slot
             created.insert(session.id)
         }
         return created
+    }
+
+    /// A new empty session for an image box, and the slot pointing at it.
+    private static func emptySlot(page: PageID, box: BoxID) -> (session: Session, slot: ImageSlot) {
+        let session = Session(owner: .pageBox(page, box))
+        return (session, ImageSlot(sessionID: session.id))
     }
 
     /// Points each slot's session at the box now holding it (`.pageBox(page, box)`), so

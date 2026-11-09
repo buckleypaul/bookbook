@@ -17,12 +17,10 @@ struct QueueBadge: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(model.title).font(.caption.weight(.medium))
                         if let running = model.running, case let .running(startedAt, _, _) = running.state {
-                            let typical = app.catalog.imageModel(provider: running.item.intent.provider,
-                                                                  id: running.item.intent.model)?
-                                .typicalDurationSeconds[running.item.intent.quality]
+                            let typical = app.typicalDuration(for: running.item)
                             TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                                Text(CostText.elapsedOfTypical(elapsed: context.date.timeIntervalSince(startedAt),
-                                                               typical: typical))
+                                Text(ElapsedTimeText.progress(elapsed: context.date.timeIntervalSince(startedAt),
+                                                              typical: typical))
                                     .font(.caption2).monospacedDigit().foregroundStyle(.secondary)
                             }
                         }

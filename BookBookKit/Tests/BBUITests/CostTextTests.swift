@@ -29,10 +29,10 @@ import Testing
     }
 
     @Test func elapsedAgainstTypical() {
-        #expect(CostText.elapsedOfTypical(elapsed: 42, typical: 70) == "0:42 of ~1:10")
-        #expect(CostText.elapsedOfTypical(elapsed: 42, typical: nil) == "0:42")
-        #expect(CostText.elapsedOfTypical(elapsed: 5, typical: 0) == "0:05")
-        #expect(CostText.elapsedOfTypical(elapsed: -3, typical: 10) == "0:00 of ~0:10")
+        #expect(ElapsedTimeText.progress(elapsed: 42, typical: 70) == "0:42 of ~1:10")
+        #expect(ElapsedTimeText.progress(elapsed: 42, typical: nil) == "0:42")
+        #expect(ElapsedTimeText.progress(elapsed: 5, typical: 0) == "0:05")
+        #expect(ElapsedTimeText.progress(elapsed: -3, typical: 10) == "0:00 of ~0:10")
     }
 
     @Test func requestAlertCombinesThresholdAndBudget() {

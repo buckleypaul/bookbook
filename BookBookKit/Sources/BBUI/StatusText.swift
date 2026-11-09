@@ -83,10 +83,11 @@ public enum ElapsedTimeText {
         return "\(total / 60):" + String(format: "%02d", total % 60)
     }
 
-    /// `0:07 of about 0:14`, or just `0:07` when the typical duration is unknown.
+    /// `0:42 of ~1:10`, or just `0:42` when the typical duration is unknown. Used by the
+    /// session thread, the Queue window and the sidebar badge.
     public static func progress(elapsed: TimeInterval, typical: Double?) -> String {
         guard let typical, typical > 0 else { return clock(elapsed) }
-        return "\(clock(elapsed)) of about \(clock(typical))"
+        return "\(clock(elapsed)) of ~\(clock(typical))"
     }
 }
 
@@ -106,16 +107,16 @@ public enum MessageStatus: Hashable, Sendable {
     /// - Parameters:
     ///   - pendingThisLaunch: queue items enqueued since launch (covers the moment before the
     ///     queue's first snapshot includes a new item).
-    ///   - typical: typical seconds for an intent's model and quality.
+    ///   - typical: typical seconds for a queue item (its model, and quality for pictures).
     ///   - deliveryFailures: pictures that couldn't be saved, by message.
     public static func resolve(_ message: Message, snapshot: QueueSnapshot, pendingThisLaunch: Set<QueueItemID>,
                                deliveryFailures: [MessageID: String] = [:],
-                               typical: (GenerationIntent) -> Double?) -> MessageStatus {
+                               typical: (QueueItem) -> Double?) -> MessageStatus {
         if let itemID = message.queueItemID {
             if let entry = snapshot.entry(for: itemID) {
                 switch entry.state {
                 case .waiting, .retrying: return .waiting
-                case let .running(startedAt, _, _): return .running(startedAt: startedAt, typicalSeconds: typical(entry.item.intent))
+                case let .running(startedAt, _, _): return .running(startedAt: startedAt, typicalSeconds: typical(entry.item))
                 case let .failed(failure): return .failed(failure.error)
                 }
             }

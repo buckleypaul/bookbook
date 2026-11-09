@@ -39,7 +39,7 @@ struct ModelSettings: View {
             }
             Section {
                 Picker("Default quality", selection: $prefs.defaultQuality) {
-                    ForEach([QualityLevel.draft, .standard, .high], id: \.self) {
+                    ForEach(QualityLevel.allCases, id: \.self) {
                         Text(VersionDetailsContent.qualityName($0)).tag($0)
                     }
                 }

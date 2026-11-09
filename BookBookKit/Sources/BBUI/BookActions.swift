@@ -27,7 +27,7 @@ private struct BookActionsModifier: ViewModifier {
             }
             .alert(
                 "Move “\(requests.trashing?.title ?? "")” to the Trash?",
-                isPresented: Binding(get: { requests.trashing != nil }, set: { if !$0 { requests.trashing = nil } }),
+                isPresented: $requests.trashing.isPresent(),
                 presenting: requests.trashing
             ) { entry in
                 Button("Move to Trash", role: .destructive) { trash(entry) }
@@ -37,7 +37,7 @@ private struct BookActionsModifier: ViewModifier {
             }
             .alert(
                 "Something Went Wrong",
-                isPresented: Binding(get: { requests.error != nil }, set: { if !$0 { requests.error = nil } }),
+                isPresented: $requests.error.isPresent(),
                 presenting: requests.error
             ) { _ in
                 Button("OK") {}

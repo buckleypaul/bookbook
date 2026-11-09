@@ -57,7 +57,7 @@ struct ElapsedTimeTextTests {
     }
 
     @Test func progress() {
-        #expect(ElapsedTimeText.progress(elapsed: 7, typical: 14) == "0:07 of about 0:14")
+        #expect(ElapsedTimeText.progress(elapsed: 7, typical: 14) == "0:07 of ~0:14")
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: nil) == "0:07")
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: 0) == "0:07")
     }

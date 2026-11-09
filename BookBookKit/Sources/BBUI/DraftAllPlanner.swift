@@ -30,14 +30,7 @@ public enum DraftAllPlanner {
     /// "Cover" or "Page N" (story pages numbered from 1 in reading order) and "Image N" (the
     /// box's position among the template's image boxes).
     public static func display(page pageID: PageID, box boxID: BoxID, in content: BookContent) -> QueueItemDisplay {
-        let pageLabel: String
-        if pageID == content.book.coverPageID {
-            pageLabel = "Cover"
-        } else if let index = content.book.pageOrder.firstIndex(of: pageID) {
-            pageLabel = "Page \(index + 1)"
-        } else {
-            pageLabel = "Page"
-        }
+        let pageLabel = WhereUsedText.pageLabel(pageID, in: content)
         let boxes = content.pages[pageID].flatMap { content.template(for: $0) }?.imageBoxes ?? []
         let boxLabel = boxes.firstIndex { $0.id == boxID }.map { "Image \($0 + 1)" } ?? "Image"
         return QueueItemDisplay(bookTitle: content.book.title, pageLabel: pageLabel, boxLabel: boxLabel)

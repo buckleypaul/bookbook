@@ -51,9 +51,17 @@ extension AppModel {
 
     /// Asks `CostPolicy` with the Settings threshold and the book's ledger total and budget.
     public func costDecision(for estimate: CostEstimate, in document: BookDocument) async -> CostDecision {
+        await costDecisionAndSpent(for: estimate, in: document).decision
+    }
+
+    /// `costDecision` plus the book's ledger total it was decided on (for the alert text),
+    /// from one read of the ledger.
+    public func costDecisionAndSpent(for estimate: CostEstimate,
+                                     in document: BookDocument) async -> (decision: CostDecision, spent: Decimal) {
         let total = await ledgerSummary(for: document.id).total
-        return CostPolicy.decide(estimate: estimate, threshold: preferences.confirmThreshold, bookTotal: total,
-                                 budget: document.content.book.budget)
+        let decision = CostPolicy.decide(estimate: estimate, threshold: preferences.confirmThreshold,
+                                         bookTotal: total, budget: document.content.book.budget)
+        return (decision, total)
     }
 
     /// The book's ledger totals (Book Settings → Cost, PD §8.12). Read off the main actor.
@@ -65,6 +73,13 @@ extension AppModel {
     /// The ledger line for `Provenance.cost` (Version details).
     public func costRecord(_ id: CostRecordID, in bookID: BookID) async -> CostRecord? {
         await openBooks.costRecords(for: bookID).last { $0.id == id }
+    }
+
+    /// The ledger lines for several `CostRecordID`s from one read (nil stays nil, as does a missing line).
+    func costRecords(_ ids: [CostRecordID?], in bookID: BookID) async -> [CostRecord?] {
+        guard ids.contains(where: { $0 != nil }) else { return ids.map { _ in nil } }
+        let records = await openBooks.costRecords(for: bookID)
+        return ids.map { id in id.flatMap { id in records.last { $0.id == id } } }
     }
 
     /// Not undoable (like the author). nil clears the budget.
@@ -95,17 +110,27 @@ extension AppModel {
     /// Boxes filled (or already drafted from this plan) since the plan was made are skipped.
     @discardableResult
     public func enqueueDraftAll(_ plan: DraftAllPlan, in document: BookDocument) -> Bool {
-        guard !plan.items.isEmpty, plan.items.count == plan.targets.count else { return false }
+        guard plan.items.count == plan.targets.count else { return false }
+        return enqueuePlanned(plan.items, in: document) { index, content in
+            let target = plan.targets[index]
+            return content.pages[target.page]?.images[target.box]?.placement == nil
+        }
+    }
+
+    /// Appends the pending message of every planned item that is `stillWanted` (given its index
+    /// in `items`) and not already queued, then enqueues them in one call (Draft all, Generate
+    /// whole sheet). False if nothing was queued.
+    func enqueuePlanned(_ items: [QueueItem], in document: BookDocument,
+                        stillWanted: (Int, BookContent) -> Bool) -> Bool {
+        guard !items.isEmpty else { return false }
         var queued: [QueueItem] = []
         document.performIrreversible { content in
             var dirty = DirtySet()
-            for (item, target) in zip(plan.items, plan.targets) {
-                guard content.pages[target.page]?.images[target.box]?.placement == nil,
-                      content.session(containing: item.messageID) == nil else { continue }
+            for (index, item) in items.enumerated() {
+                guard stillWanted(index, content), content.session(containing: item.messageID) == nil else { continue }
                 let message = Message(id: item.messageID, role: .user, text: item.intent.messageText,
                                       queueItemID: item.id, createdAt: item.enqueuedAt)
-                let changed = BookMutations.appendPendingMessage(message, page: target.page, box: target.box,
-                                                                 to: &content)
+                let changed = BookMutations.appendPendingMessage(message, target: item.target, to: &content)
                 guard !changed.isEmpty else { continue }
                 dirty.formUnion(changed)
                 queued.append(item)
@@ -114,8 +139,8 @@ extension AppModel {
         }
         guard !queued.isEmpty else { return false }
         notePending(queued.map(\.id))
-        let items = queued
-        queueOperation { await $0.enqueue(items, position: .end) }
+        let enqueued = queued
+        queueOperation { await $0.enqueue(enqueued, position: .end) }
         return true
     }
 

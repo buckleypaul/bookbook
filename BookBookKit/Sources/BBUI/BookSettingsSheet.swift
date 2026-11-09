@@ -26,6 +26,10 @@ struct BookSettingsSheet: View {
         _budgetText = State(initialValue: document.content.book.budget.map(CostText.field) ?? "")
     }
 
+    private var protectedVersions: Set<VersionID> {
+        StorageModel.protectedVersions(in: app.queueSnapshot, book: document.id)
+    }
+
     private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
@@ -61,7 +65,7 @@ struct BookSettingsSheet: View {
         .padding(20)
         .frame(width: 460)
         .task { summary = await app.ledgerSummary(for: document.id) }
-        .task { await storage.refresh(document) }
+        .task { await storage.refresh(document, protecting: protectedVersions) }
     }
 
     // MARK: Storage (PD §8.12)
@@ -91,7 +95,7 @@ struct BookSettingsSheet: View {
         .alert("Delete \(storage.plan.versionIDs.count) unused versions?", isPresented: $confirmCleanUp) {
             Button("Delete", role: .destructive) {
                 Task {
-                    if let message = await storage.cleanUp(document) { error = message }
+                    if let message = await storage.cleanUp(document, protecting: protectedVersions) { error = message }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -122,8 +126,12 @@ struct BookSettingsSheet: View {
                 }
             }
             if summary.includesEstimates {
-                Text("Includes estimates for requests whose actual cost wasn't reported.")
+                Text(Self.estimatesCaption)
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            if summary.skippedLines > 0 {
+                Text(Self.skippedLinesText(summary.skippedLines))
+                    .font(.caption).foregroundStyle(.orange)
             }
             HStack {
                 Text("Budget  $")
@@ -160,6 +168,12 @@ struct BookSettingsSheet: View {
                 }
             }
         }
+    }
+
+    static let estimatesCaption = "Includes estimates (some prices unknown)"
+
+    static func skippedLinesText(_ count: Int) -> String {
+        "\(count) ledger \(count == 1 ? "line" : "lines") couldn't be read."
     }
 
     /// The breakdown labels of PD §8.12: images, consistency checks, templates.
@@ -224,20 +238,32 @@ final class StorageModel {
         ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
     }
 
-    func refresh(_ document: BookDocument) async {
+    /// Versions that waiting or running requests for this book refer to (the version they
+    /// refine, their attached references, a checked version), so Clean Up keeps them.
+    static func protectedVersions(in snapshot: QueueSnapshot, book: BookID) -> Set<VersionID> {
+        var out: Set<VersionID> = []
+        for entry in snapshot.entries where entry.item.bookID == book {
+            if let v = entry.item.intent.refines { out.insert(v) }
+            for ref in entry.item.intent.attachedReferences { out.insert(ref.versionID) }
+            if let v = entry.item.kind.checkedVersion { out.insert(v) }
+        }
+        return out
+    }
+
+    func refresh(_ document: BookDocument, protecting: Set<VersionID> = []) async {
         let store = document.store
-        plan = CleanUp.plan(for: document.content) { store.imageFileSize($0) }
+        plan = CleanUp.plan(for: document.content, protecting: protecting) { store.imageFileSize($0) }
         size = await Task.detached { store.sizeOnDisk() }.value
     }
 
     /// Applies the plan: removes the versions (not undoable), saves, then deletes the files that
     /// nothing uses any more. Returns an error message, or nil.
-    func cleanUp(_ document: BookDocument) async -> String? {
+    func cleanUp(_ document: BookDocument, protecting: Set<VersionID> = []) async -> String? {
         guard document.isEditable, !plan.isEmpty, !isWorking else { return nil }
         isWorking = true
         defer { isWorking = false }
         let store = document.store
-        let plan = CleanUp.plan(for: document.content) { store.imageFileSize($0) }
+        let plan = CleanUp.plan(for: document.content, protecting: protecting) { store.imageFileSize($0) }
         let affected = CleanUp.affectedSessions(plan, in: document.content)
         document.performIrreversible { content in
             CleanUp.apply(plan, to: &content)

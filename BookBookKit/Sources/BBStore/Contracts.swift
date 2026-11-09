@@ -36,6 +36,17 @@ public struct LockOwner: Codable, Hashable, Sendable {
     }
 }
 
+public extension LockOwner {
+    /// This process on this Mac, as `.lock` would record it now.
+    static var current: LockOwner { BookLock.currentOwner() }
+
+    /// Whether `self` and `other` name the same Mac: by `hostID` when both have one, else by
+    /// host name (locks written before Phase 16b).
+    func isOnSameMachine(as other: LockOwner) -> Bool {
+        BookLock.sameMachine(self, other)
+    }
+}
+
 public enum LockAcquisition: Hashable, Sendable {
     /// This store now holds the lock (fresh, re-entrant from this process, or a stale lock taken over).
     case acquired

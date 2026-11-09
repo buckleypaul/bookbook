@@ -59,10 +59,11 @@ import Testing
         let sameID = LockOwner(pid: 1, host: "Renamed.local", acquiredAt: Date(), hostID: "BBBB")
         let legacySame = LockOwner(pid: 1, host: "Mine.local", acquiredAt: Date())
         let legacyOther = LockOwner(pid: 1, host: "Other.local", acquiredAt: Date())
-        #expect(LockTakeOver.offersOpenAnyway(other, thisHostID: "BBBB", thisHostName: "Mine.local"))
-        #expect(!LockTakeOver.offersOpenAnyway(sameID, thisHostID: "BBBB", thisHostName: "Mine.local"))
-        #expect(!LockTakeOver.offersOpenAnyway(legacySame, thisHostID: "BBBB", thisHostName: "Mine.local"))
-        #expect(LockTakeOver.offersOpenAnyway(legacyOther, thisHostID: "BBBB", thisHostName: "Mine.local"))
+        let mine = LockOwner(pid: 2, host: "Mine.local", acquiredAt: Date(), hostID: "BBBB")
+        #expect(LockTakeOver.offersOpenAnyway(other, thisMachine: mine))
+        #expect(!LockTakeOver.offersOpenAnyway(sameID, thisMachine: mine))
+        #expect(!LockTakeOver.offersOpenAnyway(legacySame, thisMachine: mine))
+        #expect(LockTakeOver.offersOpenAnyway(legacyOther, thisMachine: mine))
         #expect(!LockTakeOver.offersOpenAnyway(nil))
     }
 

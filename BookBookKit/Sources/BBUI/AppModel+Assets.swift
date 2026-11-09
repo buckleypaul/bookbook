@@ -138,6 +138,18 @@ extension AppModel {
         return intent.provider
     }
 
+    /// The first provider among `items` (a batch's requests) that would be sent a real-person
+    /// photo before the book acknowledged its notice; nil = enqueue without a notice. Shared by
+    /// Generate Whole Sheet and Draft All.
+    public func realPersonNoticeNeeded(for items: [QueueItem], in document: BookDocument) -> ProviderID? {
+        for item in items {
+            if let provider = realPersonNoticeNeeded(intent: item.intent, target: item.target, in: document) {
+                return provider
+            }
+        }
+        return nil
+    }
+
     /// Record the acknowledgement in `Book.acknowledgements` (not undoable).
     public func acknowledgeRealPersonNotice(_ provider: ProviderID, in document: BookDocument) {
         document.performIrreversible { BookMutations.acknowledgeRealPersonNotice(provider, in: &$0) }

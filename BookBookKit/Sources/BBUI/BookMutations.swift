@@ -96,6 +96,8 @@ public enum BookMutations {
         }
 
         if case let .success(result, provenance) = delivery.outcome, let storedImage {
+            let provenance = resolvingDeletedMentions(provenance, message: messageIndex.map { session.messages[$0] },
+                                                      in: content)
             let version = Version(id: versionID, image: storedImage, pixelSize: result.pixelSize, source: .generated,
                                   parent: provenance.intent.refines, createdAt: now, provenance: provenance)
             session.versions.append(version)

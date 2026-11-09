@@ -261,6 +261,62 @@ struct AssetCommandTests {
         #expect(!s.document.deleteAsset(pip.id))
     }
 
+    @Test func deleteAsset_rewritesProvenanceIntents_andSendTextKeepsTheName() async throws {
+        let s = try makeDocument()
+        let pip = addPip(s)
+        let page = Fixtures.firstPage(s.document.content)
+        let boxSession = try #require(s.document.content.pages[page]?.images[Fixtures.imageBox.id]?.sessionID)
+        let text = "\(MentionText.token(for: pip.id)) yawning"
+        let intent = GenerationIntent(messageText: text, provider: .openai, model: "gpt-image-2.5-sunburst", quality: .draft)
+        var provenance = Fixtures.provenance()
+        provenance.intent = intent
+        append(version(provenance: provenance), to: boxSession, in: s.document)
+        // A queued item: its message is pending in the session, its intent still holds the token.
+        let target = GenerationTarget.pageBox(page, Fixtures.imageBox.id)
+        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: s.document.id, target: target,
+                                                           now: Fixtures.date)
+        s.document.performIrreversible { BookMutations.appendPendingMessage(message, target: target, to: &$0) }
+
+        #expect(s.document.deleteAsset(pip.id))
+        let content = s.document.content
+        let stored = try #require(content.sessions[boxSession]?.versions.last?.provenance?.intent.messageText)
+        #expect(stored == "Pip yawning")
+        #expect(!stored.contains(MentionText.token(for: pip.id)))
+        // The queued intent still has the token, but the send text keeps the name.
+        #expect(item.intent.messageText == text)
+        let shown = ContextAssembler.requestDisplayText(intent: item.intent, messageID: item.messageID, content: content)
+        #expect(shown == "Pip yawning")
+        // Without the answered message there is nothing to fall back to.
+        #expect(ContextAssembler.requestDisplayText(intent: item.intent, messageID: nil, content: content) == " yawning")
+    }
+
+    @Test func queueThenDeleteThenDeliver_provenanceKeepsTheNameNotTheToken() throws {
+        let s = try makeDocument()
+        let pip = addPip(s)
+        let page = Fixtures.firstPage(s.document.content)
+        let target = GenerationTarget.pageBox(page, Fixtures.imageBox.id)
+        let intent = GenerationIntent(messageText: "\(MentionText.token(for: pip.id)) in the park", provider: .openai,
+                                      model: "gpt-image-2.5-sunburst", quality: .draft)
+        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: s.document.id, target: target,
+                                                           now: Fixtures.date)
+        s.document.performIrreversible { BookMutations.appendPendingMessage(message, target: target, to: &$0) }
+        #expect(s.document.deleteAsset(pip.id))
+
+        var provenance = Fixtures.provenance()
+        provenance.intent = item.intent
+        let result = ImageResult(imageData: Data([1]), contentType: "public.png",
+                                 pixelSize: PixelSize(width: 1024, height: 1024))
+        s.document.performIrreversible { content in
+            BookMutations.applyDelivery(
+                GenerationDelivery(item: item, outcome: .success(result: result, provenance: provenance)),
+                storedImage: Fixtures.ref, to: &content, now: Fixtures.date)
+        }
+        let session = try #require(s.document.content.session(containing: item.messageID))
+        let text = try #require(session.versions.last?.provenance?.intent.messageText)
+        #expect(text == "Pip in the park")
+        #expect(MentionText.mentionedAssets(in: text).isEmpty)
+    }
+
     // MARK: Deliveries into asset sessions
 
     func pending(_ target: GenerationTarget, in doc: BookDocument) -> QueueItem {

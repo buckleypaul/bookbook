@@ -45,6 +45,8 @@ struct ModelSettings: View {
                 }
             } footer: {
                 Text(ModelSettings.qualityExplanation).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Section {
                 Picker("Templates", selection: $prefs.defaultTemplateModelID) {
@@ -62,6 +64,8 @@ struct ModelSettings: View {
                 Text("AI helpers")
             } footer: {
                 Text(ModelSettings.consistencyNote).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Section {
                 ForEach(prefs.customModels) { spec in
@@ -73,14 +77,12 @@ struct ModelSettings: View {
                             .controlSize(.small)
                     }
                 }
+                TextField("Model ID", text: $customID, prompt: Text("Model ID"))
+                Picker("Copies", selection: $family) {
+                    ForEach(models.filter { $0.copiesFrom == nil }, id: \.id) { Text($0.displayName).tag($0.id) }
+                }
                 HStack {
-                    TextField("Model ID", text: $customID, prompt: Text("Model ID"))
-                        .labelsHidden()
-                        .frame(minWidth: 180, maxWidth: .infinity)
-                    Picker("Copies", selection: $family) {
-                        ForEach(models.filter { $0.copiesFrom == nil }, id: \.id) { Text($0.displayName).tag($0.id) }
-                    }
-                    .fixedSize()
+                    Spacer()
                     Button("Add") { add(models) }
                         .disabled(customID.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -90,9 +92,13 @@ struct ModelSettings: View {
             } footer: {
                 Text("Use a model ID BookBook doesn't list yet. It behaves and is priced like the model it copies.")
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            if family.isEmpty { family = models.first { $0.copiesFrom == nil }?.id ?? "" }
+        }
         .task {
             if app.hasOpenAIKey, app.modelAvailability.isEmpty { _ = await app.testConnection(provider) }
         }

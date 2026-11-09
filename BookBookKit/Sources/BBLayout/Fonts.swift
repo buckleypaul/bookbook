@@ -9,8 +9,9 @@ public struct FontFileInfo: Hashable, Sendable {
     public var familyName: String
     /// The raw OS/2 `fsType` value (0 if the table is missing).
     public var fsType: UInt16
-    /// False when `fsType` is "restricted license" (bit 1 set, bits 2/3 clear): it can't be
-    /// embedded in a PDF. Preview & Print / Editable / installable all count as embeddable.
+    /// False when `fsType` is "restricted license" (bit 1 set, bits 2/3 clear) or
+    /// "bitmap embedding only" (bit 9): it can't be embedded in a PDF as outlines.
+    /// Preview & Print / Editable / installable all count as embeddable.
     public var embeddingAllowed: Bool
 
     public init(postScriptNames: [String], familyName: String, fsType: UInt16, embeddingAllowed: Bool) {
@@ -54,9 +55,10 @@ public enum FontInspector {
                             embeddingAllowed: embeddingAllowed(fsType: fsType))
     }
 
-    /// False only for "restricted license" embedding: bit 1 set with bits 2 and 3 clear.
+    /// False for "restricted license" embedding (bit 1 set with bits 2 and 3 clear) and for
+    /// "bitmap embedding only" (bit 9, `0x0200`): a PDF needs the outlines (Phase 16b #80b).
     static func embeddingAllowed(fsType: UInt16) -> Bool {
-        fsType & 0x000E != 0x0002
+        fsType & 0x000E != 0x0002 && fsType & 0x0200 == 0
     }
 }
 

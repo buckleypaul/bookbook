@@ -88,6 +88,9 @@ public struct BookBookCommands: Commands {
             }
             .disabled(book == nil || (pages?.selectedPage ?? book?.content.book.pageOrder.first) == nil)
         }
+        CommandGroup(before: .help) {
+            Button("Guided Setup…") { openWindow(id: OnboardingScene.id) }
+        }
         CommandGroup(replacing: .printItem) {
             Button("Print…") { if let book { ExportActions.print(book) } }
                 .keyboardShortcut("p")

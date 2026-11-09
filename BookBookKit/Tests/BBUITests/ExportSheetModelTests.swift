@@ -9,6 +9,8 @@ import Testing
 final class FakeExportServices: ExportServices {
     var issues: [PreflightIssue] = []
     var exported: [(ExportOptions, URL)] = []
+    var printed: [ExportOptions] = []
+    func print(_ options: ExportOptions) async throws { printed.append(options) }
     func runPreflight() async -> [PreflightIssue] { issues }
     func export(_ options: ExportOptions, to url: URL,
                 progress: @MainActor (ExportProgress) -> Void) async throws -> ExportResult {
@@ -159,6 +161,23 @@ struct ExportSheetModelTests {
         #expect(services.exported[0].0.includeCover == false)
         #expect(services.exported[0].1 == url)
         #expect(model.result?.pageCount == 3)
+    }
+
+    @Test func printUsesChosenOptions() async throws {
+        let (model, _, _, services) = try makeModel(extraPages: 2, issues: [issue(.spelling)])
+        #expect(model.printTitle == "Print…")
+        await model.runPreflight()
+        #expect(model.printTitle == "Print Anyway…")
+        model.outputType = .booklet
+        model.sheetSize = .a4
+        model.includeCover = false
+        model.startPrint()
+        await model.waitForExport()
+        #expect(services.printed == [ExportOptions(kind: .booklet(.a4), includeCover: false)])
+        // Print shop without bleed is blocked, like export.
+        model.outputType = .printShop
+        model.startPrint()
+        #expect(services.printed.count == 1)
     }
 
     @Test func errorsAreReadable() {

@@ -55,6 +55,19 @@ public final class LiveExportServices: ExportServices {
         try await makeExporter().export(options, to: url, progress: progress)
     }
 
+    public func print(_ options: ExportOptions) async throws {
+        let window = NSApp.keyWindow
+        let (data, _) = try await makeExporter().pdfData(options) { _ in }
+        guard let pdf = PDFDocument(data: data),
+              let operation = pdf.printOperation(for: .shared, scalingMode: .pageScaleNone, autoRotate: true)
+        else { throw ExportError.encodingFailed }
+        if let window {
+            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+        } else {
+            operation.run()
+        }
+    }
+
     public func coverPDF() async throws -> Data {
         try await makeExporter().coverPDFData()
     }
@@ -69,21 +82,10 @@ public final class LiveExportServices: ExportServices {
 @MainActor
 public enum ExportActions {
     /// Prints the whole book as a Standard PDF through the system print panel.
-    public static func print(_ document: BookDocument) {
+    public static func print(_ document: BookDocument, options: ExportOptions = ExportOptions()) {
         let services = LiveExportServices(document: document)
-        let window = NSApp.keyWindow
         Task { @MainActor in
-            do {
-                let (data, _) = try await services.makeExporter().pdfData(ExportOptions()) { _ in }
-                guard let pdf = PDFDocument(data: data),
-                      let operation = pdf.printOperation(for: .shared, scalingMode: .pageScaleNone, autoRotate: true)
-                else { throw ExportError.encodingFailed }
-                if let window {
-                    operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
-                } else {
-                    operation.run()
-                }
-            } catch {
+            do { try await services.print(options) } catch is CancellationError {} catch {
                 showError("Couldn't print the book", error)
             }
         }

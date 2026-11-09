@@ -171,6 +171,8 @@ struct ExportSheet: View {
             Button("Done") { onClose() }
                 .keyboardShortcut(.cancelAction)
                 .disabled(model.isExporting)
+            Button(model.printTitle) { model.startPrint() }
+                .disabled(!model.canExport)
             Button(model.primaryTitle) { model.startExport() }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!model.canExport)

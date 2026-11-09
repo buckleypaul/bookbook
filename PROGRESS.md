@@ -118,6 +118,7 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - Flaky: `LibraryActionsTests.duplicate_flushesAnOpenSourceFirst` failed in several lane runs ("Operation not permitted" removing `.journal`, or the duplicate not found); being investigated in Session B (from Phase 16b).
 
 ### v1.x
+- Preflight spelling uses `language: nil`, so macOS auto-detects the language and accepts "teh" (a Malay word); real English typos are still flagged. Pinning the book's language is a product call (from Phase 16b).
 - A read-only open of an older-schema book has no in-memory migration (no older schema can exist in v1.0; needed with the first migration) (from Phase 3, moved by Phase 16).
 - `RenderOptions.Target.print` is unused (print renders `.pdfTrim`) (a dead enum case with no user impact) (from Phase 14).
 - Left-bound side-by-side landscape booklet layout; v1.0 stays top-bound with "binds at the top" in the caption (by product decision) (from Phase 14).
@@ -185,7 +186,9 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 16b — Bug fixes and edge cases
 
-**Stage:** A
+**Stage:** B
+
+**Session A done (2026-11-09):** lanes L1–L8 all merged into `phase-16b-bug-fixes`. The main thread also switched closed-book deliveries to `acquireLockExclusively()` (#3c), wired the #76a colour undo group through `TextEditingController`/`CanvasView`, and wired the undelivered count into the library-switch warning. `scripts/test.sh all` is green after a test-only fix (`SystemSpellingCheckerTests` trapped in `MainActor.assumeIsolated` inside an `.enabled(if:)` condition). For Session B: the review covers the whole phase diff (`main..phase-16b-bug-fixes`). Watch `LibraryActionsTests.duplicate_flushesAnOpenSourceFirst`, which flaked in some lane runs. "Open Anyway" relies on the per-process lock hold count (a temporary store holds the lock while `BookDocument.open` re-enters it). #47 and #48 have no automated tests. The app pass should re-check the menus, Guided Setup, the overview, the export sheet and the Open Anyway alert.
 
 - 2026-11-09: Session A started. Triage of the Phase 17 and Later follow-ups in progress.
 - Triage: 181 rows in 4 batches. Product calls are under Standing decisions ("Phase 16b product calls"). `architecture.md` updated (§4.4, §5.5, §7.7, §7.9).

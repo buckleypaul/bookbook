@@ -79,17 +79,13 @@ struct LibraryLocationSettings: View {
             Text("Each book is a self-contained file in this folder, so you can back it up by copying it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-        .alert("Switch library?", isPresented: Binding(
-            get: { confirmSwitch != nil }, set: { if !$0 { confirmSwitch = nil } }
-        ), presenting: confirmSwitch) { url in
+        .alert("Switch library?", isPresented: $confirmSwitch.isPresent(), presenting: confirmSwitch) { url in
             Button("Switch Anyway", role: .destructive) { chosen = url }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text(LibrarySwitchWarning.message(count: pendingCount) ?? "")
         }
-        .alert("Move your books to the new location?", isPresented: Binding(
-            get: { chosen != nil }, set: { if !$0 { chosen = nil } }
-        ), presenting: chosen) { url in
+        .alert("Move your books to the new location?", isPresented: $chosen.isPresent(), presenting: chosen) { url in
             Button("Move Books") { change(to: url, move: true) }
             Button("Don't Move") { change(to: url, move: false) }
             Button("Cancel", role: .cancel) { chosen = nil }

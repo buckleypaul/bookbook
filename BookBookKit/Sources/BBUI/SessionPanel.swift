@@ -187,8 +187,7 @@ struct SessionPanel: View {
                                   },
                                   onCancel: { notice = nil })
         }
-        .confirmationDialog("Delete this version?", isPresented: Binding(
-            get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
+        .confirmationDialog("Delete this version?", isPresented: $pendingDelete.isPresent(), titleVisibility: .visible) {
             Button("Delete Version", role: .destructive) {
                 if let id = pendingDelete { delete(id) }
                 pendingDelete = nil
@@ -205,7 +204,7 @@ struct SessionPanel: View {
             Text(isAsset ? "The chat clears. Discarding versions also clears the chosen image. This can't be undone."
                  : "The chat clears. Discarding versions also empties this box. This can't be undone.")
         }
-        .alert("Confirm Cost", isPresented: Binding(get: { costAlert != nil }, set: { if !$0 { costAlert = nil } })) {
+        .alert("Confirm Cost", isPresented: $costAlert.isPresent()) {
             Button(pendingAction?.kind.buttonTitle ?? "Generate") {
                 if let pending = pendingAction { perform(pending) }
                 pendingAction = nil
@@ -215,7 +214,7 @@ struct SessionPanel: View {
         } message: {
             Text(costAlert ?? "")
         }
-        .alert("Couldn't Complete That", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
+        .alert("Couldn't Complete That", isPresented: $problem.isPresent()) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(problem ?? "")
@@ -511,10 +510,8 @@ struct SessionPanel: View {
             for url in urls {
                 do {
                     selectedVersion = try await document.importImage(from: url, page: pageBox.page, box: pageBox.box)
-                } catch let failure as ImageImportFailure {
-                    problem = failure.message
                 } catch {
-                    problem = error.localizedDescription
+                    problem = ImageImportFailure.message(for: error)
                 }
             }
         }
@@ -530,10 +527,8 @@ struct SessionPanel: View {
             do {
                 selectedVersion = try await document.importAssetImage(from: url, owner: owner,
                                                                       depictsRealPerson: depictsRealPerson)
-            } catch let failure as ImageImportFailure {
-                problem = failure.message
             } catch {
-                problem = error.localizedDescription
+                problem = ImageImportFailure.message(for: error)
             }
         }
     }

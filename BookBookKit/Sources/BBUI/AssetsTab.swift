@@ -104,8 +104,7 @@ struct AssetsList: View {
                 }
             }
         }
-        .alert("New \(newType.map(AssetEditing.typeTitle) ?? "Asset")", isPresented: Binding(
-            get: { newType != nil }, set: { if !$0 { newType = nil } })) {
+        .alert("New \(newType.map(AssetEditing.typeTitle) ?? "Asset")", isPresented: $newType.isPresent()) {
             TextField("Name", text: $newName)
             Button("Create") { if let type = newType { model.create(type, name: newName, in: document) } }
             Button("Cancel", role: .cancel) {}

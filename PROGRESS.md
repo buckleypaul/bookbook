@@ -2,7 +2,7 @@
 
 Updated by each phase session (see `implementation-plan.md` §2.6). Phases are listed in execution order.
 
-**Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `blocked` · `post-MVP`
+**Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `deferred` · `blocked` · `post-MVP`
 
 **Live API spend so far:** $0.56 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
@@ -24,8 +24,8 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 12 | Consistency check and AI templates (M3) | done (hand checks deferred) | `phase-12-consistency-ai-templates` | — | $0.007 | Live check `SP12_templateAndConsistency` passed. [Log](progress/phase-12-consistency-ai-templates.md) |
 | 13 | Gemini provider | post-MVP | | | | Out of scope for v1.0 (decided 2026-11-08). Spec kept in `plan/post-mvp/phase-13-gemini.md`. |
 | 14 | Export and print | done (hand checks deferred) | `phase-14-export-print` | — | $0.00 | No live checks listed. [Log](progress/phase-14-export-print.md) |
-| 15 | Release pipeline (M4) | not started | | | | |
-| 16 | Import, book settings, onboarding, sample | not started | | | | |
+| 15 | Release pipeline (M4) | deferred | | | | Deferred by you on 2026-11-08: finish the product work first, then do the tap. Phase 16 runs before it. Not picked as "next" until you un-defer it; Phase 17 still needs it. |
+| 16 | Import, book settings, onboarding, sample | in progress | `phase-16-import-onboarding` | — | | |
 | 17 | Hardening and v1.0 (M5) | not started | | | | |
 
 ## Standing decisions
@@ -188,3 +188,9 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
+
+### Phase 16 — Library import, book settings, onboarding, sample
+
+**Stage:** A
+
+- 2026-11-08: Phase 15 deferred at your request; Phase 16 started (its dependencies 3, 10 and 14 are done).

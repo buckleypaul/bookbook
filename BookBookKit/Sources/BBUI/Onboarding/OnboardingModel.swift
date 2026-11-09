@@ -11,8 +11,14 @@ public struct OnboardingState: @unchecked Sendable {
     public func markCompleted() { defaults.set(true, forKey: AppPreferences.Key.onboardingCompleted) }
 
     /// Show on first launch only: flag unset, no key saved, and not under XCTest.
-    public func shouldShowOnLaunch(hasKey: Bool, underTests: Bool = Self.runningUnderTests) -> Bool {
-        !underTests && !hasKey && !isCompleted
+    public func shouldShowOnLaunch(hasKey: Bool, underTests: Bool = Self.runningUnderTests,
+                                   arguments: UserDefaults = .standard) -> Bool {
+        !underTests && !hasKey && !isCompleted && !Self.automationRun(arguments)
+    }
+
+    /// UI-automation runs pass `-BookBookSkipOnboarding YES` or `-BookBookLibraryRoot <path>`.
+    static func automationRun(_ arguments: UserDefaults) -> Bool {
+        arguments.bool(forKey: "BookBookSkipOnboarding") || arguments.string(forKey: "BookBookLibraryRoot") != nil
     }
 
     public static var runningUnderTests: Bool {
@@ -35,6 +41,9 @@ public final class OnboardingModel {
 
     public var isFirst: Bool { step == Step.allCases.first }
     public var isLast: Bool { step == Step.allCases.last }
+
+    /// Back to the first step (the window reopens after Done or Skip).
+    public func reset() { step = .whatIsAKey }
 
     public func next() {
         if let n = Step(rawValue: step.rawValue + 1) { step = n } else { finish() }

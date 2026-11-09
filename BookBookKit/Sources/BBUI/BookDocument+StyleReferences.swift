@@ -8,6 +8,7 @@ extension BookDocument {
     /// JPEG, HEIC and WebP. Doesn't change the style (the caller sends `.setStyleVisual`).
     func storeStyleReference(from url: URL) async throws -> ImageRef {
         guard isEditable else { throw StoreError.readOnly }
+        guard url.isFileURL else { throw StoreError.io("\(url.lastPathComponent) isn't a file on this Mac") }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let data = try Data(contentsOf: url)

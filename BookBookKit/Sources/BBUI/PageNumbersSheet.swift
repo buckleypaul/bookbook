@@ -53,6 +53,14 @@ struct PageNumbersSheet: View {
     /// The family the picker showed on open; unchanged means the stored face stays as it was.
     private let initialFamily: String?
 
+    /// The `fontFamily` Done stores. Untouched keeps the stored face (e.g. a bold one); a new
+    /// family is stored as its PostScript name; nil is the body font.
+    static func resolvedFont(family: String?, initialFamily: String?, stored: String?) -> String? {
+        if family == initialFamily { return stored }
+        guard let family else { return nil }
+        return PageNumberFontNames.postScriptName(forFamily: family) ?? (family == stored ? stored : nil)
+    }
+
     static let sizeRange: ClosedRange<Double> = 6...72
 
     init(pages: PagesController, style: PageNumberStyle, content: BookContent? = nil) {
@@ -126,15 +134,8 @@ struct PageNumbersSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Done") {
                     var style = draft
-                    if family == initialFamily {
-                        // Untouched: keep the stored face (e.g. a bold one) as it was.
-                        style.fontFamily = draft.fontFamily
-                    } else if let family {
-                        style.fontFamily = PageNumberFontNames.postScriptName(forFamily: family)
-                            ?? (family == draft.fontFamily ? draft.fontFamily : nil)
-                    } else {
-                        style.fontFamily = nil
-                    }
+                    style.fontFamily = Self.resolvedFont(family: family, initialFamily: initialFamily,
+                                                         stored: draft.fontFamily)
                     style.size = min(max(style.size, Self.sizeRange.lowerBound), Self.sizeRange.upperBound)
                     style.startNumber = max(0, style.startNumber)
                     pages.setPageNumberStyle(style)

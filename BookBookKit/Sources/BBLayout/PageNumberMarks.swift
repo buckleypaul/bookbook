@@ -9,10 +9,7 @@ public struct PageNumberMarks: Sendable {
     public let numbers: [Int: String]
 
     public init(content: BookContent) {
-        let entries = content.storyPages.map {
-            SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread)
-        }
-        layout = PageSequencer.layout(entries, cover: content.book.coverPageID)
+        layout = PageSequencer.layout(for: content)
         let roles = content.pages.compactMapValues { content.template(for: $0)?.pageRole }
         numbers = PageNumbering.numbers(layout: layout, style: content.style.pageNumbers, pageRoles: roles)
     }

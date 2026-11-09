@@ -115,8 +115,7 @@ public final class BookExporter {
     public nonisolated static func storyPositions(_ content: BookContent,
                                                   range: ClosedRange<Int>?) -> [(page: Page, position: PagePosition)] {
         let story = content.storyPages
-        let entries = story.map { SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread) }
-        let layout = PageSequencer.layout(entries, cover: content.book.coverPageID)
+        let layout = PageSequencer.layout(for: content)
         let pairs = Array(zip(story, layout.pages))
         let selected = PageRangeWidening.selected(pairs.map { (position: $0.1.position, span: $0.1.span) }, in: range)
         let keep = Set(selected.map(\.position))

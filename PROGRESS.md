@@ -26,7 +26,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 14 | Export and print | done (hand checks deferred) | `phase-14-export-print` | — | $0.00 | No live checks listed. [Log](progress/phase-14-export-print.md) |
 | 15 | Release pipeline (M4) | deferred | | | | Deferred by you on 2026-11-08: finish the product work first, then do the tap. Phase 16 runs before it. Not picked as "next" until you un-defer it; Phase 17 still needs it. |
 | 16 | Import, book settings, onboarding, sample | done (hand checks deferred) | `phase-16-import-onboarding` | — | $0.00 | No live checks listed. Sample book and preset samples are placeholders until you make them. [Log](progress/phase-16-import-onboarding.md) |
-| 16b | Bug fixes and edge cases | not started | | | | Added 2026-11-09: triage and fix the Phase 17 and Later follow-ups. No live checks. |
+| 16b | Bug fixes and edge cases | in progress | `phase-16b-bug-fixes` | — | | Added 2026-11-09: triage and fix the Phase 17 and Later follow-ups. No live checks. |
 | 17 | Hardening and v1.0 (M5) | not started | | | | |
 
 ## Standing decisions
@@ -199,4 +199,8 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-_No phase in progress._
+### Phase 16b — Bug fixes and edge cases
+
+**Stage:** A
+
+- 2026-11-09: Session A started. Triage of the Phase 17 and Later follow-ups in progress.

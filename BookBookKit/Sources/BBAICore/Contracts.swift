@@ -150,7 +150,23 @@ public struct ReferenceImage: Hashable, Sendable {
     }
 }
 
-/// Provider-neutral image request (A §7.2). Phase 10/11 add `mask` and `history`.
+/// A region-edit mask (A §7.6, Phase 11), already encoded for the wire: a PNG with alpha at the
+/// base image's exact pixel size, **transparent (alpha 0) where the provider may edit** and opaque
+/// elsewhere (SP-4 polarity). Only sent when the model's `supportsMask` is true.
+public struct MaskPayload: Hashable, Sendable {
+    /// PNG bytes (RGBA). Must match `ImageRequest.baseImage.pixelSize` exactly.
+    public var pngData: Data
+    public var pixelSize: PixelSize
+    /// The stored mask image in the book (the user's 8-bit mask, white = edit area), if any.
+    public var ref: ImageRef?
+    public init(pngData: Data, pixelSize: PixelSize, ref: ImageRef? = nil) {
+        self.pngData = pngData
+        self.pixelSize = pixelSize
+        self.ref = ref
+    }
+}
+
+/// Provider-neutral image request (A §7.2). Phase 11 adds `mask`; `history` comes with Gemini.
 public struct ImageRequest: Sendable {
     public var model: CatalogModel
     public var quality: QualityLevel
@@ -158,15 +174,18 @@ public struct ImageRequest: Sendable {
     public var instruction: ComposedPrompt
     public var baseImage: ImagePayload?
     public var references: [ReferenceImage]
+    /// Region edit only (requires `baseImage`). nil for every other request.
+    public var mask: MaskPayload?
 
     public init(model: CatalogModel, quality: QualityLevel, output: OutputShape, instruction: ComposedPrompt,
-                baseImage: ImagePayload? = nil, references: [ReferenceImage] = []) {
+                baseImage: ImagePayload? = nil, references: [ReferenceImage] = [], mask: MaskPayload? = nil) {
         self.model = model
         self.quality = quality
         self.output = output
         self.instruction = instruction
         self.baseImage = baseImage
         self.references = references
+        self.mask = mask
     }
 }
 

@@ -9,6 +9,22 @@ import Foundation
 enum OpenAIErrorMapper {
     private static let maxRawBytes = 16_000
 
+    /// Sends `request`; transport failures and non-2xx responses come back as the mapped
+    /// `ProviderError`, so every endpoint maps them the same way. `received` runs once a
+    /// response (any status) has arrived, before the status is checked.
+    static func send(_ request: HTTPRequest, via http: any HTTPClient, key: APIKey,
+                     received: () -> Void = {}) async throws(ProviderError) -> HTTPResponse {
+        let response: HTTPResponse
+        do {
+            response = try await http.send(request)
+        } catch {
+            throw map(error)
+        }
+        received()
+        guard (200..<300).contains(response.status) else { throw map(response, key: key) }
+        return response
+    }
+
     static func map(_ response: HTTPResponse, key: APIKey) -> ProviderError {
         let error = ((try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any])?["error"] as? [String: Any]
         let code = error?["code"] as? String

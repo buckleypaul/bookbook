@@ -81,16 +81,8 @@ public struct OpenAIImageProvider: ImageProvider {
             body: bodyData)
 
         progress(.sent)
-        let response: HTTPResponse
-        do {
-            response = try await http.send(httpRequest)
-        } catch {
-            throw OpenAIErrorMapper.map(error)
-        }
-        progress(.receiving)
-
-        guard (200..<300).contains(response.status) else {
-            throw OpenAIErrorMapper.map(response, key: key)
+        let response = try await OpenAIErrorMapper.send(httpRequest, via: http, key: key) {
+            progress(.receiving)
         }
         return try Self.decode(response, parametersSent: parameters.mapValues { "\($0)" }, key: key)
     }

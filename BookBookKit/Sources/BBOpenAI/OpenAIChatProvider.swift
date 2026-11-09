@@ -110,15 +110,7 @@ public struct OpenAIChatProvider: LayoutProvider, VisionProvider {
             headers: ["Authorization": "Bearer \(key.revealForTransport())", "Content-Type": "application/json"],
             body: data)
 
-        let response: HTTPResponse
-        do {
-            response = try await http.send(httpRequest)
-        } catch {
-            throw OpenAIErrorMapper.map(error)
-        }
-        guard (200..<300).contains(response.status) else {
-            throw OpenAIErrorMapper.map(response, key: key)
-        }
+        let response = try await OpenAIErrorMapper.send(httpRequest, via: http, key: key)
 
         let raw = OpenAIErrorMapper.raw(response, code: nil, key: key)
         guard let root = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],

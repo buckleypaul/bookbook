@@ -59,6 +59,8 @@ extension BookMutations {
             dirty.sessions.insert(sessionID)
         }
         if case let .success(result, provenance) = delivery.outcome, let storedImage {
+            let provenance = resolvingDeletedMentions(provenance, message: messageIndex.map { session.messages[$0] },
+                                                      in: content)
             let version = Version(id: versionID, image: storedImage, pixelSize: result.pixelSize, source: .generated,
                                   parent: provenance.intent.refines, createdAt: now, provenance: provenance)
             session.versions.append(version)
@@ -70,6 +72,18 @@ extension BookMutations {
         }
         content.sessions[sessionID] = session
         return dirty
+    }
+
+    /// A request queued before its asset was deleted still holds the token in the stored intent.
+    /// The answered message's text was rewritten to plain names at delete, so the delivered
+    /// provenance takes it (Version details and Regenerate keep the name).
+    static func resolvingDeletedMentions(_ provenance: Provenance, message: Message?,
+                                         in content: BookContent) -> Provenance {
+        guard let message, MentionText.mentionedAssets(in: provenance.intent.messageText)
+            .contains(where: { content.assets[$0] == nil }) else { return provenance }
+        var out = provenance
+        out.intent.messageText = message.text
+        return out
     }
 
     /// Adds an imported picture to an asset slot or sheet item session, with the real-person

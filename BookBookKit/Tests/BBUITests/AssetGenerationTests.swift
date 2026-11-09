@@ -165,6 +165,33 @@ struct AssetGenerationTests {
         #expect(s.app.realPersonNoticeNeeded(for: [], in: s.document) == nil)
     }
 
+    @Test func batchNotice_oneNeedingItemAmongCleanOnes_andMixedProviders() throws {
+        let s = try setup()
+        defer { s.h.tearDown() }
+        let primary = try #require(s.pip.primary)
+        s.document.performIrreversible { content in
+            BookMutations.appendImportedAssetVersion(image: Fixtures.ref, pixelSize: PixelSize(width: 1024, height: 1024),
+                                                     owner: .assetReference(s.pip.id, primary.id),
+                                                     depictsRealPerson: true, to: &content, now: Fixtures.date)
+        }
+        // Pip is ticked on the story page only; the cover's request is clean.
+        let page = Fixtures.firstPage(s.document.content)
+        s.document.perform(.setAssetChecklist(page: page, [s.pip.id]))
+        let items = s.app.draftAllPlan(in: s.document).items
+        #expect(items.count == 2)
+        let needing = try #require(items.first { $0.target == .pageBox(page, Fixtures.imageBox.id) })
+        let clean = try #require(items.first { $0.id != needing.id })
+        #expect(s.app.realPersonNoticeNeeded(for: [clean], in: s.document) == nil)
+        #expect(s.app.realPersonNoticeNeeded(for: [clean, needing, clean], in: s.document) == .openai)
+
+        // A second provider (no catalog model, so never a notice) does not hide the first.
+        var other = clean
+        other.intent.provider = .gemini
+        #expect(s.app.realPersonNoticeNeeded(for: [other, needing], in: s.document) == .openai)
+        s.app.acknowledgeRealPersonNotice(.openai, in: s.document)
+        #expect(s.app.realPersonNoticeNeeded(for: [other, needing], in: s.document) == nil)
+    }
+
     @Test func flagText_hasAnAssetChangedEntry() {
         let entries = FlagText.entries([.assetChanged])
         #expect(entries.map(\.title) == ["Asset changed"])

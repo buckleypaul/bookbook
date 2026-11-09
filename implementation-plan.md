@@ -53,6 +53,7 @@ Sizes: **S** is a few focused days, **M** about a week, **L** about two weeks (a
 | 14 | Export and print, complete | L | Print-shop PDF with bleed and crop marks, booklets, preflight, Print, PNG/JPEG export. |
 | 15 | Release pipeline | M | `brew install --cask buckleypaul/tap/bookbook` installs a notarized build. |
 | 16 | Library import, book settings, onboarding, sample | M | First-run setup, the new-book wizard, the sample book, clean-up, import from another book. |
+| 16b | Bug fixes and edge cases | L | The open follow-ups from earlier reviews and app passes are triaged, and the bugs fixed. Added 2026-11-09. |
 | 17 | Hardening and v1.0 | M | Tagged v1.0.0, installed through the tap. |
 
 **Post-MVP (not part of this plan; decided 2026-11-08):** Phase 13, the Gemini provider (a second provider, with "Retry with Gemini"), is out of scope for v1.0. v1.0 ships with OpenAI only. Its spec is kept in `plan/post-mvp/phase-13-gemini.md` for a later release, and no session picks it up. The provider protocols (BBAICore) and the `BBGemini` target stay, so it can be added later without changing the architecture.
@@ -63,7 +64,7 @@ Sizes: **S** is a few focused days, **M** about a week, **L** about two weeks (a
 - **M2, write and draft a whole book (Phases 3–9):** your household can start using local builds for real books.
 - **M3, consistent illustration (Phases 10–12):** characters stay the same from page to page.
 - **M4, print-ready and installable (Phases 14–15):** printed copies, installed with brew.
-- **M5, v1.0 (Phases 16–17).**
+- **M5, v1.0 (Phases 16, 16b, 17).**
 
 ---
 
@@ -170,7 +171,8 @@ graph TD
   P10 --> P16
   P14 --> P16
   P15 --> P17[17 Hardening + v1.0]
-  P16 --> P17
+  P16 --> P16b[16b Bug fixes and edge cases]
+  P16b --> P17
   P12 --> P17
   P11 --> P17
 ```
@@ -185,6 +187,7 @@ graph TD
 | After M1 (Phase 2) | Three lanes: **A** = Phase 3 (storage); **B** = Phase 4 → Phase 5 → Phase 6 → Phase 7 (canvas and text; one lane, because they share `CanvasView`); **C** = Phase 8 → Phase 9 (AI). Phase 8's build work starts at once, and its hand checks wait for Phases 5 and 6. Phase 9 needs Phase 3 merged. |
 | After Phase 9 | Phase 10 (assets, once Phase 7 is in) ∥ Phase 11 (region editing) ∥ Phase 14 (export, once Phases 4, 5, 7 and 8 are done). |
 | After Phases 10 and 14 | Phase 12 (consistency, AI templates) ∥ **Phase 15 (release)** ∥ Phase 16 (onboarding etc.) |
+| After Phase 16 | Phase 16b (bug fixes; runs before Phase 15 while 15 is deferred) |
 | End | Phase 17 |
 
 Phase 15 only *needs* Phase 1 and a working app. It's placed after Phase 14 so the first brew install is a printable app, but it can start earlier as a side lane if you want brew installs for household testing sooner.
@@ -217,6 +220,7 @@ Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve 
 | §5 Phase 14 | `plan/done/phase-14-export-print.md` |
 | §5 Phase 15 | `plan/phase-15-release.md` |
 | §5 Phase 16 | `plan/done/phase-16-import-onboarding.md` |
+| Phase 16b | `plan/phase-16b-bug-fixes.md` |
 | §5 Phase 17 | `plan/phase-17-hardening.md` |
 | §6 Coverage check | `plan/coverage-and-deferred.md` |
 | §7 Deferred / not in v1 | `plan/coverage-and-deferred.md` |

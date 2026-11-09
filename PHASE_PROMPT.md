@@ -9,7 +9,7 @@ Use this prompt to run one implementation phase in two sessions: **A (build)** a
 | Effort | Phases |
 |---|---|
 | low | 3, 4, 6, 7, 15, 16 |
-| medium | 5, 8, 9, 10, 11, 12, 14, 17 |
+| medium | 5, 8, 9, 10, 11, 12, 14, 16b, 17 |
 
 Phase 13 (Gemini) is post-MVP and not part of this plan.
 

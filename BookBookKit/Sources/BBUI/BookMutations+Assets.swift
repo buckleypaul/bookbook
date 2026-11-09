@@ -53,20 +53,10 @@ extension BookMutations {
                 ?? Self.sessionID(for: owner, in: content),
               var session = content.sessions[sessionID] else { return DirtySet() }
         var dirty = DirtySet()
-        let messageIndex = session.messages.firstIndex { $0.id == delivery.item.messageID }
-        if let messageIndex, session.messages[messageIndex].queueItemID != nil {
-            session.messages[messageIndex].queueItemID = nil
-            dirty.sessions.insert(sessionID)
-        }
-        if case let .success(result, provenance) = delivery.outcome, let storedImage {
-            let provenance = resolvingDeletedMentions(provenance, message: messageIndex.map { session.messages[$0] },
-                                                      in: content)
-            let version = Version(id: versionID, image: storedImage, pixelSize: result.pixelSize,
-                                  source: provenance.intent.regionMask == nil ? .generated : .regionEdit,
-                                  parent: provenance.intent.refines, createdAt: now, provenance: provenance)
-            session.versions.append(version)
-            if let messageIndex { session.messages[messageIndex].producedVersion = version.id }
-            dirty.sessions.insert(sessionID)
+        let (changed, delivered) = record(delivery, storedImage: storedImage, versionID: versionID, now: now,
+                                          in: &session, content: content)
+        if changed { dirty.sessions.insert(sessionID) }
+        if let version = delivered {
             content.sessions[sessionID] = session
             if let asset = chooseIfUnset(version.id, session: sessionID, in: &content) { dirty.assets.insert(asset) }
             return dirty

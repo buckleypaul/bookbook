@@ -112,6 +112,31 @@ struct ExportSheetModelTests {
         #expect(groups[1].issues.map(\.detail) == ["a", "b"])
     }
 
+    @Test func predictedBlanksWidenRangeThatCutsASpread() throws {
+        // Story: single (1), spread (2-3), single (4), single (5).
+        let (model, document, undo, _) = try makeModel(extraPages: 3)
+        let spread = Template(name: "Spread", kind: .spread,
+                              boxes: [Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 1), content: .image)])
+        undo.beginUndoGrouping()
+        document.perform(.addTemplate(spread))
+        document.perform(.setPageTemplate(page: document.content.book.pageOrder[1], templateID: spread.id))
+        undo.endUndoGrouping()
+        model.outputType = .booklet
+        model.includeCover = false
+        model.limitsRange = true
+        #expect(model.totalPositions == 5)
+        // 3-4 starts mid-spread: the exporter starts at 2 (spread + page 4) and adds 1 blank.
+        model.rangeFrom = 3
+        model.rangeTo = 4
+        #expect(model.selectedPageCount == 3)
+        #expect(model.predictedBlanks == 1)
+        // 1-2 ends mid-spread: the exporter includes positions 1-3 and pads 1.
+        model.rangeFrom = 1
+        model.rangeTo = 2
+        #expect(model.selectedPageCount == 3)
+        #expect(model.predictedBlanks == 1)
+    }
+
     @Test func predictedBlankCount() throws {
         // Cover + 1 story page = 2 pages -> 2 blanks.
         let (model, _, _, _) = try makeModel()

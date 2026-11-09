@@ -151,6 +151,20 @@ public struct BookletSheetLayout: Hashable, Sendable {
     }
 }
 
+/// The page-range rule shared by `BookExporter` and the export sheet: a range that cuts a
+/// spread is widened to include the whole spread.
+public enum PageRangeWidening {
+    /// The story pages (first position and span each) that `range` selects: every page whose
+    /// positions overlap it.
+    public static func selected<S: Sequence>(_ pages: S, in range: ClosedRange<Int>?) -> [(position: Int, span: Int)]
+    where S.Element == (position: Int, span: Int) {
+        pages.filter { page in
+            guard let range else { return true }
+            return (page.position...(page.position + page.span - 1)).overlaps(range)
+        }
+    }
+}
+
 public enum BookletImposition {
     /// `n` rounded up to a multiple of 4 (minimum 4).
     public static func paddedCount(_ n: Int) -> Int {

@@ -225,8 +225,8 @@ struct CanvasGeometryTests {
 @MainActor
 struct PDFExportNameTests {
     @Test func defaultFileName() {
-        #expect(PDFExportAction.defaultFileName(title: "Test") == "Test.pdf")
-        #expect(PDFExportAction.defaultFileName(title: " a/b:c ") == "a-b-c.pdf")
-        #expect(PDFExportAction.defaultFileName(title: "  ") == "Untitled.pdf")
+        #expect(ExportSheetModel.fileStem("Test") == "Test")
+        #expect(ExportSheetModel.fileStem(" a/b:c ") == "a-b-c")
+        #expect(ExportSheetModel.fileStem("  ") == "Untitled")
     }
 }

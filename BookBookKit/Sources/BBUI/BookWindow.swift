@@ -106,6 +106,7 @@ struct BookEditor: View {
     @State private var canvasImportError: String?
     @State private var showSession = true
     @State private var showTypography = false
+    @State private var showExport = false
     @State private var showNumbers = true
     @State private var draftAllRequested = false
     @State private var images: ImageCache
@@ -164,8 +165,17 @@ struct BookEditor: View {
         .navigationTitle(content.book.title)
         .focusedSceneValue(\.focusedBook, document)
         .focusedSceneValue(\.showTypography, $showTypography)
+        .focusedSceneValue(\.showExport, $showExport)
         .focusedSceneValue(\.pagesController, pages)
         .sheet(isPresented: $showTypography) { TypographyForm(document: document) }
+        .sheet(isPresented: $showExport) {
+            ExportSheet(model: ExportSheetModel(document: document, services: LiveExportServices(document: document)),
+                        onOpenPage: { [pages] page in
+                            showExport = false
+                            pages.open(page)
+                        },
+                        onClose: { showExport = false })
+        }
         .sheet(item: $pages.sheet, onDismiss: { pages.sheetDidDismiss() }) { sheet in
             sheetView(sheet, content: document.content)
         }

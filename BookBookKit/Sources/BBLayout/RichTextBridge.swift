@@ -206,7 +206,8 @@ public enum RichTextBridge {
         return rgba == typography.color ? nil : rgba
     }
 
-    private static func sameFormatting(_ a: Run, _ b: Run) -> Bool {
+    /// Equal run formatting (everything but the text), so adjacent runs can merge.
+    static func sameFormatting(_ a: Run, _ b: Run) -> Bool {
         a.bold == b.bold && a.italic == b.italic && a.underline == b.underline
             && a.fontFamily == b.fontFamily && a.size == b.size && a.color == b.color
     }

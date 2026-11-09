@@ -33,8 +33,7 @@ enum AppWiring {
     /// the index cache) live in `<root>/.bookbook-support/`, so a throwaway library never sees
     /// or adds to the real queue (#26, #32a). nil = the default app-support folder.
     static func appSupportFolder(arguments: [String: Any]) -> URL? {
-        guard let path = arguments[LibraryLocation.argumentKey] as? String, !path.isEmpty else { return nil }
-        return URL(filePath: path, directoryHint: .isDirectory)
+        LibraryLocation.argumentRoot(arguments: arguments)?
             .appending(path: ".bookbook-support", directoryHint: .isDirectory)
     }
 

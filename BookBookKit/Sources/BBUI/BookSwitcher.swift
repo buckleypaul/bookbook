@@ -31,7 +31,7 @@ struct BookSwitcher: View {
             }
             Divider()
             Button("New Book…") {
-                app.newBookRequested = true
+                app.newBookRequest = .blank
                 openWindow(id: SceneID.library)
             }
             Button("Duplicate") { duplicate() }

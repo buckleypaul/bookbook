@@ -24,8 +24,8 @@ public struct LibraryView: View {
                 } description: {
                     Text("Your books will appear here.")
                 } actions: {
-                    Button("New Book…") { app.newBookRequested = true }
-                    Button("New Book from Story…") { app.newBookFromStoryRequested = true }
+                    Button("New Book…") { app.newBookRequest = .blank }
+                    Button("New Book from Story…") { app.newBookRequest = .fromStory }
                     Button("Open Sample Book") { openSample() }
                 }
             } else {
@@ -38,9 +38,9 @@ public struct LibraryView: View {
         }
         .toolbar {
             ToolbarItemGroup {
-                Button { app.newBookRequested = true } label: { Label("New Book…", systemImage: "plus") }
+                Button { app.newBookRequest = .blank } label: { Label("New Book…", systemImage: "plus") }
                     .help("Create a new book")
-                Button { app.newBookFromStoryRequested = true } label: {
+                Button { app.newBookRequest = .fromStory } label: {
                     Label("New Book from Story…", systemImage: "text.book.closed")
                 }
                 .help("Create a new book and import its story text")
@@ -59,11 +59,8 @@ public struct LibraryView: View {
                 .help("Show the library folder in the Finder")
             }
         }
-        .sheet(isPresented: $app.newBookRequested) {
-            NewBookWizard { id in openWindow(value: id) }
-        }
-        .sheet(isPresented: $app.newBookFromStoryRequested) {
-            NewBookWizard(fromStory: true) { id in openWindow(value: id) }
+        .sheet(item: $app.newBookRequest) { kind in
+            NewBookWizard(fromStory: kind == .fromStory) { id in openWindow(value: id) }
         }
         .bookActions($actions)
         .alert("Couldn't open the sample book", isPresented: Binding(

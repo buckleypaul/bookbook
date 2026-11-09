@@ -11,12 +11,16 @@ public enum LibraryLocation {
     /// Launch argument for throwaway development libraries (`-BookBookLibraryRoot /path`).
     public static let argumentKey = "BookBookLibraryRoot"
 
+    /// The `-BookBookLibraryRoot /path` launch argument's folder, or nil when absent or empty.
+    public static func argumentRoot(arguments: [String: Any]) -> URL? {
+        guard let path = arguments[argumentKey] as? String, !path.isEmpty else { return nil }
+        return URL(filePath: path, directoryHint: .isDirectory)
+    }
+
     /// Precedence: the launch argument (argument domain only, never saved), then `libraryPath`,
     /// then `Library.defaultRoot`.
     public static func resolve(arguments: [String: Any], defaults: UserDefaults) -> URL {
-        if let path = arguments[argumentKey] as? String, !path.isEmpty {
-            return URL(filePath: path, directoryHint: .isDirectory)
-        }
+        if let root = argumentRoot(arguments: arguments) { return root }
         if let path = defaults.string(forKey: defaultsKey), !path.isEmpty {
             return URL(filePath: path, directoryHint: .isDirectory)
         }
@@ -27,15 +31,10 @@ public enum LibraryLocation {
 /// The warning before switching the library folder while requests are queued (queue.json is
 /// shared by every library, and results for books outside the new library can't be delivered).
 enum LibrarySwitchWarning {
-    /// Waiting or running entries plus finished-but-undelivered pictures.
-    static func pendingCount(_ snapshot: QueueSnapshot, undelivered: Int) -> Int {
-        let active = snapshot.entries.filter {
-            switch $0.state {
-            case .waiting, .running, .retrying: true
-            case .failed: false
-            }
-        }.count
-        return active + max(0, undelivered)
+    /// Waiting, running or retrying entries (the queue badge count) plus finished-but-undelivered
+    /// pictures.
+    static func pendingCount(_ snapshot: QueueSnapshot) -> Int {
+        QueueBadgeModel(snapshot: snapshot).count + snapshot.undeliveredCount
     }
 
     static func message(count: Int) -> String? {
@@ -115,7 +114,7 @@ struct LibraryLocationSettings: View {
     }
 
     private var pendingCount: Int {
-        LibrarySwitchWarning.pendingCount(app.queueSnapshot, undelivered: app.undeliveredCount)
+        LibrarySwitchWarning.pendingCount(app.queueSnapshot)
     }
 
     private func change(to url: URL, move: Bool) {

@@ -34,8 +34,10 @@ import Testing
             entry(book: book, state: .running(startedAt: Date(), progress: nil, attempt: 1)),
             entry(book: book, state: .failed(QueueFailure(error: .timeout, report: nil, attempts: 1, failedAt: Date()))),
         ])
-        #expect(LibrarySwitchWarning.pendingCount(snapshot, undelivered: 0) == 2)
-        #expect(LibrarySwitchWarning.pendingCount(snapshot, undelivered: 3) == 5)
+        #expect(LibrarySwitchWarning.pendingCount(snapshot) == 2)
+        var withUndelivered = snapshot
+        withUndelivered.undeliveredCount = 3
+        #expect(LibrarySwitchWarning.pendingCount(withUndelivered) == 5)
         #expect(LibrarySwitchWarning.message(count: 0) == nil)
         #expect(LibrarySwitchWarning.message(count: 2)
             == "2 requests are still queued for books in the current library; their pictures will be lost. Switch anyway?")

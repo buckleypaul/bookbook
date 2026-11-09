@@ -32,17 +32,13 @@ public enum StoryTextImporter {
     public static func read(_ url: URL, typography: Typography) throws(StoryImportError) -> RichText {
         let ext = url.pathExtension.lowercased()
         if plainTextExtensions.contains(ext) { return try readPlain(url) }
-        switch ext {
-        case "rtf":
-            guard let data = try? Data(contentsOf: url),
-                  let attributed = try? NSAttributedString(
-                      data: data, options: [.documentType: NSAttributedString.DocumentType.rtf],
-                      documentAttributes: nil)
-            else { throw .unreadable }
-            return richText(from: attributed, typography: typography)
-        default:
-            throw .unsupportedType
-        }
+        guard richTextExtensions.contains(ext) else { throw .unsupportedType }
+        guard let data = try? Data(contentsOf: url),
+              let attributed = try? NSAttributedString(
+                  data: data, options: [.documentType: NSAttributedString.DocumentType.rtf],
+                  documentAttributes: nil)
+        else { throw .unreadable }
+        return richText(from: attributed, typography: typography)
     }
 
     private static func readPlain(_ url: URL) throws(StoryImportError) -> RichText {
@@ -120,8 +116,7 @@ public enum StoryTextImporter {
                 run.italic = drawn.italic != bodyTraits.contains(.italic)
                 run.fontFamily = nil
                 run.size = nil
-                if let last = merged.last, last.bold == run.bold, last.italic == run.italic,
-                   last.underline == run.underline, last.color == run.color {
+                if let last = merged.last, RichTextBridge.sameFormatting(last, run) {
                     merged[merged.count - 1].text += run.text
                 } else {
                     merged.append(run)

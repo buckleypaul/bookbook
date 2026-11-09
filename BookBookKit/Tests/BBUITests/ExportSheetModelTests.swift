@@ -11,7 +11,7 @@ final class FakeExportServices: ExportServices {
     var exported: [(ExportOptions, URL)] = []
     var printed: [ExportOptions] = []
     func print(_ options: ExportOptions) async throws { printed.append(options) }
-    func runPreflight() async -> [PreflightIssue] { issues }
+    func runPreflight(for options: ExportOptions) async -> [PreflightIssue] { issues }
     func export(_ options: ExportOptions, to url: URL,
                 progress: @MainActor (ExportProgress) -> Void) async throws -> ExportResult {
         exported.append((options, url))

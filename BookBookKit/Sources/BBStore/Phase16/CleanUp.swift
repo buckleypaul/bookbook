@@ -4,7 +4,9 @@ import Foundation
 /// Clean up (A §10, PD §8.12): drops versions nothing uses and frees the image files only they used.
 public enum CleanUp {
     /// Unstarred versions not referenced by any page placement (cover included), reference slot
-    /// `chosen` or sheet item `chosen`. `fileNames` are the image files used only by those versions
+    /// `chosen` or sheet item `chosen`, and not an ancestor (via `parent`) of a kept or starred version. Versions
+    /// that queued or running requests refer to are not known here, so they are not protected.
+    /// `fileNames` are the image files used only by those versions
     /// (including their provenance images), computed as `ImageSweep.referencedFileNames` before
     /// minus after. `fileSize` returns a file's size in bytes by name (nil = missing, counts 0).
     public static func plan(for content: BookContent, fileSize: (String) -> Int64?) -> CleanUpPlan {
@@ -17,6 +19,13 @@ public enum CleanUp {
         for asset in content.assets.values {
             for slot in asset.references { if let c = slot.chosen { keep.insert(c) } }
             for item in asset.sheet?.items ?? [] { if let c = item.chosen { keep.insert(c) } }
+        }
+        // Keep each kept version's whole lineage (`Version.parent` chain): refining it reads the
+        // earlier instructions (`ContextAssembler.lineageInstructions`).
+        for session in content.sessions.values {
+            for v in session.versions where keep.contains(v.id) || v.starred {
+                for ancestor in session.lineage(of: v.id) { keep.insert(ancestor.id) }
+            }
         }
         var doomed: Set<VersionID> = []
         for session in content.sessions.values {

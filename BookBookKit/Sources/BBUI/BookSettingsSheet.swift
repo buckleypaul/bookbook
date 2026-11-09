@@ -245,6 +245,11 @@ final class StorageModel {
         }
         await document.flush()
         var message: String?
+        if document.lastSaveError == nil {
+            // Earlier undo steps may point at the versions and files just deleted (PD §8.12:
+            // Clean up cannot be undone), so the window's undo history goes with them.
+            document.undoManager?.removeAllActions()
+        }
         if document.lastSaveError != nil {
             message = "Couldn't save the cleaned-up book, so no picture files were deleted."
         } else {

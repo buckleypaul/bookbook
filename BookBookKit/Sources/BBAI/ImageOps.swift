@@ -1,3 +1,4 @@
+import Accelerate
 import BBModel
 import CoreGraphics
 import Foundation
@@ -153,6 +154,11 @@ public enum ImageOps {
     /// are exactly the original's wherever the feathered mask is 0 (further than the feather band
     /// from the edit area), and the edited image's wherever it's 255. `edited` is resampled to the
     /// original's size if the provider returned another size. Returns PNG data at the original's size.
+    ///
+    /// The blend runs in the original's own RGB colour space and bit depth (8 or 16 bits per
+    /// channel), non-premultiplied with alpha kept, and the PNG carries the original's profile, so
+    /// Display P3, 16-bit and transparent bases come back untouched outside the band. Only the
+    /// edited image is colour-converted. Bases that aren't RGB (gray, CMYK) work in sRGB.
     public static func composite(original: Data, edited: Data, mask: RegionMask,
                                  featherPixels: Double = defaultFeatherPixels) throws(ImageOpsError) -> Data {
         let orig = try decodeImage(original)
@@ -160,22 +166,23 @@ public enum ImageOps {
         guard mask.pixelSize == PixelSize(width: w, height: h) else {
             throw .sizeMismatch(expected: PixelSize(width: w, height: h), actual: mask.pixelSize)
         }
-        let o = try rgba(of: orig, width: w, height: h)
-        let e = try rgba(of: try decodeImage(edited), width: w, height: h)
+        let format = try workingFormat(for: orig)
+        let edit = try decodeImage(edited)
         let m = feather(mask.bytes, width: w, height: h, featherPixels: featherPixels)
-        var out = o
-        for i in 0..<(w * h) {
-            let a = Int(m[i])
-            if a == 0 { continue }
-            for c in 0..<3 {
-                let ov = Int(o[i * 4 + c]), ev = Int(e[i * 4 + c])
-                out[i * 4 + c] = UInt8((ov * (255 - a) + ev * a + 127) / 255)
-            }
+        let out = try PixelBuffer(orig, format: format)
+        defer { out.free() }
+        var e = try PixelBuffer(edit, format: format)
+        defer { e.free() }
+        if e.width != w || e.height != h { try e.resample(width: w, height: h) }
+        if format.bitsPerComponent == 16 {
+            blend(UInt16.self, into: out, from: e, mask: m)
+        } else {
+            blend(UInt8.self, into: out, from: e, mask: m)
         }
-        return try encodeRGBA(out, width: w, height: h)
+        return try encodePNG(try out.cgImage(format: format))
     }
 
-    /// The fraction (0...1) of edit-area pixels (mask > 127) in `image` that are near-black
+        /// The fraction (0...1) of edit-area pixels (mask > 127) in `image` that are near-black
     /// (max channel ≤ 16). Used to detect SP-4's "black hole" failure.
     public static func blackFillFraction(of image: Data, in mask: RegionMask) throws(ImageOpsError) -> Double {
         let w = mask.pixelSize.width, h = mask.pixelSize.height
@@ -232,6 +239,73 @@ public enum ImageOps {
                 provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
         else { throw .encodingFailed }
         return try encodePNG(image)
+    }
+
+    /// RGBA, alpha last and not premultiplied, in `image`'s RGB colour space (sRGB otherwise) at
+    /// 16 bits per channel when the image has more than 8, else 8. 16-bit channels are little-endian (host order on Apple silicon and Intel).
+    private static func workingFormat(for image: CGImage) throws(ImageOpsError) -> vImage_CGImageFormat {
+        let rgb = image.colorSpace.flatMap { $0.model == .rgb && $0.supportsOutput ? $0 : nil }
+        guard let space = rgb ?? CGColorSpace(name: CGColorSpace.sRGB) else { throw .undecodableImage }
+        let bpc = image.bitsPerComponent > 8 ? 16 : 8
+        var info = CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue)
+        if bpc == 16 { info.insert(.byteOrder16Little) }
+        guard let format = vImage_CGImageFormat(bitsPerComponent: bpc, bitsPerPixel: bpc * 4, colorSpace: space,
+                                                bitmapInfo: info, renderingIntent: .defaultIntent)
+        else { throw .undecodableImage }
+        return format
+    }
+
+    /// Per channel (alpha included), `o * (255 - a) + e * a` over 255, rounded; untouched where a = 0.
+    private static func blend<T: FixedWidthInteger & UnsignedInteger>(
+        _: T.Type, into out: PixelBuffer, from edited: PixelBuffer, mask m: [UInt8]
+    ) {
+        let w = out.width, h = out.height
+        for y in 0..<h {
+            let o = (out.buffer.data + y * out.buffer.rowBytes).assumingMemoryBound(to: T.self)
+            let e = (edited.buffer.data + y * edited.buffer.rowBytes).assumingMemoryBound(to: T.self)
+            for x in 0..<w {
+                let a = Int(m[y * w + x])
+                if a == 0 { continue }
+                for c in 0..<4 {
+                    let i = x * 4 + c
+                    o[i] = T((Int(o[i]) * (255 - a) + Int(e[i]) * a + 127) / 255)
+                }
+            }
+        }
+    }
+
+    /// A vImage buffer holding an image converted to a working format. Call `free()` when done.
+    private struct PixelBuffer {
+        var buffer: vImage_Buffer
+        let bitsPerComponent: Int
+        var width: Int { Int(buffer.width) }
+        var height: Int { Int(buffer.height) }
+
+        init(_ image: CGImage, format: vImage_CGImageFormat) throws(ImageOpsError) {
+            do { buffer = try vImage_Buffer(cgImage: image, format: format) } catch { throw .undecodableImage }
+            bitsPerComponent = Int(format.bitsPerComponent)
+        }
+
+        /// High-quality resample to `width` x `height` (4 channels, so channel order doesn't matter).
+        mutating func resample(width: Int, height: Int) throws(ImageOpsError) {
+            let bpp = UInt32(bitsPerComponent * 4)
+            guard var dst = try? vImage_Buffer(width: width, height: height, bitsPerPixel: bpp) else {
+                throw .undecodableImage
+            }
+            let flags = vImage_Flags(kvImageHighQualityResampling)
+            let err = bitsPerComponent == 16
+                ? vImageScale_ARGB16U(&buffer, &dst, nil, flags)
+                : vImageScale_ARGB8888(&buffer, &dst, nil, flags)
+            guard err == kvImageNoError else { dst.free(); throw .undecodableImage }
+            buffer.free()
+            buffer = dst
+        }
+
+        func cgImage(format: vImage_CGImageFormat) throws(ImageOpsError) -> CGImage {
+            do { return try buffer.createCGImage(format: format) } catch { throw .encodingFailed }
+        }
+
+        func free() { buffer.free() }
     }
 
     /// Separable box blur (window `2r + 1`, `r = floor(featherPixels / 2)`, edge-replicated) in

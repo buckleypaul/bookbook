@@ -17,6 +17,13 @@ public enum ImagePixelSize {
     }
 }
 
+/// The space to render an image into with Core Image's RGBA8 output: the image's own space when
+/// it is RGB, otherwise (gray, CMYK, Lab, missing) sRGB, since those can't back an RGBA8 render.
+func renderingColorSpace(for image: CGImage) -> CGColorSpace {
+    if let space = image.colorSpace, space.model == .rgb { return space }
+    return CGColorSpace(name: CGColorSpace.sRGB)!
+}
+
 enum ImageFiles {
     static func decode(url: URL) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
@@ -31,7 +38,7 @@ enum ImageFiles {
         let orientation = (props?[kCGImagePropertyOrientation] as? NSNumber)?.int32Value ?? 1
         guard orientation != 1 else { return image }
         let oriented = CIImage(cgImage: image).oriented(forExifOrientation: orientation)
-        let space = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = renderingColorSpace(for: image)
         return CIContext().createCGImage(oriented, from: oriented.extent, format: .RGBA8, colorSpace: space)
     }
 }

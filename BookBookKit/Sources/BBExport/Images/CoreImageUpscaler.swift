@@ -35,7 +35,7 @@ public struct CoreImageUpscaler: Upscaler {
         let target = CGRect(x: 0, y: 0, width: width, height: height)
         output = output.clampedToExtent().cropped(to: target)
 
-        let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let colorSpace = renderingColorSpace(for: image)
         let context = CIContext(options: [.workingColorSpace: colorSpace, .outputColorSpace: colorSpace])
         guard let result = context.createCGImage(output, from: target, format: .RGBA8, colorSpace: colorSpace) else {
             throw ExportError.encodingFailed

@@ -156,7 +156,7 @@ extension BookCommand {
             .importStoryText(texts, templateID: templateID, index: index, fixSplits: fix)
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
              .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
-             .addAsset, .updateAsset, .setAssetChecklist: self
+             .addAsset, .updateAsset, .setAssetChecklist, .importFromBook: self
         }
     }
 
@@ -166,7 +166,7 @@ extension BookCommand {
         case .addPage, .duplicatePage, .deletePage, .reorderPages, .setPageTemplate, .importStoryText: true
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
              .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
-             .addAsset, .updateAsset, .setAssetChecklist: false
+             .addAsset, .updateAsset, .setAssetChecklist, .importFromBook: false
         }
     }
 }
@@ -188,6 +188,8 @@ public final class PagesController {
         case importStory
         case bookSettings
         case pageNumbers
+        /// Phase 16: import assets, templates and the style guide from another book (PD §8.1).
+        case importFromBook
 
         public var id: Self { self }
     }

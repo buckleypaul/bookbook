@@ -319,7 +319,7 @@ public final class BookDocument {
             unfixed = .importStoryText(texts, templateID: templateID, index: index)
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
              .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
-             .addAsset, .updateAsset, .setAssetChecklist:
+             .addAsset, .updateAsset, .setAssetChecklist, .importFromBook:
             return false
         }
         guard let prepared = prepare(unfixed) else { return false }
@@ -477,6 +477,8 @@ public final class BookDocument {
         case setStyleVisual(StyleVisual, revision: Int)
         /// Phase 7: replace the page setup.
         case setPageSetup(PageSetup)
+        /// Phase 16: replace the whole style guide (import). Inverse: the old one.
+        case setStyleGuide(StyleGuide)
         /// Phase 7: replace the `acknowledged` baselines of the listed image slots.
         case setBaselines(page: PageID, [BoxID: FlagBaseline])
         /// Phase 6: add a template (no-op if the ID exists). Inverse: `removeTemplate`.
@@ -531,6 +533,38 @@ public final class BookDocument {
         case let .setPageSetup(setup):
             guard setup != content.style.pageSetup else { return nil }
             edit = .setPageSetup(setup)
+
+        case let .importFromBook(imported):
+            var edits: [Edit] = []
+            for template in imported.templates where content.templates[template.id] == nil {
+                edits.append(.insertTemplate(template))
+            }
+            for asset in imported.assets where content.assets[asset.id] == nil {
+                edits.append(.insertAsset(asset))
+            }
+            let newAssets = Set(imported.assets.filter { content.assets[$0.id] == nil }.map(\.id))
+            for session in imported.sessions where content.sessions[session.id] == nil {
+                switch session.owner {
+                case let .assetReference(owner, _), let .sheetItem(owner, _):
+                    if newAssets.contains(owner) { created.sessions[session.id] = session }
+                default: break
+                }
+            }
+            if let guide = imported.styleGuide {
+                var next = guide
+                next.pageSetup = content.style.pageSetup
+                next.visualRevision = content.style.visualRevision
+                next.visualRevisionHighWater = content.style.visualRevisionHighWater
+                if guide.visualDescription != content.style.visualDescription
+                    || guide.styleReferences != content.style.styleReferences
+                    || guide.negativeGuidance != content.style.negativeGuidance {
+                    next.visualRevision = content.style.visualRevisionHighWater + 1
+                    next.visualRevisionHighWater = next.visualRevision
+                }
+                if next != content.style { edits.append(.setStyleGuide(next)) }
+            }
+            guard !edits.isEmpty else { return nil }
+            edit = .compound(edits)
 
         case let .markFlagsOK(pageID, boxID):
             guard let page = content.pages[pageID], let template = content.template(for: page) else { return nil }
@@ -854,6 +888,11 @@ public final class BookDocument {
             content.style.visualRevision = revision
             content.style.visualRevisionHighWater = max(content.style.visualRevisionHighWater, revision)
             return (.setStyleVisual(old.visual, revision: old.visualRevision), DirtySet(style: true))
+
+        case let .setStyleGuide(guide):
+            let old = content.style
+            content.style = guide
+            return (.setStyleGuide(old), DirtySet(style: true))
 
         case let .setPageSetup(setup):
             let old = content.style.pageSetup

@@ -16,6 +16,8 @@ struct BookSettingsSheet: View {
     @State private var saving = false
     @State private var budgetText: String
     @State private var summary = LedgerSummary()
+    @State private var storage = StorageModel()
+    @State private var confirmCleanUp = false
 
     init(document: BookDocument) {
         self.document = document
@@ -39,6 +41,8 @@ struct BookSettingsSheet: View {
                 .foregroundStyle(.secondary)
             Divider()
             costSection
+            Divider()
+            storageSection
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.callout)
@@ -57,6 +61,43 @@ struct BookSettingsSheet: View {
         .padding(20)
         .frame(width: 460)
         .task { summary = await app.ledgerSummary(for: document.id) }
+        .task { await storage.refresh(document) }
+    }
+
+    // MARK: Storage (PD §8.12)
+
+    @ViewBuilder
+    private var storageSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Storage").font(.headline)
+            HStack {
+                Text("Size on disk")
+                Spacer()
+                Text(storage.sizeText).monospacedDigit().fontWeight(.semibold)
+            }
+            HStack {
+                Button("Clean Up…") { confirmCleanUp = true }
+                    .disabled(!document.isEditable || storage.plan.isEmpty || storage.isWorking)
+                if storage.plan.isEmpty {
+                    Text("Nothing to clean up").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("\(storage.plan.versionIDs.count) unused \(storage.plan.versionIDs.count == 1 ? "version" : "versions"), frees \(StorageModel.bytes(storage.plan.bytesFreed))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Text("Clean Up deletes versions that aren't starred and aren't used on a page, as an asset's chosen picture or as a sheet item.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .alert("Delete \(storage.plan.versionIDs.count) unused versions?", isPresented: $confirmCleanUp) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    if let message = await storage.cleanUp(document) { error = message }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This frees about \(StorageModel.bytes(storage.plan.bytesFreed)). Starred versions and versions in use are kept. This can't be undone.")
+        }
     }
 
     // MARK: Cost (PD §8.12)
@@ -73,7 +114,7 @@ struct BookSettingsSheet: View {
             ForEach(CostKind.allCases, id: \.self) { kind in
                 if let amount = summary.byKind[kind], amount != 0 {
                     HStack {
-                        Text(CostText.kindName(kind)).foregroundStyle(.secondary)
+                        Text(Self.costLabel(kind)).foregroundStyle(.secondary)
                         Spacer()
                         Text(CostText.amount(amount)).monospacedDigit()
                     }
@@ -121,6 +162,15 @@ struct BookSettingsSheet: View {
         }
     }
 
+    /// The breakdown labels of PD §8.12: images, consistency checks, templates.
+    static func costLabel(_ kind: CostKind) -> String {
+        switch kind {
+        case .image: "Images"
+        case .consistency: "Consistency checks"
+        case .template: "Templates"
+        }
+    }
+
     /// Title first, then the author only once the title has been applied, so a failed rename
     /// doesn't leave the book half-changed.
     private func save() {
@@ -158,5 +208,53 @@ struct BookSettingsSheet: View {
                 self.error = "Couldn't change the title. \(StoreErrorText.message(for: error))"
             }
         }
+    }
+}
+
+/// Size on disk and the Clean up flow of Book Settings (PD §8.12, A §10).
+@MainActor @Observable
+final class StorageModel {
+    private(set) var size: Int64 = 0
+    private(set) var plan = CleanUpPlan(versionIDs: [], fileNames: [], bytesFreed: 0)
+    private(set) var isWorking = false
+
+    var sizeText: String { Self.bytes(size) }
+
+    static func bytes(_ count: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+    }
+
+    func refresh(_ document: BookDocument) async {
+        let store = document.store
+        plan = CleanUp.plan(for: document.content) { store.imageFileSize($0) }
+        size = await Task.detached { store.sizeOnDisk() }.value
+    }
+
+    /// Applies the plan: removes the versions (not undoable), saves, then deletes the files that
+    /// nothing uses any more. Returns an error message, or nil.
+    func cleanUp(_ document: BookDocument) async -> String? {
+        guard document.isEditable, !plan.isEmpty, !isWorking else { return nil }
+        isWorking = true
+        defer { isWorking = false }
+        let store = document.store
+        let plan = CleanUp.plan(for: document.content) { store.imageFileSize($0) }
+        let affected = CleanUp.affectedSessions(plan, in: document.content)
+        document.performIrreversible { content in
+            CleanUp.apply(plan, to: &content)
+            return DirtySet(sessions: affected)
+        }
+        await document.flush()
+        var message: String?
+        if document.lastSaveError != nil {
+            message = "Couldn't save the cleaned-up book, so no picture files were deleted."
+        } else {
+            do {
+                try await store.deleteImages(named: plan.fileNames)
+            } catch {
+                message = "Some picture files couldn't be deleted. \(StoreErrorText.message(for: error))"
+            }
+        }
+        await refresh(document)
+        return message
     }
 }

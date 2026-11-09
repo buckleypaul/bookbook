@@ -32,23 +32,30 @@ public actor ExportImagePreparer: ImagePreparing {
     }
 
     public func prepare(_ request: ImagePreparationRequest) async throws -> CGImage {
-        var url = try await preparedFileURL(request)
+        // The full decode is the validity check here, so a cache hit skips the header read.
+        var url = try await cachedFileURL(request, checksHeader: false)
         if let image = ImageFiles.decode(url: url) { return image }
         // A cached file that won't decode (e.g. truncated by an older build) is dropped and rebuilt.
         try? FileManager.default.removeItem(at: url)
-        url = try await preparedFileURL(request)
+        url = try await cachedFileURL(request, checksHeader: true)
         guard let image = ImageFiles.decode(url: url) else { throw ExportError.imageUnreadable(request.image) }
         return image
     }
 
+    /// The prepared file for `request`, built if needed. A cached file must have a readable
+    /// header, since callers of this never decode it.
     public func preparedFileURL(_ request: ImagePreparationRequest) async throws -> URL {
+        try await cachedFileURL(request, checksHeader: true)
+    }
+
+    private func cachedFileURL(_ request: ImagePreparationRequest, checksHeader: Bool) async throws -> URL {
         await acquire()
         defer { release() }
         let stem = Self.stem(for: request)
         for ext in ["jpg", "png"] {
             let url = cacheDirectory.appendingPathComponent("\(stem).\(ext)")
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
-            if ImagePixelSize.of(url: url) != nil {
+            if !checksHeader || ImagePixelSize.of(url: url) != nil {
                 // A hit counts as use, so `pruneCache` keeps what recent exports needed.
                 try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
                 return url

@@ -135,6 +135,30 @@ struct Phase16bTextEditingTests {
         h.editor.tearDown()
     }
 
+    @Test func editorDroppedWithoutTearDown_closesTheBurst() throws {
+        weak var dropped: InlineTextEditor?
+        // A pool around the editor's whole life: AppKit autoreleases it in delegate calls.
+        let h = try autoreleasepool {
+            let h = try Harness()
+            h.editor.textView.setSelectedRange(boom)
+            h.step { h.editor.apply(.setColor(red)) }
+            #expect(h.editor.isColorBurstOpen)
+            dropped = h.editor
+            h.editor = nil
+            return h
+        }
+        #expect(dropped == nil, "the editor is gone")
+        // Two separate edits after it: each its own undo step, not merged into the burst.
+        h.step { h.doc.perform(.setRichText(page: h.page, box: h.box, text: RichText(plain: "One"), coalescing: false)) }
+        h.step { h.doc.perform(.setRichText(page: h.page, box: h.box, text: RichText(plain: "Two"), coalescing: false)) }
+        h.undo.undo()
+        #expect(h.text == RichText(plain: "One"))
+        h.undo.undo()
+        #expect(h.runs.last == Run(text: "BOOM!", color: red), "the burst is its own step")
+        h.undo.undo()
+        #expect(h.runs == [Run(text: "Hello BOOM!")])
+    }
+
     // MARK: #78a
 
     @Test func pastedKerningLinkAndSpacing_areDroppedFromTheView() throws {
@@ -175,6 +199,17 @@ struct Phase16bTextEditingTests {
         #expect(tv.typingAttributes[.link] == nil)
         #expect(tv.typingAttributes[.kern] == nil)
         h.editor.tearDown()
+    }
+
+    @Test func matchesNeighbour_onlyForAnInsertionLikeTheTextBesideIt() {
+        let plain: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12)]
+        let s = NSMutableAttributedString(string: "abcd", attributes: plain)
+        #expect(InlineTextEditor.matchesNeighbour(NSRange(location: 2, length: 1), in: s))
+        #expect(InlineTextEditor.matchesNeighbour(NSRange(location: 0, length: 1), in: s), "at the start: the next character")
+        s.addAttribute(.kern, value: 5.0, range: NSRange(location: 2, length: 1))
+        #expect(!InlineTextEditor.matchesNeighbour(NSRange(location: 2, length: 1), in: s))
+        #expect(!InlineTextEditor.matchesNeighbour(NSRange(location: 1, length: 2), in: s), "mixed insertion")
+        #expect(!InlineTextEditor.matchesNeighbour(NSRange(location: 0, length: 4), in: s), "no neighbour")
     }
 
     @Test func plainTyping_leavesTheStorageAlone() throws {

@@ -220,7 +220,7 @@ Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve 
 | §5 Phase 14 | `plan/done/phase-14-export-print.md` |
 | §5 Phase 15 | `plan/phase-15-release.md` |
 | §5 Phase 16 | `plan/done/phase-16-import-onboarding.md` |
-| Phase 16b | `plan/phase-16b-bug-fixes.md` |
+| Phase 16b | `plan/done/phase-16b-bug-fixes.md` |
 | §5 Phase 17 | `plan/phase-17-hardening.md` |
 | §6 Coverage check | `plan/coverage-and-deferred.md` |
 | §7 Deferred / not in v1 | `plan/coverage-and-deferred.md` |

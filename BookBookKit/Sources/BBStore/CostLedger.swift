@@ -34,6 +34,26 @@ public struct CostLedger: Sendable {
     /// Every complete line, decoded. A truncated or undecodable last line is skipped (not an error);
     /// a bad line anywhere else throws `.corrupt`. A missing file reads as empty.
     public func records<Record: Decodable>(_ type: Record.Type) throws(StoreError) -> [Record] {
+        try decodeLines(Record.self) { (i, error) throws(StoreError) in
+            throw StoreError.corrupt("costs.jsonl line \(i + 1): \(error)")
+        }
+    }
+
+    /// Like `records`, but a bad line anywhere is skipped and counted instead of throwing, so
+    /// one corrupt line doesn't hide the rest. The truncated tail is not counted.
+    public func lenientRecords<Record: Decodable>(_ type: Record.Type) throws(StoreError)
+        -> (records: [Record], skipped: Int) {
+        var skipped = 0
+        let out = try decodeLines(Record.self) { _, _ in skipped += 1 }
+        return (out, skipped)
+    }
+
+    /// Decodes each non-empty line. An undecodable last line with no newline after it (a
+    /// truncated tail) is skipped silently; any other bad line goes to `onBadLine` (0-based index),
+    /// which throws or records it and lets the walk go on.
+    private func decodeLines<Record: Decodable>(
+        _ type: Record.Type, onBadLine: (Int, any Error) throws(StoreError) -> Void
+    ) throws(StoreError) -> [Record] {
         guard let data = try readData() else { return [] }
         let decoder = PackageCoding.decoder()
         let lines = data.split(separator: 0x0A, omittingEmptySubsequences: false)
@@ -42,38 +62,15 @@ public struct CostLedger: Sendable {
         for (i, line) in lines.enumerated() {
             let isLast = i == lines.count - 1
             if isLast && endsWithNewline { break }  // the empty piece after the final newline
-            if line.isEmpty && !isLast { continue }
+            if line.isEmpty { continue }
             do {
                 out.append(try decoder.decode(Record.self, from: Data(line)))
             } catch {
                 if isLast { break }  // truncated tail
-                throw StoreError.corrupt("costs.jsonl line \(i + 1): \(error)")
+                try onBadLine(i, error)
             }
         }
         return out
-    }
-
-    /// Like `records`, but a bad line anywhere is skipped and counted instead of throwing, so
-    /// one corrupt line doesn't hide the rest. The truncated tail is not counted.
-    public func lenientRecords<Record: Decodable>(_ type: Record.Type) throws(StoreError)
-        -> (records: [Record], skipped: Int) {
-        guard let data = try readData() else { return ([], 0) }
-        let decoder = PackageCoding.decoder()
-        let lines = data.split(separator: 0x0A, omittingEmptySubsequences: false)
-        let endsWithNewline = data.last == 0x0A
-        var out: [Record] = []
-        var skipped = 0
-        for (i, line) in lines.enumerated() {
-            let isLast = i == lines.count - 1
-            if isLast && endsWithNewline { break }
-            if line.isEmpty { continue }
-            if let record = try? decoder.decode(Record.self, from: Data(line)) {
-                out.append(record)
-            } else if !isLast || endsWithNewline {
-                skipped += 1
-            }
-        }
-        return (out, skipped)
     }
 
     /// Cuts a truncated last line (no trailing newline) off the file. Returns true if it changed anything.

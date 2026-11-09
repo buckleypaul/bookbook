@@ -109,8 +109,11 @@ public final class BookExporter {
 
     // MARK: Sequencing
 
-    /// Story pages in reading order with their positions (A §8.1), filtered by `range`.
-    func storyPositions(range: ClosedRange<Int>?) -> [(page: Page, position: PagePosition)] {
+    /// Story pages in reading order with their positions (A §8.1), filtered by `range` (a range
+    /// that cuts a spread widens to the whole spread). The one page selection that export,
+    /// preflight and the export sheet all use.
+    public nonisolated static func storyPositions(_ content: BookContent,
+                                                  range: ClosedRange<Int>?) -> [(page: Page, position: PagePosition)] {
         let story = content.storyPages
         let entries = story.map { SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread) }
         let layout = PageSequencer.layout(entries, cover: content.book.coverPageID)
@@ -124,7 +127,7 @@ public final class BookExporter {
     func pageSlots(_ options: ExportOptions) -> [OutputSlot] {
         var slots: [OutputSlot] = []
         if options.includeCover, let cover = content.coverPage { slots.append(OutputSlot(page: cover, half: nil)) }
-        for (page, _) in storyPositions(range: options.pageRange) {
+        for (page, _) in Self.storyPositions(content, range: options.pageRange) {
             if content.template(for: page)?.kind == .spread, options.spreads == .singlePages {
                 slots += [OutputSlot(page: page, half: 0), OutputSlot(page: page, half: 1)]
             } else {
@@ -142,7 +145,7 @@ public final class BookExporter {
         var head: [OutputSlot] = []
         if options.includeCover, let cover = content.coverPage { head.append(OutputSlot(page: cover, half: nil)) }
         var story: [OutputSlot] = []
-        let positions = storyPositions(range: options.pageRange)
+        let positions = Self.storyPositions(content, range: options.pageRange)
         for (page, _) in positions {
             if content.template(for: page)?.kind == .spread {
                 story += [OutputSlot(page: page, half: 0), OutputSlot(page: page, half: 1)]

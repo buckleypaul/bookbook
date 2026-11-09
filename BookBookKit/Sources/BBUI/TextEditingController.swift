@@ -35,7 +35,10 @@ final class TextEditingController {
         editor.onCancel = { [weak self] in self?.end() }
         editor.onEndTypingStep = { [weak self] in self?.onEndTypingStep() }
         editor.onBeginUndoGroup = { [weak self] name, onClosed in self?.onBeginUndoGroup(name, onClosed) }
-        editor.onEndUndoGroup = { [weak self] name in self?.onEndUndoGroup(name) }
+        // Keeps the document's closer even if this controller goes first, so the editor's
+        // deinit can still close an open colour burst (#76a).
+        let endGroup = onEndUndoGroup
+        editor.onEndUndoGroup = { [weak self] name in (self?.onEndUndoGroup ?? endGroup)(name) }
         self.editor = editor
         canvas.addSubview(editor.host)
         place(textRect: textRect)

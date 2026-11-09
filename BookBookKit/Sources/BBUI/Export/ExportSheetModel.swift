@@ -9,9 +9,7 @@ import Observation
 /// `BookExporter`, `ExportImagePreparer` and `Preflight`; tests fake it. (A §9, PD §8.8)
 @MainActor
 public protocol ExportServices: AnyObject {
-    /// Plans and assesses images, then runs preflight on the current book.
-    func runPreflight() async -> [PreflightIssue]
-    /// Preflight limited to the pages `options` will export. Defaults to the whole book.
+    /// Plans and assesses images, then runs preflight on the pages `options` will export.
     func runPreflight(for options: ExportOptions) async -> [PreflightIssue]
     func export(_ options: ExportOptions, to url: URL,
                 progress: @MainActor (ExportProgress) -> Void) async throws -> ExportResult
@@ -20,10 +18,6 @@ public protocol ExportServices: AnyObject {
     func print(_ options: ExportOptions) async throws
     /// The encoded, upscaled image for a soft-image issue (nil if it has no box).
     func upscaledPreviewURL(for issue: PreflightIssue) async throws -> URL?
-}
-
-extension ExportServices {
-    public func runPreflight(for options: ExportOptions) async -> [PreflightIssue] { await runPreflight() }
 }
 
 /// Save-panel setup shared by every export-style panel: its own remembered folder (not the
@@ -88,6 +82,8 @@ public final class ExportSheetModel {
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var preflightTask: Task<Void, Never>?
     @ObservationIgnored private var preflightGeneration = 0
+    /// Row labels for `issues`, built once per check (nil until the first check finishes).
+    @ObservationIgnored private var pageLabels: [PageID: String]?
     /// Wait after a range or cover change before re-checking.
     @ObservationIgnored var preflightDelay: Duration = .milliseconds(300)
 
@@ -143,8 +139,8 @@ public final class ExportSheetModel {
     /// Story pages the export will include: a range that cuts a spread is widened to the
     /// whole spread, exactly as `BookExporter` does.
     private var selectedStory: [(position: Int, span: Int)] {
-        let layout = PagesOverviewModel.layout(content()).pages.map { (position: $0.position, span: $0.span) }
-        return PageRangeWidening.selected(layout, in: limitsRange ? rangeFrom...max(rangeFrom, rangeTo) : nil)
+        BookExporter.storyPositions(content(), range: options.pageRange)
+            .map { (position: $0.position.position, span: $0.position.span) }
     }
 
     /// Whether a cover page will be exported (`BookExporter` needs one to exist).
@@ -177,10 +173,18 @@ public final class ExportSheetModel {
 
     /// "Cover" or "Page N" for a preflight row.
     public func pageLabel(for issue: PreflightIssue) -> String {
-        let c = content()
-        if issue.page == c.book.coverPageID { return "Cover" }
-        guard let slot = PagesOverviewModel.layout(c).position(of: issue.page) else { return "Page" }
-        return slot.span > 1 ? "Pages \(slot.position)–\(slot.position + slot.span - 1)" : "Page \(slot.position)"
+        (pageLabels ?? Self.pageLabels(content()))[issue.page] ?? "Page"
+    }
+
+    /// "Cover" or "Page N" for every page, from one layout pass.
+    static func pageLabels(_ content: BookContent) -> [PageID: String] {
+        var labels: [PageID: String] = [:]
+        for slot in PagesOverviewModel.layout(content).pages {
+            labels[slot.id] = slot.span > 1 ? "Pages \(slot.position)–\(slot.position + slot.span - 1)"
+                                            : "Page \(slot.position)"
+        }
+        labels[content.book.coverPageID] = "Cover"
+        return labels
     }
 
     public var offersSeparateCover: Bool { outputType == .booklet && !includeCover }
@@ -199,28 +203,38 @@ public final class ExportSheetModel {
 
     public var printTitle: String { issues.isEmpty ? "Print…" : "Print Anyway…" }
 
+    /// Checks now and waits for the result.
     public func runPreflight() async {
-        preflightGeneration += 1
-        let mine = preflightGeneration
-        isCheckingPreflight = true
-        let found = await services.runPreflight(for: options)
-        guard mine == preflightGeneration else { return }   // a newer check owns the state
-        issues = found
-        isCheckingPreflight = false
-        hasCheckedPreflight = true
+        let task = startPreflight(after: nil)
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     /// Re-checks after a short wait, so dragging a stepper doesn't start a check per step. The
     /// sheet counts as checking meanwhile, which keeps Export off until the list is current.
     func schedulePreflight() {
+        startPreflight(after: preflightDelay)
+    }
+
+    /// Cancels any check in flight and starts a new one. The generation check stays as a
+    /// backstop in case a cancelled check still returns.
+    @discardableResult
+    private func startPreflight(after delay: Duration?) -> Task<Void, Never> {
         preflightTask?.cancel()
+        preflightGeneration += 1
+        let mine = preflightGeneration
         isCheckingPreflight = true
-        let delay = preflightDelay
-        preflightTask = Task { [weak self] in
-            try? await Task.sleep(for: delay)
+        let task = Task { [weak self] in
+            if let delay { try? await Task.sleep(for: delay) }
             guard !Task.isCancelled, let self else { return }
-            await runPreflight()
+            let found = await services.runPreflight(for: options)
+            guard !Task.isCancelled, mine == preflightGeneration else { return }   // a newer check owns the state
+            pageLabels = Self.pageLabels(content())
+            issues = found
+            isCheckingPreflight = false
+            hasCheckedPreflight = true
         }
+        preflightTask = task
+        return task
     }
 
     /// Waits for a scheduled re-check (tests).

@@ -34,12 +34,12 @@ public struct BookBookCommands: Commands {
     public var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Book…") {
-                app.newBookRequested = true
+                app.newBookRequest = .blank
                 openWindow(id: SceneID.library)
             }
             .keyboardShortcut("n")
             Button("New Book from Story…") {
-                app.newBookFromStoryRequested = true
+                app.newBookRequest = .fromStory
                 openWindow(id: SceneID.library)
             }
             Button("Open Sample Book") {

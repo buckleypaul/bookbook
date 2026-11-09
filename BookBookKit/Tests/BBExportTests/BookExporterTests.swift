@@ -265,7 +265,7 @@ struct BookExporterTests {
     /// outside. Returns (bookletPage, position) for every story slot.
     func bookletParity(_ content: BookContent, _ options: ExportOptions) -> [(booklet: Int, position: Int)] {
         let exporter = F.exporter(content)
-        let positions = Dictionary(uniqueKeysWithValues: exporter.storyPositions(range: nil).map {
+        let positions = Dictionary(uniqueKeysWithValues: BookExporter.storyPositions(content, range: nil).map {
             ($0.page.id, $0.position.position)
         })
         return exporter.bookletPages(options).enumerated().compactMap { index, slot in

@@ -11,6 +11,14 @@ public enum SceneID {
     public static let queue = "queue"
 }
 
+/// Which New Book sheet the Library window shows (`AppModel.newBookRequest`).
+public enum NewBookKind: Hashable, Identifiable, Sendable {
+    case blank
+    case fromStory
+
+    public var id: Self { self }
+}
+
 /// App-wide state (A §6.1), injected with `.environment`. Owns the library and its index, the
 /// app's Keychain store, the model catalog, the generation queue and the open-books registry.
 @MainActor @Observable
@@ -54,21 +62,12 @@ public final class AppModel {
     /// From `LibraryIndex`, newest first.
     public private(set) var libraryEntries: [LibraryEntry] = []
     public private(set) var queueSnapshot = QueueSnapshot()
-    /// Phase 16b: finished pictures still waiting for their book (locked by another process).
-    /// They're saved with the queue and redelivered at the next launch. Observable.
-    public var undeliveredCount: Int { queueSnapshot.undeliveredCount }
     /// From `KeychainStore.hasKey` (never reads the secret).
     public private(set) var hasOpenAIKey = false
-    /// Set by File ▸ New Book…; the Library window shows its sheet. Setting it clears
-    /// `newBookFromStoryRequested`, so the two sheets never collide.
-    public var newBookRequested = false {
-        didSet { if newBookRequested, newBookFromStoryRequested { newBookFromStoryRequested = false } }
-    }
-    /// Set by File ▸ New Book from Story…; the Library window shows the title sheet, and the new
-    /// book opens with the Import Story Text sheet already up. Setting it clears `newBookRequested`.
-    public var newBookFromStoryRequested = false {
-        didSet { if newBookFromStoryRequested, newBookRequested { newBookRequested = false } }
-    }
+    /// Set by File ▸ New Book… (`.blank`) or New Book from Story… (`.fromStory`); the Library window
+    /// shows the New Book sheet. From story, the new book opens with the Import Story Text sheet
+    /// already up. One value, so the two kinds never collide.
+    public var newBookRequest: NewBookKind?
     /// Books created by New Book from Story… whose window hasn't yet presented the import sheet.
     @ObservationIgnored private var pendingStoryImports: Set<BookID> = []
     /// Pictures that arrived but couldn't be written into their book, by message (shown in the thread).

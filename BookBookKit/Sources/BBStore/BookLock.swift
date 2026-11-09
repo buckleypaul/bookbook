@@ -228,24 +228,17 @@ struct BookLock {
     /// The package folder's `realpath(3)` (so a symlinked and a direct URL share one count, #105b),
     /// falling back to the standardized path if it can't be resolved.
     var holderKey: String {
-        let package = url.deletingLastPathComponent()
-        if let resolved = realpath(package.path(percentEncoded: false), nil) {
-            defer { free(resolved) }
-            return String(cString: resolved)
-        }
-        var p = package.standardizedFileURL.path(percentEncoded: false)
-        while p.count > 1, p.hasSuffix("/") { p.removeLast() }
-        return p
+        CanonicalPath.real(url.deletingLastPathComponent())
     }
 
-    /// `acquire()` for a `BookStore`: on `.wrote` or `.reentrant`, counts one more holder.
+    /// `acquire()` for a `BookStore`: on `.wrote` or `.reentrant`, counts one more holder under
+    /// `key` (the caller's `holderKey`, kept for `releaseHold(key:)`).
     /// `exclusiveInProcess`: also report `.heldByOther` (naming this process) when another store
     /// in this process already holds the lock, or the file already names this process, so a
     /// background job (duplicate-ID resolution) never works on a book this process has open or
     /// is opening or writing (#3b, #3c).
-    func acquireHold(now: Date = Date(), exclusiveInProcess: Bool = false) throws -> Outcome {
+    func acquireHold(key: String, now: Date = Date(), exclusiveInProcess: Bool = false) throws -> Outcome {
         try Self.holders.withLock { holders throws -> Outcome in
-            let key = holderKey
             if exclusiveInProcess, (holders[key] ?? 0) > 0 {
                 return .heldByOther(read().owner ?? Self.currentOwner(acquiredAt: now))
             }
@@ -262,11 +255,12 @@ struct BookLock {
         }
     }
 
-    /// `takeOver(expected:as:)` for a `BookStore`, as this process: on success counts one holder.
-    func takeOverHold(expected: LockOwner, now: Date = Date()) throws -> TakeoverOutcome {
+    /// `takeOver(expected:as:)` for a `BookStore`, as this process: on success counts one holder
+    /// under `key` (the caller's `holderKey`).
+    func takeOverHold(key: String, expected: LockOwner, now: Date = Date()) throws -> TakeoverOutcome {
         try Self.holders.withLock { holders throws -> TakeoverOutcome in
             let outcome = try takeOver(expected: expected, as: Self.currentOwner(acquiredAt: now))
-            if case .tookOver = outcome { holders[holderKey, default: 0] += 1 }
+            if case .tookOver = outcome { holders[key, default: 0] += 1 }
             return outcome
         }
     }
@@ -277,10 +271,9 @@ struct BookLock {
         return Self.holders.withLock { ($0[key] ?? 0) > 0 }
     }
 
-    /// Drops one holder; the last one removes the file if it still names this process.
-    func releaseHold(key: String? = nil) {
+    /// Drops one holder from `key` (the `holderKey` taken at acquire); the last one removes the file if it still names this process.
+    func releaseHold(key: String) {
         Self.holders.withLock { holders in
-            let key = key ?? holderKey
             let count = (holders[key] ?? 1) - 1
             holders[key] = count > 0 ? count : nil
             if count <= 0 {

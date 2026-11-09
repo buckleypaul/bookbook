@@ -36,18 +36,16 @@ struct Phase16bAppModelTests {
         #expect(replayed.messageText == intent.messageText)
     }
 
-    @Test func newBookFlagsAreExclusive() throws {
+    @Test func newBookRequestsAreExclusive() throws {
         defer { tearDown() }
         let app = try makeApp()
-        app.newBookRequested = true
-        app.newBookFromStoryRequested = true
-        #expect(!app.newBookRequested)
-        #expect(app.newBookFromStoryRequested)
-        app.newBookRequested = true
-        #expect(app.newBookRequested)
-        #expect(!app.newBookFromStoryRequested)
-        app.newBookRequested = false
-        #expect(!app.newBookRequested && !app.newBookFromStoryRequested)
+        app.newBookRequest = .blank
+        app.newBookRequest = .fromStory
+        #expect(app.newBookRequest == .fromStory)
+        app.newBookRequest = .blank
+        #expect(app.newBookRequest == .blank)
+        app.newBookRequest = nil
+        #expect(app.newBookRequest == nil)
     }
 
     @Test func pendingStoryImportIsDroppedWhenTheWindowClosesOrTheBookIsForgotten() async throws {
@@ -86,7 +84,7 @@ struct Phase16bAppModelTests {
         await QueueFileStore(files: files).save(PersistedQueue(
             entries: [], undelivered: [PersistedDelivery(token: UUID(), delivery: delivery)]))
         let app = try makeApp()
-        #expect(app.undeliveredCount == 0)
+        #expect(app.queueSnapshot.undeliveredCount == 0)
         await app.queueOperationsSettled()
         // The book isn't in this library: dropped (bookGone), so the count settles at 0 and the
         // spool entry is gone from queue.json after quit's flush.

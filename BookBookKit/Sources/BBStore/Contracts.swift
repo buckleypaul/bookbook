@@ -25,7 +25,7 @@ public struct LockOwner: Codable, Hashable, Sendable {
     public var host: String
     public var acquiredAt: Date
     /// Phase 16b (#99b): the Mac's hardware UUID (`gethostuuid(2)`). Optional: locks written
-    /// before Phase 16b don't have it (decoded with `decodeIfPresent`, omitted when nil).
+    /// before Phase 16b don't have it (synthesized `Codable`: decoded with `decodeIfPresent`, omitted when nil).
     public var hostID: String?
 
     public init(pid: Int32, host: String, acquiredAt: Date, hostID: String? = nil) {
@@ -34,25 +34,16 @@ public struct LockOwner: Codable, Hashable, Sendable {
         self.acquiredAt = acquiredAt
         self.hostID = hostID
     }
+}
 
-    private enum CodingKeys: String, CodingKey {
-        case pid, host, acquiredAt, hostID
-    }
+public extension LockOwner {
+    /// This process on this Mac, as `.lock` would record it now.
+    static var current: LockOwner { BookLock.currentOwner() }
 
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        pid = try c.decode(Int32.self, forKey: .pid)
-        host = try c.decode(String.self, forKey: .host)
-        acquiredAt = try c.decode(Date.self, forKey: .acquiredAt)
-        hostID = try c.decodeIfPresent(String.self, forKey: .hostID)
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(pid, forKey: .pid)
-        try c.encode(host, forKey: .host)
-        try c.encode(acquiredAt, forKey: .acquiredAt)
-        try c.encodeIfPresent(hostID, forKey: .hostID)
+    /// Whether `self` and `other` name the same Mac: by `hostID` when both have one, else by
+    /// host name (locks written before Phase 16b).
+    func isOnSameMachine(as other: LockOwner) -> Bool {
+        BookLock.sameMachine(self, other)
     }
 }
 

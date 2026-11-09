@@ -21,13 +21,38 @@ public enum StoreError: Error, Hashable, Sendable {
 /// Contents of a book's `.lock` file (A §5.3).
 public struct LockOwner: Codable, Hashable, Sendable {
     public var pid: Int32
+    /// The host name, for display. Same-machine checks use `hostID` when both sides have one.
     public var host: String
     public var acquiredAt: Date
+    /// Phase 16b (#99b): the Mac's hardware UUID (`gethostuuid(2)`). Optional: locks written
+    /// before Phase 16b don't have it (decoded with `decodeIfPresent`, omitted when nil).
+    public var hostID: String?
 
-    public init(pid: Int32, host: String, acquiredAt: Date) {
+    public init(pid: Int32, host: String, acquiredAt: Date, hostID: String? = nil) {
         self.pid = pid
         self.host = host
         self.acquiredAt = acquiredAt
+        self.hostID = hostID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case pid, host, acquiredAt, hostID
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pid = try c.decode(Int32.self, forKey: .pid)
+        host = try c.decode(String.self, forKey: .host)
+        acquiredAt = try c.decode(Date.self, forKey: .acquiredAt)
+        hostID = try c.decodeIfPresent(String.self, forKey: .hostID)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(pid, forKey: .pid)
+        try c.encode(host, forKey: .host)
+        try c.encode(acquiredAt, forKey: .acquiredAt)
+        try c.encodeIfPresent(hostID, forKey: .hostID)
     }
 }
 

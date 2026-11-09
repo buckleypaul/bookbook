@@ -208,28 +208,46 @@ struct BookExporterTests {
             #expect(doc.page(at: i)?.bounds(for: .mediaBox) == CGRect(x: 0, y: 0, width: 792, height: 612))
         }
 
-        // With the cover as page 1: 11 → 12, one blank.
+        // Cover + inside-cover blank + 10 = 12: one blank, the inside front cover.
         let (_, withCover, _) = try await pdf(content, ExportOptions(kind: .booklet(.letter)))
         #expect(withCover.blanksAdded == 1)
     }
 
     @Test func booklet_sheetSidesCarryImposedPages() async throws {
-        // Cover + 7 pages = 8: front 0 (8, 1=cover), back 0 (2, 7), front 1 (6, 3), back 1 (4, 5).
-        let (doc, result, _) = try await pdf(F.book(pages: 7), ExportOptions(kind: .booklet(.letter)))
-        #expect(result.blanksAdded == 0)
-        let names = ["Coverword"] + (1...7).map(F.leaf)
+        // Cover + inside-cover blank + 6 pages = 8: front 0 (Leaf06, cover), back 0 (blank, Leaf05),
+        // front 1 (Leaf04, Leaf01), back 1 (Leaf02, Leaf03). Story page 1 is a right-hand page.
+        let (doc, result, _) = try await pdf(F.book(pages: 6), ExportOptions(kind: .booklet(.letter)))
+        #expect(result.blanksAdded == 1)
+        let names: [String?] = ["Coverword", nil] + (1...6).map(F.leaf)
         let sides = BookletImposition.sheetSides(pageCount: 8)
         let words = F.words(doc)
         for (index, side) in sides.enumerated() {
             let left = names[side.leftPage - 1], right = names[side.rightPage - 1]
-            #expect(Set(words[index]) == [left, right])
+            #expect(Set(words[index]) == Set([left, right].compactMap { $0 }))
             let page = try #require(doc.page(at: index))
             // The left page sits in the left half of the landscape sheet, the right page in the right.
             for (name, isLeft) in [(left, true), (right, false)] {
+                guard let name else { continue }
                 let hit = try #require(doc.findString(name, withOptions: []).first { $0.pages.contains(page) })
                 #expect((hit.bounds(for: page).midX < 396) == isLeft, "\(name) on side \(index)")
             }
         }
+        #expect(Set(words[1]) == [F.leaf(5)] && Set(words[2]) == [F.leaf(4), F.leaf(1)])
+    }
+
+    @Test func booklet_blankCountIncludesLeadingBlank() async throws {
+        let content = F.book(pages: 5)
+        // Range from an even position, cover excluded: blank, Leaf02…Leaf05 = 5 → 8.
+        let (_, ranged, _) = try await pdf(content, ExportOptions(kind: .booklet(.letter), includeCover: false,
+                                                                  pageRange: 2...5))
+        #expect(ranged.blanksAdded == 4 && ranged.pageCount == 4)
+        // Range from an even position with the cover: cover, Leaf02…Leaf05 = 5 → 8, no leading blank.
+        let (_, rangedCover, _) = try await pdf(content, ExportOptions(kind: .booklet(.letter), pageRange: 2...5))
+        #expect(rangedCover.blanksAdded == 3)
+        #expect(BookletImposition.blanks(contentPages: 5, includeCover: true, firstStoryPosition: 2) == (0, 3))
+        #expect(BookletImposition.blanks(contentPages: 4, includeCover: false, firstStoryPosition: 2) == (1, 3))
+        #expect(BookletImposition.blanks(contentPages: 4, includeCover: true, firstStoryPosition: 1) == (1, 3))
+        #expect(BookletImposition.blanks(contentPages: 1, includeCover: true, firstStoryPosition: nil) == (0, 3))
     }
 
     @Test func booklet_spreadsBecomeHalves_coverExcluded() async throws {
@@ -239,6 +257,39 @@ struct BookExporterTests {
                                                                     spreads: .doubleWidth))
         #expect(result.blanksAdded == 0)
         #expect(F.words(doc) == [[F.leaf(3), F.leaf(1)], [F.leaf(2) + "a", F.leaf(2) + "b"]])
+    }
+
+    /// Booklet page b (1-based, padded) is a right-hand page when b is odd. Every story position
+    /// must keep `PageSequencer`'s side (odd position = right, `PageNumbering.marks`), so a
+    /// spread's halves face each other (booklet pages 2k, 2k + 1) and outer page numbers stay
+    /// outside. Returns (bookletPage, position) for every story slot.
+    func bookletParity(_ content: BookContent, _ options: ExportOptions) -> [(booklet: Int, position: Int)] {
+        let exporter = F.exporter(content)
+        let positions = Dictionary(uniqueKeysWithValues: exporter.storyPositions(range: nil).map {
+            ($0.page.id, $0.position.position)
+        })
+        return exporter.bookletPages(options).enumerated().compactMap { index, slot in
+            guard let page = slot.page, let position = positions[page.id] else { return nil }
+            return (index + 1, position + (slot.half ?? 0))
+        }
+    }
+
+    @Test(arguments: [(true, nil), (false, nil), (true, 2...6), (false, 2...6), (true, 3...6), (false, 4...4)]
+          as [(Bool, ClosedRange<Int>?)])
+    func booklet_storyPagesKeepSequencerSide(includeCover: Bool, range: ClosedRange<Int>?) {
+        // Positions: Leaf01 = 1, spread Leaf02 = 2–3, Leaf03 = 4, Leaf04 = 5, spread Leaf05 = 6–7,
+        // Leaf06 = 8.
+        let content = F.book(pages: 6, spreads: [1, 4])
+        let options = ExportOptions(kind: .booklet(.letter), includeCover: includeCover, pageRange: range)
+        let placed = bookletParity(content, options)
+        #expect(!placed.isEmpty)
+        for entry in placed {
+            #expect(entry.booklet % 2 == entry.position % 2,
+                    "position \(entry.position) on booklet page \(entry.booklet)")
+        }
+        let slots = F.exporter(content).bookletPages(options)
+        if includeCover { #expect(slots.first?.page?.id == content.book.coverPageID) }
+        #expect(slots.count % 4 == 0)
     }
 
     @Test func booklet_scalesLetterPagesOnLetter() async throws {

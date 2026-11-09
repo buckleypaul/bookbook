@@ -943,9 +943,10 @@ A Core ML implementation can be added later without changes elsewhere (D11).
 ### 9.3 Booklet imposition
 
 - Pages, including the cover unless it's excluded, are padded with blanks to a multiple of 4. The number added is reported to the user.
+- Story pages keep `PageSequencer`'s side (odd position = right = odd booklet page): a blank inside front cover follows the cover, or a leading blank precedes a range that starts on an even position. These count in the reported blanks.
 - For `n` pages and sheet side `s`, pages are paired as (n − 2s, 1 + 2s) on the front and (2 + 2s, n − 1 − 2s) on the back, for s = 0…n/4 − 1, using 1-based page numbers.
 - Each half-sheet slot holds one page, scaled to fit and centred when the page size doesn't fit two-up exactly (§8.8, with a notice). 5.5×8.5 in on Letter and A5 on A4 fit at 100%.
-- Sheet sizes: Letter, A4, Tabloid, A3. The output dialog shows printing instructions, such as "Print double-sided, flip on short edge", based on orientation.
+- Sheet sizes: Letter, A4, Tabloid, A3. The output dialog shows printing instructions, "Print double-sided, flip on short edge" for both orientations (the fold is always parallel to the sheet's short edge).
 - When the cover is excluded, it can be exported separately as a single page for printing on card.
 
 ### 9.4 Preflight (§8.8 "Before export")

@@ -293,25 +293,6 @@ public protocol ImagePreparing: Sendable {
     func prepare(_ request: ImagePreparationRequest) async throws -> CGImage
 }
 
-// The image lane implements, in `Sources/BBExport/Images/` (stubs are in place; replace them):
-//
-//   public struct CoreImageUpscaler: Upscaler            // CILanczosScaleTransform + CISharpenLuminance ≈0.4
-//   public enum ImagePreparationPlanner {
-//       /// One request per placed image box on `page` (main actor not required: pure geometry).
-//       public static func requests(page: Page, in content: BookContent,
-//                                   imageURL: (ImageRef) -> URL,
-//                                   pixelSize: (ImageRef) -> CGSize?) -> [ImagePreparationRequest]
-//   }
-//   public actor ExportImagePreparer: ImagePreparing {
-//       public init(cacheDirectory: URL, upscaler: any Upscaler = CoreImageUpscaler())
-//       public func assess(_ request: ImagePreparationRequest) -> ImageAssessment
-//       /// Cropped + resampled to `requiredPixels`, cached as <hash>-<w>x<h>.jpg|png.
-//       public func prepare(_ request: ImagePreparationRequest) async throws -> CGImage
-//       /// Encoded cache file for "Preview upscaled".
-//       public func preparedFileURL(_ request: ImagePreparationRequest) async throws -> URL
-//   }
-//   public enum ImagePixelSize { public static func of(url: URL) -> CGSize? }   // CGImageSource, no decode
-
 // MARK: - Preflight (A §9.4)
 
 public struct PreflightIssue: Hashable, Sendable, Identifiable {
@@ -359,38 +340,3 @@ public protocol SpellingChecking: AnyObject {
     /// Misspelled words in `text`, in order.
     func misspelledWords(in text: String) -> [String]
 }
-
-// The preflight lane implements, in `Sources/BBExport/Preflight/` (stubs in place; replace them):
-//
-//   public final class SystemSpellingChecker: SpellingChecking   // NSSpellChecker, @MainActor
-//   @MainActor public enum Preflight {
-//       /// Issues in reading order (cover first), then by kind order above.
-//       /// `assessments` come from ExportImagePreparer.assess; boxes not in it aren't checked for softness.
-//       public static func run(_ content: BookContent,
-//                              assessments: [BoxImageKey: ImageAssessment],
-//                              spelling: any SpellingChecking) -> [PreflightIssue]
-//   }
-
-// MARK: - Exporter (A §9.1)
-
-// The pipeline lane implements, in `Sources/BBExport/Pipeline/` (stubs in place; replace them):
-//
-//   @MainActor public final class BookExporter {
-//       public init(content: BookContent, images: any PageImageSource, preparer: any ImagePreparing,
-//                   imageURL: @escaping @Sendable (ImageRef) -> URL)
-//       /// Page numbers come from `PageNumberMarks.make(for: content)`.
-//       /// Renders one page per step on the main actor with `await` between pages (UI stays live);
-//       /// images are prepared by `preparer` off the main actor. Checks `Task.isCancelled` between
-//       /// pages and throws CancellationError. `progress` is called after each unit.
-//       public func pdfData(_ options: ExportOptions,
-//                           progress: @MainActor (ExportProgress) -> Void) async throws -> (Data, ExportResult)
-//       public func export(_ options: ExportOptions, to url: URL,
-//                          progress: @MainActor (ExportProgress) -> Void) async throws -> ExportResult
-//       /// One page (a spread: both halves, double width) at 300 DPI.
-//       public func bitmapData(page: PageID, format: BitmapFormat) async throws -> Data
-//       /// Cover only, single page — for printing on card when a booklet excludes it.
-//       public func coverPDFData() async throws -> Data
-//   }
-//
-// `PDFExporter` (Phase 2) stays as a thin synchronous wrapper or is removed with its callers
-// moved to BookExporter; the pipeline lane decides and keeps its tests passing.

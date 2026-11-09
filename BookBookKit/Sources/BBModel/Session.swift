@@ -27,7 +27,18 @@ public struct Session: Hashable, Codable, Sendable, Identifiable {
 
 public enum SessionOwner: Hashable, Codable, Sendable {
     case pageBox(PageID, BoxID)
-    // Phase 10 adds .assetReference(AssetID, UUID) and .sheetItem(AssetID, UUID).
+    /// Phase 10: an asset's reference slot (`ReferenceSlot.id`).
+    case assetReference(AssetID, UUID)
+    /// Phase 10: a character-sheet item (`SheetItem.id`).
+    case sheetItem(AssetID, UUID)
+
+    /// The asset that owns this session, if any.
+    public var assetID: AssetID? {
+        switch self {
+        case .pageBox: nil
+        case let .assetReference(asset, _), let .sheetItem(asset, _): asset
+        }
+    }
 }
 
 public enum MessageRole: String, Codable, Sendable {
@@ -87,9 +98,14 @@ public struct Version: Hashable, Codable, Sendable, Identifiable {
     public var starred: Bool
     /// nil for imported versions.
     public var provenance: Provenance?
+    /// Phase 10 (A §11): the import question "Is this a photo of a real person?". nil = not
+    /// asked (generated versions, page-box imports, older files) = treated as false.
+    public var depictsRealPerson: Bool?
 
     public init(id: VersionID = VersionID(), image: ImageRef, pixelSize: PixelSize, source: VersionSource,
-                parent: VersionID? = nil, createdAt: Date, starred: Bool = false, provenance: Provenance? = nil) {
+                parent: VersionID? = nil, createdAt: Date, starred: Bool = false, provenance: Provenance? = nil,
+                depictsRealPerson: Bool? = nil) {
+        self.depictsRealPerson = depictsRealPerson
         self.id = id
         self.image = image
         self.pixelSize = pixelSize
@@ -188,4 +204,15 @@ public struct Provenance: Hashable, Codable, Sendable {
 /// What a queued generation writes into (A §7.9). Phase 2: page boxes only.
 public enum GenerationTarget: Hashable, Codable, Sendable {
     case pageBox(PageID, BoxID)
+    /// Phase 10: an asset reference slot / a character-sheet item.
+    case assetReference(AssetID, UUID)
+    case sheetItem(AssetID, UUID)
+
+    public var owner: SessionOwner {
+        switch self {
+        case let .pageBox(p, b): .pageBox(p, b)
+        case let .assetReference(a, s): .assetReference(a, s)
+        case let .sheetItem(a, i): .sheetItem(a, i)
+        }
+    }
 }

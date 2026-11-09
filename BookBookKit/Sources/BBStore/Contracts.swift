@@ -48,6 +48,9 @@ public struct DirtySet: Hashable, Sendable {
     public var deletedPages: Set<PageID>
     /// Phase 6: templates removed from the book; `templates/<id>.json` is deleted in the same transaction.
     public var deletedTemplates: Set<TemplateID>
+    /// Phase 10: `assets/<id>.json` to write / delete (same delete-then-undo rules as templates).
+    public var assets: Set<AssetID> = []
+    public var deletedAssets: Set<AssetID> = []
 
     public init(book: Bool = false, style: Bool = false, templates: Set<TemplateID> = [], pages: Set<PageID> = [],
                 sessions: Set<SessionID> = [], deletedPages: Set<PageID> = [],
@@ -63,7 +66,7 @@ public struct DirtySet: Hashable, Sendable {
 
     public var isEmpty: Bool {
         !book && !style && templates.isEmpty && pages.isEmpty && sessions.isEmpty && deletedPages.isEmpty
-            && deletedTemplates.isEmpty
+            && deletedTemplates.isEmpty && assets.isEmpty && deletedAssets.isEmpty
     }
 
     public mutating func formUnion(_ other: DirtySet) {
@@ -80,12 +83,16 @@ public struct DirtySet: Hashable, Sendable {
         deletedTemplates.subtract(other.templates)
         templates.subtract(other.deletedTemplates)
         deletedTemplates.formUnion(other.deletedTemplates)
+        deletedAssets.subtract(other.assets)
+        assets.subtract(other.deletedAssets)
+        assets.formUnion(other.assets)
+        deletedAssets.formUnion(other.deletedAssets)
     }
 
     /// Everything in `content` (used when creating a book).
     public static func all(_ content: BookContent) -> DirtySet {
         DirtySet(book: true, style: true, templates: Set(content.templates.keys), pages: Set(content.pages.keys),
-                 sessions: Set(content.sessions.keys))
+                 sessions: Set(content.sessions.keys)).with { $0.assets = Set(content.assets.keys) }
     }
 }
 
@@ -104,5 +111,13 @@ public struct LibraryEntry: Codable, Hashable, Sendable, Identifiable {
         self.url = url
         self.modifiedAt = modifiedAt
         self.thumbnailURL = thumbnailURL
+    }
+}
+
+extension DirtySet {
+    func with(_ body: (inout DirtySet) -> Void) -> DirtySet {
+        var copy = self
+        body(&copy)
+        return copy
     }
 }

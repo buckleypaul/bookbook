@@ -314,7 +314,8 @@ public final class BookDocument {
         case let .importStoryText(texts, templateID, index, _):
             unfixed = .importStoryText(texts, templateID: templateID, index: index)
         case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop:
+             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
+             .addAsset, .updateAsset, .setAssetChecklist:
             return false
         }
         guard let prepared = prepare(unfixed) else { return false }
@@ -599,6 +600,9 @@ public final class BookDocument {
             let crop = CropMath.clamped(zoom: zoom, center: center, imageSize: imageSize, boxRect: boxRect)
             if CropMath.isSame(crop, (placement.zoom, placement.center)) { return nil }
             edit = .setCrop(page: pageID, box: boxID, version: placement.versionID, zoom: crop.zoom, center: crop.center)
+
+        case .addAsset, .updateAsset, .setAssetChecklist:
+            return nil // Phase 10: UI-core lane implements (contract stub).
 
         case let .setTypography(typography):
             edit = .setTypography(typography)

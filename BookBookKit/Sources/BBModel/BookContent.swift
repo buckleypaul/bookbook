@@ -8,9 +8,12 @@ public struct BookContent: Hashable, Sendable {
     public var templates: [TemplateID: Template]
     public var pages: [PageID: Page]
     public var sessions: [SessionID: Session]
+    /// Phase 10: `assets/<id>.json`.
+    public var assets: [AssetID: Asset]
 
     public init(book: Book, style: StyleGuide, templates: [TemplateID: Template],
-                pages: [PageID: Page], sessions: [SessionID: Session]) {
+                pages: [PageID: Page], sessions: [SessionID: Session], assets: [AssetID: Asset] = [:]) {
+        self.assets = assets
         self.book = book
         self.style = style
         self.templates = templates

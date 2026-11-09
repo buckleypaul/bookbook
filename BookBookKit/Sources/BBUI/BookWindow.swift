@@ -99,6 +99,8 @@ struct BookEditor: View {
     @State private var pages: PagesController
     @State private var layouts: TemplateEditorModel
     @State private var styleModel: StyleTabModel
+    @State private var assetsModel = AssetsModel()
+    @State private var sheetBatchRequest: AssetID?
     @State private var sidebarTab: SidebarTab = .pages
     @State private var selectedImageBox: BoxID?
     @State private var canvasImportError: String?
@@ -158,6 +160,7 @@ struct BookEditor: View {
         }
         .toolbar { toolbar }
         .draftAllFlow(document: document, trigger: $draftAllRequested)
+        .sheetBatchFlow(document: document, trigger: $sheetBatchRequest)
         .navigationTitle(content.book.title)
         .focusedSceneValue(\.focusedBook, document)
         .focusedSceneValue(\.showTypography, $showTypography)
@@ -191,6 +194,7 @@ struct BookEditor: View {
         }
         .onChange(of: sidebarTab) { layouts.finishContinuousEdit() }
         .onChange(of: pages.selectedPage) { selectedImageBox = nil }
+        .onChange(of: content.assets) { assetsModel.validate(document.content) }
         .onChange(of: pages.mode) { _, mode in if mode == .overview { selectedImageBox = nil } }
     }
 
@@ -198,8 +202,17 @@ struct BookEditor: View {
     private func sidebar(_ content: BookContent) -> some View {
         switch sidebarTab {
         case .pages, .style: PageList(document: document, content: content, pages: pages)
+        case .assets: AssetsList(document: document, content: content, model: assetsModel, images: images)
         case .layouts: TemplateList(document: document, content: content, model: layouts)
         }
+    }
+
+    /// Where-used link: the page editor on that page, with the box selected when there is one.
+    private func openFromWhereUsed(_ page: PageID, _ box: BoxID?) {
+        sidebarTab = .pages
+        pages.open(page)
+        // `selectedPage` changing clears the box selection, so set it after that has run.
+        Task { @MainActor in selectedImageBox = box }
     }
 
     private func isReorder(_ command: BookCommand?) -> Bool {
@@ -314,7 +327,10 @@ struct BookEditor: View {
                     .frame(maxWidth: .infinity)
                     .background(.yellow.opacity(0.25))
             }
-            if sidebarTab == .layouts {
+            if sidebarTab == .assets {
+                AssetsDetail(document: document, content: content, model: assetsModel, images: images,
+                             onOpenPage: openFromWhereUsed, onGenerateSheet: { sheetBatchRequest = $0 })
+            } else if sidebarTab == .layouts {
                 LayoutsDetail(document: document, model: layouts, images: images)
             } else if sidebarTab == .style {
                 StyleTab(document: document, model: styleModel)
@@ -363,7 +379,9 @@ struct BookEditor: View {
 
     @ViewBuilder
     private func sessionPanel(_ content: BookContent) -> some View {
-        if sidebarTab == .layouts {
+        if sidebarTab == .assets {
+            AssetsSessionPanel(document: document, content: content, model: assetsModel, images: images)
+        } else if sidebarTab == .layouts {
             BoxInspector(model: layouts)
                 .disabled(!document.isEditable)
         } else if pages.mode == .editor, let page = pages.selectedPage, let box = selectedImageBox,

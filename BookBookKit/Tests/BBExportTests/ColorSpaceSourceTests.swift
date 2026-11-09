@@ -17,6 +17,14 @@ enum ColorSpaceFixtures {
         return ctx.makeImage()!
     }
 
+    static func grayAlpha(width: Int, height: Int) -> CGImage {
+        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(gray: 0.5, alpha: 0.5)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return ctx.makeImage()!
+    }
+
     static func cmyk(width: Int, height: Int) -> CGImage {
         let space = CGColorSpaceCreateDeviceCMYK()
         let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -79,6 +87,22 @@ struct ColorSpaceSourceTests {
         let image = try await preparer.prepare(ImageTestSupport.request(
             crop: CGRect(x: 0, y: 0, width: 64, height: 48), required: CGSize(width: 128, height: 96), url: src, sha: "gray"))
         #expect(image.width == 128 && image.height == 96)
+    }
+
+    @Test func preparerHandlesGrayAlphaPNGAtTargetSize() async throws {
+        let dir = ImageTestSupport.tempDir()
+        let src = dir.appendingPathComponent("grayalpha.png")
+        ColorSpaceFixtures.write(ColorSpaceFixtures.grayAlpha(width: 64, height: 48), type: .png, to: src)
+        let preparer = ExportImagePreparer(cacheDirectory: dir.appendingPathComponent("cache"))
+        let image = try await preparer.prepare(ImageTestSupport.request(
+            crop: CGRect(x: 0, y: 0, width: 64, height: 48), required: CGSize(width: 64, height: 48), url: src, sha: "ga"))
+        #expect(image.width == 64 && image.height == 48)
+    }
+
+    @Test func flatteningGrayAlphaImageSucceeds() throws {
+        let flat = try ExportImagePreparer.flattened(ColorSpaceFixtures.grayAlpha(width: 64, height: 48))
+        #expect(flat.width == 64 && flat.height == 48)
+        #expect(flat.alphaInfo == .noneSkipLast)
     }
 
     @Test func preparerHandlesCMYKJPEG() async throws {

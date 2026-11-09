@@ -46,7 +46,6 @@ struct ModelSettings: View {
             } footer: {
                 Text(ModelSettings.qualityExplanation).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             Section {
                 Picker("Templates", selection: $prefs.defaultTemplateModelID) {
@@ -64,7 +63,6 @@ struct ModelSettings: View {
                 Text("AI helpers")
             } footer: {
                 Text(ModelSettings.consistencyNote).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Section {

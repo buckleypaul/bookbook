@@ -35,7 +35,7 @@ struct StyleFlagsTests {
     // MARK: Style flag
 
     @Test(arguments: [
-        (0, 0, 0, false), (0, 1, 0, true), (1, 1, 0, false), (0, 2, 1, true), (0, 2, 2, false), (0, 3, 2, true), (5, 3, 0, false),
+        (0, 0, 0, false), (0, 1, 0, true), (1, 1, 0, false), (0, 2, 1, true), (0, 2, 2, false), (0, 3, 2, true), (5, 3, 0, true), (5, 3, 3, false),
     ])
     func styleChanged(placed: Int, visual: Int, acknowledged: Int, expected: Bool) {
         var (content, page, box) = Self.book(provenance: Self.provenance(styleRevision: placed))

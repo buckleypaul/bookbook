@@ -15,6 +15,9 @@ public actor BookStore {
     /// Set while this store holds `.lock` (wrote it, or found this process's own lock); counted
     /// in `BookLock`'s per-process holders.
     private var holdsLock = false
+    /// The per-process holder key taken at acquire (the package's real path then), so a release
+    /// after the package moved (e.g. trashed) still drops the right count.
+    private var lockKey: String?
     /// Test hook (fault injection): see `SaveStep`.
     private var saveFaultHook: SaveFaultHook?
 
@@ -202,7 +205,12 @@ public actor BookStore {
             guard images.hasPrefix(package.hasSuffix("/") ? package : package + "/") else {
                 throw StoreError.io("images folder is outside the package")
             }
-            if fm.fileExists(atPath: dest.path(percentEncoded: false)) { return }
+            if fm.fileExists(atPath: dest.path(percentEncoded: false)) {
+                // Same bytes as an existing file, maybe a >24 h orphan: make it young again so the
+                // open-time sweep can't remove it before the JSON that refers to it is saved (#100).
+                try fm.setAttributes([.modificationDate: Date()], ofItemAtPath: dest.path(percentEncoded: false))
+                return
+            }
             let tmp = dir.appending(path: ".tmp-\(UUID().uuidString)")
             do {
                 try PackageCoding.writeSynced(data, to: tmp)
@@ -248,17 +256,57 @@ public actor BookStore {
 
     // MARK: Phase 3 contract: lock, read-only, thumbnail, sweep
 
-    /// Takes `<package>/.lock` (A §5.3). A lock held by this process, or by a dead PID on this host, is taken over.
-    /// Call before `load()`. A lock from another host is treated as live.
+    /// Takes `<package>/.lock` (A §5.3). A lock held by this process, or a stale one on this Mac
+    /// (dead PID, or a PID reused by a process that started after the lock was taken), is taken
+    /// over. Call before `load()`. A lock from another Mac is treated as live; see `takeOverLock`.
     public func acquireLock() throws(StoreError) -> LockAcquisition {
-        if holdsLock { return .acquired }
-        let outcome = try PackageCoding.io("acquire lock") { try BookLock(packageURL: packageURL).acquireHold() }
+        try acquireLock(exclusiveInProcess: false)
+    }
+
+    /// Like `acquireLock()`, but also reports `.heldByOther` (naming this process) when another
+    /// store in this process already holds the lock, or `.lock` already names this process. For
+    /// background jobs that must not touch a book this process has open, is opening, or is
+    /// writing headlessly (duplicate-ID resolution, #3b/#3c).
+    public func acquireLockExclusively() throws(StoreError) -> LockAcquisition {
+        try acquireLock(exclusiveInProcess: true)
+    }
+
+    private func acquireLock(exclusiveInProcess: Bool) throws(StoreError) -> LockAcquisition {
+        if holdsLock { return exclusiveInProcess ? .heldByOther(BookLock.currentOwner()) : .acquired }
+        let lock = BookLock(packageURL: packageURL)
+        let key = lock.holderKey
+        let outcome = try PackageCoding.io("acquire lock") { try lock.acquireHold(exclusiveInProcess: exclusiveInProcess) }
         switch outcome {
         case .wrote, .reentrant:
             holdsLock = true
+            lockKey = key
             return .acquired
         case .heldByOther(let owner):
             return .heldByOther(owner)
+        }
+    }
+
+    /// "Open Anyway" (#99b): replaces a lock that `acquireLock()` reported as
+    /// `.heldByOther(expectedOwner)` (typically another Mac's, which can never be proved stale
+    /// from here) with this process's, after the user confirms. Succeeds only if `.lock` still
+    /// names exactly `expectedOwner` (or has been removed meanwhile). If the file changed since,
+    /// returns `.heldByOther` with the owner it names now (or `expectedOwner` if it is
+    /// unreadable; call `acquireLock()` again in that case), and the caller may ask the user
+    /// again. On `.acquired` this store holds the lock as if `acquireLock()` had
+    /// succeeded; release it with `releaseLock()`. The other process is not told: if it is
+    /// still running, both may write (the user accepted that risk).
+    public func takeOverLock(expectedOwner: LockOwner) throws(StoreError) -> LockAcquisition {
+        if holdsLock { return .acquired }
+        let lock = BookLock(packageURL: packageURL)
+        let key = lock.holderKey
+        let outcome = try PackageCoding.io("take over lock") { try lock.takeOverHold(expected: expectedOwner) }
+        switch outcome {
+        case .tookOver:
+            holdsLock = true
+            lockKey = key
+            return .acquired
+        case .ownerChanged(let owner):
+            return .heldByOther(owner ?? expectedOwner)
         }
     }
 
@@ -268,7 +316,14 @@ public actor BookStore {
     public func releaseLock() {
         guard holdsLock else { return }
         holdsLock = false
-        BookLock(packageURL: packageURL).releaseHold()
+        BookLock(packageURL: packageURL).releaseHold(key: lockKey)
+        lockKey = nil
+    }
+
+    /// A store dropped without `releaseLock()` gives up its hold, so `.lock` doesn't stay until
+    /// the process exits (#105c).
+    deinit {
+        if holdsLock { BookLock(packageURL: packageURL).releaseHold(key: lockKey) }
     }
 
     /// After this, `load()` never writes (no journal replay, migration, sweep or ledger repair) and
@@ -305,12 +360,15 @@ public actor BookStore {
     }
 
     /// Deletes `images/` files that no JSON in `content` refers to and that are older than `minimumAge` (A §5.2).
-    /// `load()` calls this at open; public for tests and Phase 16 clean-up. Returns the number removed.
+    /// Files named in `SweepProtection.shared` for this book are kept too. `load()` calls this at
+    /// open; public for tests and Phase 16 clean-up. Returns the number removed.
     @discardableResult
     public func sweepOrphanImages(referencedBy content: BookContent, minimumAge: TimeInterval = 86_400,
                                   now: Date = Date()) throws(StoreError) -> Int {
         guard !readOnly else { return 0 }
+        // Plus files the queue still needs (e.g. a queued region edit's mask, #29a).
         let referenced = ImageSweep.referencedFileNames(in: content)
+            .union(SweepProtection.shared.names(for: content.book.id))
         return try PackageCoding.io("sweep images") {
             try ImageSweep.sweep(packageURL: packageURL, referenced: referenced, minimumAge: minimumAge, now: now)
         }

@@ -175,9 +175,10 @@ import Testing
         #expect(request.references.first?.payload.pixelSize == PixelSize(width: 800, height: 800))
     }
 
-    @Test func sessionIsResolvedByMessageWhenSlotMoved() throws {
+    @Test func messageSessionWithNoSlotDoesNotBorrowAnotherSessionsBox() throws {
         var walk = RefinementBook.make()
-        // The slot now points at a different (empty) session; the message still finds the right one.
+        // No slot holds the message's session and the target box now belongs to another session:
+        // the request must not use that box's shape (Phase 16b #52).
         let page = walk.book.pageID, box = walk.book.imageBox
         let realID = walk.book.sessionID
         let empty = Session(owner: .pageBox(page, box))
@@ -185,9 +186,10 @@ import Testing
         walk.book.content.pages[page]?.images[box]?.sessionID = empty.id
         var content = walk.book.content
         content.sessions[realID] = walk.book.content.sessions[realID]
-        let (request, _) = try assembleBook(walk.book, walk.refine(0), content: content, messageID: walk.pendingMessage,
-                                            imageData: walk.imageData)
-        #expect(request.instruction.rendered.contains("A fox in the rain"))
+        #expect(throws: (any Error).self) {
+            try assembleBook(walk.book, walk.refine(0), content: content, messageID: walk.pendingMessage,
+                             imageData: walk.imageData)
+        }
     }
 
     @Test func headerPixelSizeIsRead() {

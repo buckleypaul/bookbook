@@ -1,4 +1,5 @@
 import AppKit
+import BBAI
 import BBStore
 import Foundation
 import SwiftUI
@@ -23,10 +24,32 @@ public enum LibraryLocation {
     }
 }
 
+/// The warning before switching the library folder while requests are queued (queue.json is
+/// shared by every library, and results for books outside the new library can't be delivered).
+enum LibrarySwitchWarning {
+    /// Waiting or running entries plus finished-but-undelivered pictures.
+    static func pendingCount(_ snapshot: QueueSnapshot, undelivered: Int) -> Int {
+        let active = snapshot.entries.filter {
+            switch $0.state {
+            case .waiting, .running, .retrying: true
+            case .failed: false
+            }
+        }.count
+        return active + max(0, undelivered)
+    }
+
+    static func message(count: Int) -> String? {
+        guard count > 0 else { return nil }
+        let noun = count == 1 ? "request is" : "requests are"
+        return "\(count) \(noun) still queued for books in the current library; their pictures will be lost. Switch anyway?"
+    }
+}
+
 /// Settings ▸ General ▸ Library: the folder path, with Choose… and an offer to move the books.
 struct LibraryLocationSettings: View {
     @Environment(AppModel.self) private var app
     @State private var chosen: URL?
+    @State private var confirmSwitch: URL?
     @State private var working = false
     @State private var error: String?
 
@@ -57,6 +80,14 @@ struct LibraryLocationSettings: View {
             Text("Each book is a self-contained file in this folder, so you can back it up by copying it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+        .alert("Switch library?", isPresented: Binding(
+            get: { confirmSwitch != nil }, set: { if !$0 { confirmSwitch = nil } }
+        ), presenting: confirmSwitch) { url in
+            Button("Switch Anyway", role: .destructive) { chosen = url }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text(LibrarySwitchWarning.message(count: pendingCount) ?? "")
+        }
         .alert("Move your books to the new location?", isPresented: Binding(
             get: { chosen != nil }, set: { if !$0 { chosen = nil } }
         ), presenting: chosen) { url in
@@ -80,7 +111,11 @@ struct LibraryLocationSettings: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard url.standardizedFileURL != app.libraryRoot.standardizedFileURL else { return }
         error = nil
-        chosen = url
+        if pendingCount > 0 { confirmSwitch = url } else { chosen = url }
+    }
+
+    private var pendingCount: Int {
+        LibrarySwitchWarning.pendingCount(app.queueSnapshot, undelivered: app.undeliveredCount)
     }
 
     private func change(to url: URL, move: Bool) {

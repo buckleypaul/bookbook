@@ -15,6 +15,7 @@ public struct BookWindow: View {
     @State private var loadError: String?
     @State private var lockOwner: LockOwner?
     @State private var showLockAlert = false
+    @State private var confirmTakeOver = false
 
     public init(bookID: BookID) {
         self.bookID = bookID
@@ -38,9 +39,12 @@ public struct BookWindow: View {
                 ContentUnavailableView {
                     Label("Book in Use", systemImage: "lock")
                 } description: {
-                    Text(StoreErrorText.message(for: .locked(lockOwner)))
+                    Text("\(StoreErrorText.message(for: .locked(lockOwner))) \(LockAdviceText.message(offersOpenAnyway: LockTakeOver.offersOpenAnyway(lockOwner)))")
                 } actions: {
                     Button("Open Read-Only") { Task { await load(readOnly: true) } }
+                    if LockTakeOver.offersOpenAnyway(lockOwner) {
+                        Button("Open Anyway…") { confirmTakeOver = true }
+                    }
                 }
             } else {
                 ProgressView("Opening…")
@@ -54,9 +58,18 @@ public struct BookWindow: View {
             isPresented: $showLockAlert
         ) {
             Button("Open Read-Only") { Task { await load(readOnly: true) } }
+            if LockTakeOver.offersOpenAnyway(lockOwner) {
+                Button("Open Anyway…") { confirmTakeOver = true }
+            }
             Button("Close", role: .cancel) { dismiss() }
         } message: {
-            Text("Another copy of BookBook is using it. You can open it read-only to look at it, but you won't be able to change it.")
+            Text(LockAdviceText.message(offersOpenAnyway: LockTakeOver.offersOpenAnyway(lockOwner)))
+        }
+        .alert("Open this book anyway?", isPresented: $confirmTakeOver) {
+            Button("Open Anyway", role: .destructive) { Task { await openAnyway() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(LockTakeOver.warning)
         }
         .onChange(of: app.windowCloseRequests.contains(bookID)) { _, requested in
             guard requested else { return }
@@ -66,6 +79,28 @@ public struct BookWindow: View {
         .onDisappear {
             let app = app, bookID = bookID
             Task { await app.closeBook(bookID) }
+        }
+    }
+
+    /// "Open Anyway" (#99b): takes the lock over from `lockOwner`, then opens the book editable.
+    private func openAnyway() async {
+        guard let owner = lockOwner, let url = app.libraryEntries.first(where: { $0.id == bookID })?.url else {
+            await load(readOnly: false)
+            return
+        }
+        let store = BookStore(packageURL: url)
+        switch await LockTakeOver.takeOver(store, from: owner) {
+        case .taken:
+            // The store's hold is counted per process, so the real open finds the lock ours.
+            await load(readOnly: false)
+            await store.releaseLock()
+        case let .changed(newOwner):
+            // The lock changed hands while the warning was up: ask again about the new holder.
+            lockOwner = newOwner
+            showLockAlert = true
+        case let .failed(message):
+            lockOwner = nil
+            loadError = message
         }
     }
 
@@ -195,7 +230,8 @@ struct BookEditor: View {
             document.undoManager = undoManager
             if pages.selectedPage == nil { pages.selectedPage = content.book.pageOrder.first ?? content.book.coverPageID }
             // New Book from Story…: open straight into the import sheet.
-            if document.isEditable, app.takePendingStoryImport(for: document.id) { pages.sheet = .importStory }
+            // Taken even when read-only, so a stale flag can't fire later (#72b).
+            if app.takePendingStoryImport(for: document.id), document.isEditable { pages.sheet = .importStory }
         }
         .onChange(of: undoManager) { _, manager in document.undoManager = manager }
         .onChange(of: content.book.pageOrder) {
@@ -253,19 +289,18 @@ struct BookEditor: View {
             .help("Import story text and split it into pages")
             .disabled(!document.isEditable)
             Menu {
-                Button("Book Settings…") { pages.sheet = .bookSettings }
-                Button("Page Numbers…") { pages.sheet = .pageNumbers }
-                Button("Import from Book…") { pages.sheet = .importFromBook }
+                Button("Book Settings…") { pages.sheet = .bookSettings }.disabled(!document.isEditable)
+                Button("Page Numbers…") { pages.sheet = .pageNumbers }.disabled(!document.isEditable)
+                Button("Import from Book…") { pages.sheet = .importFromBook }.disabled(!document.isEditable)
                 Divider()
                 Button("Draft All Empty Boxes…") { draftAllRequested = true }
-                    .disabled(!app.hasOpenAIKey || !app.isOnline)
+                    .disabled(!document.isEditable || !app.hasOpenAIKey || !app.isOnline)
                 Divider()
                 Toggle("Show Page Numbers in Overview", isOn: $showNumbers)
             } label: {
                 Label("Book", systemImage: "book.closed")
             }
             .help("Book settings, page numbers and typography")
-            .disabled(!document.isEditable)
         }
         if !app.isOnline {
             ToolbarItem {
@@ -471,6 +506,58 @@ struct PageList: View {
             Spacer()
             ImageFlagIcons(flags: flags).font(.caption)
             StatusBadge(status: status).font(.caption)
+        }
+    }
+}
+
+/// "Open Anyway" for a book whose lock another process holds (#99b). Offered for locks from
+/// another Mac (which can't be proved stale from here); a live lock on this Mac keeps the
+/// read-only choice only.
+enum LockTakeOver {
+    enum Outcome: Equatable {
+        case taken
+        case changed(LockOwner)
+        case failed(String)
+    }
+
+    static let warning = "If another Mac is still editing this book, its changes and yours can overwrite each other and work can be lost. Only continue if you know the other copy of BookBook is closed, for example after a crash."
+
+    /// This Mac's hardware UUID (the same value `.lock` records as `hostID`).
+    static let thisHostID: String? = {
+        var id = UUID().uuid
+        var wait = timespec(tv_sec: 1, tv_nsec: 0)
+        let result = withUnsafeMutableBytes(of: &id) { raw in
+            gethostuuid(raw.baseAddress!.assumingMemoryBound(to: UInt8.self), &wait)
+        }
+        return result == 0 ? UUID(uuid: id).uuidString : nil
+    }()
+
+    /// Whether the locked screen offers "Open Anyway": the lock names a different Mac (by host
+    /// UUID when both sides have one, else by host name).
+    static func offersOpenAnyway(_ owner: LockOwner?, thisHostID: String? = LockTakeOver.thisHostID,
+                                 thisHostName: String = LockTakeOver.hostName) -> Bool {
+        guard let owner else { return false }
+        if let id = owner.hostID, let mine = thisHostID { return id != mine }
+        return owner.host != thisHostName
+    }
+
+    static let hostName: String = {
+        var buf = [CChar](repeating: 0, count: 256)
+        guard gethostname(&buf, buf.count) == 0 else { return "localhost" }
+        buf[buf.count - 1] = 0
+        return String(decoding: buf.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }()
+
+    /// Takes `.lock` over from `owner` with `store`; the caller releases the store's hold once
+    /// the book has opened.
+    static func takeOver(_ store: BookStore, from owner: LockOwner) async -> Outcome {
+        do {
+            switch try await store.takeOverLock(expectedOwner: owner) {
+            case .acquired: return .taken
+            case let .heldByOther(newOwner): return .changed(newOwner)
+            }
+        } catch {
+            return .failed(StoreErrorText.message(for: error))
         }
     }
 }

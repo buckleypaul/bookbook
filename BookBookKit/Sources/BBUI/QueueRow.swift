@@ -90,15 +90,19 @@ public struct QueueBannerModel: Equatable {
 public struct QueueBadgeModel: Equatable {
     public var count: Int
     public var running: QueueEntry?
+    public var isPaused: Bool
 
     public init(snapshot: QueueSnapshot) {
+        isPaused = snapshot.pause != nil
         let live = snapshot.entries.filter { if case .failed = $0.state { false } else { true } }
         count = live.count
         running = live.first { if case .running = $0.state { true } else { false } }
     }
 
     public var isHidden: Bool { count == 0 }
-    public var title: String { count == 1 ? "1 in queue" : "\(count) in queue" }
+    public var title: String {
+        (count == 1 ? "1 in queue" : "\(count) in queue") + (isPaused ? " (paused)" : "")
+    }
 }
 
 public extension QueueSnapshot {

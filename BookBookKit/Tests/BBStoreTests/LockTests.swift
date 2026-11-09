@@ -93,7 +93,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: dir) }
         // Another host (any PID, even a dead one), or PID 1 (launchd) on this host.
         let live = host.map { LockOwner(pid: (try? deadPID()) ?? 2, host: $0, acquiredAt: testNow) }
-            ?? LockOwner(pid: 1, host: BookLock.currentHost, acquiredAt: testNow)
+            ?? LockOwner(pid: 1, host: BookLock.currentHost, acquiredAt: Date())
         try writeLock(live, url)
         let store = BookStore(packageURL: url)
         #expect(try await store.acquireLock() == .heldByOther(live))
@@ -105,7 +105,7 @@ import Testing
     @Test func readOnlyRefusesWritesAndDoesNotReplayJournal() async throws {
         let (dir, url, content) = try makeBook()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let other = LockOwner(pid: 1, host: BookLock.currentHost, acquiredAt: testNow)
+        let other = LockOwner(pid: 1, host: BookLock.currentHost, acquiredAt: Date())
         try writeLock(other, url)
         // A committed, unapplied transaction from the other writer.
         var changed = content

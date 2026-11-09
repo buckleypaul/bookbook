@@ -47,6 +47,10 @@ public struct BookBookCommands: Commands {
             }
             Button("Library") { openWindow(id: SceneID.library) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+            Divider()
+            Button("Book Settings…") { pages?.sheet = .bookSettings }
+                .keyboardShortcut(",", modifiers: [.command, .option])
+                .disabled(pages?.isEditable != true)
         }
         CommandMenu("Format") {
             let editing = book?.formatting.isEditing ?? false
@@ -69,11 +73,6 @@ public struct BookBookCommands: Commands {
                 .disabled(pages?.isEditable != true)
         }
         CommandMenu("Page") { pageMenu }
-        CommandGroup(after: .saveItem) {
-            Button("Book Settings…") { pages?.sheet = .bookSettings }
-                .keyboardShortcut(",", modifiers: [.command, .option])
-                .disabled(pages?.isEditable != true)
-        }
         CommandGroup(replacing: .importExport) {
             Button("Import Story Text…") { pages?.sheet = .importStory }
                 .keyboardShortcut("i", modifiers: [.command, .shift])

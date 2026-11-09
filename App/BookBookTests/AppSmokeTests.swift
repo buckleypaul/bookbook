@@ -1,6 +1,25 @@
+import BBStore
 import Foundation
 import Testing
 @testable import BookBook
+
+/// Phase 16b (#26, #32a): a `-BookBookLibraryRoot` library keeps its own queue, price list and
+/// index cache in `<root>/.bookbook-support/`; without it the default folder is used.
+@MainActor @Test func app_throwawayLibraryHasItsOwnSupportFolder() throws {
+    let folder = try #require(AppWiring.appSupportFolder(arguments: ["BookBookLibraryRoot": "/tmp/Throwaway"]))
+    #expect(folder.path(percentEncoded: false) == "/tmp/Throwaway/.bookbook-support/")
+    #expect(AppWiring.indexCacheURL(in: folder).path(percentEncoded: false)
+        == "/tmp/Throwaway/.bookbook-support/library-index.json")
+    #expect(AppWiring.appSupportFolder(arguments: [:]) == nil)
+    #expect(AppWiring.appSupportFolder(arguments: ["BookBookLibraryRoot": ""]) == nil)
+}
+
+/// Phase 16b (#44): as a test host the app wires no model listers, so launch never calls `/models`.
+@MainActor @Test func app_noModelListersUnderTests() {
+    let keychain = KeychainStore(service: "app.bookbook.tests-\(UUID())")
+    #expect(AppWiring.listers(keychain: keychain).isEmpty)
+    #expect(AppWiring.listers(keychain: keychain, underTests: false).count == 1)
+}
 
 /// Phase 1b smoke test: the app module loads and the host app has the expected bundle ID.
 @Test func app_moduleLoadsWithExpectedBundleID() {

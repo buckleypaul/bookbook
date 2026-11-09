@@ -70,8 +70,19 @@ struct SheetBatchFlow: ViewModifier {
                                       budget: document.content.book.budget)
             + (decision.needsConfirmation ? " That is above your confirmation limit." : "")
             + " Locked items are skipped. Queued one after another."
+            + (SheetBatchWarning.primaryHasNoImage(document.content.assets[asset]) ? SheetBatchWarning.text : "")
         self.plan = plan
         showConfirm = true
+    }
+}
+
+/// Generating a sheet without a chosen primary image gives the model nothing to keep consistent.
+enum SheetBatchWarning {
+    static let text = " Warning: this character's Primary reference has no picture yet, so the sheet won't match a chosen look."
+
+    static func primaryHasNoImage(_ asset: Asset?) -> Bool {
+        guard let asset else { return false }
+        return asset.primary?.chosen == nil
     }
 }
 

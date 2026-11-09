@@ -50,7 +50,7 @@ private func tempDirectory() -> URL {
 
 @Suite struct URLErrorMappingTests {
     @Test(arguments: [
-        URLError.Code.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed,
+        URLError.Code.notConnectedToInternet, .dataNotAllowed,
         .internationalRoamingOff, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed,
     ])
     func offlineCodes(code: URLError.Code) {

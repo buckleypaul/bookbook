@@ -202,7 +202,7 @@ struct Phase9WiringTests {
         let snapshot = await app.queue.snapshot()
         #expect(snapshot.entries.map(\.id).first == restored.id)
         #expect(snapshot.entries.count == 2)
-        #expect(snapshot.pause == .restored(count: 1))
+        #expect(snapshot.pause == .restored(count: 2), "both items wait behind the restored pause (#34f)")
         let newItem = try #require(snapshot.entries.last?.item)
         #expect(newItem.display == QueueItemDisplay(bookTitle: "Fox", pageLabel: "Page 1", boxLabel: "Image 1"))
         #expect(newItem.estimate.amount != nil)

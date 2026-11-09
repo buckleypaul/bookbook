@@ -71,8 +71,10 @@ struct ExportSheetModelTests {
         #expect(model.options.kind == .booklet(.a4))
     }
 
-    @Test func printShopBlockedWithoutBleed_turnOnBleedIsUndoable() throws {
+    @Test func printShopBlockedWithoutBleed_turnOnBleedIsUndoable() async throws {
         let (model, doc, undo, _) = try makeModel()
+        model.preflightDelay = .milliseconds(1)
+        await model.runPreflight()
         model.outputType = .printShop
         #expect(!doc.content.style.pageSetup.bleedEnabled)
         #expect(model.needsBleed)
@@ -82,6 +84,7 @@ struct ExportSheetModelTests {
         undo.endUndoGrouping()
         #expect(doc.content.style.pageSetup.bleedEnabled)
         #expect(!model.needsBleed)
+        await model.waitForPreflight()
         #expect(model.canExport)
         #expect(!model.turnOnBleed())
         undo.undo()
@@ -89,6 +92,7 @@ struct ExportSheetModelTests {
         #expect(model.needsBleed)
         // Standard and booklet never need bleed.
         model.outputType = .standard
+        await model.waitForPreflight()
         #expect(model.canExport)
     }
 
@@ -166,8 +170,10 @@ struct ExportSheetModelTests {
         #expect(three.predictedBlanks == 4)
     }
 
-    @Test func rangeValidation() throws {
+    @Test func rangeValidation() async throws {
         let (model, _, _, _) = try makeModel(extraPages: 2)
+        model.preflightDelay = .milliseconds(1)
+        await model.runPreflight()
         model.limitsRange = true
         model.rangeFrom = 3
         model.rangeTo = 2
@@ -176,6 +182,7 @@ struct ExportSheetModelTests {
         model.rangeTo = 9
         #expect(!model.isRangeValid)
         model.rangeTo = 3
+        await model.waitForPreflight()
         #expect(model.canExport)
     }
 
@@ -183,7 +190,10 @@ struct ExportSheetModelTests {
         let (model, _, _, services) = try makeModel()
         let url = FileManager.default.temporaryDirectory.appending(path: "x.pdf")
         model.chooseDestination = { _ in url }
+        model.preflightDelay = .milliseconds(1)
+        await model.runPreflight()
         model.includeCover = false
+        await model.waitForPreflight()
         model.startExport()
         #expect(model.isExporting)
         await model.waitForExport()
@@ -199,9 +209,11 @@ struct ExportSheetModelTests {
         #expect(model.printTitle == "Print…")
         await model.runPreflight()
         #expect(model.printTitle == "Print Anyway…")
+        model.preflightDelay = .milliseconds(1)
         model.outputType = .booklet
         model.sheetSize = .a4
         model.includeCover = false
+        await model.waitForPreflight()
         model.startPrint()
         await model.waitForExport()
         #expect(services.printed == [ExportOptions(kind: .booklet(.a4), includeCover: false)])

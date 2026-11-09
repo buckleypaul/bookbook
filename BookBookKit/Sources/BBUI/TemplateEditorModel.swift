@@ -243,17 +243,48 @@ public final class TemplateEditorModel {
         continuousToken = nil
     }
 
-    /// Adds an image or text box (centred in the first page's safe area, a third of its size),
-    /// on top, and selects it.
+    /// How far each new box steps down and right from one already at its spot (page points).
+    static let newBoxCascadeStep: CGFloat = 18
+
+    /// Adds an image or text box (a third of the first page's safe area, centred in it, or
+    /// cascaded down and right past boxes already there, #54a), on top, and selects it.
     public func addBox(_ content: BoxContentKind) {
-        guard let geometry else { return }
+        guard let geometry, let current = template else { return }
         let safe = geometry.pageSafeAreas.first ?? geometry.safeArea
         let size = CGSize(width: safe.width / 3, height: safe.height / 3)
-        let rect = CGRect(x: safe.midX - size.width / 2, y: safe.midY - size.height / 2,
-                          width: size.width, height: size.height)
+        let rect = Self.newBoxRect(size: size, safe: safe,
+                                   existing: current.boxes.map { geometry.trimRect(for: $0.frame) })
         let box = Box(frame: geometry.normalizedFrame(for: rect), content: content)
         update(actionName: content == .image ? "Add Image Box" : "Add Text Box") { $0.boxes.append(box) }
         if template?.box(box.id) != nil { selection = [box.id] }
+    }
+
+    /// Where a new box of `size` goes: centred in `safe`, then stepped by `newBoxCascadeStep`
+    /// down and right while a box in `existing` (trim rects) already starts at that spot.
+    /// Clamped to `safe`; once a clamped spot is taken too, the cascade restarts at the safe
+    /// area's top-left corner and finally gives up (the box may then overlap one).
+    static func newBoxRect(size: CGSize, safe: CGRect, existing: [CGRect]) -> CGRect {
+        let step = newBoxCascadeStep
+        func clamped(_ origin: CGPoint) -> CGRect {
+            let x = min(max(origin.x, safe.minX), max(safe.minX, safe.maxX - size.width))
+            let y = min(max(origin.y, safe.minY), max(safe.minY, safe.maxY - size.height))
+            return CGRect(origin: CGPoint(x: x, y: y), size: size)
+        }
+        func taken(_ rect: CGRect) -> Bool {
+            existing.contains { abs($0.minX - rect.minX) < step / 2 && abs($0.minY - rect.minY) < step / 2 }
+        }
+        let starts = [CGPoint(x: safe.midX - size.width / 2, y: safe.midY - size.height / 2),
+                      CGPoint(x: safe.minX, y: safe.minY)]
+        for start in starts {
+            var rect = clamped(start)
+            var previous: CGRect?
+            while taken(rect), rect != previous {
+                previous = rect
+                rect = clamped(CGPoint(x: rect.minX + step, y: rect.minY + step))
+            }
+            if !taken(rect) { return rect }
+        }
+        return clamped(starts[0])
     }
 
     public func deleteSelection() {
@@ -336,21 +367,32 @@ public final class TemplateEditorModel {
 
     /// Nudges the selection by `delta` page points (arrow keys; ⇧ = 10 pt). One undo step.
     public func nudgeSelection(by delta: CGVector) {
-        guard let size = geometry?.trimSize, size.width > 0, size.height > 0 else { return }
+        guard let geometry, case let size = geometry.trimSize, size.width > 0, size.height > 0 else { return }
         let dx = Double(delta.dx / size.width), dy = Double(delta.dy / size.height)
         let ids = selection
         update(actionName: "Nudge Box") { template in
             for i in template.boxes.indices where ids.contains(template.boxes[i].id) {
+                let foldEdges = LayoutEditingMath.foldEdges(of: template.boxes[i], geometry: geometry)
                 template.boxes[i].frame.x += dx
                 template.boxes[i].frame.y += dy
+                // A bleed edge nudged off the fold doesn't start bleeding (#64).
+                template.boxes[i].bleedEdges = LayoutEditingMath.bleedEdges(
+                    of: template.boxes[i], foldEdgesBefore: foldEdges, geometry: geometry)
             }
         }
     }
 
     private func apply(frames: [BoxID: NormalizedRect], actionName: String) {
+        let geometry = geometry
         update(actionName: actionName) { template in
             for i in template.boxes.indices {
-                if let frame = frames[template.boxes[i].id] { template.boxes[i].frame = frame }
+                guard let frame = frames[template.boxes[i].id] else { continue }
+                let foldEdges = geometry.map { LayoutEditingMath.foldEdges(of: template.boxes[i], geometry: $0) } ?? []
+                template.boxes[i].frame = frame
+                if let geometry {
+                    template.boxes[i].bleedEdges = LayoutEditingMath.bleedEdges(
+                        of: template.boxes[i], foldEdgesBefore: foldEdges, geometry: geometry)
+                }
             }
         }
     }

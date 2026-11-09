@@ -36,6 +36,8 @@ struct SessionPanel: View {
 
     @State private var prompt = ""
     @State private var selectedVersion: VersionID?
+    /// The `resetEpoch` of a reset that kept versions; the placed version isn't the base while it matches.
+    @State private var freshEpoch: Int?
     @State private var detailsExpanded = false
     @State private var quality: QualityLevel?
     @State private var includeStoryText: Bool?
@@ -87,6 +89,9 @@ struct SessionPanel: View {
     /// The version Details and refinement use: the selection if it still exists, else the placed one.
     private func baseID(_ session: Session) -> VersionID? {
         if let selectedVersion, session.version(selectedVersion) != nil { return selectedVersion }
+        // After Reset Session → Keep Versions the thread starts fresh (PD §8.6): no refining the placed
+        // version until the user clicks one.
+        if freshEpoch == session.resetEpoch { return nil }
         return placedID.flatMap { session.version($0)?.id }
     }
 
@@ -135,9 +140,16 @@ struct SessionPanel: View {
         }
         .dropDestination(for: URL.self) { urls, _ in
             guard document.isEditable else { return false }
-            importImages(urls.filter(\.isFileURL))
-            return !urls.isEmpty
+            let files = urls.filter(\.isFileURL)
+            importImages(files)
+            return !files.isEmpty
         } isTargeted: { dropTargeted = $0 }
+        .onChange(of: placedID) {
+            // An undo (or any other change) moved the placement: a stale selection would refine a
+            // picture that isn't on the page.
+            selectedVersion = nil
+            freshEpoch = nil
+        }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.image]) { result in
             switch result {
             case let .success(url): importImages([url])
@@ -194,7 +206,7 @@ struct SessionPanel: View {
                  : "The chat clears. Discarding versions also empties this box. This can't be undone.")
         }
         .alert("Confirm Cost", isPresented: Binding(get: { costAlert != nil }, set: { if !$0 { costAlert = nil } })) {
-            Button("Generate") {
+            Button(pendingAction?.kind.buttonTitle ?? "Generate") {
                 if let pending = pendingAction { perform(pending) }
                 pendingAction = nil
             }
@@ -447,6 +459,7 @@ struct SessionPanel: View {
 
     private func choose(_ version: Version) {
         selectedVersion = version.id
+        freshEpoch = nil
         guard version.id != placedID else { return }
         switch owner {
         case let .pageBox(page, box): document.perform(.chooseVersion(page: page, box: box, version: version.id))
@@ -461,6 +474,7 @@ struct SessionPanel: View {
 
     private func reset(keepVersions: Bool) {
         selectedVersion = nil
+        freshEpoch = keepVersions ? session.map { $0.resetEpoch + 1 } : nil
         document.resetSession(owner: owner, keepVersions: keepVersions)
     }
 
@@ -786,6 +800,15 @@ struct SessionPanel: View {
     }
 
     private enum PendingGeneration {
+        var kind: CostConfirmKind {
+            switch self {
+            case .generate, .regenerate: .generate
+            case .regionEdit: .regionEdit
+            case .fixConsistency: .fixConsistency
+            case .checkConsistency: .checkConsistency
+            }
+        }
+
         case generate(GenerationIntent)
         case regenerate(Version)
         case regionEdit(RegionEditRequest)
@@ -863,5 +886,19 @@ enum RegionEditEntry {
         if !isOnline { return "Region editing needs an internet connection." }
         if !hasKey { return "Add your OpenAI API key in Settings to edit a region." }
         return nil
+    }
+}
+
+/// Which request a cost confirmation guards, so its button names the action (not always "Generate").
+enum CostConfirmKind: Equatable {
+    case generate, regionEdit, fixConsistency, checkConsistency
+
+    var buttonTitle: String {
+        switch self {
+        case .generate: "Generate"
+        case .regionEdit: "Edit"
+        case .fixConsistency: "Fix"
+        case .checkConsistency: "Check"
+        }
     }
 }

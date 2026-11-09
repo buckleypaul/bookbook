@@ -424,7 +424,7 @@ import Testing
         (ProviderError.missingKey, QueueLedgerRule.none),
         (.cancelled, .estimate(.cancelled)),
         (.timeout, .estimate(.failed)),
-        (.offline, .estimate(.failed)),
+        (.offline, .none),
         (.transient(nil), .estimate(.failed)),
         (.transient(ProviderErrorRaw(status: 500, code: nil, body: "")), .free),
         (.noImage(ProviderErrorRaw(status: 200, code: nil, body: "")), .estimate(.failed)),

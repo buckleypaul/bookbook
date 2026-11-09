@@ -53,8 +53,11 @@ public enum CostText {
 
     /// The Draft All Empty Boxes confirmation: always shown.
     public static func batchAlert(count: Int, estimate: CostEstimate, decision: CostDecision, spent: Decimal,
-                                  budget: Decimal?) -> String {
-        var text = "\(count) \(count == 1 ? "request" : "requests"), \(Self.estimate(estimate))."
+                                  budget: Decimal?, coverIncluded: Bool = false) -> String {
+        let noun = coverIncluded && count > 1
+            ? "\(count) pictures (cover + \(count - 1) \(count == 2 ? "page" : "pages"))"
+            : "\(count) \(count == 1 ? "request" : "requests")"
+        var text = "\(noun), \(Self.estimate(estimate))."
         if decision.overBudget, let budget {
             text += " This book has spent \(amount(spent)) of its \(amount(budget)) budget."
         }

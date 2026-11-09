@@ -53,6 +53,29 @@ public struct CostLedger: Sendable {
         return out
     }
 
+    /// Like `records`, but a bad line anywhere is skipped and counted instead of throwing, so
+    /// one corrupt line doesn't hide the rest. The truncated tail is not counted.
+    public func lenientRecords<Record: Decodable>(_ type: Record.Type) throws(StoreError)
+        -> (records: [Record], skipped: Int) {
+        guard let data = try readData() else { return ([], 0) }
+        let decoder = PackageCoding.decoder()
+        let lines = data.split(separator: 0x0A, omittingEmptySubsequences: false)
+        let endsWithNewline = data.last == 0x0A
+        var out: [Record] = []
+        var skipped = 0
+        for (i, line) in lines.enumerated() {
+            let isLast = i == lines.count - 1
+            if isLast && endsWithNewline { break }
+            if line.isEmpty { continue }
+            if let record = try? decoder.decode(Record.self, from: Data(line)) {
+                out.append(record)
+            } else if !isLast || endsWithNewline {
+                skipped += 1
+            }
+        }
+        return (out, skipped)
+    }
+
     /// Cuts a truncated last line (no trailing newline) off the file. Returns true if it changed anything.
     @discardableResult
     public func repair() throws(StoreError) -> Bool {

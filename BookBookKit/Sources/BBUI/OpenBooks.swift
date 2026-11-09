@@ -258,9 +258,10 @@ public final class OpenBooks {
         }
         let store = BookStore(packageURL: url)
         // Take the lock before `load()`, which may recover the journal, migrate and sweep. If
-        // another process has the book, nothing is written here; the queue retries later.
+        // another process has the book, or another store in this process holds it (an open in
+        // progress, duplicate-ID resolution), nothing is written here; the queue retries later.
         do {
-            if case let .heldByOther(owner) = try await store.acquireLock() { throw StoreError.locked(owner) }
+            if case let .heldByOther(owner) = try await store.acquireLockExclusively() { throw StoreError.locked(owner) }
         } catch {
             Self.log.error("Couldn't lock a closed book for a delivery: \(String(describing: error), privacy: .public)")
             report(delivery, StoreErrorText.message(for: error))
@@ -328,9 +329,14 @@ public final class OpenBooks {
 
     /// Every ledger line of a book, read off the main actor. Empty if the book or file is gone.
     public func costRecords(for id: BookID) async -> [CostRecord] {
-        guard let url = await packageURL(for: id) else { return [] }
+        await costLedgerRead(for: id).records
+    }
+
+    /// The readable ledger lines plus how many couldn't be read (a corrupt line is skipped, not fatal).
+    public func costLedgerRead(for id: BookID) async -> (records: [CostRecord], skipped: Int) {
+        guard let url = await packageURL(for: id) else { return ([], 0) }
         let ledger = CostLedger(packageURL: url)
-        return await Task.detached { (try? ledger.records(CostRecord.self)) ?? [] }.value
+        return await Task.detached { (try? ledger.lenientRecords(CostRecord.self)) ?? ([], 0) }.value
     }
 
     /// Stores the image of a successful delivery; nil for failures or if the write failed (the

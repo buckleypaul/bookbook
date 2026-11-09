@@ -63,11 +63,14 @@ public struct LedgerSummary: Hashable, Sendable {
     public var byKind: [CostKind: Decimal]
     /// Newest first.
     public var recent: [CostRecord]
-    /// True if any record counted in `total` is an estimate.
+    /// True if any record counted in `total` is an estimate (a $0 one too: its price was unknown).
     public var includesEstimates: Bool
+    /// Ledger lines that couldn't be read and were left out of the totals.
+    public var skippedLines: Int
 
     public init(total: Decimal = 0, byKind: [CostKind: Decimal] = [:], recent: [CostRecord] = [],
-                includesEstimates: Bool = false) {
+                includesEstimates: Bool = false, skippedLines: Int = 0) {
+        self.skippedLines = skippedLines
         self.total = total
         self.byKind = byKind
         self.recent = recent
@@ -76,16 +79,16 @@ public struct LedgerSummary: Hashable, Sendable {
 
     /// `total` is the sum of `amount` over all records; `recent` holds the newest
     /// `recentLimit` records. Implemented by the cost lane.
-    public init(records: [CostRecord], recentLimit: Int = 50) {
+    public init(records: [CostRecord], skippedLines: Int = 0, recentLimit: Int = 50) {
         var total: Decimal = 0
         var byKind: [CostKind: Decimal] = [:]
         var estimates = false
         for record in records {
             total += record.amount
             byKind[record.kind, default: 0] += record.amount
-            if record.basis == .estimate && record.amount != 0 { estimates = true }
+            if record.basis == .estimate { estimates = true }
         }
         let recent = records.sorted { $0.at > $1.at }.prefix(max(0, recentLimit))
-        self.init(total: total, byKind: byKind, recent: Array(recent), includesEstimates: estimates)
+        self.init(total: total, byKind: byKind, recent: Array(recent), includesEstimates: estimates, skippedLines: skippedLines)
     }
 }

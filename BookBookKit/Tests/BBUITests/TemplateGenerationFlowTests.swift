@@ -162,7 +162,7 @@ struct TemplateGenerationFlowTests {
         await flow.generate(confirmed: true)
         guard case .failed = flow.state else { Issue.record("state \(flow.state)"); return }
         #expect(await s.app.openBooks.costRecords(for: s.entry.id).isEmpty)
-        #expect(flow.sent != nil)
+        #expect(flow.sent == nil) // nothing left the machine, so nothing was sent
     }
 
     @Test func aboveThreshold_asksBeforeSending() async throws {

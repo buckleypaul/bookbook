@@ -46,6 +46,15 @@ public enum ProviderErrorText {
     }
 }
 
+/// What the locked-book screen and alert say besides the owner (#99b).
+public enum LockAdviceText {
+    public static func message(offersOpenAnyway: Bool) -> String {
+        offersOpenAnyway
+            ? "Another copy of BookBook is using it. You can open it read-only to look at it. If that copy has quit or crashed, you can open it anyway."
+            : "Another copy of BookBook is using it. You can open it read-only to look at it, but you won't be able to change it."
+    }
+}
+
 /// Plain-language lines for storage errors.
 public enum StoreErrorText {
     public static func message(for error: StoreError) -> String {

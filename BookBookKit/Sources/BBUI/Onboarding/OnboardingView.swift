@@ -59,8 +59,9 @@ public struct OnboardingView: View {
         }
         .padding(24)
         .frame(width: 540, height: 460)
-        .onAppear { app.refreshKeyStatus() }
-        .onDisappear { draft = ""; testResult = nil }
+        .onAppear { model.reset(); app.refreshKeyStatus() }
+        // The close button counts as skipping: otherwise it reopens every launch (#4a).
+        .onDisappear { model.skipSetup(); draft = ""; testResult = nil }
     }
 
     private func close() { draft = ""; dismiss() }

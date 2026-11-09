@@ -32,6 +32,26 @@ enum LayoutEditingMath {
         geometry.normalizedFrame(for: geometry.trimRect(fromRender: rect, pushedEdges: pushedEdges))
     }
 
+    /// The bleed edges of `box` that lie on a spread's fold (where `PageGeometry` suppresses
+    /// their bleed): `.leading` and/or `.trailing`, or none on a single page.
+    static func foldEdges(of box: Box, geometry: PageGeometry) -> EdgeSet {
+        guard geometry.isSpread, !box.bleedEdges.isEmpty else { return [] }
+        let fold = geometry.foldX, width = geometry.trimSize.width, tolerance: CGFloat = 0.5
+        var edges: EdgeSet = []
+        if box.bleedEdges.contains(.leading), abs(CGFloat(box.frame.x) * width - fold) <= tolerance { edges.insert(.leading) }
+        if box.bleedEdges.contains(.trailing), abs(CGFloat(box.frame.maxX) * width - fold) <= tolerance { edges.insert(.trailing) }
+        return edges
+    }
+
+    /// `box.bleedEdges` after an edit moved its frame: an edge that sat on the fold before the
+    /// edit (`foldEdgesBefore`, its bleed suppressed) and no longer does is removed, so its
+    /// bleed doesn't reappear once the edit ends (Phase 16b #64). Other edges are kept.
+    static func bleedEdges(of box: Box, foldEdgesBefore: EdgeSet, geometry: PageGeometry) -> EdgeSet {
+        guard !foldEdgesBefore.isEmpty else { return box.bleedEdges }
+        let left = foldEdgesBefore.subtracting(foldEdges(of: box, geometry: geometry))
+        return box.bleedEdges.subtracting(left)
+    }
+
     /// Snap targets for a drag: `SnapTargets.make`, plus the bleed's outer edges when bleed
     /// is on (a full-bleed box's render edges sit there).
     static func snapTargets(geometry: PageGeometry, others: [EditableBox]) -> SnapTargets {

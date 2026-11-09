@@ -356,6 +356,16 @@ extension CanvasView {
         get { placement.textEditing.onEndTypingStep }
         set { placement.textEditing.onEndTypingStep = newValue }
     }
+
+    var onBeginUndoGroup: (String, @escaping @MainActor () -> Void) -> Void {
+        get { placement.textEditing.onBeginUndoGroup }
+        set { placement.textEditing.onBeginUndoGroup = newValue }
+    }
+
+    var onEndUndoGroup: (String) -> Void {
+        get { placement.textEditing.onEndUndoGroup }
+        set { placement.textEditing.onEndUndoGroup = newValue }
+    }
     var undoManagerProvider: () -> UndoManager? {
         get { placement.textEditing.undoManagerProvider }
         set { placement.textEditing.undoManagerProvider = newValue }
@@ -394,6 +404,10 @@ struct PageCanvas: NSViewRepresentable {
             document.perform(.setRichText(page: page, box: box, text: text, coalescing: coalescing))
         }
         view.onEndTypingStep = { document.endTypingStep() }
+        view.onBeginUndoGroup = { name, onClosed in
+            document.beginUndoGroup(actionName: name, onClosedByReplay: onClosed)
+        }
+        view.onEndUndoGroup = { name in document.endUndoGroup(actionName: name) }
         view.onOpenBookSettings = onOpenBookSettings
         view.onDropImageFiles = onDropImageFiles
         view.onBeginCrop = { closed in

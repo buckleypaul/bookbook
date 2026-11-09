@@ -67,9 +67,29 @@ public struct Library: Sendable {
 // MARK: Phase 3 library operations
 
 extension Library {
+    /// Runs `body` holding the package's `.lock` (#103). A lock held by another live process throws
+    /// `.locked`; this process's own lock is fine (re-entrant: the app flushes or closes first).
+    static func withPackageLock<T>(_ url: URL, _ body: () throws(StoreError) -> T) throws(StoreError) -> T {
+        let lock = BookLock(packageURL: url)
+        let key = lock.holderKey
+        let outcome = try PackageCoding.io("acquire lock") { try lock.acquireHold() }
+        if case .heldByOther(let owner) = outcome { throw StoreError.locked(owner) }
+        defer { lock.releaseHold(key: key) }
+        return try body()
+    }
+
     /// Recursive copy with a new `Book.id` and the title "<title> copy" (folder name collision-safe).
-    /// Skips `.lock` and `.journal`. The source must be flushed first if it's open.
+    /// Holds the source's lock throughout (`.locked` if another process has it open) and rolls a
+    /// committed journal forward first, so the copy includes it; then skips `.lock` and `.journal`.
+    /// The source must be flushed first if it's open in this process.
     public func duplicate(_ entry: LibraryEntry, now: Date = Date()) throws(StoreError) -> LibraryEntry {
+        try Self.withPackageLock(entry.url) { () throws(StoreError) -> LibraryEntry in
+            try PackageCoding.io("recover journal") { try Journal(packageURL: entry.url).recover() }
+            return try duplicateLocked(entry, now: now)
+        }
+    }
+
+    private func duplicateLocked(_ entry: LibraryEntry, now: Date) throws(StoreError) -> LibraryEntry {
         let fm = FileManager.default
         let titles = Set(scan().map(\.title))
         var title = "\(entry.title) copy"
@@ -109,12 +129,17 @@ extension Library {
     }
 
     /// Moves the package to the Trash (`FileManager.trashItem`). Returns its URL in the Trash.
+    /// Holds the package's lock while doing so: `.locked` if another process has it open (#103).
     @discardableResult
     public func trash(_ entry: LibraryEntry) throws(StoreError) -> URL? {
-        try PackageCoding.io("trash book") {
-            var result: NSURL?
-            try FileManager.default.trashItem(at: entry.url, resultingItemURL: &result)
-            return result as URL?
+        try Self.withPackageLock(entry.url) { () throws(StoreError) -> URL? in
+            try PackageCoding.io("trash book") {
+                var result: NSURL?
+                try FileManager.default.trashItem(at: entry.url, resultingItemURL: &result)
+                // Our `.lock` moved with it; drop it so a restored book doesn't carry it.
+                if let trashed = result as URL? { BookLock(packageURL: trashed).release(BookLock.currentOwner()) }
+                return result as URL?
+            }
         }
     }
 

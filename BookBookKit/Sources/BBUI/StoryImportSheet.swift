@@ -62,7 +62,7 @@ final class StoryImportModel {
             readError = nil
         } catch {
             readError = switch error {
-            case .unsupportedType: "BookBook can import plain text (.txt) or rich text (.rtf) files."
+            case .unsupportedType: "BookBook can import plain text (.txt, .text, .md) or rich text (.rtf) files."
             case .unreadable: "Couldn't read “\(url.lastPathComponent)”."
             }
         }
@@ -165,9 +165,20 @@ struct StoryImportSheet: View {
         .frame(minWidth: 700, minHeight: 560)
     }
 
+    /// The file types the open panel offers: the importer's plain-text and rich-text
+    /// extensions (Phase 16b #71a). `.rtfd` is not read (v1.x).
+    static var allowedContentTypes: [UTType] {
+        var types: [UTType] = [.plainText, .rtf]
+        let extensions = StoryTextImporter.plainTextExtensions.union(StoryTextImporter.richTextExtensions).sorted()
+        for name in extensions {
+            if let type = UTType(filenameExtension: name), !types.contains(type) { types.append(type) }
+        }
+        return types
+    }
+
     private func openFile() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.plainText, .rtf]
+        panel.allowedContentTypes = Self.allowedContentTypes
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         model.open(url, typography: document.content.style.typography)

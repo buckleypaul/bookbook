@@ -46,8 +46,9 @@ struct StyleReferencesView: View {
             .strokeBorder(isTargeted ? Color.accentColor : Color.secondary.opacity(0.3),
                           style: StrokeStyle(lineWidth: isTargeted ? 2 : 1, dash: [4])))
         .dropDestination(for: URL.self) { urls, _ in
-            add(urls)
-            return !urls.isEmpty
+            let files = urls.filter(\.isFileURL)
+            add(files)
+            return !files.isEmpty
         } isTargeted: { isTargeted = $0 }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: Self.types, allowsMultipleSelection: true) { result in
             switch result {

@@ -130,6 +130,27 @@ done
 out="$(cd "$r" && env 'BASH_FUNC_security%%=() { echo HIJACKED; }' scripts/live-tests.sh --package Pkg openai 2>&1)" || true
 case "$out" in *HIJACKED*) bad "exported functions are ignored" ;; *) ok "exported functions are ignored" ;; esac
 
+# Zero-test guard (#90): a stub swift lists tests; the Keychain name is made non-existent and the
+# existence check bypassed, so no real item is read. The stub never sees or prints the environment.
+r="$(new_repo live-zero)"
+mkdir -p "$r/Pkg" "$r/stub"; printf '// swift-tools-version: 6.0\n' > "$r/Pkg/Package.swift"
+cat > "$r/stub/swift" <<'STUB'
+#!/bin/bash
+case "$*" in
+  *"build --build-tests"*) exit 0 ;;
+  *" list"*) printf '%s\n' "BBTests.Other/a()" "BBOpenAITests.LiveProviderTests/SP4_maskPolarity()"; exit 0 ;;
+  *) echo "STUB-RAN $*" ; exit 0 ;;
+esac
+STUB
+chmod +x "$r/stub/swift"
+sed -i '' -e "s#^swift_bin=.*#swift_bin=\"$r/stub/swift\"#" \
+  -e 's/openai-api-key/bookbook-selftest-no-such-item/g' \
+  -e 's#^if ! /usr/bin/security find-generic-password -a "$account" -s "$service" >/dev/null 2>&1; then#if false; then#' "$r/scripts/live-tests.sh"
+out="$(cd "$r" && scripts/live-tests.sh --package Pkg openai zzz_nothing 2>&1)" && st=0 || st=$?
+if [ "$st" -eq 1 ] && [[ "$out" == *"no test matches"* ]] && [[ "$out" != *STUB-RAN* ]]; then ok "a filter matching zero tests exits 1 before the key step"; else bad "a filter matching zero tests exits 1 before the key step (exit $st)"; fi
+out="$(cd "$r" && scripts/live-tests.sh --package Pkg openai SP4_maskPolarity 2>&1)" && st=0 || st=$?
+if [ "$st" -eq 0 ] && [[ "$out" == *"1 test(s) match"* ]] && [[ "$out" == *STUB-RAN* ]]; then ok "a matching filter runs the tests"; else bad "a matching filter runs the tests (exit $st)"; fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

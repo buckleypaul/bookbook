@@ -736,6 +736,8 @@ public actor GenerationQueue {
         redeliveryWorker = Task { [weak self] in await self?.runRedelivery() }
     }
 
+    private var isRedelivering = false
+
     /// Retries kept deliveries every 30 s, and early whenever the queue changes.
     private func runRedelivery() async {
         while !undelivered.isEmpty {
@@ -749,6 +751,10 @@ public actor GenerationQueue {
     }
 
     private func attemptRedeliveries() async {
+        // One pass at a time: an overlapping pass would deliver the same picture twice.
+        guard !isRedelivering else { return }
+        isRedelivering = true
+        defer { isRedelivering = false }
         for pending in undelivered {
             let result = await host.deliver(pending.delivery)
             guard result != .bookUnavailable else { continue }

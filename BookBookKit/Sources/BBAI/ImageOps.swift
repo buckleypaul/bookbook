@@ -161,13 +161,22 @@ public enum ImageOps {
     /// edited image is colour-converted. Bases that aren't RGB (gray, CMYK) work in sRGB.
     public static func composite(original: Data, edited: Data, mask: RegionMask,
                                  featherPixels: Double = defaultFeatherPixels) throws(ImageOpsError) -> Data {
+        try composite(original: original, decodingEdited: { () throws(ImageOpsError) in try decodeImage(edited) },
+                      mask: mask, featherPixels: featherPixels)
+    }
+
+    /// `composite(original:edited:mask:featherPixels:)` with the edited image supplied by
+    /// `decodingEdited`, so a caller that already decoded it doesn't decode it again. It runs after
+    /// the original is decoded and checked, so errors surface in the same order.
+    static func composite(original: Data, decodingEdited: () throws(ImageOpsError) -> CGImage, mask: RegionMask,
+                          featherPixels: Double = defaultFeatherPixels) throws(ImageOpsError) -> Data {
         let orig = try decodeImage(original)
         let w = orig.width, h = orig.height
         guard mask.pixelSize == PixelSize(width: w, height: h) else {
             throw .sizeMismatch(expected: PixelSize(width: w, height: h), actual: mask.pixelSize)
         }
         let format = try workingFormat(for: orig)
-        let edit = try decodeImage(edited)
+        let edit = try decodingEdited()
         let m = feather(mask.bytes, width: w, height: h, featherPixels: featherPixels)
         let out = try PixelBuffer(orig, format: format)
         defer { out.free() }
@@ -182,11 +191,16 @@ public enum ImageOps {
         return try encodePNG(try out.cgImage(format: format))
     }
 
-        /// The fraction (0...1) of edit-area pixels (mask > 127) in `image` that are near-black
+    /// The fraction (0...1) of edit-area pixels (mask > 127) in `image` that are near-black
     /// (max channel ≤ 16). Used to detect SP-4's "black hole" failure.
     public static func blackFillFraction(of image: Data, in mask: RegionMask) throws(ImageOpsError) -> Double {
+        try blackFillFraction(of: try decodeImage(image), in: mask)
+    }
+
+    /// `blackFillFraction(of:in:)` for an already decoded image.
+    static func blackFillFraction(of image: CGImage, in mask: RegionMask) throws(ImageOpsError) -> Double {
         let w = mask.pixelSize.width, h = mask.pixelSize.height
-        let px = try rgba(of: try decodeImage(image), width: w, height: h)
+        let px = try rgba(of: image, width: w, height: h)
         var edit = 0, black = 0
         for i in 0..<(w * h) where mask.bytes[i] > 127 {
             edit += 1
@@ -197,7 +211,7 @@ public enum ImageOps {
 
     // MARK: Private helpers
 
-    private static func decodeImage(_ data: Data) throws(ImageOpsError) -> CGImage {
+    static func decodeImage(_ data: Data) throws(ImageOpsError) -> CGImage {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
               let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { throw .undecodableImage }
         return img

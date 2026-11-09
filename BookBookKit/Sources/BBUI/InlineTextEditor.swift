@@ -10,6 +10,11 @@ import os
 ///   `.setRichText` command, so ⌘Z reaches the window's `UndoManager` via the responder chain.
 /// - Typing goes out with `coalescing: true`; each format action (`TextFormatTarget`) goes out
 ///   as one `coalescing: false` command, which ends the typing undo step (A §6.3).
+/// - Colour changes on one selection in quick succession (the colour panel sends one per drag
+///   step) go out inside one undo group (`onBeginUndoGroup`/`onEndUndoGroup`), closed 0.6 s
+///   after the last change or by any other edit (Phase 16b #76a).
+/// - Inserted text (paste, drop) is run through the `RichTextBridge` round trip, so the view
+///   shows only what the model keeps: no kerning, links or paragraph spacing (Phase 16b #78a).
 /// - While editing it is `formatting.target` and keeps `formatting.state` current.
 /// - It never touches `NSTextView.layoutManager` (that would switch the view to TextKit 1); a
 ///   DEBUG assertion watches for the switch.
@@ -34,11 +39,25 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
     /// Escape ends editing.
     var onCancel: () -> Void = {}
     private let undoManagerProvider: () -> UndoManager?
+    /// Opens a document undo group (`BookDocument.beginUndoGroup`): the action name, and a
+    /// handler called if an undo or redo closes the group first.
+    var onBeginUndoGroup: (String, @escaping @MainActor () -> Void) -> Void = { _, _ in }
+    /// Closes the group opened by `onBeginUndoGroup` (`BookDocument.endUndoGroup`).
+    var onEndUndoGroup: (String) -> Void = { _ in }
+    /// The open colour burst: the selection it applies to and the task that closes it.
+    private var colorBurst: (selection: NSRange, closer: Task<Void, Never>)?
+    /// Where the text view's pending edit inserts text (from `shouldChangeTextIn`), so
+    /// `textDidChange` can round-trip just the inserted characters.
+    private var pendingInsertion: NSRange?
     #if DEBUG
     private var switchObserver: (any NSObjectProtocol)?
     #endif
 
     private static let log = Logger(subsystem: "app.bookbook", category: "InlineTextEditor")
+    /// The undo name of a colour burst.
+    static let colorActionName = "Text Colour"
+    /// How long after the last colour change a burst closes.
+    static let colorBurstIdle: Duration = .milliseconds(600)
 
     /// `typography` is the box's own (`InlineTextEditor.typography(for:base:)`): role-resolved,
     /// with its style overrides applied, so the editor wraps and styles like the renderer.
@@ -106,6 +125,7 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
     /// Reloads the view if the model's text changed from outside (undo/redo).
     func reloadIfNeeded(modelText: RichText, typography: Typography) {
         guard modelText != shownText || typography != self.typography else { return }
+        finishColorBurst()
         // An undo during IME composition: commit the marked text first, so the view and the model
         // don't drift apart (the next keystroke would otherwise overwrite the undo).
         isReloading = true
@@ -143,6 +163,7 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
     }
 
     func tearDown() {
+        finishColorBurst()
         #if DEBUG
         if let switchObserver { NotificationCenter.default.removeObserver(switchObserver) }
         switchObserver = nil
@@ -157,9 +178,21 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
 
     // MARK: NSTextViewDelegate
 
+    func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
+                  replacementString: String?) -> Bool {
+        if !isReloading, let replacementString {
+            pendingInsertion = NSRange(location: affectedCharRange.location, length: replacementString.utf16.count)
+        }
+        return true
+    }
+
     func textDidChange(_ notification: Notification) {
+        let insertion = pendingInsertion
+        pendingInsertion = nil
         guard !isReloading else { return }
+        finishColorBurst()
         let text = RichTextBridge.richText(from: textView.attributedString(), typography: typography)
+        if let insertion { normalizeAttributes(in: insertion, to: text) }
         guard text != shownText else { return }
         shownText = text
         onChange(text, true)
@@ -168,6 +201,7 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
 
     func textViewDidChangeSelection(_ notification: Notification) {
         guard !isReloading else { return }
+        if let burst = colorBurst, burst.selection != textView.selectedRange() { finishColorBurst() }
         publishState()
     }
 
@@ -181,6 +215,45 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
     func undoManager(for view: NSTextView) -> UndoManager? {
         undoManagerProvider()
     }
+
+    /// Gives the characters in `range` exactly the attributes `RichTextBridge` would draw for
+    /// `text` (the model form of the whole view), dropping what the model can't hold (kerning,
+    /// links, paragraph spacing, shadows...). Attribute-only: the string, the selection and the
+    /// model are unchanged. Skipped during IME composition.
+    private func normalizeAttributes(in range: NSRange, to text: RichText) {
+        guard range.length > 0, !textView.hasMarkedText(), let storage = textView.textStorage else { return }
+        let rebuilt = RichTextBridge.attributedString(from: text, typography: typography)
+        guard rebuilt.string == storage.string, NSMaxRange(range) <= rebuilt.length else { return }
+        // Paragraph styles span whole paragraphs; widen so pasted spacing on a partly pasted
+        // paragraph is reset too.
+        let target = (storage.string as NSString).paragraphRange(for: range)
+        // Plain typing already matches; leave the storage (and its spelling marks) alone.
+        var differs = false
+        rebuilt.enumerateAttributes(in: target, options: []) { attributes, subrange, stop in
+            var effective = NSRange()
+            let current = storage.attributes(at: subrange.location, effectiveRange: &effective)
+            if !(current as NSDictionary).isEqual(to: attributes) || NSMaxRange(effective) < NSMaxRange(subrange) {
+                differs = true
+                stop.pointee = true
+            }
+        }
+        guard differs else { return }
+        let typingAttributes = textView.typingAttributes
+        isReloading = true
+        storage.beginEditing()
+        rebuilt.enumerateAttributes(in: target, options: []) { attributes, subrange, _ in
+            storage.setAttributes(attributes, range: subrange)
+        }
+        storage.endEditing()
+        isReloading = false
+        // New typing after the paste takes the round-tripped formatting, not the pasted one.
+        let caret = textView.selectedRange()
+        if caret.length == 0, caret.location > 0, caret.location <= rebuilt.length {
+            textView.typingAttributes = rebuilt.attributes(at: caret.location - 1, effectiveRange: nil)
+        } else {
+            textView.typingAttributes = typingAttributes
+        }
+    }
 }
 
 // MARK: Formatting (TextFormatTarget)
@@ -192,6 +265,11 @@ extension InlineTextEditor {
     func apply(_ action: FormatAction) {
         if textView.hasMarkedText() { textView.unmarkText() }
         let selection = textView.selectedRange()
+        if case .setColor = action, selection.length > 0 {
+            applyColor(action, selection: selection)
+            return
+        }
+        finishColorBurst()
         let text = currentText()
         if case .setAlignment(let alignment) = action {
             if selection.length == 0 { applyToTypingAttributes(action) }
@@ -209,6 +287,44 @@ extension InlineTextEditor {
         guard let transform = RichTextFormatting.transform(for: action, current: runs, typography: typography)
         else { return }
         commitFormatted(RichTextFormatting.applying(transform, to: selection, of: text), selection: selection)
+    }
+
+    /// A colour change on a selection: joins the open burst on the same selection, or opens a
+    /// new one (one undo step), then (re)starts the idle timer that closes it (#76a).
+    private func applyColor(_ action: FormatAction, selection: NSRange) {
+        if let burst = colorBurst, burst.selection != selection { finishColorBurst() }
+        let text = currentText()
+        let runs = RichTextFormatting.runs(in: selection, of: text)
+        guard let transform = RichTextFormatting.transform(for: action, current: runs, typography: typography)
+        else { return }
+        let edited = RichTextFormatting.applying(transform, to: selection, of: text)
+        if colorBurst == nil {
+            // Nothing to change: don't open an (empty) group for it.
+            guard edited != shownText else { onEndTypingStep(); publishState(); return }
+            onBeginUndoGroup(Self.colorActionName) { [weak self] in self?.dropColorBurst() }
+        }
+        colorBurst?.closer.cancel()
+        let closer = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.colorBurstIdle)
+            guard !Task.isCancelled else { return }
+            self?.finishColorBurst()
+        }
+        colorBurst = (selection, closer)
+        commitFormatted(edited, selection: selection)
+    }
+
+    /// Closes the open colour burst now (any other edit, a new selection, the editor closing).
+    func finishColorBurst() {
+        guard let burst = colorBurst else { return }
+        burst.closer.cancel()
+        colorBurst = nil
+        onEndUndoGroup(Self.colorActionName)
+    }
+
+    /// An undo or redo closed the group: forget the burst without closing anything.
+    private func dropColorBurst() {
+        colorBurst?.closer.cancel()
+        colorBurst = nil
     }
 
     /// The formatting at the selection (or of the typing attributes when it's empty).

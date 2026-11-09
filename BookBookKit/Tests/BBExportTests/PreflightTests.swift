@@ -168,6 +168,19 @@ struct PreflightTests {
         #expect(issues[0].page == p && issues[0].detail.contains(ghost))
     }
 
+    @Test func missingFontReportedOnceOnFirstPage() {
+        var c = PF.clean()
+        let ghost = "NoSuchFont-Regular"
+        for p in c.book.pageOrder {
+            var text = RichText(plain: "Hello there")
+            text.paragraphs[0].runs[0].fontFamily = ghost
+            c.pages[p]?.text[PF.textBox.id] = text
+        }
+        let issues = PF.run(c)
+        #expect(issues.map(\.kind) == [.missingFont])
+        #expect(issues[0].page == c.book.pageOrder[0])
+    }
+
     @Test func orderingCoverFirstThenStoryPagesThenKind() {
         var c = PF.clean()
         let cover = c.book.coverPageID

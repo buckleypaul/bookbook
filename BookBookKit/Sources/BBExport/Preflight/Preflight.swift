@@ -42,6 +42,7 @@ public enum Preflight {
         pages += content.storyPages.filter { $0.id != content.book.coverPageID }
 
         var issues: [PreflightIssue] = []
+        var reportedFonts: Set<String> = []
         for page in pages {
             guard let template = content.template(for: page) else { continue }
             let texts: [(Box, RichText)] = template.boxes.compactMap { box in
@@ -90,7 +91,7 @@ public enum Preflight {
             }
 
             let missing = FontAvailability.missingFonts(in: texts.map(\.1), typography: content.style.typography)
-            for name in missing {
+            for name in missing where reportedFonts.insert(name).inserted {
                 issues.append(PreflightIssue(kind: .missingFont, page: page.id,
                                              detail: "Font “\(name)” isn't installed"))
             }

@@ -74,6 +74,19 @@ cd "$pkg_dir"
 echo "live-tests: building $package tests (no key in this step)"
 "$swift_bin" build --build-tests
 
+# Zero-tests check, still without the key: `swift test list` ignores --filter, so match the same
+# regex against its output. SwiftPM exits 0 when a filter matches nothing; that must not look green.
+listed="$("$swift_bin" test --skip-build list 2>/dev/null || true)"
+matched=0
+if [ -n "$listed" ]; then
+  matched="$(printf '%s\n' "$listed" | /usr/bin/grep -Ec -e "$test_filter" || true)"
+fi
+if [ "${matched:-0}" -eq 0 ]; then
+  echo "live-tests: no test matches '$test_filter' in $package; nothing run" >&2
+  exit 1
+fi
+echo "live-tests: $matched test(s) match"
+
 mode="live"
 [ "${BOOKBOOK_RECORD_FIXTURES:-}" = "1" ] && mode="record"
 echo "live-tests: running $test_filter against $provider ($mode mode, budget \$${BOOKBOOK_LIVE_BUDGET:-10})"

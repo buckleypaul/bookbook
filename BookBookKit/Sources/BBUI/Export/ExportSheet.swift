@@ -72,7 +72,7 @@ struct ExportSheet: View {
             }
             if let blanks = model.result?.blanksAdded ?? model.predictedBlanks {
                 note(blanks == 0 ? "No blank pages needed."
-                     : "\(blanks) blank \(blanks == 1 ? "page" : "pages") will be added to fill the last sheet.")
+                     : "\(blanks) blank \(blanks == 1 ? "page" : "pages") will be added so pages fall on the right side and fill the last sheet.")
             }
             if let result = model.result {
                 if result.scaledToFit {

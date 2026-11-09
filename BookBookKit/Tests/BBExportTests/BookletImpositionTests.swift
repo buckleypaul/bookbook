@@ -69,7 +69,68 @@ struct BookletImpositionTests {
         #expect(layout.firstSlot == CGRect(x: 0, y: 0, width: 792, height: 612))
         #expect(layout.secondSlot == CGRect(x: 0, y: 612, width: 792, height: 612))
         #expect(layout.scale == 1)
-        #expect(layout.printingInstructions == "Print double-sided, flip on long edge.")
+        #expect(layout.printingInstructions == "Print double-sided, flip on short edge.")
+    }
+
+    /// Duplex model: a flip turns the sheet over about an axis through its centre. A short-edge
+    /// flip is about the axis parallel to the short edges, so it mirrors the long dimension
+    /// (x on a landscape sheet, y on a portrait one); a long-edge flip mirrors the short one.
+    /// Returns the back-side slot (0 = first, 1 = second) behind front slot `slot`.
+    static func backSlot(behind slot: Int, layout: BookletSheetLayout, shortEdge: Bool) -> Int {
+        let slots = [layout.firstSlot, layout.secondSlot]
+        let size = layout.sheetSize
+        let mirrorX = (size.width >= size.height) == shortEdge
+        let centre = CGPoint(x: slots[slot].midX, y: slots[slot].midY)
+        let behind = mirrorX ? CGPoint(x: size.width - centre.x, y: centre.y)
+                             : CGPoint(x: centre.x, y: size.height - centre.y)
+        return slots.firstIndex { $0.contains(behind) }!
+    }
+
+    static func flipsOnShortEdge(_ layout: BookletSheetLayout) -> Bool {
+        layout.printingInstructions.contains("short edge")
+    }
+
+    /// In a folded booklet each leaf carries page 2k − 1 on its front (recto) and 2k on its back,
+    /// so with the stated flip, the page behind every front-side page must be its leaf partner.
+    @Test(arguments: [(CGSize(width: 396, height: 612), SheetSize.letter),   // side by side
+                      (CGSize(width: 720, height: 576), SheetSize.tabloid),  // stacked
+                      (CGSize(width: 576, height: 432), SheetSize.a4)])      // stacked
+    func duplex_backPageBacksItsLeafPartner(page: CGSize, sheet: SheetSize) {
+        let layout = BookletImposition.layout(pageSize: page, sheet: sheet)
+        let shortEdge = Self.flipsOnShortEdge(layout)
+        for n in stride(from: 4, through: 16, by: 4) {
+            let sides = BookletImposition.sheetSides(pageCount: n)
+            for s in 0..<(n / 4) {
+                let front = sides[s * 2], back = sides[s * 2 + 1]
+                let frontPages = [front.leftPage, front.rightPage], backPages = [back.leftPage, back.rightPage]
+                for slot in 0..<2 {
+                    let p = frontPages[slot]
+                    let partner = p % 2 == 1 ? p + 1 : p - 1
+                    #expect(backPages[Self.backSlot(behind: slot, layout: layout, shortEdge: shortEdge)] == partner,
+                            "n = \(n), sheet \(s), front page \(p)")
+                }
+            }
+        }
+        // Concretely, on the outer sheet page 2 backs page 1 and n − 1 backs n; the other
+        // flip would back page 1 with n − 1.
+        let sides = BookletImposition.sheetSides(pageCount: 8)
+        let behindCover = [sides[1].leftPage, sides[1].rightPage][Self.backSlot(behind: 1, layout: layout,
+                                                                                 shortEdge: shortEdge)]
+        #expect(behindCover == 2)
+        let wrong = [sides[1].leftPage, sides[1].rightPage][Self.backSlot(behind: 1, layout: layout,
+                                                                           shortEdge: !shortEdge)]
+        #expect(wrong == 7)
+    }
+
+    @Test func duplex_stackedBackStaysUprightWhenOpened() {
+        // Stacked: folding on the horizontal centre line and opening turns the back over about
+        // that line, which is what a short-edge flip of a portrait sheet does, so back content
+        // drawn upright in the PDF reads upright in the opened booklet. A long-edge flip turns
+        // it over about the vertical axis instead (the back would read upside down).
+        let layout = BookletImposition.layout(pageSize: CGSize(width: 720, height: 576), sheet: .tabloid)
+        #expect(layout.sheetSize.height > layout.sheetSize.width)
+        #expect(layout.firstSlot.maxY == layout.secondSlot.minY) // fold is horizontal
+        #expect(Self.flipsOnShortEdge(layout))
     }
 
     @Test(arguments: SheetSize.allCases)

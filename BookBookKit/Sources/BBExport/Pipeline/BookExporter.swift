@@ -114,13 +114,10 @@ public final class BookExporter {
         let story = content.storyPages
         let entries = story.map { SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread) }
         let layout = PageSequencer.layout(entries, cover: content.book.coverPageID)
-        return zip(story, layout.pages).compactMap { page, position in
-            if let range {
-                let positions = position.position...(position.position + position.span - 1)
-                guard positions.overlaps(range) else { return nil }
-            }
-            return (page, position)
-        }
+        let pairs = Array(zip(story, layout.pages))
+        let selected = PageRangeWidening.selected(pairs.map { (position: $0.1.position, span: $0.1.span) }, in: range)
+        let keep = Set(selected.map(\.position))
+        return pairs.filter { keep.contains($0.1.position) }.map { (page: $0.0, position: $0.1) }
     }
 
     /// Output pages for standard and print-shop exports.
@@ -137,19 +134,27 @@ public final class BookExporter {
         return slots
     }
 
-    /// Booklet pages in folded reading order (cover first when included, spreads always as
-    /// halves), before padding.
+    /// Booklet pages in folded reading order, padded (A §9.3): cover first when included,
+    /// spreads always as halves, a leading blank when needed so each story page keeps the side
+    /// `PageSequencer` gives it (so spreads face each other and outer page numbers stay
+    /// outside), and trailing blanks to a multiple of 4. Blank slots have no page.
     func bookletPages(_ options: ExportOptions) -> [OutputSlot] {
-        var slots: [OutputSlot] = []
-        if options.includeCover, let cover = content.coverPage { slots.append(OutputSlot(page: cover, half: nil)) }
-        for (page, _) in storyPositions(range: options.pageRange) {
+        var head: [OutputSlot] = []
+        if options.includeCover, let cover = content.coverPage { head.append(OutputSlot(page: cover, half: nil)) }
+        var story: [OutputSlot] = []
+        let positions = storyPositions(range: options.pageRange)
+        for (page, _) in positions {
             if content.template(for: page)?.kind == .spread {
-                slots += [OutputSlot(page: page, half: 0), OutputSlot(page: page, half: 1)]
+                story += [OutputSlot(page: page, half: 0), OutputSlot(page: page, half: 1)]
             } else {
-                slots.append(OutputSlot(page: page, half: nil))
+                story.append(OutputSlot(page: page, half: nil))
             }
         }
-        return slots
+        guard !head.isEmpty || !story.isEmpty else { return [] }
+        let blanks = BookletImposition.blanks(contentPages: head.count + story.count, includeCover: !head.isEmpty,
+                                              firstStoryPosition: positions.first?.position.position)
+        return head + Array(repeating: .blank, count: blanks.leading) + story
+            + Array(repeating: .blank, count: blanks.trailing)
     }
 
     // MARK: Rendering
@@ -218,13 +223,13 @@ public final class BookExporter {
         return ExportResult(pageCount: total)
     }
 
-    /// Booklet: pad to a multiple of 4, then one PDF page per sheet side (A §9.3).
+    /// Booklet: `pages` already padded by `bookletPages`; one PDF page per sheet side (A §9.3).
     private func renderBooklet(_ pages: [OutputSlot], sheet: SheetSize, into consumer: CGDataConsumer,
                                progress: @MainActor (ExportProgress) -> Void) async throws -> ExportResult {
         guard !pages.isEmpty else { throw ExportError.noPages }
-        let padded = BookletImposition.paddedCount(pages.count)
-        let blanks = padded - pages.count
-        let all = pages + Array(repeating: OutputSlot.blank, count: blanks)
+        let padded = pages.count
+        let blanks = pages.filter { $0.page == nil }.count
+        let all = pages
         let pageSize = PageGeometry(setup: content.style.pageSetup).trimSize
         let layout = BookletImposition.layout(pageSize: pageSize, sheet: sheet)
         let sides = BookletImposition.sheetSides(pageCount: padded)

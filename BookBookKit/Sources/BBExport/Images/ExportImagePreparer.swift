@@ -109,9 +109,9 @@ public actor ExportImagePreparer: ImagePreparing {
     }
 
     /// Drops the alpha channel (onto white) so JPEG encoding is clean.
-    private static func flattened(_ image: CGImage) throws -> CGImage {
+    static func flattened(_ image: CGImage) throws -> CGImage {
         guard hasAlpha(image) else { return image }
-        let space = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let space = renderingColorSpace(for: image)
         guard let ctx = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
                                   bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
         else { throw ExportError.contextCreationFailed }

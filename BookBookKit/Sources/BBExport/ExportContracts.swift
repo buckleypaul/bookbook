@@ -151,10 +151,40 @@ public struct BookletSheetLayout: Hashable, Sendable {
     }
 }
 
+/// The page-range rule shared by `BookExporter` and the export sheet: a range that cuts a
+/// spread is widened to include the whole spread.
+public enum PageRangeWidening {
+    /// The story pages (first position and span each) that `range` selects: every page whose
+    /// positions overlap it.
+    public static func selected<S: Sequence>(_ pages: S, in range: ClosedRange<Int>?) -> [(position: Int, span: Int)]
+    where S.Element == (position: Int, span: Int) {
+        pages.filter { page in
+            guard let range else { return true }
+            return (page.position...(page.position + page.span - 1)).overlaps(range)
+        }
+    }
+}
+
 public enum BookletImposition {
     /// `n` rounded up to a multiple of 4 (minimum 4).
     public static func paddedCount(_ n: Int) -> Int {
         max(4, (n + 3) / 4 * 4)
+    }
+
+    /// Blanks around the booklet's content so every story page keeps `PageSequencer`'s side
+    /// (odd position = right-hand = odd booklet page). `leading` is 0 or 1, placed after the
+    /// cover (the inside front cover) or before the first page of a range that starts on an
+    /// even position; `trailing` pads the total to a multiple of 4. `contentPages` counts the
+    /// cover when included; `firstStoryPosition` is nil when no story page is selected.
+    public static func blanks(contentPages: Int, includeCover: Bool,
+                              firstStoryPosition: Int?) -> (leading: Int, trailing: Int) {
+        var leading = 0
+        if let first = firstStoryPosition {
+            let firstBookletPage = includeCover ? 2 : 1
+            leading = (firstBookletPage - first) % 2 == 0 ? 0 : 1
+        }
+        let total = contentPages + leading
+        return (leading, paddedCount(total) - total)
     }
 
     /// Sheet sides for `n` pages (n a multiple of 4), front then back for each sheet:

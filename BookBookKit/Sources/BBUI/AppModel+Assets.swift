@@ -70,12 +70,9 @@ extension AppModel {
     public func generate(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID?,
                          attachedReferences: [VersionRef], target: GenerationTarget,
                          in document: BookDocument) -> Bool {
-        let intent = generationIntent(prompt: prompt, quality: quality, includeStoryText: includeStoryText,
-                                      refines: refines, attachedReferences: attachedReferences)
-        guard !intent.messageText.isEmpty else { return false }
-        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, target: target,
-                                                           now: now())
-        return enqueue(message, prepared(item, content: document.content), in: document)
+        enqueueGeneration(generationIntent(prompt: prompt, quality: quality, includeStoryText: includeStoryText,
+                                           refines: refines, attachedReferences: attachedReferences),
+                          target: target, in: document)
     }
 
     /// Unlocked sheet items with nothing pending (empty or not), planned like Draft all.

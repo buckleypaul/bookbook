@@ -448,9 +448,7 @@ struct SessionPanel: View {
     }
 
     private func submitRegionEdit(_ version: Version, drawing: RegionMaskDrawing, prompt text: String) {
-        let request = RegionEditRequest(version: version, drawing: drawing, prompt: text,
-                                        quality: quality ?? app.defaults.quality, includeStoryText: storyText,
-                                        attached: liveAttached,
+        let request = RegionEditRequest(version: version, drawing: drawing,
                                         intent: app.generationIntent(prompt: text, quality: quality ?? app.defaults.quality,
                                                                      includeStoryText: storyText, refines: version.id,
                                                                      attachedReferences: liveAttached))
@@ -717,18 +715,12 @@ struct SessionPanel: View {
     private func confirmCostThenPerform(_ action: PendingGeneration) {
         let current: CostEstimate
         switch action {
-        case let .generate(intent):
-            current = app.estimate(prompt: intent.messageText, quality: intent.quality,
-                                   includeStoryText: intent.includeStoryText, refines: intent.refines,
-                                   attachedReferences: intent.attachedReferences, target: target, in: document)
+        case let .generate(intent), let .fixConsistency(intent):
+            current = app.estimate(for: intent, target: target, in: document)
         case let .regenerate(version):
             current = app.regenerateEstimate(version, target: target, in: document) ?? .unknown
         case let .regionEdit(request):
-            current = app.estimate(prompt: request.prompt, quality: request.quality,
-                                   includeStoryText: request.includeStoryText, refines: request.version.id,
-                                   attachedReferences: request.attached, target: target, in: document)
-        case let .fixConsistency(intent):
-            current = app.estimate(for: intent, target: target, in: document)
+            current = app.estimate(for: request.intent, target: target, in: document)
         case let .checkConsistency(sessionID, versionID):
             current = app.consistencyCheckEstimate(bookID: document.id, sessionID: sessionID, versionID: versionID)
         }
@@ -752,9 +744,7 @@ struct SessionPanel: View {
         guard app.hasOpenAIKey else { return }
         switch action {
         case let .generate(intent):
-            if app.generate(prompt: intent.messageText, quality: intent.quality,
-                            includeStoryText: intent.includeStoryText, refines: intent.refines,
-                            attachedReferences: intent.attachedReferences, target: target, in: document) {
+            if app.enqueueGeneration(intent, target: target, in: document) {
                 prompt = ""
                 attached = []
             }
@@ -770,9 +760,9 @@ struct SessionPanel: View {
             Task {
                 do throws(RegionEditRefusal) {
                     _ = try await app.generateRegionEdit(
-                        prompt: request.prompt, quality: request.quality,
-                        includeStoryText: request.includeStoryText, refines: request.version.id,
-                        drawing: request.drawing, attachedReferences: request.attached,
+                        prompt: request.intent.messageText, quality: request.intent.quality,
+                        includeStoryText: request.intent.includeStoryText, refines: request.version.id,
+                        drawing: request.drawing, attachedReferences: request.intent.attachedReferences,
                         target: target, in: document)
                 } catch {
                     problem = error.message
@@ -790,11 +780,7 @@ struct SessionPanel: View {
     private struct RegionEditRequest {
         var version: Version
         var drawing: RegionMaskDrawing
-        var prompt: String
-        var quality: QualityLevel
-        var includeStoryText: Bool
-        var attached: [VersionRef]
-        /// For the real-person notice check only.
+        /// The prompt and settings; `generateRegionEdit` adds the mask.
         var intent: GenerationIntent
     }
 

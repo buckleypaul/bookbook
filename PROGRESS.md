@@ -19,7 +19,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 7 | Style guide and page setup | done | `phase-7-style-page-setup` | — | $0.00 | No live checks. [Log](progress/phase-7-style-page-setup.md) |
 | 8 | Sessions and versions | done | `phase-8-sessions-versions` | — | $0.02 | Live check `SP8_refinementLowQuality` passed. [Log](progress/phase-8-sessions-versions.md) |
 | 9 | Queue, cost, errors and settings (M2) | done | `phase-9-queue-cost-settings` | — | $0.04 | Live check `SP9_twoRequestsAndCancel` passed. [Log](progress/phase-9-queue-cost-settings.md) |
-| 10 | Assets and character sheets | not started | | | | |
+| 10 | Assets and character sheets | in progress | `phase-10-assets-characters` | — | $0.00 | No live checks listed. |
 | 11 | Region editing | not started | | | | |
 | 12 | Consistency check and AI templates (M3) | not started | | | | |
 | 13 | Gemini provider (floating) | not started | | | | Needs the `gemini-api-key` Keychain item |
@@ -137,3 +137,9 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
+
+### Phase 10 — Assets and character sheets
+
+**Stage:** A
+
+- Started 2026-11-08 (Session A).

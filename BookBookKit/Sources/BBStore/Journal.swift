@@ -122,9 +122,7 @@ struct Journal {
     private static let inFlight = Mutex<Set<String>>([])
 
     static func inFlightKey(_ url: URL) -> String {
-        var p = url.standardizedFileURL.path(percentEncoded: false)
-        while p.count > 1, p.hasSuffix("/") { p.removeLast() }
-        return p
+        CanonicalPath.standardized(url)
     }
 
     /// Runs `body` with `tx` registered as in flight: another store in this process neither
@@ -201,9 +199,7 @@ struct Journal {
 
     /// Symlink-resolved path without a trailing slash.
     private static func resolved(_ url: URL) -> String {
-        var p = url.resolvingSymlinksInPath().path(percentEncoded: false)
-        while p.count > 1, p.hasSuffix("/") { p.removeLast() }
-        return p
+        CanonicalPath.symlinksResolved(url)
     }
 
     /// True if the txid folder name, every manifest path and every resolved source and

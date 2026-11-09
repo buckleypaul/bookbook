@@ -72,7 +72,7 @@ extension Library {
     static func withPackageLock<T>(_ url: URL, _ body: () throws(StoreError) -> T) throws(StoreError) -> T {
         let lock = BookLock(packageURL: url)
         let key = lock.holderKey
-        let outcome = try PackageCoding.io("acquire lock") { try lock.acquireHold() }
+        let outcome = try PackageCoding.io("acquire lock") { try lock.acquireHold(key: key) }
         if case .heldByOther(let owner) = outcome { throw StoreError.locked(owner) }
         defer { lock.releaseHold(key: key) }
         return try body()

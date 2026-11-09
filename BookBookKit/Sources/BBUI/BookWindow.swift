@@ -84,7 +84,7 @@ public struct BookWindow: View {
 
     /// "Open Anyway" (#99b): takes the lock over from `lockOwner`, then opens the book editable.
     private func openAnyway() async {
-        guard let owner = lockOwner, let url = app.libraryEntries.first(where: { $0.id == bookID })?.url else {
+        guard let owner = lockOwner, let url = app.entry(for: bookID)?.url else {
             await load(readOnly: false)
             return
         }
@@ -522,31 +522,13 @@ enum LockTakeOver {
 
     static let warning = "If another Mac is still editing this book, its changes and yours can overwrite each other and work can be lost. Only continue if you know the other copy of BookBook is closed, for example after a crash."
 
-    /// This Mac's hardware UUID (the same value `.lock` records as `hostID`).
-    static let thisHostID: String? = {
-        var id = UUID().uuid
-        var wait = timespec(tv_sec: 1, tv_nsec: 0)
-        let result = withUnsafeMutableBytes(of: &id) { raw in
-            gethostuuid(raw.baseAddress!.assumingMemoryBound(to: UInt8.self), &wait)
-        }
-        return result == 0 ? UUID(uuid: id).uuidString : nil
-    }()
-
-    /// Whether the locked screen offers "Open Anyway": the lock names a different Mac (by host
-    /// UUID when both sides have one, else by host name).
-    static func offersOpenAnyway(_ owner: LockOwner?, thisHostID: String? = LockTakeOver.thisHostID,
-                                 thisHostName: String = LockTakeOver.hostName) -> Bool {
+    /// Whether the locked screen offers "Open Anyway": the lock names a different Mac than
+    /// `thisMachine` (by host UUID when both sides have one, else by host name). Tests pass a
+    /// stand-in for this Mac.
+    static func offersOpenAnyway(_ owner: LockOwner?, thisMachine: LockOwner = .current) -> Bool {
         guard let owner else { return false }
-        if let id = owner.hostID, let mine = thisHostID { return id != mine }
-        return owner.host != thisHostName
+        return !owner.isOnSameMachine(as: thisMachine)
     }
-
-    static let hostName: String = {
-        var buf = [CChar](repeating: 0, count: 256)
-        guard gethostname(&buf, buf.count) == 0 else { return "localhost" }
-        buf[buf.count - 1] = 0
-        return String(decoding: buf.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
-    }()
 
     /// Takes `.lock` over from `owner` with `store`; the caller releases the store's hold once
     /// the book has opened.

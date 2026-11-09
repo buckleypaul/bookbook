@@ -163,7 +163,7 @@ public actor LibraryIndex {
     /// Whether an FSEvents path matters: the package itself, its `book.json` or its `thumbnail.png`.
     /// Everything else inside a package (`.journal`, `.lock`, `images/`, `pages/`...) is the app's own save noise.
     static func isRelevant(path: String, root: URL) -> Bool {
-        let rootPath = realPath(root)
+        let rootPath = CanonicalPath.real(root)
         let rootParts = rootPath.split(separator: "/")
         let parts = path.split(separator: "/")
         guard parts.count >= rootParts.count, Array(parts.prefix(rootParts.count)) == rootParts else { return false }
@@ -222,7 +222,7 @@ private final class FSEventsWatcher {
         }
         let flags = FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes
             | kFSEventStreamCreateFlagNoDefer)
-        let realRoot = realPath(root)
+        let realRoot = CanonicalPath.real(root)
         guard let stream = FSEventStreamCreate(nil, callback, &context, [realRoot] as CFArray,
                                                FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.3, flags)
         else { return }
@@ -243,12 +243,4 @@ private final class FSEventsWatcher {
     }
 
     deinit { stop() }
-}
-
-/// The canonical path (FSEvents reports `/private/var/...`; Foundation's `resolvingSymlinksInPath` strips `/private`).
-private func realPath(_ url: URL) -> String {
-    let path = url.path(percentEncoded: false)
-    guard let resolved = realpath(path, nil) else { return url.standardizedFileURL.path(percentEncoded: false) }
-    defer { free(resolved) }
-    return String(cString: resolved)
 }

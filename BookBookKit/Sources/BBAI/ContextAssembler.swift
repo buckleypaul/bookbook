@@ -177,6 +177,18 @@ public enum ContextAssembler {
         var includeStory: Bool
     }
 
+    /// The request with mention tokens shown as asset names. A token whose asset was deleted
+    /// after the item was queued no longer resolves; the answered message's text was rewritten
+    /// to plain names at delete, so that text is used and the name is not dropped (A §4.3).
+    public static func requestDisplayText(intent: GenerationIntent, messageID: MessageID?, content: BookContent) -> String {
+        var text = intent.messageText
+        if MentionText.mentionedAssets(in: text).contains(where: { content.assets[$0] == nil }),
+           let messageID, let message = content.session(containing: messageID)?.messages.first(where: { $0.id == messageID }) {
+            text = message.text
+        }
+        return MentionText.displayText(text, assets: content.assets)
+    }
+
     static func prepare(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID?,
                         content: BookContent) -> Prepared? {
         guard let context = context(target: target, messageID: messageID, content: content) else { return nil }
@@ -199,7 +211,7 @@ public enum ContextAssembler {
                          pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
         }
         let assets = assetsInPlay(intent: intent, context: context, content: content)
-        let request = MentionText.displayText(intent.messageText, assets: content.assets)
+        let request = requestDisplayText(intent: intent, messageID: messageID, content: content)
         let matchText = includeStory ? request + "\n" + storyText : request
         let candidates = ReferenceSelector.candidates(.init(
             base: base, attached: attached, assets: assets, styleReferences: content.style.styleReferences,
@@ -266,7 +278,7 @@ public enum ContextAssembler {
                 .map { MentionText.displayText($0.text, assets: content.assets).trimmed }.filter { !$0.isEmpty }
         }
         let history = earlier.enumerated().map { "\($0.offset + 1)) \($0.element)" }.joined(separator: "; ")
-        let requestText = MentionText.displayText(intent.messageText, assets: content.assets).trimmed
+        let requestText = requestDisplayText(intent: intent, messageID: messageID, content: content).trimmed
         let legend = sent.enumerated().map { index, entry in
             let name = entry.plan.asset.flatMap { content.assets[$0]?.name } ?? ""
             return PromptTemplates.render(PromptTemplates.text(for: "legend-\(entry.plan.role)") ?? "Image {{n}}.",

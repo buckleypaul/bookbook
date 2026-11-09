@@ -222,6 +222,8 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
     /// model are unchanged. Skipped during IME composition.
     private func normalizeAttributes(in range: NSRange, to text: RichText) {
         guard range.length > 0, !textView.hasMarkedText(), let storage = textView.textStorage else { return }
+        // Plain typing: skip the whole-text rebuild below.
+        if Self.matchesNeighbour(range, in: storage) { return }
         let rebuilt = RichTextBridge.attributedString(from: text, typography: typography)
         guard rebuilt.string == storage.string, NSMaxRange(range) <= rebuilt.length else { return }
         // Paragraph styles span whole paragraphs; widen so pasted spacing on a partly pasted
@@ -253,6 +255,20 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
         } else {
             textView.typingAttributes = typingAttributes
         }
+    }
+
+    /// True when the characters in `range` all carry exactly the attributes of the character
+    /// next to them (before, or after at the start). The rest of the storage is already in the
+    /// bridge's normal form, so such an insertion (plain typing, the common case) is too: it
+    /// joins its neighbour's run, which the bridge draws with these same attributes.
+    static func matchesNeighbour(_ range: NSRange, in storage: NSAttributedString) -> Bool {
+        guard range.length > 0, NSMaxRange(range) <= storage.length else { return false }
+        let neighbour = range.location > 0 ? range.location - 1 : NSMaxRange(range)
+        guard neighbour < storage.length else { return false }
+        var effective = NSRange()
+        let inserted = storage.attributes(at: range.location, effectiveRange: &effective)
+        guard NSMaxRange(effective) >= NSMaxRange(range) else { return false }
+        return (inserted as NSDictionary).isEqual(to: storage.attributes(at: neighbour, effectiveRange: nil))
     }
 }
 

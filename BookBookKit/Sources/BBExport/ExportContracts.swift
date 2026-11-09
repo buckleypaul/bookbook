@@ -157,6 +157,22 @@ public enum BookletImposition {
         max(4, (n + 3) / 4 * 4)
     }
 
+    /// Blanks around the booklet's content so every story page keeps `PageSequencer`'s side
+    /// (odd position = right-hand = odd booklet page). `leading` is 0 or 1, placed after the
+    /// cover (the inside front cover) or before the first page of a range that starts on an
+    /// even position; `trailing` pads the total to a multiple of 4. `contentPages` counts the
+    /// cover when included; `firstStoryPosition` is nil when no story page is selected.
+    public static func blanks(contentPages: Int, includeCover: Bool,
+                              firstStoryPosition: Int?) -> (leading: Int, trailing: Int) {
+        var leading = 0
+        if let first = firstStoryPosition {
+            let firstBookletPage = includeCover ? 2 : 1
+            leading = (firstBookletPage - first) % 2 == 0 ? 0 : 1
+        }
+        let total = contentPages + leading
+        return (leading, paddedCount(total) - total)
+    }
+
     /// Sheet sides for `n` pages (n a multiple of 4), front then back for each sheet:
     /// front (n − 2s, 1 + 2s), back (2 + 2s, n − 1 − 2s), s = 0…n/4 − 1.
     public static func sheetSides(pageCount n: Int) -> [SheetSide] {

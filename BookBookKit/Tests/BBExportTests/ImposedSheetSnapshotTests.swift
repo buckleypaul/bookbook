@@ -21,25 +21,27 @@ struct ImposedSheetSnapshotTests {
     }
 
     @Test func booklet_halfLetterOnLetter_outerSheetFront() async throws {
-        // Cover + 3 pages: the outer front holds Leaf03 (left) and the cover (right).
-        let image = try await sheet(F.book(pages: 3), ExportOptions(kind: .booklet(.letter)), page: 0)
+        // Cover + inside-cover blank + 6 pages = 8: the outer front holds Leaf06 (left) and the
+        // cover (right); the outer back holds the inside-cover blank (left) and Leaf05 (right).
+        let image = try await sheet(F.book(pages: 6), ExportOptions(kind: .booklet(.letter)), page: 0)
         assertSnapshot(of: image, as: .image(precision: 0.99, perceptualPrecision: 0.97))
     }
 
     @Test func booklet_halfLetterOnLetter_outerSheetBack() async throws {
-        let image = try await sheet(F.book(pages: 3), ExportOptions(kind: .booklet(.letter)), page: 1)
+        let image = try await sheet(F.book(pages: 6), ExportOptions(kind: .booklet(.letter)), page: 1)
         assertSnapshot(of: image, as: .image(precision: 0.99, perceptualPrecision: 0.97))
     }
 
     @Test func booklet_letterPagesScaledOnLetter_withBlank() async throws {
-        // Cover + 2 pages padded to 4: the outer front holds a blank (left) and the cover.
+        // Cover + inside-cover blank + 2 pages = 4: the outer front holds Leaf02 (left) and the cover.
         let content = F.book(pages: 2, trim: PointSize(width: 612, height: 792))
         let image = try await sheet(content, ExportOptions(kind: .booklet(.letter)), page: 0)
         assertSnapshot(of: image, as: .image(precision: 0.99, perceptualPrecision: 0.97))
     }
 
     @Test func booklet_landscapePagesStackedOnA4() async throws {
-        let content = F.book(pages: 3, trim: PointSize(width: 576, height: 432))
+        // Cover + inside-cover blank + 6 pages = 8: Leaf06 on top, the cover below.
+        let content = F.book(pages: 6, trim: PointSize(width: 576, height: 432))
         let image = try await sheet(content, ExportOptions(kind: .booklet(.a4)), page: 0)
         assertSnapshot(of: image, as: .image(precision: 0.99, perceptualPrecision: 0.97))
     }

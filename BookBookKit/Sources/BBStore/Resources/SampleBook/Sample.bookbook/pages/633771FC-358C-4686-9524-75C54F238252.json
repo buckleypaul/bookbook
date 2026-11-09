@@ -1,0 +1,36 @@
+{
+  "assetChecklist" : [
+
+  ],
+  "id" : "633771FC-358C-4686-9524-75C54F238252",
+  "images" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B1" : {
+      "acknowledged" : {
+        "assetRevisions" : {
+
+        },
+        "styleRevision" : 0
+      },
+      "sessionID" : "D0403DF2-5EBB-4A60-9C8B-1C7BA4AC5B7C"
+    }
+  },
+  "isDone" : false,
+  "kind" : "story",
+  "templateID" : "A1B2C3D4-0001-4000-8000-000000000001",
+  "text" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B2" : {
+      "paragraphs" : [
+        {
+          "runs" : [
+            {
+              "bold" : false,
+              "italic" : false,
+              "text" : "Pip the frog lived at the edge of Willow Pond, where the evenings were very quiet.",
+              "underline" : false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

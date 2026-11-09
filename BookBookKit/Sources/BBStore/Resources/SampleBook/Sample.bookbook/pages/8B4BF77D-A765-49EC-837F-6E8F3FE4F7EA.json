@@ -1,0 +1,36 @@
+{
+  "assetChecklist" : [
+
+  ],
+  "id" : "8B4BF77D-A765-49EC-837F-6E8F3FE4F7EA",
+  "images" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B1" : {
+      "acknowledged" : {
+        "assetRevisions" : {
+
+        },
+        "styleRevision" : 0
+      },
+      "sessionID" : "1896EDFD-F61B-4422-909B-E4148B29AB0E"
+    }
+  },
+  "isDone" : false,
+  "kind" : "story",
+  "templateID" : "A1B2C3D4-0001-4000-8000-000000000001",
+  "text" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B2" : {
+      "paragraphs" : [
+        {
+          "runs" : [
+            {
+              "bold" : false,
+              "italic" : false,
+              "text" : "The fireflies lent him their light, and the old heron showed him the way.",
+              "underline" : false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

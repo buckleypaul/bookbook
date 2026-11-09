@@ -63,12 +63,26 @@ public struct StylePreset: Hashable, Codable, Sendable, Identifiable {
     public var visualDescription: String
     /// nil = keep `StyleGuide.defaultNegativeGuidance`.
     public var negativeGuidance: String?
+    /// File name of a sample picture in `Resources/Presets/Samples/` (Phase 16). nil until one is
+    /// added; callers show a neutral placeholder.
+    public var sampleImage: String?
 
-    public init(id: String, name: String, visualDescription: String, negativeGuidance: String? = nil) {
+    public init(id: String, name: String, visualDescription: String, negativeGuidance: String? = nil,
+                sampleImage: String? = nil) {
         self.id = id
         self.name = name
         self.visualDescription = visualDescription
         self.negativeGuidance = negativeGuidance
+        self.sampleImage = sampleImage
+    }
+
+    /// The bundled sample picture, or nil when the preset has none (or the file is missing).
+    public var sampleImageURL: URL? {
+        guard let sampleImage, !sampleImage.isEmpty else { return nil }
+        let name = sampleImage as NSString
+        return Bundle.module.url(forResource: name.deletingPathExtension,
+                                 withExtension: name.pathExtension.isEmpty ? nil : name.pathExtension,
+                                 subdirectory: "Presets/Samples")
     }
 }
 

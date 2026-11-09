@@ -1,0 +1,36 @@
+{
+  "assetChecklist" : [
+
+  ],
+  "id" : "ED46B831-AFC7-4F0A-B068-7CBB1095E424",
+  "images" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B1" : {
+      "acknowledged" : {
+        "assetRevisions" : {
+
+        },
+        "styleRevision" : 0
+      },
+      "sessionID" : "B73C7D3C-C384-4E9A-84D8-43093EEE7225"
+    }
+  },
+  "isDone" : false,
+  "kind" : "story",
+  "templateID" : "A1B2C3D4-0001-4000-8000-000000000001",
+  "text" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B2" : {
+      "paragraphs" : [
+        {
+          "runs" : [
+            {
+              "bold" : false,
+              "italic" : false,
+              "text" : "At the top of the hill, the moon was only resting on a pillow of mist.",
+              "underline" : false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

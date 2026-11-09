@@ -26,7 +26,8 @@ let package = Package(
         // Value types, IDs, schema versions, derived queries. Foundation only, no I/O.
         .target(name: "BBModel", dependencies: [collections], swiftSettings: settings),
         // Package I/O, journal, library, migrations, image store, keychain. Bundles style/template presets.
-        .target(name: "BBStore", dependencies: ["BBModel"], resources: [.copy("Resources/Presets")], swiftSettings: settings),
+        .target(name: "BBStore", dependencies: ["BBModel"], resources: [.copy("Resources/Presets"), .copy("Resources/SampleBook")],
+                swiftSettings: settings),
         // Geometry, page order, TextKit 2 layout, PageRenderer. AppKit only for TextKit and fonts; no views.
         .target(name: "BBLayout", dependencies: ["BBModel"], swiftSettings: settings),
         // HTTP client, multipart, SSE. Redacts Authorization / x-goog-api-key.

@@ -1,0 +1,36 @@
+{
+  "assetChecklist" : [
+
+  ],
+  "id" : "455C411F-068A-4EDD-9EBB-CF73BB53CC87",
+  "images" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B1" : {
+      "acknowledged" : {
+        "assetRevisions" : {
+
+        },
+        "styleRevision" : 0
+      },
+      "sessionID" : "452036E4-EBE2-4F3E-A8B5-D3C50392D0E0"
+    }
+  },
+  "isDone" : false,
+  "kind" : "story",
+  "templateID" : "A1B2C3D4-0001-4000-8000-000000000001",
+  "text" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B2" : {
+      "paragraphs" : [
+        {
+          "runs" : [
+            {
+              "bold" : false,
+              "italic" : false,
+              "text" : "“I will find it,” said Pip, and he hopped onto the biggest lily pad.",
+              "underline" : false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "assetChecklist" : [
+
+  ],
+  "id" : "E94FEE01-998E-4D65-B0CA-253358B0495C",
+  "images" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B1" : {
+      "acknowledged" : {
+        "assetRevisions" : {
+
+        },
+        "styleRevision" : 0
+      },
+      "sessionID" : "8A9D7EB5-B849-4458-AAB6-74F999268247"
+    }
+  },
+  "isDone" : false,
+  "kind" : "story",
+  "templateID" : "A1B2C3D4-0001-4000-8000-000000000001",
+  "text" : {
+    "A1B2C3D4-0001-4000-8000-0000000000B2" : {
+      "paragraphs" : [
+        {
+          "runs" : [
+            {
+              "bold" : false,
+              "italic" : false,
+              "text" : "One night the moon slipped behind a cloud, and the whole pond went dark.",
+              "underline" : false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

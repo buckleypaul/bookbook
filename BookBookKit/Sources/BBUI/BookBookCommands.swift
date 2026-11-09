@@ -42,6 +42,9 @@ public struct BookBookCommands: Commands {
                 app.newBookFromStoryRequested = true
                 openWindow(id: SceneID.library)
             }
+            Button("Open Sample Book") {
+                Task { await app.openSampleBook { openWindow(value: $0) } }
+            }
             Button("Library") { openWindow(id: SceneID.library) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
         }

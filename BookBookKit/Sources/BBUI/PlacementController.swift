@@ -127,6 +127,12 @@ final class PlacementController: CanvasController {
                            showsFold: geometry.isSpread, showsBleed: geometry.bleed > 0)
     }
 
+    /// The scene's sheet from the cached geometry (the scene shows the bleed whenever it's on).
+    var sheetRect: CGRect? {
+        guard renderContent != nil, page != nil, imageSource != nil, let geometry else { return nil }
+        return geometry.bleed > 0 ? geometry.bleedRect : geometry.trimRect
+    }
+
     /// The draw geometry: double width with a fold for a spread template. Set in `update`.
     private var geometry: PageGeometry?
 

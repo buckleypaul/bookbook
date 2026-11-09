@@ -73,6 +73,13 @@ final class LayoutEditingController: CanvasController {
                            showsFold: geometry.isSpread, showsBleed: geometry.bleed > 0)
     }
 
+    /// The scene's sheet straight from the model's geometry (the scene draws in `geometry.setup`
+    /// with the same spread flag), without building the scene's content.
+    var sheetRect: CGRect? {
+        guard let geometry = model.geometry else { return nil }
+        return geometry.bleed > 0 ? geometry.bleedRect : geometry.trimRect
+    }
+
     /// Re-registers observation of everything the canvas shows; a change redraws.
     func willDraw() {
         let revision = withObservationTracking {

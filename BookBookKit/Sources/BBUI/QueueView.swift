@@ -136,6 +136,7 @@ struct DraftAllFlow: ViewModifier {
     @State private var message = ""
     @State private var showConfirm = false
     @State private var showNothing = false
+    @State private var notice: ProviderID?
 
     func body(content: Content) -> some View {
         content
@@ -149,15 +150,37 @@ struct DraftAllFlow: ViewModifier {
             } message: {
                 Text("Every image box already has a picture.")
             }
+            .sheet(isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+                if let provider = notice {
+                    RealPersonNoticeSheet(provider: provider,
+                                          onContinue: {
+                                              notice = nil
+                                              app.acknowledgeRealPersonNotice(provider, in: document)
+                                              checkNoticeThenEnqueue()
+                                          },
+                                          onCancel: { notice = nil; plan = nil })
+                }
+            }
             .alert("Draft All Empty Boxes?", isPresented: $showConfirm) {
                 Button("Draft All") {
-                    if let plan { app.enqueueDraftAll(plan, in: document) }
-                    plan = nil
+                    checkNoticeThenEnqueue()
                 }
                 Button("Cancel", role: .cancel) { plan = nil }
             } message: {
                 Text(message)
             }
+    }
+
+    /// The real-person notice (once per provider and book, A §11) comes after the cost
+    /// confirmation and before anything is queued.
+    private func checkNoticeThenEnqueue() {
+        guard let plan else { return }
+        if let provider = app.realPersonNoticeNeeded(for: plan.items, in: document) {
+            notice = provider
+            return
+        }
+        app.enqueueDraftAll(plan, in: document)
+        self.plan = nil
     }
 
     private func start() async {

@@ -10,6 +10,7 @@ struct SheetBatchFlow: ViewModifier {
     @State private var message = ""
     @State private var showConfirm = false
     @State private var showNothing = false
+    @State private var notice: ProviderID?
 
     func body(content: Content) -> some View {
         content
@@ -23,15 +24,37 @@ struct SheetBatchFlow: ViewModifier {
             } message: {
                 Text("Every item on this sheet is locked or already being generated.")
             }
+            .sheet(isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+                if let provider = notice {
+                    RealPersonNoticeSheet(provider: provider,
+                                          onContinue: {
+                                              notice = nil
+                                              app.acknowledgeRealPersonNotice(provider, in: document)
+                                              checkNoticeThenEnqueue()
+                                          },
+                                          onCancel: { notice = nil; plan = nil })
+                }
+            }
             .alert("Generate Whole Sheet?", isPresented: $showConfirm) {
                 Button("Generate") {
-                    if let plan { app.enqueueSheetBatch(plan, in: document) }
-                    plan = nil
+                    checkNoticeThenEnqueue()
                 }
                 Button("Cancel", role: .cancel) { plan = nil }
             } message: {
                 Text(message)
             }
+    }
+
+    /// The real-person notice (once per provider and book, A §11) comes after the cost
+    /// confirmation and before anything is queued.
+    private func checkNoticeThenEnqueue() {
+        guard let plan else { return }
+        if let provider = app.realPersonNoticeNeeded(for: plan.items, in: document) {
+            notice = provider
+            return
+        }
+        app.enqueueSheetBatch(plan, in: document)
+        self.plan = nil
     }
 
     private func start(_ asset: AssetID) async {

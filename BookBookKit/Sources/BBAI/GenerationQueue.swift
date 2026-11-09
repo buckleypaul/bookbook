@@ -752,9 +752,3 @@ public actor GenerationQueue {
         }
     }
 }
-
-/// Prices nothing, so every ledger line is the item's estimate. For the Phase 2 initializer.
-struct UnpricedCostPricing: CostPricing {
-    func actualCost(of usage: TokenUsage, provider: ProviderID, model: String) -> Decimal? { nil }
-    var priceListAsOf: String? { nil }
-}

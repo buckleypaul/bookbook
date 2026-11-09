@@ -91,9 +91,14 @@ public struct OpenAIImageProvider: ImageProvider {
 
     static let maxEditImages = 16
 
-    /// Accepted upload formats. HEIC and the rest must be normalised by the caller.
+    /// Accepted upload formats, by UTType identifier. HEIC and the rest must be normalised by the caller.
     static func imageType(_ identifier: String) -> (mime: String, ext: String)? {
-        guard let type = UTType(identifier) else { return nil }
+        imageType(UTType(identifier))
+    }
+
+    /// Accepted upload formats (PNG, JPEG, WebP); shared with the chat provider.
+    static func imageType(_ type: UTType?) -> (mime: String, ext: String)? {
+        guard let type else { return nil }
         if type.conforms(to: .png) { return ("image/png", "png") }
         if type.conforms(to: .jpeg) { return ("image/jpeg", "jpg") }
         if type.conforms(to: .webP) { return ("image/webp", "webp") }

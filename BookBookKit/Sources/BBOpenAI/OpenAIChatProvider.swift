@@ -79,12 +79,9 @@ public struct OpenAIChatProvider: LayoutProvider, VisionProvider {
         }
     }
 
+    /// The MIME type for a UTType identifier or a MIME type; PNG, JPEG and WebP only.
     static func mimeType(_ identifier: String) -> String? {
-        guard let type = UTType(identifier) ?? UTType(mimeType: identifier) else { return nil }
-        if type.conforms(to: .png) { return "image/png" }
-        if type.conforms(to: .jpeg) { return "image/jpeg" }
-        if type.conforms(to: .webP) { return "image/webp" }
-        return nil
+        OpenAIImageProvider.imageType(UTType(identifier) ?? UTType(mimeType: identifier))?.mime
     }
 
     private func send(model: String, messages: [[String: Any]], name: String,

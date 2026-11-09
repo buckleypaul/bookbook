@@ -1,0 +1,1 @@
+Draw a reference image of {{name}} for the rest of the book to follow: the full figure from head to toe, seen from the front in a relaxed, neutral pose, alone on a plain, simple, light background. No other characters, props or scenery.

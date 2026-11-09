@@ -1,0 +1,1 @@
+Character sheet: draw {{name}} with a clearly {{expression}} expression, showing the face and upper body, alone on a plain, simple, light background.

@@ -10,9 +10,14 @@ import Foundation
 public enum SheetRequests {
     public static func messageText(for kind: SheetItemKind) -> String {
         switch kind {
-        case let .view(view): "\(view.rawValue) view"
-        case let .expression(name): "\(name) expression"
+        case let .view(view): capitalizedFirst("\(ReferenceSelector.displayName(view: view)) view")
+        case let .expression(name): capitalizedFirst("\(ReferenceSelector.displayName(expression: name)) expression")
         }
+    }
+
+    private static func capitalizedFirst(_ text: String) -> String {
+        guard let first = text.first else { return text }
+        return first.uppercased() + text.dropFirst()
     }
 
     /// The message text for a reference slot's first image when the user sends nothing more

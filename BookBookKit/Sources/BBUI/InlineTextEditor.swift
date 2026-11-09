@@ -202,7 +202,8 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
         guard text != shownText else { return }
         shownText = text
         onChange(text, true)
-        publishState()
+        // Normalizing changes attributes only, never the model form, so `text` is still current.
+        publishState(text: text)
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -353,9 +354,11 @@ extension InlineTextEditor {
     }
 
     /// The formatting at the selection (or of the typing attributes when it's empty).
-    var formatState: FormatState {
+    var formatState: FormatState { formatState(text: currentText()) }
+
+    /// `formatState` for `text`, the view's current text in model form (already computed).
+    private func formatState(text: RichText) -> FormatState {
         let selection = textView.selectedRange()
-        let text = currentText()
         let runs = selection.length == 0 ? [typingRun()] : RichTextFormatting.runs(in: selection, of: text)
         var state = RichTextFormatting.state(of: runs, typography: typography)
         state.alignment = RichTextFormatting.alignment(in: selection, of: text)
@@ -363,8 +366,14 @@ extension InlineTextEditor {
     }
 
     func publishState() {
+        publishState(text: nil)
+    }
+
+    /// Publishes the formatting state. `text`, when given, is the view's current text in model
+    /// form, so it isn't converted again.
+    private func publishState(text: RichText?) {
         guard let formatting, formatting.target === self else { return }
-        let state = formatState
+        let state = formatState(text: text ?? currentText())
         if formatting.state != state { formatting.state = state }
     }
 
@@ -392,7 +401,7 @@ extension InlineTextEditor {
         } else {
             onEndTypingStep()
         }
-        publishState()
+        publishState(text: normal)
     }
 
     /// The run new typing would get, read from the typing attributes.

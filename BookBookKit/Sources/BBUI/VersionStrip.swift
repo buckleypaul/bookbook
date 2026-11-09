@@ -21,6 +21,8 @@ struct VersionStrip: View {
     let onEditRegion: (Version) -> Void
     let regionEditReason: (Version) -> String?
     let onDelete: (Version) -> Void
+    /// Whether a consistency check of the version is waiting or running.
+    var isChecking: (Version) -> Bool = { _ in false }
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -47,6 +49,7 @@ struct VersionStrip: View {
                         .strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.3),
                                       lineWidth: selected ? 3 : 1))
                     .overlay(alignment: .topTrailing) { starButton(version) }
+                    .overlay(alignment: .bottomTrailing) { consistencyBadge(version) }
                     .overlay(alignment: .bottomLeading) {
                         if placed {
                             Image(systemName: "checkmark.circle.fill")
@@ -69,7 +72,22 @@ struct VersionStrip: View {
             Button("Delete Version…", role: .destructive) { onDelete(version) }
         }
         .help(placed ? "Version \(number) (on the page)" : "Put version \(number) on the page")
-        .accessibilityLabel("Version \(number)\(placed ? ", on the page" : "")\(version.starred ? ", starred" : "")")
+        .accessibilityLabel("Version \(number)\(placed ? ", on the page" : "")\(version.starred ? ", starred" : "")\(version.consistency?.showsWarning == true ? ", consistency warning" : "")")
+    }
+
+    @ViewBuilder
+    private func consistencyBadge(_ version: Version) -> some View {
+        if isChecking(version) {
+            ProgressView().controlSize(.mini).padding(3)
+                .help("Checking consistency…")
+                .accessibilityLabel("Checking consistency")
+        } else if version.consistency?.showsWarning == true {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.black, .yellow)
+                .padding(3)
+                .help("This picture differs from the references. Open Version details to fix or dismiss.")
+                .accessibilityLabel("Consistency warning")
+        }
     }
 
     private func starButton(_ version: Version) -> some View {

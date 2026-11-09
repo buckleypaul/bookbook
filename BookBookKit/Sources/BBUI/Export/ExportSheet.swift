@@ -74,6 +74,9 @@ struct ExportSheet: View {
                 note(blanks == 0 ? "No blank pages needed."
                      : "\(blanks) blank \(blanks == 1 ? "page" : "pages") will be added so pages fall on the right side and fill the last sheet.")
             }
+            if model.bookletBindsAtTop {
+                note("These landscape pages are stacked two to a sheet, so the booklet binds at the top.")
+            }
             if let result = model.result {
                 if result.scaledToFit {
                     note("Pages were scaled to \(Int((result.scale * 100).rounded())) percent to fit two to a sheet.")
@@ -124,7 +127,8 @@ struct ExportSheet: View {
                     ForEach(group.issues) { issue in
                         HStack {
                             Button { onOpenPage(issue.page) } label: {
-                                Text(issue.detail).frame(maxWidth: .infinity, alignment: .leading)
+                                Text("\(model.pageLabel(for: issue)): \(issue.detail)")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .buttonStyle(.link)
                             .help("Go to this page")
@@ -182,10 +186,12 @@ struct ExportSheet: View {
 
     private static func runSavePanel(_ name: String) -> URL? {
         let panel = NSSavePanel()
+        ExportPanel.configure(panel)
         panel.allowedContentTypes = [.pdf]
-        panel.canCreateDirectories = true
         panel.nameFieldStringValue = name
-        return panel.runModal() == .OK ? panel.url : nil
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        ExportPanel.remember(url)
+        return url
     }
 }
 

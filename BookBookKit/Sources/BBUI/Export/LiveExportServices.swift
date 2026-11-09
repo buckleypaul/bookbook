@@ -31,10 +31,15 @@ public final class LiveExportServices: ExportServices {
     }
 
     public func runPreflight() async -> [PreflightIssue] {
+        await runPreflight(for: ExportOptions())
+    }
+
+    public func runPreflight(for options: ExportOptions) async -> [PreflightIssue] {
         let content = document.content
         let store = document.store
+        let selected = Preflight.exportedPageIDs(content, options: options)
         var all: [ImagePreparationRequest] = []
-        for page in [content.coverPage].compactMap({ $0 }) + content.storyPages {
+        for page in [content.coverPage].compactMap({ $0 }) + content.storyPages where selected.contains(page.id) {
             all += ImagePreparationPlanner.requests(
                 page: page, in: content,
                 imageURL: { store.imageURL(for: $0) },
@@ -47,17 +52,21 @@ public final class LiveExportServices: ExportServices {
             byKey[request.key] = request
         }
         requests = byKey
-        return Preflight.run(content, assessments: assessments, spelling: SystemSpellingChecker())
+        return Preflight.run(content, assessments: assessments, spelling: SystemSpellingChecker(),
+                             pages: selected)
     }
 
     public func export(_ options: ExportOptions, to url: URL,
                        progress: @MainActor (ExportProgress) -> Void) async throws -> ExportResult {
-        try await makeExporter().export(options, to: url, progress: progress)
+        let result = try await makeExporter().export(options, to: url, progress: progress)
+        await preparer.pruneCache()
+        return result
     }
 
     public func print(_ options: ExportOptions) async throws {
-        let window = NSApp.keyWindow
         let (data, _) = try await makeExporter().pdfData(options) { _ in }
+        // After the PDF is built, so the window is the one showing now (the sheet may have closed).
+        let window = NSApp.keyWindow.map { $0.sheetParent ?? $0 }
         guard let pdf = PDFDocument(data: data),
               let operation = pdf.printOperation(for: .shared, scalingMode: .pageScaleNone, autoRotate: true)
         else { throw ExportError.encodingFailed }
@@ -94,7 +103,7 @@ public enum ExportActions {
     /// Saves one page (a spread: both halves) as PNG or JPEG at 300 DPI.
     public static func exportPageAsImage(_ document: BookDocument, page: PageID) {
         let panel = NSSavePanel()
-        panel.canCreateDirectories = true
+        ExportPanel.configure(panel)
         panel.allowedContentTypes = [.png]
         panel.nameFieldStringValue = ExportSheetModel.fileStem(document.content.book.title) + ".png"
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -107,6 +116,7 @@ public enum ExportActions {
         panel.accessoryView = row
         let accepted = withExtendedLifetime(handler) { panel.runModal() == .OK }
         guard accepted, let url = panel.url else { return }
+        ExportPanel.remember(url)
         let format: BitmapFormat = popup.indexOfSelectedItem == 1 ? .jpeg : .png
         let services = LiveExportServices(document: document)
         Task { @MainActor in

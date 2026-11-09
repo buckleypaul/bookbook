@@ -61,7 +61,8 @@ extension BookMutations {
         if case let .success(result, provenance) = delivery.outcome, let storedImage {
             let provenance = resolvingDeletedMentions(provenance, message: messageIndex.map { session.messages[$0] },
                                                       in: content)
-            let version = Version(id: versionID, image: storedImage, pixelSize: result.pixelSize, source: .generated,
+            let version = Version(id: versionID, image: storedImage, pixelSize: result.pixelSize,
+                                  source: provenance.intent.regionMask == nil ? .generated : .regionEdit,
                                   parent: provenance.intent.refines, createdAt: now, provenance: provenance)
             session.versions.append(version)
             if let messageIndex { session.messages[messageIndex].producedVersion = version.id }

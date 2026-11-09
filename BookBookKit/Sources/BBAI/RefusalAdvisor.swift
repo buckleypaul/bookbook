@@ -146,6 +146,14 @@ public enum RefusalAdvisor {
                                  fixes: ["Try again.", "Try a lower quality level, which is usually faster."], offersOtherProvider: true)
         case .cancelled:
             return FailureAdvice(headline: "Cancelled", explanation: "You stopped this request before it finished.", offersOtherProvider: false)
+        case .noImage where RegionEditFailure.isBlankArea(f.error):
+            return FailureAdvice(headline: "The edit came back blank",
+                                 explanation: "The model returned a blank area instead of an edit.",
+                                 fixes: ["Try again.", "Or select a slightly larger area."], offersOtherProvider: false)
+        case .noImage(let raw) where raw?.code == RegionEditFailure.compositeFailedCode:
+            return FailureAdvice(headline: "The edit couldn't be blended in",
+                                 explanation: "\(p) sent a picture, but BookBook couldn't blend it into the selected area.",
+                                 fixes: ["Try again."], offersOtherProvider: false)
         case .noImage:
             return FailureAdvice(headline: "\(p) didn't return a picture", explanation: "The request went through, but no image came back.",
                                  fixes: ["Try again.", "Try rephrasing the scene."], offersOtherProvider: true)

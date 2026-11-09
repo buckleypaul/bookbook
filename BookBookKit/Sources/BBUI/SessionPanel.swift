@@ -49,6 +49,7 @@ struct SessionPanel: View {
     @State private var estimate = CostEstimate.unknown
     @State private var costAlert: String?
     @State private var pendingAction: PendingGeneration?
+    @State private var regionEditing: RegionEditSubject?
     /// The real-person notice waiting for Continue/Cancel, and the action it guards.
     @State private var notice: PendingNotice?
     /// The import waiting for the real-person answer, and the ones queued behind it.
@@ -147,6 +148,15 @@ struct SessionPanel: View {
             ReferencePickerView(content: content, store: document.store, excluding: session?.id) { ref in
                 if !attached.contains(ref) { attached.append(ref) }
             }
+        }
+        .sheet(item: $regionEditing) { subject in
+            RegionEditorSheet(imageData: subject.imageData, pixelSize: subject.version.pixelSize,
+                              modelName: app.defaultModelName,
+                              onCancel: { regionEditing = nil },
+                              onSubmit: { drawing, text in
+                                  regionEditing = nil
+                                  submitRegionEdit(subject.version, drawing: drawing, prompt: text)
+                              })
         }
         .sheet(item: $question, onDismiss: nextQuestion) { pending in
             RealPersonQuestionSheet(fileName: pending.url.lastPathComponent, defaultAnswer: pending.defaultAnswer,
@@ -320,15 +330,51 @@ struct SessionPanel: View {
                          onChoose: { choose($0) },
                          onToggleStar: { document.setStarred(!$0.starred, version: $0.id, owner: owner) },
                          onExport: { export($0, in: session) },
+                         onEditRegion: { startRegionEdit($0) },
+                         regionEditReason: { regionEditReason(for: $0) },
                          onDelete: { pendingDelete = $0.id })
             if let base, let version = session.version(base) {
+                let reason = regionEditReason(for: version)
                 HStack {
                     Button("Export Image…") { export(version, in: session) }
+                    Button("Edit Region…") { startRegionEdit(version) }
+                        .disabled(reason != nil)
+                        .help(reason ?? "Select an area of this picture and describe the change.")
                     Button("Delete…", role: .destructive) { pendingDelete = version.id }
                 }
                 .controlSize(.small)
+                if let reason {
+                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
+    }
+
+    /// Why "Edit Region…" is unavailable for `version`, or nil when it can run.
+    private func regionEditReason(for version: Version) -> String? {
+        RegionEditEntry.unavailableMessage(
+            isEditable: document.isEditable, isOnline: app.isOnline, hasKey: app.hasOpenAIKey,
+            refusal: app.regionEditUnavailableReason(refines: version.id, target: target, in: document))
+    }
+
+    private func startRegionEdit(_ version: Version) {
+        guard regionEditReason(for: version) == nil else { return }
+        guard let data = try? Data(contentsOf: document.store.imageURL(for: version.image)) else {
+            problem = "The picture couldn't be opened."
+            return
+        }
+        regionEditing = RegionEditSubject(version: version, imageData: data)
+    }
+
+    private func submitRegionEdit(_ version: Version, drawing: RegionMaskDrawing, prompt text: String) {
+        let request = RegionEditRequest(version: version, drawing: drawing, prompt: text,
+                                        quality: quality ?? app.defaults.quality, includeStoryText: storyText,
+                                        attached: liveAttached,
+                                        intent: app.generationIntent(prompt: text, quality: quality ?? app.defaults.quality,
+                                                                     includeStoryText: storyText, refines: version.id,
+                                                                     attachedReferences: liveAttached))
+        checkThenPerform(.regionEdit(request))
     }
 
     private func choose(_ version: Version) {
@@ -589,6 +635,10 @@ struct SessionPanel: View {
                                    attachedReferences: intent.attachedReferences, target: target, in: document)
         case let .regenerate(version):
             current = app.regenerateEstimate(version, target: target, in: document) ?? .unknown
+        case let .regionEdit(request):
+            current = app.estimate(prompt: request.prompt, quality: request.quality,
+                                   includeStoryText: request.includeStoryText, refines: request.version.id,
+                                   attachedReferences: request.attached, target: target, in: document)
         }
         Task {
             let decision = await app.costDecision(for: current, in: document)
@@ -619,16 +669,50 @@ struct SessionPanel: View {
             }
         case let .regenerate(version):
             app.regenerate(version, target: target, in: document)
+        case let .regionEdit(request):
+            let target = target
+            let document = document
+            Task {
+                do throws(RegionEditRefusal) {
+                    _ = try await app.generateRegionEdit(
+                        prompt: request.prompt, quality: request.quality,
+                        includeStoryText: request.includeStoryText, refines: request.version.id,
+                        drawing: request.drawing, attachedReferences: request.attached,
+                        target: target, in: document)
+                } catch {
+                    problem = error.message
+                }
+            }
         }
+    }
+
+    private struct RegionEditSubject: Identifiable {
+        let id = UUID()
+        var version: Version
+        var imageData: Data
+    }
+
+    private struct RegionEditRequest {
+        var version: Version
+        var drawing: RegionMaskDrawing
+        var prompt: String
+        var quality: QualityLevel
+        var includeStoryText: Bool
+        var attached: [VersionRef]
+        /// For the real-person notice check only.
+        var intent: GenerationIntent
     }
 
     private enum PendingGeneration {
         case generate(GenerationIntent)
         case regenerate(Version)
+        case regionEdit(RegionEditRequest)
 
         var intent: GenerationIntent {
             switch self {
             case let .generate(intent): intent
+            case let .regionEdit(request):
+                request.intent
             case let .regenerate(version):
                 version.provenance?.intent ?? GenerationIntent(messageText: "", provider: .openai, model: "",
                                                                quality: .standard)
@@ -672,5 +756,18 @@ private struct VersionDetailsGrid: View {
         .task(id: version.provenance?.cost) {
             if let id = version.provenance?.cost { cost = await app.costRecord(id, in: bookID) } else { cost = nil }
         }
+    }
+}
+
+
+/// The availability text for "Edit Region…" (PD §8.6: unavailable, with a short explanation).
+enum RegionEditEntry {
+    static func unavailableMessage(isEditable: Bool, isOnline: Bool, hasKey: Bool,
+                                   refusal: RegionEditRefusal?) -> String? {
+        if !isEditable { return RegionEditRefusal.readOnly.message }
+        if let refusal { return refusal.message }
+        if !isOnline { return "Region editing needs an internet connection." }
+        if !hasKey { return "Add your OpenAI API key in Settings to edit a region." }
+        return nil
     }
 }

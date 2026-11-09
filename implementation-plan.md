@@ -214,7 +214,7 @@ Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve 
 | §5 Phase 11 | `plan/done/phase-11-region-editing.md` |
 | §5 Phase 12 | `plan/done/phase-12-consistency-ai-templates.md` |
 | §5 Phase 13 | `plan/post-mvp/phase-13-gemini.md` (post-MVP) |
-| §5 Phase 14 | `plan/phase-14-export-print.md` |
+| §5 Phase 14 | `plan/done/phase-14-export-print.md` |
 | §5 Phase 15 | `plan/phase-15-release.md` |
 | §5 Phase 16 | `plan/phase-16-import-onboarding.md` |
 | §5 Phase 17 | `plan/phase-17-hardening.md` |

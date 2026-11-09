@@ -23,7 +23,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 11 | Region editing | done (hand checks deferred) | `phase-11-region-editing` | — | $0.04 | Live check `SP11_maskedEditRealIllustration` passed. [Log](progress/phase-11-region-editing.md) |
 | 12 | Consistency check and AI templates (M3) | done (hand checks deferred) | `phase-12-consistency-ai-templates` | — | $0.007 | Live check `SP12_templateAndConsistency` passed. [Log](progress/phase-12-consistency-ai-templates.md) |
 | 13 | Gemini provider | post-MVP | | | | Out of scope for v1.0 (decided 2026-11-08). Spec kept in `plan/post-mvp/phase-13-gemini.md`. |
-| 14 | Export and print | in progress | `phase-14-export-print` | — | $0.00 | No live checks listed. |
+| 14 | Export and print | done (hand checks deferred) | `phase-14-export-print` | — | $0.00 | No live checks listed. [Log](progress/phase-14-export-print.md) |
 | 15 | Release pipeline (M4) | not started | | | | |
 | 16 | Import, book settings, onboarding, sample | not started | | | | |
 | 17 | Hardening and v1.0 (M5) | not started | | | | |
@@ -63,13 +63,17 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Confirm-cost alert wording for a check or fix (Session A noted it says "Generate").
 - Real-person photo: Check Consistency shows the notice first, then the cost step.
 
+### Phase 14 — Export and print
+- Letter booklet of a 10-page 5.5×8.5 in book: print double-sided (short-edge flip), fold and staple; the pages read in order. Also try one with the cover included (inside-front-cover blank).
+- Print-shop PDF: open in Acrobat and confirm the TrimBox/BleedBox (PDFKit confirmed them) and that crop marks look right in Preview.
+- Spreads option: a book with a spread exported as single pages and as double-width pages.
+- Export progress and Cancel on a large book with many images (small books finish before progress shows).
+- Undo after Turn On Bleed in the export sheet.
+
 ## Open follow-ups
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
-
-### Phase 14
-- Consistency-warning preflight item and export off the main actor: picked up by Phase 14 Session A (drop at close if confirmed).
 
 ### Phase 16
 - Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phases 5 and 7; unreachable in Phase 7 because the box opens Book Settings).
@@ -77,11 +81,15 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Phase 17
+- Phase 14 review should-fixes: export cache files are written straight to their final path and `fileExists` counts as a hit, so a truncated file breaks that image forever (write to temp and rename, `ExportImagePreparer.swift:52`); `ImageFiles.decode` is lazy, so the 300 DPI bitmap decodes on the main actor during `ctx.draw` (use `kCGImageSourceShouldCacheImmediately`); `canExport` doesn't wait for preflight, so you can export before issues load; preflight isn't re-run after Turn On Bleed (soft-image "needs" stays at the no-bleed size); preflight ignores the page range and cover exclusion; a word misspelled twice in one box gives duplicate `PreflightIssue.id`s; the export cache in `~/Library/Caches/BookBook/<id>/export` is never pruned (from Phase 14).
+- Phase 14 nits: `RenderOptions.Target.print` is unused (print renders `.pdfTrim`); a spread exported as single pages prepares its images twice; the soft-image detail gives width only and flags any crop under 600 px even when downsampled for a small box; `LiveExportServices.print` captures `NSApp.keyWindow` (the sheet) before the PDF is built (from Phase 14).
+- Phase 14 app pass: "Exported N pages." stays in the sheet footer after options change; preflight rows all read "Image box has no image" with no page number; the save panel starts at "Macintosh HD" when the app is launched via `open` (from Phase 14).
+- Stacked landscape booklets bind at the top; landscape picture books are usually bound on the left. Product call: confirm or add a rotated side-by-side layout (from Phase 14).
 - Export image prep ignores box rotation (crop is the unrotated footprint), and crops round out by up to 2 px (from Phase 14).
 - Crop marks are plain black, not registration colour (from Phase 14).
 - `SystemSpellingChecker` (NSSpellChecker) has no test; the text-overflow preflight detail is generic (from Phase 14).
 - v1.0 is OpenAI only: make sure no Gemini choice shows in the app (there's a Gemini mention in `ModelCatalog.json`, plus Gemini text in `RealPersonNotice.swift` and `VersionDetailsContent.swift`), and that the final live pass covers only OpenAI (Gemini moved to post-MVP 2026-11-08).
-- Flaky: `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` failed once (NSCocoaError 512 / POSIX 22 saving `.journal/<id>/staged`) and passed on the re-run (seen in Phase 12 Session B).
+- Flaky: `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` fails now and then (NSCocoaError 512 / POSIX 22 saving `.journal/<id>/staged`) and passes on re-run (seen in Phase 12 Session B and Phase 14 Session B).
 - Confirm-cost alert's button says "Generate" for a consistency check (from Phase 12).
 - Chat `refusal` maps to stage `.output`, which is a guess; confirm it against a real refusal (from Phase 12).
 - The SP12 live test hardcodes model IDs; read them from the catalog (from Phase 12).
@@ -145,7 +153,6 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - The toolbar Book menu's `.disabled(!isEditable)` also disables the view-only "Show Page Numbers in Overview" toggle (from Phase 5 review).
 - Overview thumbnails hash whole `Page`/`Template`/`StyleGuide` per cell per redraw; key on IDs plus a revision (from Phase 5 review).
 - `PageRenderer` half culling uses `CGRect.intersects`, inconsistent for an edge exactly on the gutter (content stream only; output is clipped) (from Phase 5 review).
-- Spreads export as two PDF pages; a double-width spread export option isn't built (from Phase 5; Phase 14).
 - Format bar: the colour picker adds one undo step per colour-panel change (debounce it like the Typography form); there's no typed size field, only ±1 pt steps (from Phase 4 review).
 - Importing a font clears only that window's layout cache and missing-font list; other open books keep stale fallback layouts and banners (from Phase 4 review).
 - Pasted rich text keeps attributes the model drops (kerning, paragraph spacing, links) in the editor until reload; pasted text with no requested font still uses the family match (from Phase 4).
@@ -181,18 +188,3 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
-
-### Phase 14 — Export and print
-
-**Stage:** B
-
-- Started 2026-11-08. Follow-ups picked up: consistency-warning preflight item; export off the main actor.
-- Contracts (main thread): `BBExport/ExportContracts.swift` (options, results, booklet imposition formula, crop marks, image prep, preflight, `ImagePreparing`), `BBLayout/Contracts.swift` (`BoxImageKey`, `PreparedImageSource`, `RenderOptions.Target.pdfBleed/.print`), with compiling stubs per lane.
-- Decision: page drawing stays on the main actor (TextKit 2), one page per step with suspensions; image preparation runs off it in the `ExportImagePreparer` actor. Written into A §9.1.
-- Lanes: **images** (sonnet: upscaler, planner, preparer, cache); **preflight** (sonnet); **pipeline** (opus: renderer prepared images, booklet/marks, `BookExporter`, PDF boxes, bitmaps); **ui** (sonnet: export sheet, preflight list, Print ⌘P, page-as-image, menus; owns `BookDocument` this phase).
-- Session A done 2026-11-08: all four lanes merged; `scripts/test.sh all` green, no warnings, no stubs left.
-  - images: `CoreImageUpscaler`, `ImagePixelSize` (EXIF-aware), `ImagePreparationPlanner`, `ExportImagePreparer` (one source in memory at a time; cache `<hash>-<w>x<h>.jpg|png`).
-  - preflight: `Preflight.run` + `SystemSpellingChecker`; cover text included; each missing font reported once per book (first page needing it).
-  - pipeline: `PageRenderer.prepared`, `.pdfBleed`/`.print`, booklet layout + crop marks, `BookExporter` (standard / print shop with TrimBox+BleedBox / booklet, cover-only PDF, 300 DPI PNG/JPEG, progress, cancel, temp-file write). `PDFExporter` kept as a sync wrapper over shared `OutputPageDrawing`. Booklet blanks go at the end. Print-shop spread halves show the facing half in the fold-side bleed. Added a `__Snapshots__` exclude to BBExportTests in `Package.swift`.
-  - ui: `BBUI/Export/` (`ExportSheetModel`, `ExportSheet`, `LiveExportServices`); File ▸ Export… (⇧⌘E), Export Page as Image…, Print… (⌘P = direct Standard print); the sheet's Print… uses the chosen options. Turn On Bleed uses `.setPageSetup` (undoable). Old `PDFExportAction` removed (`StatusTextTests` updated).
-  - For Session B: the UI was only tested against fakes during Session A; the hand-check pass must exercise the real export/print/preview paths end to end. No live checks in this phase.

@@ -31,6 +31,10 @@ struct BookSettingsCleanUpTests {
         try await store.save(content, dirty: .all(content))
 
         let document = BookDocument(content: content, store: store)
+        let undo = UndoManager()
+        document.undoManager = undo
+        undo.registerUndo(withTarget: document) { _ in }
+        #expect(undo.canUndo)
         let model = StorageModel()
         await model.refresh(document)
         #expect(model.plan.versionIDs == [loose1.id, loose2.id])
@@ -40,6 +44,7 @@ struct BookSettingsCleanUpTests {
 
         let message = await model.cleanUp(document)
         #expect(message == nil)
+        #expect(!undo.canUndo && !undo.canRedo)
         let versions = document.content.sessions[slot.sessionID]?.versions.map(\.id) ?? []
         #expect(Set(versions) == [placed.id, starred.id])
         #expect(!FileManager.default.fileExists(atPath: store.imageURL(for: loose1.image).path(percentEncoded: false)))

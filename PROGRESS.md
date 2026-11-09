@@ -25,7 +25,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 13 | Gemini provider | post-MVP | | | | Out of scope for v1.0 (decided 2026-11-08). Spec kept in `plan/post-mvp/phase-13-gemini.md`. |
 | 14 | Export and print | done (hand checks deferred) | `phase-14-export-print` | — | $0.00 | No live checks listed. [Log](progress/phase-14-export-print.md) |
 | 15 | Release pipeline (M4) | deferred | | | | Deferred by you on 2026-11-08: finish the product work first, then do the tap. Phase 16 runs before it. Not picked as "next" until you un-defer it; Phase 17 still needs it. |
-| 16 | Import, book settings, onboarding, sample | in progress | `phase-16-import-onboarding` | — | | |
+| 16 | Import, book settings, onboarding, sample | done (hand checks deferred) | `phase-16-import-onboarding` | — | $0.00 | No live checks listed. Sample book and preset samples are placeholders until you make them. [Log](progress/phase-16-import-onboarding.md) |
 | 17 | Hardening and v1.0 (M5) | not started | | | | |
 
 ## Standing decisions
@@ -70,16 +70,26 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Export progress and Cancel on a large book with many images (small books finish before progress shows).
 - Undo after Turn On Bleed in the export sheet.
 
+### Phase 16 — Import, book settings, onboarding, sample
+- Fresh macOS user account: first run shows Guided Setup (the automated pass used `-onboardingCompleted NO` instead).
+- The real sample book (6–8 pages, Standard quality, under 15 MB) and the ~8 preset sample images: make them in the app and bundle them (see the READMEs in `Resources/SampleBook/` and `Resources/Presets/Samples/`), then explore the sample with no key.
+- Wizard with a name-only main character (no description) creates the asset (the automated run was inconclusive).
+- Import a template: the copy shows in the template list, and editing it doesn't change the original.
+- Clean up a book with 30 unused unstarred versions: the count and MB shown, the confirmation, and size on disk dropping by that amount (needs generations).
+- Book Settings cost breakdown by type (images / consistency checks / templates) and recent requests on a book with spend.
+- Guided Setup's OpenAI links (api-keys, billing overview, organization general) open the right pages; `curl` got 403s from Cloudflare.
+
 ## Open follow-ups
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
 
-### Phase 16
-- Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phases 5 and 7; unreachable in Phase 7 because the box opens Book Settings).
-- A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
-
 ### Phase 17
+- Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phases 5, 7 and 16; unreachable in Phase 7 because the box opens Book Settings).
+- A read-only open of an older-schema book has no in-memory migration (from Phase 3, moved by Phase 16).
+- Phase 16 review should-fixes: Clean Up doesn't protect versions used by queued or running requests (`refines`, `attachedReferences`; it needs the queue passed into `CleanUp.plan`); a book still opening (lock taken, not in `documents`) isn't in the open set for duplicate-ID resolution, and the open list is read once per pass; a delivery to a closed book isn't serialised with `resolveDuplicateBookIDs`; an imported style guide copies typography `FontRef`s but not the `fonts/` files, and it also replaces `pageNumbers`; `ImportFromBookSheet.remainingClashes` runs a full `BookImporter.build` on every body evaluation; an imported template with a `pageRole` can duplicate the target's one with no prompt; `PresetSampleImage` and `AppModel.createBook(spec:)` do file I/O on the main actor (from Phase 16 review).
+- Guided Setup: closing it with the close button never sets `onboardingCompleted`, so it reopens every launch until a key is saved; reopening it after Done or Skip starts on the last step, not the first; no launch-argument guard for UI-automation runs (from Phase 16).
+- "Book Settings…" (⌘⌥,) in `BookBookCommands.swift:72` uses `CommandGroup(after: .saveItem)`, which doesn't exist in this non-document app, so it's missing from the File menu (from Phase 16 app pass).
 - Phase 14 review should-fixes: export cache files are written straight to their final path and `fileExists` counts as a hit, so a truncated file breaks that image forever (write to temp and rename, `ExportImagePreparer.swift:52`); `ImageFiles.decode` is lazy, so the 300 DPI bitmap decodes on the main actor during `ctx.draw` (use `kCGImageSourceShouldCacheImmediately`); `canExport` doesn't wait for preflight, so you can export before issues load; preflight isn't re-run after Turn On Bleed (soft-image "needs" stays at the no-bleed size); preflight ignores the page range and cover exclusion; a word misspelled twice in one box gives duplicate `PreflightIssue.id`s; the export cache in `~/Library/Caches/BookBook/<id>/export` is never pruned (from Phase 14).
 - Phase 14 nits: `RenderOptions.Target.print` is unused (print renders `.pdfTrim`); a spread exported as single pages prepares its images twice; the soft-image detail gives width only and flags any crop under 600 px even when downsampled for a small box; `LiveExportServices.print` captures `NSApp.keyWindow` (the sheet) before the PDF is built (from Phase 14).
 - Phase 14 app pass: "Exported N pages." stays in the sheet footer after options change; preflight rows all read "Image box has no image" with no page number; the save panel starts at "Macintosh HD" when the app is launched via `open` (from Phase 14).
@@ -188,22 +198,4 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-### Phase 16 — Library import, book settings, onboarding, sample
-
-**Stage:** B
-
-- 2026-11-08: Phase 15 deferred at your request; Phase 16 started (its dependencies 3, 10 and 14 are done).
-- Contracts: `BBStore/Phase16/Phase16Contracts.swift` (import, clean-up plan, `NewBookSpec`).
-- Lanes, all merged:
-  - **L1 store:** `BookImporter` (clashes, build with ID remapping, image copy deduplicated by hash), `CleanUp` (plan, apply, immediate file delete), `BookStore.sizeOnDisk`, and duplicate `Book.id` resolution on library refresh (Phase 3 follow-up).
-  - **L2 onboarding:** a "Guided Setup" window scene that opens on first launch (flag `onboardingCompleted`; not under XCTest or when a key is saved), with typical costs from the price list. It can be reopened from Settings › API Keys and the Help menu.
-  - **L3 wizard and sample:** a five-step `NewBookWizard` (each step skippable), `NewBookSpec.apply`, `Library.createBook(spec:)`, `StylePreset.sampleImage` (optional; none bundled yet), the bundled placeholder sample book "Pip and the Missing Moon" (text only), and Open Sample Book in the library toolbar, the empty state and the File menu.
-  - **L4 import and clean-up UI:** the `.importFromBook` command, `ImportFromBookSheet` (book menu and File › Import from Book…), and Book Settings › Storage (size on disk, Clean Up… with confirmation). Book Settings cost labels now read images / consistency checks / templates.
-- Assumptions:
-  - The real sample book and the preset sample images are content you make in the app, per the content note. The bundled sample is a text-only placeholder made by `SampleBookGenerator` (`BOOKBOOK_GENERATE_SAMPLE=1`). To add the real ones, see the READMEs in `Resources/SampleBook/` and `Resources/Presets/Samples/`.
-  - Read-only open of an older-schema book (Phase 16/17 follow-up) is left for Phase 17.
-- **For Session B:**
-  - Run the full `scripts/test.sh all`.
-  - Check that Guided Setup's OpenAI billing and organization URLs are current.
-  - Check undo of import, and that Clean up handles dangling `parent`/`refines` lineage (L1 noted it doesn't check `Session+Lineage`).
-  - Check that the sample opens with no key, and that the onboarding window doesn't pop up in automated app runs.
+_No phase in progress._

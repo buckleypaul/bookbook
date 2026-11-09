@@ -65,6 +65,26 @@ import Testing
         #expect(CleanUp.plan(for: f.book.content) { _ in nil }.bytesFreed == 0)
     }
 
+    @Test func keepsAncestorsOfPlacedVersion() async throws {
+        var f = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.book.dir) }
+        let storyID = try #require(f.book.content.book.pageOrder.first)
+        let (box, slot) = try #require(f.book.content.pages[storyID]?.images.first)
+        let v1 = try await f.book.addVersion("v1", to: slot.sessionID)
+        var v2 = try await f.book.addVersion("v2", to: slot.sessionID)
+        var v3 = try await f.book.addVersion("v3", to: slot.sessionID)
+        v2.parent = v1.id
+        v3.parent = v2.id
+        f.book.content.sessions[slot.sessionID]?.versions.removeAll { $0.id == v2.id || $0.id == v3.id }
+        f.book.content.sessions[slot.sessionID]?.versions.append(contentsOf: [v2, v3])
+        f.book.content.pages[storyID]?.images[box]?.placement = ImagePlacement(versionID: v3.id, boxAspectWhenPlaced: 1)
+        let plan = CleanUp.plan(for: f.book.content) { f.book.store.imageFileSize($0) }
+        #expect(!plan.versionIDs.contains(v1.id))
+        #expect(!plan.versionIDs.contains(v2.id))
+        #expect(!plan.versionIDs.contains(v3.id))
+        #expect(plan.versionIDs.isSuperset(of: f.loose.map(\.id)))
+    }
+
     @Test func emptyWhenNothingToClean() throws {
         let content = try sampleContent()
         #expect(CleanUp.plan(for: content) { _ in 1 }.isEmpty)

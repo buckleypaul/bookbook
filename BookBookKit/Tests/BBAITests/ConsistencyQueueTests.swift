@@ -338,7 +338,7 @@ func pngData(width: Int, height: Int, alpha: Bool = false) throws -> Data {
         let queue = PersistedQueue(entries: [.init(item: check), .init(item: imageItem("A", check: true))])
         let decoded = try JSONDecoder().decode(PersistedQueue.self, from: JSONEncoder().encode(queue))
         #expect(decoded == queue)
-        #expect(decoded.schemaVersion == 2)
+        #expect(decoded.schemaVersion == PersistedQueue.currentSchemaVersion)
     }
 
     @Test func estimateIncludingFollowUp() {

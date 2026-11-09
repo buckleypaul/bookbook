@@ -35,7 +35,9 @@ public actor GenerationQueue {
     private var entries: [QueueEntry] = []
     private var current: Current?
     private var userPaused = false
-    private var restoredCount: Int?
+    /// Paused at launch because waiting items came back from `queue.json`. The banner's count is
+    /// the current waiting items; the pause clears itself when none are left.
+    private var restoredPause = false
     private var online = true
     private var hasRestored = false
     /// The run task waits here (after a retry backoff) while the queue is paused.
@@ -46,8 +48,14 @@ public actor GenerationQueue {
     /// The worker's current 30 s wait; cancelled to wake it early when the queue changes.
     private var redeliveryWait: Task<Void, Never>?
 
-    private var saving = false
+    /// The save loop in flight (nil when idle); `flushPersistence()` awaits it.
+    private var saveTask: Task<Void, Never>?
     private var saveDirty = false
+    /// Region edits: blends the provider output through the mask, off the actor. Tests replace it.
+    private var compositeRegionEdit: @Sendable (_ raw: Data, _ base: Data?, _ storedMask: Data?) async
+        -> Result<RegionEditCompositor.Edit, ProviderError> = {
+            await RegionEditCompositor.composite(raw: $0, base: $1, storedMask: $2)
+        }
 
     private var subscribers: [UUID: AsyncStream<QueueSnapshot>.Continuation] = [:]
 
@@ -92,7 +100,8 @@ public actor GenerationQueue {
 
     /// Loads `queue.json`. Waiting and failed items come back (the queue is then paused with
     /// `.restored(count:)`, counting waiting items); an item that was running is recorded as
-    /// cancelled (estimated ledger line) and its message cleared, not re-queued. Runs once.
+    /// cancelled (estimated ledger line) and its message cleared, not re-queued. Undelivered
+    /// results (Phase 16b) come back and are redelivered at once, then every 30 s. Runs once.
     public func restore() async {
         guard !hasRestored else { return }
         hasRestored = true
@@ -109,10 +118,18 @@ public actor GenerationQueue {
                 restored.append(QueueEntry(item: entry.item, state: .waiting))
             }
         }
-        let waiting = restored.filter { $0.state == .waiting }.count
-        if waiting > 0 { restoredCount = waiting }
+        if restored.contains(where: { $0.state == .waiting }) { restoredPause = true }
         entries.insert(contentsOf: restored, at: 0)
+        let knownTokens = Set(undelivered.map(\.token))
+        let spooled = saved.undelivered.filter { !knownTokens.contains($0.token) }.compactMap { saved in
+            saved.delivery.map { PendingDelivery(token: saved.token, delivery: $0) }
+        }
+        undelivered.insert(contentsOf: spooled, at: 0)
         changed()
+        if !spooled.isEmpty {
+            await attemptRedeliveries()
+            if !undelivered.isEmpty { startRedeliveryWorker() }
+        }
         for item in interrupted {
             await recordCost(for: item, model: item.intent.model, status: .cancelled, basis: .estimate, actual: nil)
             await deliver(GenerationDelivery(item: item, outcome: .failure(.cancelled)))
@@ -189,13 +206,26 @@ public actor GenerationQueue {
         cancelCurrent()
     }
 
-    /// Puts a failed item back at the end of the queue.
+    /// Puts a failed item back at the end of the queue. A failed consistency check goes before
+    /// every waiting item instead (it belongs straight after its parent), and is dropped if its
+    /// version already has another live check.
     public func retry(_ id: QueueItemID) {
         guard let index = entries.firstIndex(where: { $0.id == id }),
               case .failed = entries[index].state else { return }
         var entry = entries.remove(at: index)
         entry.state = .waiting
-        entries.append(entry)
+        if let version = entry.item.kind.checkedVersion {
+            let alreadyChecking = entries.contains { other in
+                if case .failed = other.state { return false }
+                return other.item.kind.checkedVersion == version
+            }
+            if !alreadyChecking {
+                let front = entries.firstIndex { $0.state == .waiting && $0.id != current?.id } ?? entries.endIndex
+                entries.insert(entry, at: front)
+            }
+        } else {
+            entries.append(entry)
+        }
         changed()
         startNextIfIdle()
     }
@@ -208,9 +238,9 @@ public actor GenerationQueue {
 
     /// Clears a user pause and the restored-at-launch pause. An offline pause stays until online.
     public func resume() {
-        guard userPaused || restoredCount != nil else { return }
+        guard userPaused || restoredPause else { return }
         userPaused = false
-        restoredCount = nil
+        restoredPause = false
         changed()
         pauseMayHaveCleared()
     }
@@ -231,8 +261,19 @@ public actor GenerationQueue {
         consistencyInstructions = instructions
     }
 
+    /// Replaces the region-edit compositor (tests).
+    func setCompositor(_ compositor: @escaping @Sendable (Data, Data?, Data?) async
+        -> Result<RegionEditCompositor.Edit, ProviderError>) {
+        compositeRegionEdit = compositor
+    }
+
     /// Used for the next ledger line.
     public func setPricing(_ pricing: any CostPricing) { self.pricing = pricing }
+
+    /// Returns once every queue change so far is saved (quit awaits it, #34a).
+    public func flushPersistence() async {
+        while let task = saveTask { await task.value }
+    }
 
     public func snapshot() -> QueueSnapshot {
         QueueSnapshot(entries: entries, pause: pauseReason, undeliveredCount: undelivered.count)
@@ -254,7 +295,10 @@ public actor GenerationQueue {
 
     private var pauseReason: QueuePause? {
         if !online { return .offline }
-        if let restoredCount { return .restored(count: restoredCount) }
+        if restoredPause {
+            let waiting = entries.count(where: { $0.state == .waiting })
+            if waiting > 0 { return .restored(count: waiting) }
+        }
         if userPaused { return .user }
         return nil
     }
@@ -270,6 +314,14 @@ public actor GenerationQueue {
 
     /// Every queue change: publish, save, and wake the redelivery worker.
     private func changed() {
+        // The restored pause ends with its last waiting item (removed, or started by a resume).
+        if restoredPause, !entries.contains(where: { $0.state == .waiting }) {
+            restoredPause = false
+            if pauseReason == nil {
+                unpauseWaiter?.resume()
+                unpauseWaiter = nil
+            }
+        }
         publish()
         persist()
         redeliveryWait?.cancel()
@@ -312,25 +364,25 @@ public actor GenerationQueue {
             case let .failed(failure):
                 return PersistedQueue.Entry(item: entry.item, failure: failure)
             }
-        })
+        }, undelivered: undelivered.map { PersistedDelivery(token: $0.token, delivery: $0.delivery) })
     }
 
     /// Coalesced: at most one save in flight; the last one always writes the latest state.
     private func persist() {
         guard persistence != nil else { return }
         saveDirty = true
-        guard !saving else { return }
-        saving = true
-        Task { await self.drainSaves() }
+        guard saveTask == nil else { return }
+        saveTask = Task { await self.drainSaves() }
     }
 
     private func drainSaves() async {
-        guard let persistence else { return }
-        while saveDirty {
-            saveDirty = false
-            await persistence.save(persistedQueue())
+        if let persistence {
+            while saveDirty {
+                saveDirty = false
+                await persistence.save(persistedQueue())
+            }
         }
-        saving = false
+        saveTask = nil
     }
 
     // MARK: - Running
@@ -529,8 +581,10 @@ public actor GenerationQueue {
         if let maskRef = item.intent.regionMask {
             // Region edit (A §7.6): the provider's output is composited locally through the user's
             // mask; the composite becomes the version and the raw output is kept for Version details.
-            switch await RegionEditCompositor.composite(raw: result.imageData, base: request.baseImage?.data,
-                                                        storedMask: storedMask) {
+            let composited = await compositeRegionEdit(result.imageData, request.baseImage?.data, storedMask)
+            // A cancel during the off-thread composite wins: the call stays charged, nothing lands.
+            if isCancelled(item.id) { return await finishCancelled(item) }
+            switch composited {
             case let .failure(error):
                 return await finishFailed(item, error, report: report, attempts: 1)
             case let .success(edit):
@@ -576,9 +630,8 @@ public actor GenerationQueue {
     }
 
     private func runConsistencyCheck(_ item: QueueItem, version: VersionID) async {
-        guard let content = await host.content(for: item.bookID) else {
-            return await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
-        }
+        // A check of a book that's gone is dropped quietly, like a gone version.
+        guard let content = await host.content(for: item.bookID) else { return finishDropped(item) }
         guard let plan = ConsistencyAssembler.plan(version: version, content: content, provider: item.intent.provider)
         else { return finishDropped(item) }
         guard let model = catalog.textModel(provider: item.intent.provider, id: item.intent.model),

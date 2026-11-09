@@ -74,6 +74,7 @@ enum PackageCoding {
     static func templatePath(_ id: TemplateID) -> String { "templates/\(id.rawValue.uuidString).json" }
     static func pagePath(_ id: PageID) -> String { "pages/\(id.rawValue.uuidString).json" }
     static func sessionPath(_ id: SessionID) -> String { "sessions/\(id.rawValue.uuidString).json" }
+    static func assetPath(_ id: AssetID) -> String { "assets/\(id.rawValue.uuidString).json" }
 
     /// Encoded files for the dirty entities of `content`, keyed by relative path.
     static func files(for content: BookContent, dirty: DirtySet) throws(StoreError) -> [String: Data] {
@@ -87,6 +88,10 @@ enum PackageCoding {
         for id in dirty.pages {
             guard let p = content.pages[id] else { throw StoreError.notFound("page \(id)") }
             out[pagePath(id)] = try encode(p)
+        }
+        for id in dirty.assets {
+            guard let a = content.assets[id] else { throw StoreError.notFound("asset \(id)") }
+            out[assetPath(id)] = try encode(a)
         }
         for id in dirty.sessions {
             guard let s = content.sessions[id] else { throw StoreError.notFound("session \(id)") }

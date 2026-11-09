@@ -377,6 +377,11 @@ Image files that no JSON refers to are swept only when the book is opened, and o
   - Image files are copied by hash, so duplicates are skipped.
   - Name clashes go through a rename prompt before anything is written.
 - The **sample book** is a bundled read-only `.bookbook` in the app resources. "Open sample" copies it into the library on first use.
+- **As built (Phase 16):**
+  - An imported style guide keeps the target book's page setup; only the visual style and typography come across. Importing is one undoable `BookCommand` (`.importFromBook`). Undo removes the assets and templates and restores the style guide, but leaves the new sessions behind as orphans, as for any new session.
+  - Duplicate `Book.id`s (a Finder copy) are resolved on library refresh. The package already indexed keeps its ID. Otherwise the earliest-created folder keeps it. The other package gets a new ID through a locked, journaled save.
+  - Clean up deletes the freed image files at once, not through the 24-hour orphan sweep.
+  - The sample book is bundled at `BBStore/Resources/SampleBook/Sample.bookbook`. The ID of its library copy is kept in `UserDefaults` (`sampleBookCopyID`). The bundled one is a text-only placeholder until the real one is made in the app (see its README).
 
 ### 5.5 App-level files
 

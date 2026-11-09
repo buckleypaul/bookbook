@@ -1,4 +1,5 @@
 import BBModel
+import BBStore
 import Foundation
 
 /// An undoable edit (A §6.3, plan P-3). Applied only through `BookDocument.perform(_:)`.
@@ -87,6 +88,12 @@ public enum BookCommand: Hashable, Sendable {
     case updateAsset(Asset, actionName: String)
     /// Phase 10: replace a page's asset checklist (order kept; unknown IDs dropped).
     case setAssetChecklist(page: PageID, [AssetID])
+    /// Phase 16 (PD §8.1): merge an import from another book (`BookImporter.build`) in one undo
+    /// step: adds its assets and templates (IDs that already exist are skipped) and replaces
+    /// the style guide when `styleGuide` is set (the book's page setup is kept; a visual
+    /// change bumps `visualRevision`). Its sessions are added irreversibly (orphans if undone,
+    /// like every new session). The image files must already be in the package.
+    case importFromBook(BookImport)
 
     /// The undo menu title ("Undo Typing", …).
     public var actionName: String {
@@ -112,6 +119,7 @@ public enum BookCommand: Hashable, Sendable {
         case .addAsset: "New Asset"
         case let .updateAsset(_, name): name
         case .setAssetChecklist: "Change Asset Checklist"
+        case .importFromBook: "Import from Book"
         }
     }
 

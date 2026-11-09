@@ -44,7 +44,8 @@ extension AppModel {
         return GenerationIntent(messageText: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
                                 refines: refines, attachedReferences: attachedReferences,
                                 provider: settings.provider, model: settings.model, quality: quality,
-                                includeStoryText: includeStoryText)
+                                includeStoryText: includeStoryText,
+                                checkConsistency: preferences.consistencyCheckEnabled)
     }
 
     /// The estimate shown next to Generate, for any target.
@@ -58,7 +59,7 @@ extension AppModel {
 
     /// "Regenerate with same settings" estimate for any target; nil without provenance.
     public func regenerateEstimate(_ version: Version, target: GenerationTarget, in document: BookDocument) -> CostEstimate? {
-        guard let intent = version.provenance?.intent else { return nil }
+        guard let intent = (version.provenance?.intent).map(replayed) else { return nil }
         return estimate(intent, target: target, content: document.content)
     }
 
@@ -96,7 +97,7 @@ extension AppModel {
             ids.append(sheetItem.id)
         }
         return SheetBatchPlan(asset: asset, items: items, sheetItems: ids,
-                              estimate: CostEstimate.total(items.map(\.estimate)))
+                              estimate: CostEstimate.total(items.map(\.estimateIncludingFollowUp)))
     }
 
     /// Appends the pending messages and enqueues the plan. False if nothing was queued.

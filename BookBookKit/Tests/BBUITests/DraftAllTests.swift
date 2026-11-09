@@ -53,7 +53,7 @@ struct DraftAllTests {
         }
         #expect(plan.items.map(\.display.pageLabel) == ["Cover", "Page 1", "Page 2", "Page 3"])
         #expect(plan.items.allSatisfy { $0.display.boxLabel == "Image 1" && $0.display.bookTitle == "Test" })
-        #expect(plan.estimate == CostEstimate.total(plan.items.map(\.estimate)))
+        #expect(plan.estimate == CostEstimate.total(plan.items.map(\.estimateIncludingFollowUp)))
         let total = try #require(plan.estimate.amount)
         #expect(total > 0)
         // Nothing appended or enqueued by planning.

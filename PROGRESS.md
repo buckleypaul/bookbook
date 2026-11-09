@@ -4,7 +4,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 **Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `blocked` · `skipped (floating)`
 
-**Live API spend so far:** $0.51 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
+**Live API spend so far:** $0.55 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
@@ -159,4 +159,8 @@ The running phase writes its log here; when it is marked done, move the entry to
 **Stage:** A
 
 - Started 2026-11-08 on `phase-11-region-editing`.
+- Contracts: `MaskPayload` + `ImageRequest.mask` (BBAICore); `GenerationIntent.regionMask`, `Provenance.maskSent/rawOutput/featherPixels` (BBModel); `ImageOps` API (BBAI).
+- Live re-check `SP11_maskedEditRealIllustration` (3 low 1024² edits on the SP-2 illustration, $0.043): no black fill in any run; change inside the mask 26–34 vs about 2.1 outside. **Decision:** masked edit + mandatory local composite + black-fill safety net (>60% near-black under the mask → `.noImage`, no version). architecture.md §7.6 updated.
+- Decision: no Gemini catalog row is added before Phase 13 (it would be selectable but unusable); the "Gemini model → region tool greyed out" hand check is covered by tests with a non-`supportsMask` model and is deferred.
+- Lanes: 1 OpenAI mask + live check (merged), 2 ImageOps (merged), 3 region editor UI, 4 pipeline.
 

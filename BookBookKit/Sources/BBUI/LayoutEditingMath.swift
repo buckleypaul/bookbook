@@ -137,13 +137,13 @@ enum LayoutEditingMath {
         let edges = handle.movingEdges
         guard !edges.isEmpty else { return ResizeResult(rect: box.rect, guides: []) }
         let rotation = box.rotationDegrees.isFinite ? box.rotationDegrees : 0
-        let d = rotateVector(CGVector(dx: current.x - start.x, dy: current.y - start.y), degrees: -rotation)
+        let d = CropMath.unrotated(CGSize(width: current.x - start.x, height: current.y - start.y), degrees: rotation)
         let r = box.rect
         var minX = r.minX, maxX = r.maxX, minY = r.minY, maxY = r.maxY
-        if edges.contains(.leading) { minX = min(minX + d.dx, maxX - minSize) }
-        if edges.contains(.trailing) { maxX = max(maxX + d.dx, minX + minSize) }
-        if edges.contains(.top) { minY = min(minY + d.dy, maxY - minSize) }
-        if edges.contains(.bottom) { maxY = max(maxY + d.dy, minY + minSize) }
+        if edges.contains(.leading) { minX = min(minX + d.width, maxX - minSize) }
+        if edges.contains(.trailing) { maxX = max(maxX + d.width, minX + minSize) }
+        if edges.contains(.top) { minY = min(minY + d.height, maxY - minSize) }
+        if edges.contains(.bottom) { maxY = max(maxY + d.height, minY + minSize) }
 
         let isCorner = (edges.contains(.leading) || edges.contains(.trailing))
             && (edges.contains(.top) || edges.contains(.bottom))
@@ -173,10 +173,11 @@ enum LayoutEditingMath {
         // transform puts it: the fixed edges then stay put on the page.
         if !isUnrotated(rotation) {
             let oldCentre = CGPoint(x: r.midX, y: r.midY)
-            let offset = rotateVector(CGVector(dx: local.midX - oldCentre.x, dy: local.midY - oldCentre.y),
-                                      degrees: rotation)
-            local.origin = CGPoint(x: oldCentre.x + offset.dx - local.width / 2,
-                                   y: oldCentre.y + offset.dy - local.height / 2)
+            // Rotating by `rotation` is unrotating by its negation.
+            let offset = CropMath.unrotated(CGSize(width: local.midX - oldCentre.x, height: local.midY - oldCentre.y),
+                                            degrees: -rotation)
+            local.origin = CGPoint(x: oldCentre.x + offset.width - local.width / 2,
+                                   y: oldCentre.y + offset.height - local.height / 2)
         }
         return ResizeResult(rect: local, guides: guides)
     }
@@ -224,10 +225,4 @@ enum LayoutEditingMath {
         normalizedDegrees(degrees) == 0
     }
 
-    private static func rotateVector(_ v: CGVector, degrees: Double) -> CGVector {
-        guard degrees != 0 else { return v }
-        let a = CGFloat(degrees) * .pi / 180
-        let cs = cos(a), sn = sin(a)
-        return CGVector(dx: v.dx * cs - v.dy * sn, dy: v.dx * sn + v.dy * cs)
-    }
 }

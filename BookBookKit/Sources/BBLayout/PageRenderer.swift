@@ -18,6 +18,10 @@ public struct PageRenderer {
     public var images: any PageImageSource
     /// Optional layout cache (the canvas sets it). When nil, every draw lays out afresh.
     public var layouts: TextBoxLayoutCache?
+    /// Export-time bitmaps (Phase 14, A §8.4 / §9.1). When set and it has an image for a box,
+    /// that image fills the box's render rect (clipped to the box shape) with no placement
+    /// transform, so the renderer never resamples; otherwise the box draws from `images`.
+    public var prepared: (any PreparedImageSource)?
 
     public init(images: any PageImageSource) {
         self.images = images
@@ -111,8 +115,17 @@ public struct PageRenderer {
         defer { ctx.restoreGState() }
         applyRotation(box, rect: rect, ctx: ctx)
         let path = boxPath(rect, cornerRadius: box.cornerRadius)
+        let isOutput = options.target == .pdfBleed || options.target == .print
 
-        if let slot = page.images[box.id], let placement = slot.placement,
+        if let prepared, let image = prepared.preparedImage(for: BoxImageKey(page: page.id, box: box.id)) {
+            ctx.addPath(path)
+            ctx.clip()
+            // Already cropped and resampled to the render rect: draw it filling the rect (flip locally).
+            ctx.translateBy(x: rect.minX, y: rect.maxY)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.interpolationQuality = .high
+            ctx.draw(image, in: CGRect(origin: .zero, size: rect.size))
+        } else if let slot = page.images[box.id], let placement = slot.placement,
            let version = content.placedVersion(page: page.id, box: box.id),
            let image = images.image(for: version.image) {
             ctx.addPath(path)
@@ -124,6 +137,9 @@ public struct PageRenderer {
             ctx.scaleBy(x: 1, y: -1)
             ctx.interpolationQuality = .high
             ctx.draw(image, in: CGRect(origin: .zero, size: target.size))
+        } else if isOutput {
+            // Print and bleed PDFs never draw editor placeholders or sample art.
+            return
         } else if options.previewSampleContent, page.images[box.id]?.placement == nil {
             ctx.addPath(path)
             ctx.clip()

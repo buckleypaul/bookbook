@@ -69,7 +69,10 @@ let package = Package(
             resources: [.copy("Fixtures")], swiftSettings: settings
         ),
         .testTarget(name: "BBGeminiTests", dependencies: ["BBGemini", "BBTestSupport"], swiftSettings: settings),
-        .testTarget(name: "BBExportTests", dependencies: ["BBExport", "BBTestSupport", snapshots], swiftSettings: settings),
+        .testTarget(
+            name: "BBExportTests", dependencies: ["BBExport", "BBTestSupport", snapshots],
+            exclude: ["__Snapshots__"], swiftSettings: settings
+        ),
         .testTarget(name: "BBUITests", dependencies: ["BBUI", "BBAI", "BBAICore", "BBTestSupport", snapshots], swiftSettings: settings),
         .testTarget(name: "BBTestSupportTests", dependencies: ["BBTestSupport"], swiftSettings: settings),
     ]

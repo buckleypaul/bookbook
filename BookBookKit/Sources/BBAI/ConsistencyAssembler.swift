@@ -56,6 +56,8 @@ public enum ConsistencyAssembler {
         guard let session = content.sessions.values.first(where: { $0.version(versionID) != nil }),
               let version = session.version(versionID),
               let target = target(for: session, in: content) else { return nil }
+        // The checked image is sent too: a real-person photo needs the acknowledged notice (A §11).
+        guard !sendsRealPersonPhoto(version: version, content: content, provider: provider) else { return nil }
         let producing = session.messages.first { $0.producedVersion == versionID }?.id
         let intent = version.provenance?.intent
             ?? GenerationIntent(messageText: "", refines: version.parent, provider: provider ?? .openai, model: "",
@@ -68,6 +70,20 @@ public enum ConsistencyAssembler {
         return ConsistencyPlan(versionID: versionID, sessionID: session.id, checked: checked,
                                references: references, assets: assets,
                                styleDescription: content.style.visualDescription)
+    }
+
+    /// True when checking `version` would send it, a real-person photo, to `provider` before the
+    /// book acknowledged that provider's notice (A §11). A nil provider counts as unacknowledged.
+    public static func sendsRealPersonPhoto(version: Version, content: BookContent, provider: ProviderID?) -> Bool {
+        guard version.depictsRealPerson == true else { return false }
+        return !(provider.map { content.book.acknowledgements.realPersonPhotoNotice.contains($0) } ?? false)
+    }
+
+    /// `sendsRealPersonPhoto(version:content:provider:)` for the version with this ID; false if it's gone.
+    public static func sendsRealPersonPhoto(versionID: VersionID, content: BookContent,
+                                            provider: ProviderID?) -> Bool {
+        guard let version = content.sessions.values.lazy.compactMap({ $0.version(versionID) }).first else { return false }
+        return sendsRealPersonPhoto(version: version, content: content, provider: provider)
     }
 
     /// Images a check of the version this intent will produce would send (for the parent's

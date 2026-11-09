@@ -154,10 +154,10 @@ public enum ContextAssembler {
             case .sheetItem: add(resolved.asset.id, mentioned: true, primaryOnly: true)
             }
         }
-        for id in MentionTokens.ids(in: intent.messageText) { add(id, mentioned: true) }
+        for id in MentionText.mentionedAssets(in: intent.messageText) { add(id, mentioned: true) }
         if let refines = intent.refines {
             for message in context.session.lineageInstructions(of: refines) {
-                for id in MentionTokens.ids(in: message.text) { add(id, mentioned: true) }
+                for id in MentionText.mentionedAssets(in: message.text) { add(id, mentioned: true) }
             }
         }
         if case let .page(resolved) = context {
@@ -199,7 +199,7 @@ public enum ContextAssembler {
                          pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
         }
         let assets = assetsInPlay(intent: intent, context: context, content: content)
-        let request = MentionTokens.display(intent.messageText, assets: content.assets)
+        let request = MentionText.displayText(intent.messageText, assets: content.assets)
         let matchText = includeStory ? request + "\n" + storyText : request
         let candidates = ReferenceSelector.candidates(.init(
             base: base, attached: attached, assets: assets, styleReferences: content.style.styleReferences,
@@ -263,10 +263,10 @@ public enum ContextAssembler {
         var earlier: [String] = []
         if isRefinement, let refines = intent.refines {
             earlier = session.lineageInstructions(of: refines)
-                .map { MentionTokens.display($0.text, assets: content.assets).trimmed }.filter { !$0.isEmpty }
+                .map { MentionText.displayText($0.text, assets: content.assets).trimmed }.filter { !$0.isEmpty }
         }
         let history = earlier.enumerated().map { "\($0.offset + 1)) \($0.element)" }.joined(separator: "; ")
-        let requestText = MentionTokens.display(intent.messageText, assets: content.assets).trimmed
+        let requestText = MentionText.displayText(intent.messageText, assets: content.assets).trimmed
         let legend = sent.enumerated().map { index, entry in
             let name = entry.plan.asset.flatMap { content.assets[$0]?.name } ?? ""
             return PromptTemplates.render(PromptTemplates.text(for: "legend-\(entry.plan.role)") ?? "Image {{n}}.",

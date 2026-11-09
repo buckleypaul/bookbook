@@ -43,15 +43,11 @@ public actor ThumbnailCache {
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
             kCGImageSourceCreateThumbnailWithTransform: true,
         ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else { return nil }
-        let data = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
-        else { return nil }
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else { return nil }
+        guard let image = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary),
+              let data = ThumbnailRendering.pngData(image) else { return nil }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try (data as Data).write(to: output, options: .atomic)
+            try data.write(to: output, options: .atomic)
         } catch {
             return nil
         }
@@ -76,18 +72,40 @@ public enum BookThumbnail {
         let scale = Double(maxPixelSize) / max(trim.width, trim.height)
         let width = max(1, Int((trim.width * scale).rounded()))
         let height = max(1, Int((trim.height * scale).rounded()))
-        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        let image = withoutActuallyEscaping(imageURL) { escapable in
+            ThumbnailRendering.render(page: page, in: content, trim: CGSize(width: trim.width, height: trim.height),
+                                      pixelWidth: width, pixelHeight: height,
+                                      images: URLImageSource(imageURL: escapable),
+                                      options: RenderOptions(target: .thumbnail))
+        }
+        return image.flatMap(ThumbnailRendering.pngData)
+    }
+}
+
+/// The bitmap set-up and PNG encoding shared by the library and Pages-overview thumbnails.
+enum ThumbnailRendering {
+    /// Draws `page` of `content` (whose page setup is the draw trim, `trim` points) into a new
+    /// `pixelWidth`×`pixelHeight` sRGB bitmap. `fillWhite` paints the bitmap white first.
+    @MainActor
+    static func render(page: Page, in content: BookContent, trim: CGSize, pixelWidth: Int, pixelHeight: Int,
+                       images: any PageImageSource, options: RenderOptions, fillWhite: Bool = false) -> CGImage? {
+        guard let ctx = CGContext(data: nil, width: pixelWidth, height: pixelHeight, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
-        // PageRenderer wants trim points, origin top-left, y down.
-        ctx.translateBy(x: 0, y: Double(height))
-        ctx.scaleBy(x: Double(width) / trim.width, y: -Double(height) / trim.height)
-        withoutActuallyEscaping(imageURL) { escapable in
-            let source = URLImageSource(imageURL: escapable)
-            PageRenderer(images: source).draw(page: page, in: content, into: ctx, options: RenderOptions(target: .thumbnail))
+        if fillWhite {
+            ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
         }
-        guard let image = ctx.makeImage() else { return nil }
+        // PageRenderer wants trim points, origin top-left, y down.
+        ctx.translateBy(x: 0, y: Double(pixelHeight))
+        ctx.scaleBy(x: Double(pixelWidth) / trim.width, y: -Double(pixelHeight) / trim.height)
+        PageRenderer(images: images).draw(page: page, in: content, into: ctx, options: options)
+        return ctx.makeImage()
+    }
+
+    /// `image` encoded as PNG.
+    static func pngData(_ image: CGImage) -> Data? {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
         else { return nil }

@@ -95,13 +95,7 @@ struct BoxInspector: View {
     private func multi(count: Int) -> some View {
         Form {
             Section("\(count) Boxes Selected") {
-                Menu("Align") {
-                    ForEach(AlignOperation.allCases, id: \.self) { op in Button(op.title) { model.align(op) } }
-                }
-                Menu("Distribute") {
-                    Button("Horizontally") { model.distribute(.horizontal) }.disabled(count < 3)
-                    Button("Vertically") { model.distribute(.vertical) }.disabled(count < 3)
-                }
+                ArrangeMenuItems(model: model, count: count, grouping: .submenus)
                 HStack {
                     Button("Front") { model.moveSelection(.toFront) }
                     Button("Forward") { model.moveSelection(.forward) }

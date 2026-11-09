@@ -28,12 +28,6 @@ final class PageThumbnailRenderer {
         self.capacity = capacity
     }
 
-    /// The trim size a page is drawn at: double width for a spread (its boxes are normalized
-    /// over both pages, A §4.1).
-    static func drawSize(for page: Page, in content: BookContent) -> CGSize {
-        PageGeometry(setup: content.style.pageSetup, kind: content.template(for: page)?.kind).trimSize
-    }
-
     /// The whole page (both halves for a spread), `pixelHeight` tall.
     func image(for pageID: PageID, in content: BookContent, marks: [PageNumberMark], pixelHeight: Int) -> CGImage? {
         guard let page = content.pages[pageID], pixelHeight > 0 else { return nil }
@@ -42,25 +36,19 @@ final class PageThumbnailRenderer {
                       author: content.book.author, marks: marks, pixelHeight: pixelHeight)
         if let image = cache[key] { return image }
 
-        let size = Self.drawSize(for: page, in: content)
+        // Double width for a spread (its boxes are normalized over both pages, A §4.1).
+        let drawContent = PageGeometry.drawContent(for: page, in: content)
+        let trim = drawContent.style.pageSetup.trimSize
+        let size = CGSize(width: trim.width, height: trim.height)
         guard size.width > 0, size.height > 0 else { return nil }
         let height = pixelHeight
         let width = max(1, Int((Double(height) * size.width / size.height).rounded()))
-        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return nil }
-        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
-        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        // PageRenderer wants trim points, origin top-left, y down.
-        ctx.translateBy(x: 0, y: Double(height))
-        ctx.scaleBy(x: Double(width) / size.width, y: -Double(height) / size.height)
-        var drawContent = content
-        drawContent.style.pageSetup.trimSize = PointSize(width: size.width, height: size.height)
         var options = RenderOptions(target: .thumbnail)
         options.pageNumbers = marks
-        PageRenderer(images: images).draw(page: page, in: drawContent, into: ctx, options: options)
-        guard let image = ctx.makeImage() else { return nil }
+        guard let image = ThumbnailRendering.render(page: page, in: drawContent, trim: size, pixelWidth: width,
+                                                    pixelHeight: height, images: images, options: options,
+                                                    fillWhite: true)
+        else { return nil }
 
         cache[key] = image
         order.append(key)

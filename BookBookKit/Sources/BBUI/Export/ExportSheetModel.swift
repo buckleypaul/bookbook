@@ -93,8 +93,7 @@ public final class ExportSheetModel {
         self.content = content
         self.performCommand = perform
         self.services = services
-        let total = PagesOverviewModel.layout(content()).pages.reduce(0) { $0 + $1.span }
-        rangeTo = max(1, total)
+        rangeTo = max(1, totalPositions)
     }
 
     public convenience init(document: BookDocument, services: any ExportServices) {
@@ -148,15 +147,22 @@ public final class ExportSheetModel {
 
     /// Pages that go into the PDF (a booklet counts each position as one page).
     public var selectedPageCount: Int {
-        selectedStory.reduce(0) { $0 + $1.span } + (exportsCover ? 1 : 0)
+        Self.pageCount(story: selectedStory, exportsCover: exportsCover)
+    }
+
+    private static func pageCount(story: [(position: Int, span: Int)], exportsCover: Bool) -> Int {
+        story.reduce(0) { $0 + $1.span } + (exportsCover ? 1 : 0)
     }
 
     /// Booklet only: blank pages the export will add (the inside front cover or a parity
     /// blank before an even-starting range, plus padding to a multiple of 4).
     public var predictedBlanks: Int? {
-        guard outputType == .booklet, selectedPageCount > 0 else { return nil }
-        let blanks = BookletImposition.blanks(contentPages: selectedPageCount, includeCover: exportsCover,
-                                              firstStoryPosition: selectedStory.first?.position)
+        guard outputType == .booklet else { return nil }
+        let story = selectedStory, exportsCover = exportsCover
+        let pageCount = Self.pageCount(story: story, exportsCover: exportsCover)
+        guard pageCount > 0 else { return nil }
+        let blanks = BookletImposition.blanks(contentPages: pageCount, includeCover: exportsCover,
+                                              firstStoryPosition: story.first?.position)
         return blanks.leading + blanks.trailing
     }
 

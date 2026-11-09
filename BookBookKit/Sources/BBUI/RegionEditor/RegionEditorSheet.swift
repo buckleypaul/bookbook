@@ -180,13 +180,6 @@ public struct RegionEditorSheet: View {
 
     /// Decodes `data` downsampled so its longest side is at most `maxPixels` (CGImageSource thumbnail).
     nonisolated static func decodeForDisplay(_ data: Data, maxPixels: Int) -> CGImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
-        ]
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        ImageCache.load(data, maxPixelSize: maxPixels)
     }
 }

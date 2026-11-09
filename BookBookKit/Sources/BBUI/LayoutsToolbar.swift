@@ -24,6 +24,38 @@ struct LayoutsDetail: View {
     }
 }
 
+/// The Align and Distribute commands for the selected boxes, shared by the toolbar's Align menu
+/// (as sections) and the inspector's multi-selection form (as submenus). Distributing needs
+/// three or more boxes.
+struct ArrangeMenuItems: View {
+    enum Grouping { case sections, submenus }
+
+    let model: TemplateEditorModel
+    /// The number of selected boxes.
+    let count: Int
+    let grouping: Grouping
+
+    var body: some View {
+        group("Align") {
+            ForEach(AlignOperation.allCases, id: \.self) { op in
+                Button(op.title) { model.align(op) }
+            }
+        }
+        group("Distribute") {
+            Button("Horizontally") { model.distribute(.horizontal) }.disabled(count < 3)
+            Button("Vertically") { model.distribute(.vertical) }.disabled(count < 3)
+        }
+    }
+
+    @ViewBuilder
+    private func group(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        switch grouping {
+        case .sections: Section(title) { content() }
+        case .submenus: Menu(title) { content() }
+        }
+    }
+}
+
 struct LayoutsToolbar: View {
     @Bindable var model: TemplateEditorModel
 
@@ -37,15 +69,7 @@ struct LayoutsToolbar: View {
                     .help("Add a text box")
             }
             Menu {
-                Section("Align") {
-                    ForEach(AlignOperation.allCases, id: \.self) { op in
-                        Button(op.title) { model.align(op) }
-                    }
-                }
-                Section("Distribute") {
-                    Button("Horizontally") { model.distribute(.horizontal) }.disabled(count < 3)
-                    Button("Vertically") { model.distribute(.vertical) }.disabled(count < 3)
-                }
+                ArrangeMenuItems(model: model, count: count, grouping: .sections)
             } label: { Label("Align", systemImage: "align.horizontal.left") }
                 .disabled(count == 0)
                 .help("Align (one box aligns to its page's safe area) and distribute (three or more)")

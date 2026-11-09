@@ -271,7 +271,8 @@ public enum ProviderError: Error, Hashable, Codable, Sendable {
     /// Anything unmapped.
     case unknown(ProviderErrorRaw?)
 
-    /// Retried automatically by the queue (Phase 9; Phase 2 does not retry).
+    /// A rate limit or a transient server/transport failure. Informational: the queue's retries
+    /// are decided by `QueueRetryPolicy` (BBAI), which also retries `.offline` and `.noImage`.
     public var isTransient: Bool {
         switch self {
         case .rateLimited, .transient: true

@@ -6,10 +6,19 @@ import Foundation
 public struct ModelCatalog: Sendable {
     public var asOf: String
     public var imageModels: [CatalogModel]
+    /// Phase 12: text (`kind: text`) and vision (`kind: vision`) models.
+    public var textModels: [CatalogTextModel]
 
-    public init(asOf: String, imageModels: [CatalogModel]) {
+    public init(asOf: String, imageModels: [CatalogModel], textModels: [CatalogTextModel] = []) {
         self.asOf = asOf
         self.imageModels = imageModels
+        self.textModels = textModels
+    }
+
+    /// Phase 12: models usable for templates (`kind: text`) or the consistency check (`kind: vision`).
+    public func textModels(kind: TextModelKind) -> [CatalogTextModel] { textModels.filter { $0.kind == kind } }
+    public func textModel(provider: ProviderID, id: String) -> CatalogTextModel? {
+        textModels.first { $0.provider == provider && $0.id == id }
     }
 
     public enum CatalogError: Error, Equatable, Sendable {

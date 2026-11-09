@@ -24,6 +24,9 @@ public final class AppModel {
     /// The catalog as shipped (custom models copy a family from here).
     @ObservationIgnored public let bundledCatalog: ModelCatalog
     @ObservationIgnored public let queue: GenerationQueue
+    /// Phase 12: the template-generation provider (A §7.7), set by the app's wiring. nil = AI
+    /// templates unavailable.
+    @ObservationIgnored public var layoutProvider: (any LayoutProvider)?
     @ObservationIgnored public let writer: BookWriter
     @ObservationIgnored public let thumbnails: ThumbnailCache
     public let openBooks: OpenBooks

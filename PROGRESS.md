@@ -21,7 +21,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 9 | Queue, cost, errors and settings (M2) | done | `phase-9-queue-cost-settings` | — | $0.04 | Live check `SP9_twoRequestsAndCancel` passed. [Log](progress/phase-9-queue-cost-settings.md) |
 | 10 | Assets and character sheets | done (hand checks deferred) | `phase-10-assets-characters` | — | $0.00 | No live checks listed. [Log](progress/phase-10-assets-characters.md) |
 | 11 | Region editing | done (hand checks deferred) | `phase-11-region-editing` | — | $0.04 | Live check `SP11_maskedEditRealIllustration` passed. [Log](progress/phase-11-region-editing.md) |
-| 12 | Consistency check and AI templates (M3) | not started | | | | |
+| 12 | Consistency check and AI templates (M3) | in progress | `phase-12-consistency-ai-templates` | — | | |
 | 13 | Gemini provider (floating) | not started | | | | Needs the `gemini-api-key` Keychain item |
 | 14 | Export and print | not started | | | | |
 | 15 | Release pipeline (M4) | not started | | | | |
@@ -157,4 +157,15 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
+
+### Phase 12 — Consistency check and AI templates
+
+**Stage:** A
+
+**Contracts (main thread):** `BBModel/Consistency.swift` (`ConsistencyDifference`, `ConsistencyReport`, `ConsistencySent`); `Version.consistency`; `GenerationIntent.checkConsistency` / `.versionSource`; `BBAICore/TextContracts.swift` (`CatalogTextModel`, `ConsistencyThresholds`, `TemplateDraft`, `StructuredSchemas`, `LayoutRequest/Result`, `ConsistencyRequest/Result`, `LayoutProvider`, `VisionProvider`); BBAI stubs `TemplateNormalizer`, `LayoutPrompt`, `ConsistencyPrompt`, `CostEstimator+Text`, `ModelCatalog.textModels`; `AppPreferences` consistency switch and template/consistency default models; `AppModel.layoutProvider`.
+
+**Assumptions:**
+- Template generation runs directly from the Layouts tab (a short request with a progress sheet), not through the generation queue; it writes a `.template` ledger line. Recorded in architecture.md §7.7.
+- Phase 14 isn't merged, so the consistency preflight item is Phase 14's (plan §3).
+- Dismissing a warning is a `BookCommand` (undoable), like Mark as OK.
 

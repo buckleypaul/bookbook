@@ -126,7 +126,8 @@ public final class TemplateGenerationFlow {
             await recordCost(model: model, provider: provider.id, estimate: estimate, usage: result.usage)
             finish(result.draft)
         } catch {
-            sent = Self.record(request, parametersSent: [:])
+            // A missing key means nothing left the machine, so there is nothing to show as sent.
+            sent = error == .missingKey ? nil : Self.record(request, parametersSent: [:])
             if let rule = Self.ledgerRule(for: error) {
                 await recordCost(model: model, provider: provider.id, estimate: estimate, usage: nil, failure: rule)
             }

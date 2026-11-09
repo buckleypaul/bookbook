@@ -98,8 +98,9 @@ public enum ContextAssembler {
                         break outer
                     }
                 }
-                // No slot holds the session any more: fall back to the target's own box if it still exists.
-                if let home { (pageID, boxID) = home }
+                // No slot holds the session any more. If the target box now belongs to another session,
+                // its shape is not this session's: resolve to nothing rather than use it.
+                if let home { (pageID, boxID) = home } else { return nil }
             }
             session = owner
         } else {
@@ -398,29 +399,31 @@ public enum ContextAssembler {
     static func assetSubject(_ resolved: AssetResolved, numbers: [ImageRef: Int],
                              sent: [ReferenceSelector.Candidate]) -> String {
         let asset = resolved.asset
-        let values = ["name": asset.name, "type": asset.type.rawValue]
-        var text: String
+        var values = ["name": asset.name, "type": asset.type.rawValue]
+        let template: String
         switch resolved.kind {
         case let .slot(slot) where slot.isPrimary:
-            text = PromptTemplates.text(for: "asset-reference-\(asset.type.rawValue)") ?? "A reference image of {{name}}."
+            template = PromptTemplates.text(for: "asset-reference-\(asset.type.rawValue)") ?? "A reference image of {{name}}."
         case let .slot(slot):
-            text = PromptTemplates.render(PromptTemplates.text(for: "asset-reference-slot") ?? "{{label}}",
-                                          ["label": slot.label.trimmed])
+            template = PromptTemplates.text(for: "asset-reference-slot") ?? "{{label}}"
+            values["label"] = slot.label.trimmed
         case let .sheetItem(item):
             switch item.kind {
             case let .view(view):
-                text = PromptTemplates.text(for: "sheet-view-\(view.rawValue)") ?? "{{name}}, \(view.rawValue) view."
+                template = PromptTemplates.text(for: "sheet-view-\(view.rawValue)") ?? "{{name}}, \(view.rawValue) view."
             case let .expression(name):
-                text = PromptTemplates.render(PromptTemplates.text(for: "sheet-expression") ?? "{{name}}, {{expression}}.",
-                                              ["expression": ReferenceSelector.displayName(expression: name)])
+                template = PromptTemplates.text(for: "sheet-expression") ?? "{{name}}, {{expression}}."
+                values["expression"] = ReferenceSelector.displayName(expression: name)
             }
         }
+        // One pass over the template, so a label or name containing `{{...}}` is never expanded.
+        var text = PromptTemplates.render(template, values)
         // The primary reference, when it's sent, anchors the look.
         if let primary = sent.first(where: { $0.asset == asset.id && $0.tier == .mentionedPrimary }),
            let n = numbers[primary.ref], let same = PromptTemplates.text(for: "asset-same") {
-            text += " " + PromptTemplates.render(same, ["n": "\(n)"])
+            text += " " + PromptTemplates.render(same, values.merging(["n": "\(n)"]) { $1 })
         }
-        return PromptTemplates.render(text, values)
+        return text
     }
 
     // MARK: Composition wording
@@ -563,9 +566,21 @@ enum PromptTemplates {
         return text.trimmingCharacters(in: .newlines)
     }
 
+    /// One left-to-right scan, so substituted text (a slot label with `{{name}}`) is never re-expanded.
     static func render(_ template: String, _ values: [String: String]) -> String {
-        var out = template
-        for (name, value) in values { out = out.replacingOccurrences(of: "{{\(name)}}", with: value) }
-        return out
+        var out = ""
+        var rest = Substring(template)
+        while let open = rest.range(of: "{{") {
+            out += rest[..<open.lowerBound]
+            let afterOpen = rest[open.upperBound...]
+            if let close = afterOpen.range(of: "}}"), let value = values[String(afterOpen[..<close.lowerBound])] {
+                out += value
+                rest = afterOpen[close.upperBound...]
+            } else {
+                out += "{{"
+                rest = afterOpen
+            }
+        }
+        return out + rest
     }
 }

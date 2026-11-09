@@ -207,7 +207,12 @@ public enum BookMutations {
     public static func deleteVersion(_ version: VersionID, in sessionID: SessionID,
                                      to content: inout BookContent) -> DirtySet {
         guard var session = content.sessions[sessionID], session.version(version) != nil else { return DirtySet() }
+        let grandparent = session.version(version)?.parent
         session.versions.removeAll { $0.id == version }
+        // Children of the deleted version take its parent, so their lineage has no gap.
+        for index in session.versions.indices where session.versions[index].parent == version {
+            session.versions[index].parent = grandparent
+        }
         for index in session.messages.indices where session.messages[index].producedVersion == version {
             session.messages[index].producedVersion = nil
         }

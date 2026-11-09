@@ -197,7 +197,8 @@ struct DraftAllFlow: ViewModifier {
         let decision = await app.costDecision(for: plan.estimate, in: document)
         let spent = await app.ledgerSummary(for: document.id).total
         message = CostText.batchAlert(count: plan.count, estimate: plan.estimate, decision: decision, spent: spent,
-                                      budget: document.content.book.budget)
+                                      budget: document.content.book.budget,
+                                      coverIncluded: plan.targets.contains { $0.page == document.content.book.coverPageID })
             + (decision.needsConfirmation ? " That is above your confirmation limit." : "")
             + " Draft quality, queued one after another."
         self.plan = plan

@@ -121,6 +121,8 @@ struct CommittedTextField: View {
     var multiline = false
     let commit: (String) -> Void
     @State private var draft = ""
+    /// The last value `draft` was brought in line with; only a draft that differs from it is committed.
+    @State private var synced = ""
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -135,15 +137,24 @@ struct CommittedTextField: View {
             }
         }
         .focused($focused)
-        .onAppear { draft = value }
-        .onChange(of: value) { _, new in if !focused { draft = new } }
+        .onAppear { draft = value; synced = value }
+        // An outside change (an undo while focused) wins over a stale draft.
+        .onChange(of: value) { _, new in synced = new; draft = new }
         .onChange(of: focused) { _, now in if !now { flush() } }
         .onDisappear(perform: flush)
         .accessibilityLabel(title)
     }
 
     private func flush() {
-        if draft != value { commit(draft) }
+        if let text = CommittedText.textToCommit(draft: draft, synced: synced) { commit(text) }
+    }
+}
+
+/// The pure rule behind `CommittedTextField`.
+enum CommittedText {
+    /// The draft to commit, or nil when it equals what the field last synced with (nothing was typed).
+    static func textToCommit(draft: String, synced: String) -> String? {
+        draft == synced ? nil : draft
     }
 }
 

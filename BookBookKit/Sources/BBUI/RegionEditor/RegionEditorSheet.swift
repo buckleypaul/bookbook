@@ -6,31 +6,6 @@ import CoreGraphics
 import ImageIO
 import SwiftUI
 
-/// Whether the region tool can be used with a model (PD §8.6, A §7.6: only `supportsMask` models).
-public enum RegionEditAvailability: Equatable, Sendable {
-    case available
-    case unavailable(reason: String)
-
-    /// `.unavailable` with a short plain-language reason when `model` is nil or its `supportsMask` is false.
-    public static func of(_ model: CatalogModel?) -> RegionEditAvailability {
-        guard let model else {
-            return .unavailable(reason: "No image model is selected. Choose one in Settings to edit part of a picture.")
-        }
-        guard model.image.supportsMask else {
-            return .unavailable(reason: "\(model.displayName) can't edit part of a picture. "
-                                + "Describe the change in a follow-up prompt instead.")
-        }
-        return .available
-    }
-
-    public var isAvailable: Bool { self == .available }
-
-    public var reason: String? {
-        if case let .unavailable(reason) = self { return reason }
-        return nil
-    }
-}
-
 /// Phase 11: the region editor sheet (A §6.2). Mark an area of the selected version with the brush or
 /// lasso, describe the change, then "Edit Region" hands back the drawing (image px) and the prompt.
 /// Undo, redo and Clear are local to the sheet: nothing here is a book edit.

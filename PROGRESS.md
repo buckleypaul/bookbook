@@ -140,6 +140,12 @@ The running phase writes its log here; when it is marked done, move the entry to
 
 ### Phase 10 — Assets and character sheets
 
-**Stage:** A
+**Stage:** B
 
-- Started 2026-11-08 (Session A).
+- Session A 2026-11-08. Contracts (`BBModel/Asset.swift`, new `SessionOwner`/`GenerationTarget` cases, `Version.depictsRealPerson`, `BookContent.assets`, `DirtySet.assets`, `AssemblyReport.assetRevisions`, `BookCommand.addAsset/updateAsset/setAssetChecklist`, BBUI stubs) then four lanes, all merged; `scripts/test.sh all` green.
+  - **Model + store:** `MentionText`, incremental `UsageIndex`, `Asset.revised/normalized`, asset-changed flag, `assets/` folder (no schema bump; `Journal` path allow-list extended).
+  - **AI:** `ReferenceSelector` (tiers 1–7, per-type caps, style cap, budget, "Left out" summary), `SheetSynonyms` (`Resources/Prompts/sheet-synonyms.json`, since Package.swift bundles only Prompts/), cast section and `legend-asset.txt`, asset-session prompts (square, no story/composition), `sendsRealPersonPhoto`, `Provenance.assetRevisions`. Attached references now come before style references (A §7.4 order).
+  - **UI core:** asset commands with by-ID inverses (field-wise merge so undo doesn't drop a delivered choice), usage index kept by `BookDocument`, Mark as OK records asset revisions, `deleteAsset`, deliveries/imports into asset sessions (set `chosen` when empty), generic `generate(target:)`, sheet batch, SessionPanel for any owner, `@mention` autocomplete, page asset checklist, Reference another image picker, real-person question (EXIF default) and first-send notice, Version details Assets / Left out / Real person photo.
+  - **Assets tab:** sidebar tab between Pages and Layouts, list with type filter, editor (name, description, tags, slots/primary), character sheet grid (lock, custom expressions, Generate Whole Sheet with estimate first), where-used links into the page editor, delete confirmation.
+- Decisions: default sheet is 8 items (primary = front view; user, 2026-11-08); locked sheet items are still sent (lock = don't regenerate); revision bumps only on description / primary image change. Recorded in architecture.md §4.2, §7.4.
+- For Session B: no live checks listed. Known gaps: `sendsRealPersonPhoto` applies the image-count cap but not the byte budget (may over-report); `@mention` autocomplete completes only at the end of the prompt (click/Return, no arrow keys); where-used box labels are "image box N". Hand checks need a real generation for Pip (low quality) — confirm spend with the user first if it'd matter.

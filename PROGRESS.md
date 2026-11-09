@@ -2,7 +2,7 @@
 
 Updated by each phase session (see `implementation-plan.md` §2.6). Phases are listed in execution order.
 
-**Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `blocked` · `post-MVP`
+**Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `deferred` · `blocked` · `post-MVP`
 
 **Live API spend so far:** $0.56 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
@@ -24,8 +24,8 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 12 | Consistency check and AI templates (M3) | done (hand checks deferred) | `phase-12-consistency-ai-templates` | — | $0.007 | Live check `SP12_templateAndConsistency` passed. [Log](progress/phase-12-consistency-ai-templates.md) |
 | 13 | Gemini provider | post-MVP | | | | Out of scope for v1.0 (decided 2026-11-08). Spec kept in `plan/post-mvp/phase-13-gemini.md`. |
 | 14 | Export and print | done (hand checks deferred) | `phase-14-export-print` | — | $0.00 | No live checks listed. [Log](progress/phase-14-export-print.md) |
-| 15 | Release pipeline (M4) | not started | | | | |
-| 16 | Import, book settings, onboarding, sample | not started | | | | |
+| 15 | Release pipeline (M4) | deferred | | | | Deferred by you on 2026-11-08: finish the product work first, then do the tap. Phase 16 runs before it. Not picked as "next" until you un-defer it; Phase 17 still needs it. |
+| 16 | Import, book settings, onboarding, sample | in progress | `phase-16-import-onboarding` | — | | |
 | 17 | Hardening and v1.0 (M5) | not started | | | | |
 
 ## Standing decisions
@@ -77,7 +77,6 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 ### Phase 16
 - Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phases 5 and 7; unreachable in Phase 7 because the box opens Book Settings).
-- A Finder copy of a package keeps the same `Book.id`; give one a new ID on detection (from Phase 3).
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
 
 ### Phase 17
@@ -188,3 +187,23 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ## Current phase log
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
+
+### Phase 16 — Library import, book settings, onboarding, sample
+
+**Stage:** B
+
+- 2026-11-08: Phase 15 deferred at your request; Phase 16 started (its dependencies 3, 10 and 14 are done).
+- Contracts: `BBStore/Phase16/Phase16Contracts.swift` (import, clean-up plan, `NewBookSpec`).
+- Lanes, all merged:
+  - **L1 store:** `BookImporter` (clashes, build with ID remapping, image copy deduplicated by hash), `CleanUp` (plan, apply, immediate file delete), `BookStore.sizeOnDisk`, and duplicate `Book.id` resolution on library refresh (Phase 3 follow-up).
+  - **L2 onboarding:** a "Guided Setup" window scene that opens on first launch (flag `onboardingCompleted`; not under XCTest or when a key is saved), with typical costs from the price list. It can be reopened from Settings › API Keys and the Help menu.
+  - **L3 wizard and sample:** a five-step `NewBookWizard` (each step skippable), `NewBookSpec.apply`, `Library.createBook(spec:)`, `StylePreset.sampleImage` (optional; none bundled yet), the bundled placeholder sample book "Pip and the Missing Moon" (text only), and Open Sample Book in the library toolbar, the empty state and the File menu.
+  - **L4 import and clean-up UI:** the `.importFromBook` command, `ImportFromBookSheet` (book menu and File › Import from Book…), and Book Settings › Storage (size on disk, Clean Up… with confirmation). Book Settings cost labels now read images / consistency checks / templates.
+- Assumptions:
+  - The real sample book and the preset sample images are content you make in the app, per the content note. The bundled sample is a text-only placeholder made by `SampleBookGenerator` (`BOOKBOOK_GENERATE_SAMPLE=1`). To add the real ones, see the READMEs in `Resources/SampleBook/` and `Resources/Presets/Samples/`.
+  - Read-only open of an older-schema book (Phase 16/17 follow-up) is left for Phase 17.
+- **For Session B:**
+  - Run the full `scripts/test.sh all`.
+  - Check that Guided Setup's OpenAI billing and organization URLs are current.
+  - Check undo of import, and that Clean up handles dangling `parent`/`refines` lineage (L1 noted it doesn't check `Session+Lineage`).
+  - Check that the sample opens with no key, and that the onboarding window doesn't pop up in automated app runs.

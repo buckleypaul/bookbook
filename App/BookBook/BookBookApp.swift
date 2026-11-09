@@ -13,6 +13,7 @@ struct BookBookApp: App {
         Window("Library", id: SceneID.library) {
             LibraryView()
                 .environment(model)
+                .opensOnboardingOnFirstLaunch(model)
         }
         .commands { BookBookCommands(app: model) }
 
@@ -29,6 +30,12 @@ struct BookBookApp: App {
             QueueView()
                 .environment(model)
         }
+
+        Window("Guided Setup", id: OnboardingScene.id) {
+            OnboardingView()
+                .environment(model)
+        }
+        .windowResizability(.contentSize)
 
         Settings {
             SettingsView()

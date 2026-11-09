@@ -1,0 +1,240 @@
+import AppKit
+import BBModel
+import BBStore
+import SwiftUI
+
+/// The logic behind the new-book wizard (PD §8.13): which step is up, and the `NewBookSpec` the
+/// choices add up to. Every step is skippable; skipping resets that step to its default. No views,
+/// so it's testable.
+@MainActor @Observable
+final class NewBookWizardModel {
+    enum Step: Int, CaseIterable {
+        case title, pageSize, style, character, story
+    }
+
+    private(set) var step: Step = .title
+    var title = "Untitled"
+    var author = ""
+    var pageSize: PageSizePreset?
+    var orientation: Orientation = .portrait
+    var stylePresetID: String?
+    var characterName = ""
+    var characterDescription = ""
+    var importStory: Bool
+    /// Bundled presets, in menu order (empty if they fail to load).
+    let presets: [StylePreset]
+
+    init(importStory: Bool = false, presets: [StylePreset]? = nil) {
+        self.importStory = importStory
+        self.presets = presets ?? ((try? Presets.stylePresets()) ?? [])
+    }
+
+    var isFirst: Bool { step == .title }
+    var isLast: Bool { step == .story }
+
+    /// Page sizes are the presets with a fixed size (custom sizes are set in the Style tab).
+    static var pageSizes: [PageSizePreset] { PageSizePreset.allCases.filter { $0 != .custom } }
+
+    /// Square sizes have no orientation choice.
+    var orientationApplies: Bool { pageSize.map { $0 != .square8 && $0 != .square8_5 } ?? false }
+
+    func next() {
+        if let after = Step(rawValue: step.rawValue + 1) { step = after }
+    }
+
+    func back() {
+        if let before = Step(rawValue: step.rawValue - 1) { step = before }
+    }
+
+    /// Clears this step's choices and moves on (Create on the last step).
+    func skip() {
+        switch step {
+        case .title: title = "Untitled"; author = ""
+        case .pageSize: pageSize = nil; orientation = .portrait
+        case .style: stylePresetID = nil
+        case .character: characterName = ""; characterDescription = ""
+        case .story: importStory = false
+        }
+        next()
+    }
+
+    /// What the choices so far add up to. A blank character (no name, no description) is none.
+    var spec: NewBookSpec {
+        let name = characterName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = characterDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let character = (name.isEmpty && text.isEmpty) ? nil : NewBookSpec.MainCharacter(name: name, description: text)
+        return NewBookSpec(title: title, author: author, pageSize: pageSize,
+                           orientation: pageSize == nil ? nil : (orientationApplies ? orientation : .portrait),
+                           stylePresetID: stylePresetID, mainCharacter: character, importStoryAfter: importStory)
+    }
+}
+
+/// A preset's sample picture, or a neutral placeholder when it has none.
+struct PresetSampleImage: View {
+    let preset: StylePreset?
+    var size: CGFloat = 64
+    @State private var image: NSImage?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+            } else {
+                Rectangle().fill(.quaternary)
+                    .overlay { Image(systemName: "paintpalette").foregroundStyle(.secondary) }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .accessibilityHidden(true)
+        .task(id: preset?.sampleImage) {
+            image = preset?.sampleImageURL.flatMap { try? Data(contentsOf: $0) }.flatMap { NSImage(data: $0) }
+        }
+    }
+}
+
+/// Replaces the title-only sheet: title and author, page size, style preset, an optional main
+/// character, then an offer to import story text. Back / Skip / Next / Create on every step.
+struct NewBookWizard: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var model: NewBookWizardModel
+    @State private var error: String?
+    @State private var creating = false
+    let onCreated: (BookID) -> Void
+
+    init(fromStory: Bool = false, onCreated: @escaping (BookID) -> Void) {
+        _model = State(initialValue: NewBookWizardModel(importStory: fromStory))
+        self.onCreated = onCreated
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(heading).font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding([.horizontal, .top], 20)
+            content.padding(20).frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
+            if let error {
+                Text(error).foregroundStyle(.red).font(.callout).padding(.horizontal, 20)
+            }
+            Divider()
+            HStack {
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Spacer()
+                Text("Step \(model.step.rawValue + 1) of \(NewBookWizardModel.Step.allCases.count)")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Back") { model.back() }.disabled(model.isFirst || creating)
+                Button("Skip") { skip() }.disabled(creating)
+                if model.isLast {
+                    Button("Create") { create() }.keyboardShortcut(.defaultAction).disabled(creating)
+                } else {
+                    Button("Next") { model.next() }.keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(12)
+        }
+        .frame(width: 460)
+    }
+
+    private var heading: String {
+        switch model.step {
+        case .title: "Title and author"
+        case .pageSize: "Page size"
+        case .style: "Style"
+        case .character: "Main character"
+        case .story: "Story text"
+        }
+    }
+
+    private func skip() {
+        if model.isLast { model.skip(); create() } else { model.skip() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch model.step {
+        case .title:
+            Form {
+                TextField("Title", text: $model.title)
+                TextField("Author", text: $model.author)
+            }
+            .formStyle(.columns)
+        case .pageSize:
+            VStack(alignment: .leading, spacing: 12) {
+                Picker("Size", selection: $model.pageSize) {
+                    Text("Default (US Letter)").tag(PageSizePreset?.none)
+                    ForEach(NewBookWizardModel.pageSizes, id: \.self) { Text($0.displayName).tag(PageSizePreset?.some($0)) }
+                }
+                if model.orientationApplies {
+                    Picker("Orientation", selection: $model.orientation) {
+                        Text("Portrait").tag(Orientation.portrait)
+                        Text("Landscape").tag(Orientation.landscape)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Text("You can change this later in the Style tab.").font(.caption).foregroundStyle(.secondary)
+            }
+        case .style:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    styleRow(nil)
+                    ForEach(model.presets) { styleRow($0) }
+                }
+            }
+            .frame(maxHeight: 280)
+        case .character:
+            Form {
+                TextField("Name", text: $model.characterName)
+                TextField("Description", text: $model.characterDescription, axis: .vertical)
+                    .lineLimit(3...6)
+                Text("Becomes a character in the Assets tab. Leave blank to add characters later.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .formStyle(.columns)
+        case .story:
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Import story text after creating the book", isOn: $model.importStory)
+                Text("The book opens with the Import Story Text sheet, so you can paste your text and split it into pages.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func styleRow(_ preset: StylePreset?) -> some View {
+        let selected = model.stylePresetID == preset?.id
+        return Button {
+            model.stylePresetID = preset?.id
+        } label: {
+            HStack(spacing: 10) {
+                PresetSampleImage(preset: preset)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(preset?.name ?? "No preset").font(.body.weight(.medium))
+                    if let preset {
+                        Text(preset.visualDescription).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    }
+                }
+                Spacer()
+                if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
+            }
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 8).fill(selected ? Color.accentColor.opacity(0.15) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func create() {
+        creating = true
+        let spec = model.spec
+        Task {
+            defer { creating = false }
+            do {
+                let entry = try await app.createBook(spec: spec)
+                dismiss()
+                onCreated(entry.id)
+            } catch {
+                self.error = "Couldn't create the book. \(StoreErrorText.message(for: error))"
+            }
+        }
+    }
+}

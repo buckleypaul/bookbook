@@ -42,6 +42,9 @@ public struct BookBookCommands: Commands {
                 app.newBookFromStoryRequested = true
                 openWindow(id: SceneID.library)
             }
+            Button("Open Sample Book") {
+                Task { await app.openSampleBook { openWindow(value: $0) } }
+            }
             Button("Library") { openWindow(id: SceneID.library) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
         }
@@ -75,6 +78,8 @@ public struct BookBookCommands: Commands {
             Button("Import Story Text…") { pages?.sheet = .importStory }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(pages?.isEditable != true)
+            Button("Import from Book…") { pages?.sheet = .importFromBook }
+                .disabled(pages?.isEditable != true)
             Button("Export…") { showExport?.wrappedValue = true }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(book == nil || showExport == nil)
@@ -84,6 +89,9 @@ public struct BookBookCommands: Commands {
                 }
             }
             .disabled(book == nil || (pages?.selectedPage ?? book?.content.book.pageOrder.first) == nil)
+        }
+        CommandGroup(before: .help) {
+            Button("Guided Setup…") { openWindow(id: OnboardingScene.id) }
         }
         CommandGroup(replacing: .printItem) {
             Button("Print…") { if let book { ExportActions.print(book) } }

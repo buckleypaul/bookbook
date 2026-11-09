@@ -1,0 +1,43 @@
+{
+  "boxes" : [
+    {
+      "bleedEdges" : 0,
+      "content" : {
+        "image" : {
+
+        }
+      },
+      "cornerRadius" : 0,
+      "frame" : {
+        "height" : 0.5682,
+        "width" : 0.8333,
+        "x" : 0.0833,
+        "y" : 0.0682
+      },
+      "id" : "A1B2C3D4-0001-4000-8000-0000000000B1",
+      "rotationDegrees" : 0
+    },
+    {
+      "bleedEdges" : 0,
+      "content" : {
+        "text" : {
+          "_0" : {
+            "padding" : 0
+          }
+        }
+      },
+      "cornerRadius" : 0,
+      "frame" : {
+        "height" : 0.25,
+        "width" : 0.8333,
+        "x" : 0.0833,
+        "y" : 0.6818
+      },
+      "id" : "A1B2C3D4-0001-4000-8000-0000000000B2",
+      "rotationDegrees" : 0
+    }
+  ],
+  "id" : "A1B2C3D4-0001-4000-8000-000000000001",
+  "kind" : "single",
+  "name" : "Image above text"
+}

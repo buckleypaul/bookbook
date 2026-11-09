@@ -278,6 +278,51 @@ public final class AppModel {
         return entry
     }
 
+    /// Creates a book from the new-book wizard's `spec` (PD §8.13). Creation, not an edit: there
+    /// is no `BookCommand` and the new book's undo stack starts empty. With `importStoryAfter`,
+    /// the book's window shows the story-import sheet when it opens (`takePendingStoryImport`).
+    public func createBook(spec: NewBookSpec) async throws -> LibraryEntry {
+        let entry = try library.createBook(spec: spec, now: now())
+        openBooks.remember([entry])
+        if spec.importStoryAfter { pendingStoryImports.insert(entry.id) }
+        await refreshLibrary()
+        return entry
+    }
+
+    /// `UserDefaults` key holding the `BookID` (UUID string) of this user's copy of the sample book.
+    public static let sampleBookIDKey = "sampleBookCopyID"
+
+    /// "Open Sample Book": the library copy of the bundled sample (A §5.4). The first use copies it
+    /// into the library under a new `Book.id` and remembers that ID; later uses return the same
+    /// book while it is still in the library, and copy again if the user deleted it. No API key needed.
+    public func sampleBookEntry() async throws -> LibraryEntry {
+        if let text = userDefaults.string(forKey: Self.sampleBookIDKey), let uuid = UUID(uuidString: text) {
+            let id = BookID(rawValue: uuid)
+            if let existing = entry(for: id) { return existing }
+            await refreshLibrary()
+            if let existing = entry(for: id) { return existing }
+        }
+        guard let source = SampleBook.bundledURL() else { throw StoreError.notFound("SampleBook/Sample.bookbook") }
+        let library = library, now = now()
+        let copy = try await Task.detached { try library.installSample(from: source, now: now) }.value
+        userDefaults.set(copy.id.rawValue.uuidString, forKey: Self.sampleBookIDKey)
+        openBooks.remember([copy])
+        await refreshLibrary()
+        return copy
+    }
+
+    /// Set when Open Sample Book fails; the Library window shows it.
+    public var sampleBookError: String?
+
+    /// File ▸ Open Sample Book: copies the sample on first use, then opens it through `open`.
+    public func openSampleBook(open: @MainActor (BookID) -> Void) async {
+        do {
+            open(try await sampleBookEntry().id)
+        } catch {
+            sampleBookError = StoreErrorText.message(for: error)
+        }
+    }
+
     /// True once for a book created by New Book from Story…: its window then presents the import sheet.
     public func takePendingStoryImport(for id: BookID) -> Bool {
         pendingStoryImports.remove(id) != nil

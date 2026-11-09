@@ -19,6 +19,8 @@ public final class AppPreferences {
         public static let consistencyCheckEnabled = "consistencyCheckEnabled"
         public static let defaultTemplateModel = "defaultTemplateModel"
         public static let defaultConsistencyModel = "defaultConsistencyModel"
+        /// Phase 16 (PD §8.13): set once the guided setup is finished or skipped.
+        public static let onboardingCompleted = "onboardingCompleted"
     }
 
     /// Phase 12 (PD §8.9, §8.11): the global consistency-check switch. On by default.

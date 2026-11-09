@@ -20,4 +20,6 @@ Part of implementation-plan.md; read the core file (§0–§3) first.
 
 **Tests added:** a workflow dry-run job (build and sign with an ad-hoc identity on PRs; skip notarization) so release breakage shows up before a tag.
 
+**Looked up 2026-11-08:** Homebrew 7.0 maps macOS 27 to `:golden_gate` (`macos_version.rb` SYMBOLS: `golden_gate: "27"`, `tahoe: "26"`), so use `depends_on macos: :golden_gate`.
+
 **Risks:** certificate and secrets setup (you'll need to add: the Developer ID .p12 and its password, the App Store Connect API key .p8 with key ID and issuer, the tap PAT, and the team ID). Notarization delays.

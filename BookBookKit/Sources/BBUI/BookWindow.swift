@@ -255,6 +255,7 @@ struct BookEditor: View {
             Menu {
                 Button("Book Settings…") { pages.sheet = .bookSettings }
                 Button("Page Numbers…") { pages.sheet = .pageNumbers }
+                Button("Import from Book…") { pages.sheet = .importFromBook }
                 Divider()
                 Button("Draft All Empty Boxes…") { draftAllRequested = true }
                     .disabled(!app.hasOpenAIKey || !app.isOnline)
@@ -309,6 +310,8 @@ struct BookEditor: View {
             StoryImportSheet(document: document, pages: pages)
         case .bookSettings:
             BookSettingsSheet(document: document)
+        case .importFromBook:
+            ImportFromBookSheet(document: document)
         case .pageNumbers:
             PageNumbersSheet(pages: pages, style: content.style.pageNumbers, content: content)
         }

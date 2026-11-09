@@ -1,0 +1,53 @@
+{
+  "negativeGuidance" : "no text, letters or words in the image",
+  "pageNumbers" : {
+    "enabled" : false,
+    "position" : "bottomCenter",
+    "size" : 12,
+    "skipFrontMatter" : true,
+    "skippedPages" : [
+
+    ],
+    "startNumber" : 1
+  },
+  "pageSetup" : {
+    "bleedAmount" : 9,
+    "bleedEnabled" : false,
+    "margins" : {
+      "bottom" : 36,
+      "leading" : 36,
+      "top" : 36,
+      "trailing" : 36
+    },
+    "orientation" : "portrait",
+    "sizePreset" : "eightByTen",
+    "trimSize" : {
+      "height" : 720,
+      "width" : 576
+    }
+  },
+  "presetID" : "watercolour",
+  "styleReferences" : [
+
+  ],
+  "typography" : {
+    "alignment" : "leading",
+    "bodyFont" : {
+      "postScriptName" : "AvenirNext-Regular"
+    },
+    "bodySize" : 20,
+    "color" : {
+      "alpha" : 1,
+      "blue" : 0,
+      "green" : 0,
+      "red" : 0
+    },
+    "lineSpacing" : 1.2,
+    "titleFont" : {
+      "postScriptName" : "AvenirNext-Bold"
+    }
+  },
+  "visualDescription" : "Soft watercolour illustration with translucent washes, visible paper grain, gentle colour bleeds and loose, hand-painted edges.",
+  "visualRevision" : 1,
+  "visualRevisionHighWater" : 1
+}

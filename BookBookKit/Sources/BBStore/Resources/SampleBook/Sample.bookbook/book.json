@@ -1,0 +1,22 @@
+{
+  "acknowledgements" : {
+    "realPersonPhotoNotice" : [
+
+    ]
+  },
+  "author" : "BookBook Sample",
+  "coverPageID" : "791A3902-D3B7-48FC-97FF-2058306D02D1",
+  "createdAt" : "2026-09-21T14:13:20.000000000Z",
+  "id" : "F9430418-C7D5-4826-AB0D-4D90072BA854",
+  "modifiedAt" : "2026-09-21T14:13:20.000000000Z",
+  "pageOrder" : [
+    "633771FC-358C-4686-9524-75C54F238252",
+    "E94FEE01-998E-4D65-B0CA-253358B0495C",
+    "455C411F-068A-4EDD-9EBB-CF73BB53CC87",
+    "8B4BF77D-A765-49EC-837F-6E8F3FE4F7EA",
+    "ED46B831-AFC7-4F0A-B068-7CBB1095E424",
+    "34665405-D18A-42E7-A014-18329DDB10E1"
+  ],
+  "schemaVersion" : 1,
+  "title" : "Pip and the Missing Moon"
+}

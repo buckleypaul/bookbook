@@ -54,6 +54,12 @@ public final class BookDocument {
     /// Counts undo registrations, so `endUndoGroup` can tell whether the group's step is
     /// still the newest one before renaming it.
     @ObservationIgnored private var undoRegistrations = 0
+    /// Observes `fontsRegisteredNotification`, so a font imported in another open book refreshes this one.
+    @ObservationIgnored private nonisolated(unsafe) var fontsObserver: (any NSObjectProtocol)?
+
+    /// Posted (process-wide) after a font import registers a font, so every open book drops stale
+    /// fallback layouts and recomputes its missing-font banner (A §8.3).
+    public static let fontsRegisteredNotification = Notification.Name("app.bookbook.fontsRegistered")
 
     private final class UndoGroupRecord {
         var inverses: [Edit] = []
@@ -105,9 +111,19 @@ public final class BookDocument {
         // Imported fonts (A §8.3): every file in `fonts/` is registered for this process.
         FontRegistry.register(store.fontFileURLs())
         refreshMissingFonts()
+        fontsObserver = NotificationCenter.default.addObserver(
+            forName: Self.fontsRegisteredNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, !self.isClosed else { return }
+                self.fontsRevision += 1
+                self.refreshMissingFonts()
+            }
+        }
     }
 
     isolated deinit {
+        if let fontsObserver { NotificationCenter.default.removeObserver(fontsObserver) }
         autosaveResults?.cancel()
         thumbnailTask?.cancel()
     }
@@ -161,6 +177,7 @@ public final class BookDocument {
         }
         fontsRevision += 1
         refreshMissingFonts()
+        NotificationCenter.default.post(name: Self.fontsRegisteredNotification, object: nil)
         return info
     }
 
@@ -207,6 +224,12 @@ public final class BookDocument {
             content.book.modifiedAt = now()
             dirty.book = true
             scheduleSave(dirty)
+            // Only the edited box can bring in a missing font (a paste), so check just that.
+            if case let .setText(page, box, _) = edit, let text = content.pages[page]?.text[box] {
+                let found = FontAvailability.missingFonts(in: [text], typography: content.style.typography)
+                let merged = Set(missingFonts).union(found).sorted()
+                if merged != missingFonts { missingFonts = merged }
+            }
             return true
         }
         guard apply(edit, actionName: command.actionName) else {
@@ -326,7 +349,12 @@ public final class BookDocument {
         var copy = content
         Self.merge(prepared, into: &copy)
         guard Self.applyEdit(prepared.edit, to: &copy) != nil else { return false }
-        return PageSequencer.layout(Self.sequence(of: copy), cover: copy.book.coverPageID).hasSplitSpread
+        // Only a split the command creates counts: a book the user already accepted as split
+        // doesn't warn again (Phase 16b).
+        func splits(_ c: BookContent) -> Set<PageID> {
+            Set(PageSequencer.layout(Self.sequence(of: c), cover: c.book.coverPageID).pages.filter(\.isSplit).map(\.id))
+        }
+        return !splits(copy).subtracting(splits(content)).isEmpty
     }
 
     /// Book Settings (PD §8.12): set the author. Not undoable, like `rename(to:)`; the cover
@@ -501,6 +529,8 @@ public final class BookDocument {
         /// Several edits as one undo step, applied in order; the inverse is the reversed
         /// inverses. A sub-edit whose target has gone is skipped.
         case compound([Edit])
+        /// Phase 16b: dismiss (or restore) a version's consistency warning. Inverse: the old value.
+        case setConsistencyDismissed(session: SessionID, version: VersionID, dismissed: Bool)
     }
 
     /// A command translated into its undoable edit, plus what it creates irreversibly
@@ -553,6 +583,7 @@ public final class BookDocument {
             if let guide = imported.styleGuide {
                 var next = guide
                 next.pageSetup = content.style.pageSetup
+                next.pageNumbers = content.style.pageNumbers
                 next.visualRevision = content.style.visualRevision
                 next.visualRevisionHighWater = content.style.visualRevisionHighWater
                 if guide.visualDescription != content.style.visualDescription
@@ -569,6 +600,7 @@ public final class BookDocument {
         case let .markFlagsOK(pageID, boxID):
             guard let page = content.pages[pageID], let template = content.template(for: page) else { return nil }
             var baselines: [BoxID: FlagBaseline] = [:]
+            var dismissals: [Edit] = []
             for box in template.imageBoxes where boxID == nil || box.id == boxID {
                 guard var slot = page.images[box.id], let placement = slot.placement else { continue }
                 slot.acknowledged.styleRevision = content.style.visualRevision
@@ -579,9 +611,14 @@ public final class BookDocument {
                     if let revision = content.assets[asset]?.revision { slot.acknowledged.assetRevisions[asset] = revision }
                 }
                 if slot.acknowledged != page.images[box.id]?.acknowledged { baselines[box.id] = slot.acknowledged }
+                // Also clear the placed version's consistency warning (Phase 16b).
+                if content.sessions[slot.sessionID]?.version(placement.versionID)?.consistency?.showsWarning == true {
+                    dismissals.append(.setConsistencyDismissed(session: slot.sessionID, version: placement.versionID,
+                                                               dismissed: true))
+                }
             }
-            guard !baselines.isEmpty else { return nil }
-            edit = .setBaselines(page: pageID, baselines)
+            guard !baselines.isEmpty || !dismissals.isEmpty else { return nil }
+            edit = .compound((baselines.isEmpty ? [] : [.setBaselines(page: pageID, baselines)]) + dismissals)
 
         case let .setRichText(pageID, boxID, text, _):
             guard let page = content.pages[pageID], let template = content.template(for: page),
@@ -594,8 +631,8 @@ public final class BookDocument {
                   content.sessions[slot.sessionID]?.version(versionID) != nil else { return nil }
             if slot.placement?.versionID == versionID { return nil }
             let placement = ImagePlacement(versionID: versionID, boxAspectWhenPlaced: content.boxAspect(box, in: template))
-            var baseline = slot.acknowledged
-            baseline.boxAspect = nil
+            // A different picture starts unacknowledged: the old one's "OK" doesn't carry over (A §4.4).
+            let baseline = FlagBaseline()
             edit = .setPlacement(page: pageID, box: boxID, placement: placement, baseline: baseline)
 
         case let .addPage(index, templateID, fix):
@@ -898,6 +935,11 @@ public final class BookDocument {
             let old = content.style.pageSetup
             content.style.pageSetup = setup
             return (.setPageSetup(old), DirtySet(style: true))
+
+        case let .setConsistencyDismissed(sessionID, versionID, dismissed):
+            guard let old = content.sessions[sessionID]?.version(versionID)?.consistency?.dismissed else { return nil }
+            let dirty = BookMutations.setConsistencyDismissed(dismissed, version: versionID, in: sessionID, to: &content)
+            return (.setConsistencyDismissed(session: sessionID, version: versionID, dismissed: old), dirty)
 
         case let .setBaselines(pageID, baselines):
             guard content.pages[pageID] != nil else { return nil }

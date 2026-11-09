@@ -301,7 +301,7 @@ struct Provenance {
 | Derived value | How it's computed |
 |---|---|
 | Page **status** | *Empty* when there is no text and no placement. *Done* when `isDone`. Otherwise *in progress*. |
-| **Style changed** | `max(placedVersion.provenance.styleRevision, acknowledged.styleRevision) < currentVisualRevision`. Imported versions (no provenance) are never flagged (Phase 7). |
+| **Style changed** | `placedVersion.provenance.styleRevision != currentVisualRevision && acknowledged.styleRevision != currentVisualRevision`. Imported versions (no provenance) are never flagged (Phase 7). Revisions are never reused, so an image made at a revision that an undo has since gone back past is flagged too (Phase 16b). |
 | **Asset changed** | For any asset in the placed version's `assetRevisions`, the recorded revision is below the current one, and that hasn't been acknowledged. |
 | **Layout changed** | `abs(log(currentBoxAspect / (acknowledged.boxAspect ?? placement.boxAspectWhenPlaced))) > 0.05` (about a 5% change in shape). `currentBoxAspect` is the render rect's aspect, so bleed counts. Placing a new version clears `acknowledged.boxAspect` (Phase 7). |
 | **Consistency warning** | The placed version has an undismissed warning. |
@@ -309,7 +309,7 @@ struct Provenance {
 | **Physical page positions** | `PageSequencer` (§8.1) |
 | **Cost totals** | Summed from the cost ledger (§7.10). |
 
-Flags clear on their own when the box gets a newer version. "Mark as OK" (a small addition to §8.5) writes the current revisions into `acknowledged`.
+Flags clear on their own when the box gets a newer version. "Mark as OK" (a small addition to §8.5) writes the current revisions into `acknowledged` and dismisses the placed version's consistency warning, as one undo step. Choosing a different version resets `acknowledged` to empty (the old picture's "OK" doesn't carry over); undo restores it (Phase 16b).
 
 **Phase 7 decisions.** Undoing a style edit restores the previous fields *and* `visualRevision`, so flags it raised disappear on undo, but `StyleGuide.visualRevisionHighWater` (decoded as `visualRevision` when missing, so no schema bump) never goes down: every bump sets `visualRevision = highWater + 1`, so a number is never reused and an image generated at a since-undone revision is still flagged after a different edit. Choosing the version that is already placed is a no-op (no undo step, `acknowledged.boxAspect` kept). Page-setup changes don't rewrite placements: box frames are already trim-normalized, and `PageGeometry.imageRect` re-clamps the stored focal point and zoom at draw time, so reverting a size change restores the original crop ("crops are kept where possible").
 
@@ -390,7 +390,8 @@ Image files that no JSON refers to are swept only when the book is opened, and o
 | Preferences | `UserDefaults` (providers, models, quality, threshold, custom model IDs, consistency switch, library path). **As built (Phase 9):** custom model IDs live here (`customModels`), not in `pricelist.json`. |
 | API keys | Keychain, service `app.bookbook.api-key`, account `openai` or `gemini`; `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`; not synchronizable |
 | Model catalog overrides and the user's price list | `~/Library/Application Support/BookBook/pricelist.json` (when missing, the bundled defaults are used) |
-| Queue | `~/Library/Application Support/BookBook/queue.json` |
+| Queue | `~/Library/Application Support/BookBook/queue.json`: schema 3, which also lists undelivered pictures (finished but not yet saved into a locked or closed book). Their bytes are spooled in `<appSupport>/undelivered/<token>.<ext>` and redelivered at launch and every 30 s. A newer-schema or unreadable file is moved aside to `queue-unreadable-<UTC time>.json`, never overwritten. |
+| Library-root override | With `-BookBookLibraryRoot <dir>` (UI automation), `queue.json`, `pricelist.json` and the index cache live in `<dir>/.bookbook-support/` instead. |
 | Caches | `~/Library/Caches/BookBook/` |
 
 ---
@@ -683,7 +684,7 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
   - Snap edges within 2% of a margin or the trim edge to it.
   - Mark boxes that touch the trim edge as bleed boxes.
   - Drop degenerate boxes.
-  - Ensure at least one box.
+  - Ensure at least one box. As built (Phase 12), `TemplateNormalizer` doesn't make a fallback box: it throws `.noBoxes` when nothing usable is left.
 - The result is a new `Template`, opened in the visual editor. Provider refusals (`refusal` content on OpenAI, block reasons on Gemini) use the normal error path.
 
 **As built (Phase 12):** template generation runs directly from the Layouts tab, not through the generation queue (§7.9): it's one short request that the user waits for in a sheet, and its result opens in the editor rather than landing in a session. The sheet shows the estimate first and a "What was sent" disclosure (model, prompts, parameters). Each request writes a `template` ledger line. Draft coordinates are fractions of the trim area (both pages for a spread), origin top-left; text boxes may carry an alignment, a corner radius in points and a `#RRGGBB` background panel.
@@ -750,7 +751,7 @@ struct QueueItem {
 - **Cancelling the running item:** this cancels the `URLSessionTask`. Neither provider documents whether a cancelled request is billed, so the app assumes it is (§5). A ledger entry is written with status `cancelled` and the estimate marked as an estimate.
 - **Failures:** the item stays in the queue as failed (§5) and the queue carries on. Transient errors (429, 500, 503 and 504; network loss) are retried automatically up to 3 times with exponential backoff and jitter, honouring `Retry-After`, before the item is marked failed.
 - **Timeouts:** 300 s per request. Image generation can take up to about 2 minutes.
-- **Persistence:** `queue.json` is rewritten whenever the queue changes. When the app relaunches, waiting and failed items come back with the queue **paused**, and a banner offers "Resume N queued requests". An item that was running when the app quit is recorded as cancelled.
+- **Persistence:** `queue.json` is rewritten whenever the queue changes. When the app relaunches, waiting and failed items come back with the queue **paused** (the `restoredPause` flag), and a banner offers "Resume N queued requests", where N is the items waiting now; the flag clears when it reaches 0. An item that was running when the app quit is recorded as cancelled.
 - **Batch actions** ("Generate whole sheet", "Draft all empty boxes") build all their items, show the combined estimate (§7.10), and enqueue them in one call.
 - **Offline:** when `NWPathMonitor` reports no network, the queue pauses and AI actions show "Offline". Everything else keeps working (§3).
 
@@ -758,7 +759,7 @@ struct QueueItem {
 - Automatic retries cover `.rateLimited`, `.transient` and `.offline`: up to 3 retries, base 2 s doubling plus jitter, or `Retry-After` capped at 120 s. `.noImage` retries once. While waiting, the item is `.retrying(attempt:resumesAt:lastError:)`. `.timeout` isn't retried, since the request may have been billed.
 - Pause reasons rank offline, then restored, then user. Restore pauses only if at least one waiting item came back, so there's never a "Resume 0" banner. An item interrupted before its request was sent comes back as waiting.
 - `remove` on a waiting or retrying item delivers `.failure(.cancelled)` so the host clears the pending message. A failed item's message was already cleared when it failed.
-- `GenerationHost.deliver` returns a `DeliveryResult`. When a book is locked by another process, the result is kept in memory and redelivered every 30 s and on every queue change. It's lost if the app quits first.
+- `GenerationHost.deliver` returns a `DeliveryResult`. When a book is locked by another process, the result is kept in memory and redelivered every 30 s and on every queue change. The picture's bytes are spooled to disk and listed in `queue.json` (§5.5), so it is redelivered after a relaunch too (Phase 16b).
 - The app calls `restore()` before any enqueue, so the first save can't overwrite the previous `queue.json`.
 
 ### 7.10 Cost estimation and tracking (§5, §8.12)

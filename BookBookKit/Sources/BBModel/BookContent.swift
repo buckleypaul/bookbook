@@ -141,7 +141,8 @@ public struct ImageFlags: OptionSet, Hashable, Sendable {
 extension BookContent {
     /// Flags for one image box (A §4.4, Phase 7 rules):
     /// - style changed: the placed version has provenance and
-    ///   `max(provenance.styleRevision, acknowledged.styleRevision) < style.visualRevision`;
+    ///   `provenance.styleRevision != style.visualRevision` and `acknowledged.styleRevision != style.visualRevision`
+    ///   (revisions are never reused, so "newer" and "different" agree except after an undo);
     ///   imported versions (no provenance) never get it;
     /// - asset changed (Phase 10): for any `(asset, rec)` in the placed version's
     ///   `provenance.assetRevisions` whose asset still exists,
@@ -154,7 +155,8 @@ extension BookContent {
               let slot = page.images[boxID], let placement = slot.placement else { return [] }
         var flags: ImageFlags = []
         if let provenance = sessions[slot.sessionID]?.version(placement.versionID)?.provenance,
-           max(provenance.styleRevision, slot.acknowledged.styleRevision) < style.visualRevision {
+           provenance.styleRevision != style.visualRevision,
+           slot.acknowledged.styleRevision != style.visualRevision {
             flags.insert(.styleChanged)
         }
         if let revisions = sessions[slot.sessionID]?.version(placement.versionID)?.provenance?.assetRevisions,

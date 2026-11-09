@@ -18,7 +18,7 @@ public struct OnboardingState: @unchecked Sendable {
 
     /// UI-automation runs pass `-BookBookSkipOnboarding YES` or `-BookBookLibraryRoot <path>`.
     static func automationRun(_ arguments: UserDefaults) -> Bool {
-        arguments.bool(forKey: "BookBookSkipOnboarding") || arguments.string(forKey: "BookBookLibraryRoot") != nil
+        arguments.bool(forKey: "BookBookSkipOnboarding") || arguments.string(forKey: LibraryLocation.argumentKey) != nil
     }
 
     public static var runningUnderTests: Bool {

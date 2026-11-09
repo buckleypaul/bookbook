@@ -4,7 +4,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 **Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `blocked` · `skipped (floating)`
 
-**Live API spend so far:** $0.55 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
+**Live API spend so far:** $0.56 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
@@ -21,7 +21,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 9 | Queue, cost, errors and settings (M2) | done | `phase-9-queue-cost-settings` | — | $0.04 | Live check `SP9_twoRequestsAndCancel` passed. [Log](progress/phase-9-queue-cost-settings.md) |
 | 10 | Assets and character sheets | done (hand checks deferred) | `phase-10-assets-characters` | — | $0.00 | No live checks listed. [Log](progress/phase-10-assets-characters.md) |
 | 11 | Region editing | done (hand checks deferred) | `phase-11-region-editing` | — | $0.04 | Live check `SP11_maskedEditRealIllustration` passed. [Log](progress/phase-11-region-editing.md) |
-| 12 | Consistency check and AI templates (M3) | in progress | `phase-12-consistency-ai-templates` | — | | |
+| 12 | Consistency check and AI templates (M3) | done (hand checks deferred) | `phase-12-consistency-ai-templates` | — | $0.007 | Live check `SP12_templateAndConsistency` passed. [Log](progress/phase-12-consistency-ai-templates.md) |
 | 13 | Gemini provider (floating) | not started | | | | Needs the `gemini-api-key` Keychain item |
 | 14 | Export and print | not started | | | | |
 | 15 | Release pipeline (M4) | not started | | | | |
@@ -57,6 +57,13 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Lasso the sky and replace it: feathered edge, no hard seam (needs a generation).
 - A model without `supportsMask` (Gemini row, Phase 13): region tool greyed out with an explanation (covered by tests only).
 
+### Phase 12 — Consistency check and AI templates
+- Pip with "a blue scarf" (reference red): the warning badge reads "scarf is blue; reference is red"; the one-click fix shows its estimate first, then gives a red scarf (needs a generation).
+- Consistency switch off: the estimate drops (sub-cent, hidden by rounding to whole cents) and no follow-up is queued after a generation.
+- "Big picture across the top two-thirds, two lines of text at the bottom in a rounded cream box": a sensible template opens in the editor, snapped to the margins (needs a template call).
+- Confirm-cost alert wording for a check or fix (Session A noted it says "Generate").
+- Real-person photo: Check Consistency shows the notice first, then the cost step.
+
 ## Open follow-ups
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
@@ -65,12 +72,29 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - Run SG-1...SG-8 first (from Phase 0).
 
 ### Phase 14
+- Consistency-warning preflight item (Phase 12 deferred it to Phase 14, plan §3).
 - Export off the main actor (from Phase 2).
 
 ### Phase 16
 - Hand-check the title-box bold state: title/author boxes are bound and not text-editable (double-click opens Book Settings), so B is disabled there. Check it once the Style tab owns the title font: B shows on over the bold title face, and pressing it gives the regular weight (from Phase 4, moved by Phases 5 and 7; unreachable in Phase 7 because the box opens Book Settings).
 - A Finder copy of a package keeps the same `Book.id`; give one a new ID on detection (from Phase 3).
 - A read-only open of an older-schema book has no in-memory migration (from Phase 3; or Phase 17).
+
+### Phase 17
+- Flaky: `FaultInjectionTests.concurrentSavesAndOpensDoNotRaceOnJournalFolder` failed once (NSCocoaError 512 / POSIX 22 saving `.journal/<id>/staged`) and passed on the re-run (seen in Phase 12 Session B).
+- Confirm-cost alert's button says "Generate" for a consistency check (from Phase 12).
+- Chat `refusal` maps to stage `.output`, which is a guess; confirm it against a real refusal (from Phase 12).
+- The SP12 live test hardcodes model IDs; read them from the catalog (from Phase 12).
+- "Regenerate with Same Settings" on a fix version keeps `versionSource`, so the new version is labelled `.consistencyFix` too (from Phase 12).
+- "Mark Images as OK" (`BookDocument.swift` ~535) doesn't clear the consistency-warning flag (from Phase 12).
+- A failed check records nothing of what was sent, so Version details can't show it (from Phase 12).
+- `GenerationQueue.retry` puts a failed check at the back of the queue, and a retry can run beside a newer check of the same version (from Phase 12).
+- `runConsistencyCheck` fails with `.unknown` when the book is gone; drop it quietly instead (from Phase 12).
+- Template "What was sent" is filled in on `.missingKey`, when nothing was sent (from Phase 12).
+- `TemplateNormalizer.snapLines` doesn't mirror margins on a spread's right page (from Phase 12).
+- `TemplateNormalizer` throws `.noBoxes` and doesn't make a fallback box; note this in A §7.7 (from Phase 12).
+- A throwaway `-BookBookLibraryRoot` library showed "Resume 13 queued requests", so the queue file seems shared across library roots (from Phase 12 app pass).
+- Duplicate `.fixedSize` modifiers on two footers in `ModelSettings.swift` (from Phase 12).
 
 ### Later
 - Phase 11 review should-fixes: `finishSuccess` ignores a cancel during the off-thread composite (`GenerationQueue.swift:482`); `startRegionEdit` reads the image with blocking `Data(contentsOf:)` on the main actor (`SessionPanel.swift:363`); SP11 live test builds its own white mask instead of `ImageOps.providerMaskPNG`'s black, so the app's wire mask is untested live (`LiveProviderTests.swift:177`); `RegionEditAvailability` unused and its Gemini wording differs from `RegionEditRefusal.maskUnsupported`; mask bytes are outside `ReferenceSelector`'s byte budget (`ContextAssembler.swift:354`); blank/failed-composite results report `attempts: 1` after retries (`GenerationQueue.swift:485`); gray/CMYK bases composite via sRGB (from Phase 11 review).
@@ -158,18 +182,4 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 
 The running phase writes its log here; when it is marked done, move the entry to `progress/phase-<id>-<slug>.md`.
 
-### Phase 12 — Consistency check and AI templates
-
-**Stage:** B
-
-**Session A note:** five lanes merged: L1 BBAI (normalizer, layout/consistency prompts, text estimates, catalog text models, flag), L2 `OpenAIChatProvider` (layout + vision, SP-7 fixtures, live test `SP12_templateAndConsistency` written, not run), L3 consistency follow-ups (queue kind/parent, `queue.json` schema 2, `ConsistencyAssembler`, delivery, estimates incl. follow-ups, `AppModel+Consistency`), L5 AI template sheet (Layouts tab sparkles button, `TemplateGenerationFlow`), L4 consistency UI (strip badge, panel section with Fix/Dismiss/Check, Version details rows, thumbnail flag, Settings ▸ Models "AI helpers", queue row wording). App wires `OpenAIChatProvider` as vision and layout provider. `scripts/test.sh all` was green before L4; L4 reported BBUITests (412) and the app build green. Nothing was looked at in the running app.
-
-**For Session B:** run the live check `SP12_templateAndConsistency` (est. ~$0.02). Known items to look at: the confirm-cost alert button says "Generate" for a check; chat `refusal` maps to stage `.output` (a guess); the SP12 live test hardcodes model IDs; L4 edited `QueueView.swift` (one line) outside its list.
-
-**Contracts (main thread):** `BBModel/Consistency.swift` (`ConsistencyDifference`, `ConsistencyReport`, `ConsistencySent`); `Version.consistency`; `GenerationIntent.checkConsistency` / `.versionSource`; `BBAICore/TextContracts.swift` (`CatalogTextModel`, `ConsistencyThresholds`, `TemplateDraft`, `StructuredSchemas`, `LayoutRequest/Result`, `ConsistencyRequest/Result`, `LayoutProvider`, `VisionProvider`); BBAI stubs `TemplateNormalizer`, `LayoutPrompt`, `ConsistencyPrompt`, `CostEstimator+Text`, `ModelCatalog.textModels`; `AppPreferences` consistency switch and template/consistency default models; `AppModel.layoutProvider`.
-
-**Assumptions:**
-- Template generation runs directly from the Layouts tab (a short request with a progress sheet), not through the generation queue; it writes a `.template` ledger line. Recorded in architecture.md §7.7.
-- Phase 14 isn't merged, so the consistency preflight item is Phase 14's (plan §3).
-- Dismissing a warning isn't undoable (PD §8.10 doesn't list it); "Show Warning Again" reverses it. It's written with `setConsistencyWarningDismissed`, not a `BookCommand`.
-
+_No phase in progress._

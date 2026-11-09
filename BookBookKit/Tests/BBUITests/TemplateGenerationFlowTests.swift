@@ -176,7 +176,9 @@ struct TemplateGenerationFlowTests {
         guard case .confirming = flow.state else { Issue.record("state \(flow.state)"); return }
         #expect(await provider.requests.isEmpty)
 
+        s.undo.beginUndoGrouping()
         await flow.generate(confirmed: true)
+        s.undo.endUndoGrouping()
         guard case .finished = flow.state else { Issue.record("state \(flow.state)"); return }
         #expect(await provider.requests.count == 1)
     }
@@ -190,7 +192,9 @@ struct TemplateGenerationFlowTests {
         flow.kind = .spread
         #expect(flow.request() != nil)
         #expect(flow.estimate()?.amount != nil)
+        s.undo.beginUndoGrouping()
         await flow.generate(confirmed: true)
+        s.undo.endUndoGrouping()
         guard case let .finished(id) = flow.state else { Issue.record("state \(flow.state)"); return }
         #expect(s.document.content.templates[id]?.kind == .spread)
     }

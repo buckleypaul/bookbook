@@ -295,10 +295,8 @@ public actor GenerationQueue {
 
     private var pauseReason: QueuePause? {
         if !online { return .offline }
-        if restoredPause {
-            let waiting = entries.count(where: { $0.state == .waiting })
-            if waiting > 0 { return .restored(count: waiting) }
-        }
+        // `changed()` clears `restoredPause` once no waiting item is left, so there's always one here.
+        if restoredPause { return .restored(count: entries.count(where: { $0.state == .waiting })) }
         if userPaused { return .user }
         return nil
     }

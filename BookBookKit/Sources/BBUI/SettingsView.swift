@@ -36,6 +36,7 @@ struct APIKeysSettings: View {
     @State private var error: String?
     @State private var testing = false
     @State private var testResult: ConnectionTestResult?
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Form {
@@ -61,6 +62,7 @@ struct APIKeysSettings: View {
                     Text(error).foregroundStyle(.red).font(.callout)
                 }
                 connectionTest
+                Button("Show Guided Setup…") { openWindow(id: OnboardingScene.id) }
             } header: {
                 Text("OpenAI")
             } footer: {

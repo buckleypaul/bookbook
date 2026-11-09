@@ -178,8 +178,10 @@ struct LibraryCell: View {
                 return
             }
             let rendition = await app.thumbnails.rendition(of: source, bookID: entry.id, maxPixelSize: 400)
-            // Read the bytes (not `NSImage(contentsOf:)`) so a rewritten file isn't served from a cache.
-            image = rendition.flatMap { try? Data(contentsOf: $0) }.flatMap { NSImage(data: $0) }
+            // Read the bytes (not `NSImage(contentsOf:)`) so a rewritten file isn't served from a cache,
+            // off the main actor (#3g).
+            let data = await Task.detached { rendition.flatMap { try? Data(contentsOf: $0) } }.value
+            image = data.flatMap { NSImage(data: $0) }
         }
     }
 }

@@ -23,9 +23,9 @@ enum WhereUsedText {
     /// "Page 3" for a page-level site, "Page 3, image box 2" for a box (numbered in layer order).
     static func siteLabel(_ site: UsageSite, in content: BookContent) -> String {
         let page = pageLabel(site.page, in: content)
-        guard let box = site.box, let p = content.pages[site.page], let template = content.templates[p.templateID]
+        guard let box = site.box, let p = content.pages[site.page], let template = content.template(for: p)
         else { return page }
-        let imageBoxes = template.boxes.filter { $0.content == .image }
+        let imageBoxes = template.imageBoxes
         guard let index = imageBoxes.firstIndex(where: { $0.id == box }) else { return page }
         return imageBoxes.count > 1 ? "\(page), image box \(index + 1)" : "\(page), image box"
     }

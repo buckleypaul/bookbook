@@ -599,7 +599,7 @@ struct SessionPanel: View {
             HStack {
                 Picker("Quality", selection: Binding(get: { quality ?? app.defaults.quality },
                                                      set: { quality = $0 })) {
-                    ForEach([QualityLevel.draft, .standard, .high], id: \.self) {
+                    ForEach(QualityLevel.allCases, id: \.self) {
                         Text(VersionDetailsContent.qualityName($0)).tag($0)
                     }
                 }

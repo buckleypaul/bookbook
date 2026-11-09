@@ -82,16 +82,8 @@ final class ImportFromBookModel {
 
     func kindLabel(of item: BookImportItem) -> String {
         switch item {
-        case let .asset(id): source?.assets[id].map { Self.typeName($0.type) } ?? "Asset"
+        case let .asset(id): source?.assets[id].map { AssetTypeText.name($0.type) } ?? "Asset"
         case .template: "Template"
-        }
-    }
-
-    static func typeName(_ type: AssetType) -> String {
-        switch type {
-        case .character: "Character"
-        case .place: "Place"
-        case .object: "Object"
         }
     }
 
@@ -249,7 +241,7 @@ struct ImportFromBookSheet: View {
                             Toggle(isOn: binding(asset: asset.id)) {
                                 HStack {
                                     Text(asset.name.isEmpty ? "Untitled" : asset.name)
-                                    Text(ImportFromBookModel.typeName(asset.type)).foregroundStyle(.secondary)
+                                    Text(AssetTypeText.name(asset.type)).foregroundStyle(.secondary)
                                 }
                             }
                         }

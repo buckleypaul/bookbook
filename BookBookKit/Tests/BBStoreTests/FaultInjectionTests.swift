@@ -174,6 +174,51 @@ extension Trait where Self == CheapSync {
     /// Several stores on one book saving and opening at once (the empty `.journal` is created
     /// and removed constantly) never fail on the folder vanishing or reappearing.
     @Test func concurrentSavesAndOpensDoNotRaceOnJournalFolder() async throws {
+        try await Self.concurrentSavesAndOpens()
+    }
+
+    /// #14/#68: the race was rare (a few percent of runs under load), so loop it.
+    @Test func concurrentSavesAndOpensSurviveFiftyRuns() async throws {
+        for _ in 0..<50 { try await Self.concurrentSavesAndOpens() }
+    }
+
+    /// #14/#68: another store's clean-up must not remove `.journal` while this process has a
+    /// transaction registered under it (registered, folder not yet created).
+    @Test func removeRootIfEmptyIsNoOpWhileTransactionInFlight() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "B.bookbook")
+        try BookStore.create(try sampleContent(), at: url)
+        let journal = Journal(packageURL: url)
+        try FileManager.default.createDirectory(at: journal.root, withIntermediateDirectories: true)
+        let tx = journal.root.appending(path: Journal.newTxid(), directoryHint: .isDirectory)
+        journal.withInFlight(tx) {
+            journal.removeRootIfEmpty()
+            #expect(exists(journal.root))
+            // The transaction itself finishing may remove it.
+            journal.removeRootIfEmpty(finished: tx)
+            #expect(!exists(journal.root))
+        }
+        try FileManager.default.createDirectory(at: journal.root, withIntermediateDirectories: true)
+        journal.removeRootIfEmpty()
+        #expect(!exists(journal.root))
+    }
+
+    /// Single-level mkdir: recreates `.journal` if it vanished, and tolerates existing folders.
+    @Test func createTransactionFoldersBuildsEachLevel() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appending(path: "B.bookbook")
+        try BookStore.create(try sampleContent(), at: url)
+        let journal = Journal(packageURL: url)
+        let tx = journal.root.appending(path: Journal.newTxid(), directoryHint: .isDirectory)
+        try journal.createTransactionFolders(tx)
+        #expect(exists(tx.appending(path: "staged")))
+        try journal.createTransactionFolders(tx)
+        #expect(exists(tx.appending(path: "staged")))
+    }
+
+    static func concurrentSavesAndOpens() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appending(path: "B.bookbook")

@@ -44,15 +44,24 @@ struct Journal {
     @discardableResult
     func run(files: [String: Data], deletions: [String], commit: Bool = true, apply shouldApply: Bool = true,
              fault: SaveFaultHook? = nil) throws -> URL {
-        let fm = FileManager.default
         let tx = root.appending(path: Self.newTxid(), directoryHint: .isDirectory)
-        let staged = tx.appending(path: "staged", directoryHint: .isDirectory)
         // Another store in this process opening the book must not discard this transaction
-        // while it is still uncommitted. (A crashed process leaves no entry, so it is recovered.)
-        let key = tx.standardizedFileURL.path(percentEncoded: false)
-        Self.inFlight.withLock { _ = $0.insert(key) }
-        defer { Self.inFlight.withLock { _ = $0.remove(key) } }
-        try Self.createDirectoryRetrying(staged)
+        // while it is still uncommitted, nor remove `.journal` under it.
+        return try withInFlight(tx) {
+            try createTransactionFolders(tx)
+            try stage(files: files, deletions: deletions, in: tx, fault: fault)
+            guard commit else { return tx }
+            try PackageCoding.writeSynced(Data(), to: tx.appending(path: Self.commitName))
+            try PackageCoding.fsync(tx)
+            try fault?(.committed, 0)
+            if shouldApply { try apply(tx, fault: fault) }
+            return tx
+        }
+    }
+
+    private func stage(files: [String: Data], deletions: [String], in tx: URL, fault: SaveFaultHook?) throws {
+        let fm = FileManager.default
+        let staged = tx.appending(path: "staged", directoryHint: .isDirectory)
         for (path, data) in files {
             let dest = staged.appending(path: path)
             try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -63,12 +72,6 @@ struct Journal {
                                       to: tx.appending(path: Self.manifestName))
         try PackageCoding.fsync(tx)
         try fault?(.staged, 0)
-        guard commit else { return tx }
-        try PackageCoding.writeSynced(Data(), to: tx.appending(path: Self.commitName))
-        try PackageCoding.fsync(tx)
-        try fault?(.committed, 0)
-        if shouldApply { try apply(tx, fault: fault) }
-        return tx
     }
 
     /// Moves staged files into place, applies deletions, removes the transaction folder.
@@ -95,32 +98,67 @@ struct Journal {
             try fault?(.renamed, applied)
         }
         try Self.removeIfPresent(tx)
-        removeRootIfEmpty()
+        removeRootIfEmpty(finished: tx)
         try fault?(.cleanedUp, applied)
     }
 
-    /// `.journal/` exists only while a save is in flight (A §5.1). `rmdir(2)` fails harmlessly
-    /// while another transaction is still in it.
-    func removeRootIfEmpty() {
-        // ENOTEMPTY (another transaction appeared) and ENOENT (already gone) are both fine.
-        _ = rmdir(root.path(percentEncoded: false))
+    /// `.journal/` exists only while a save is in flight (A §5.1). Runs `rmdir(2)` only when no
+    /// transaction of this process (other than `finished`, the one just applied) is in flight
+    /// under this root, and does so under the mutex that registers transactions. So it can never
+    /// remove `.journal` between another store registering its transaction and creating its
+    /// folder (#14/#68). Another process's transaction makes `rmdir` fail harmlessly
+    /// (ENOTEMPTY), or is caught by the ENOENT retry in `createTransactionFolders`.
+    func removeRootIfEmpty(finished: URL? = nil) {
+        let prefix = Self.inFlightKey(root) + "/"
+        let own = finished.map(Self.inFlightKey)
+        Self.inFlight.withLock { inFlight in
+            guard !inFlight.contains(where: { $0.hasPrefix(prefix) && $0 != own }) else { return }
+            // ENOTEMPTY (another process's transaction) and ENOENT (already gone) are both fine.
+            _ = rmdir(root.path(percentEncoded: false))
+        }
     }
 
     /// Transaction folders this process is writing right now (standardized paths).
     private static let inFlight = Mutex<Set<String>>([])
 
-    /// `mkdir -p` that survives another store `rmdir`-ing an empty `.journal` between creating
-    /// it and creating the transaction folder inside it. Once the tx folder exists, `.journal`
-    /// is non-empty and no `rmdir` can remove it.
-    static func createDirectoryRetrying(_ url: URL) throws {
+    static func inFlightKey(_ url: URL) -> String {
+        var p = url.standardizedFileURL.path(percentEncoded: false)
+        while p.count > 1, p.hasSuffix("/") { p.removeLast() }
+        return p
+    }
+
+    /// Runs `body` with `tx` registered as in flight: another store in this process neither
+    /// discards it in `recover()` nor removes `.journal` under it. A crashed process leaves no
+    /// entry, so its transaction is recovered on the next open.
+    func withInFlight<T>(_ tx: URL, _ body: () throws -> T) rethrows -> T {
+        let key = Self.inFlightKey(tx)
+        Self.inFlight.withLock { _ = $0.insert(key) }
+        defer { Self.inFlight.withLock { _ = $0.remove(key) } }
+        return try body()
+    }
+
+    /// Creates `.journal`, then `<tx>`, then `<tx>/staged` with single-level `mkdir(2)` calls.
+    /// EEXIST counts as success; ENOENT (another process removed an empty `.journal` between
+    /// steps) restarts from `.journal`. Foundation's intermediate-directory creation reported
+    /// that race as EINVAL (Cocoa 512), which made the concurrent-save test flaky (#14/#68).
+    func createTransactionFolders(_ tx: URL) throws {
+        let levels = [root, tx, tx.appending(path: "staged", directoryHint: .isDirectory)]
         var attempt = 0
-        while true {
-            do {
-                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-                return
-            } catch where attempt < 5 && isNoSuchFile(error) {
-                attempt += 1
+        var index = 0
+        while index < levels.count {
+            let path = levels[index].path(percentEncoded: false)
+            if mkdir(path, 0o755) == 0 || errno == EEXIST {
+                index += 1
+                continue
             }
+            let code = errno
+            guard code == ENOENT || code == EINTR, attempt < 20 else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(code),
+                              userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(code)),
+                                         NSFilePathErrorKey: path])
+            }
+            attempt += 1
+            if code == ENOENT { index = 0 }
         }
     }
 
@@ -205,7 +243,7 @@ struct Journal {
         }
         for tx in txs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             // Still being written by another store in this process: theirs to finish.
-            let key = tx.standardizedFileURL.path(percentEncoded: false)
+            let key = Self.inFlightKey(tx)
             if Self.inFlight.withLock({ $0.contains(key) }) { continue }
             let committed = fm.fileExists(atPath: tx.appending(path: Self.commitName).path(percentEncoded: false))
             // A journal may come from a shared book, so it is untrusted: anything that is not

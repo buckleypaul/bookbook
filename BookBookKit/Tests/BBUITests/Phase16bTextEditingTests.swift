@@ -177,6 +177,17 @@ struct Phase16bTextEditingTests {
         h.editor.tearDown()
     }
 
+    @Test func matchesNeighbour_onlyForAnInsertionLikeTheTextBesideIt() {
+        let plain: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12)]
+        let s = NSMutableAttributedString(string: "abcd", attributes: plain)
+        #expect(InlineTextEditor.matchesNeighbour(NSRange(location: 2, length: 1), in: s))
+        #expect(InlineTextEditor.matchesNeighbour(NSRange(location: 0, length: 1), in: s), "at the start: the next character")
+        s.addAttribute(.kern, value: 5.0, range: NSRange(location: 2, length: 1))
+        #expect(!InlineTextEditor.matchesNeighbour(NSRange(location: 2, length: 1), in: s))
+        #expect(!InlineTextEditor.matchesNeighbour(NSRange(location: 1, length: 2), in: s), "mixed insertion")
+        #expect(!InlineTextEditor.matchesNeighbour(NSRange(location: 0, length: 4), in: s), "no neighbour")
+    }
+
     @Test func plainTyping_leavesTheStorageAlone() throws {
         let h = try Harness()
         let tv = h.editor.textView

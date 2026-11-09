@@ -145,6 +145,12 @@ public final class TemplateEditorModel {
         var edited = current
         change(&edited)
         guard edited != current else { return }
+        // A bleed edge moved off a spread's fold doesn't start bleeding (#64), whichever edit
+        // moved it: drags, nudges, align/distribute or the inspector's frame fields.
+        if edited.kind == current.kind {
+            let geometry = PageGeometry(setup: document.content.style.pageSetup, kind: current.kind)
+            LayoutEditingMath.dropBleedMovedOffFold(in: &edited, from: current, geometry: geometry)
+        }
         if openInteraction != nil { interactionEdited = true }
         if isUncopiedPreset {
             // First edit of a preset: copy it into the book and edit it as one undo step.
@@ -372,27 +378,16 @@ public final class TemplateEditorModel {
         let ids = selection
         update(actionName: "Nudge Box") { template in
             for i in template.boxes.indices where ids.contains(template.boxes[i].id) {
-                let foldEdges = LayoutEditingMath.foldEdges(of: template.boxes[i], geometry: geometry)
                 template.boxes[i].frame.x += dx
                 template.boxes[i].frame.y += dy
-                // A bleed edge nudged off the fold doesn't start bleeding (#64).
-                template.boxes[i].bleedEdges = LayoutEditingMath.bleedEdges(
-                    of: template.boxes[i], foldEdgesBefore: foldEdges, geometry: geometry)
             }
         }
     }
 
     private func apply(frames: [BoxID: NormalizedRect], actionName: String) {
-        let geometry = geometry
         update(actionName: actionName) { template in
             for i in template.boxes.indices {
-                guard let frame = frames[template.boxes[i].id] else { continue }
-                let foldEdges = geometry.map { LayoutEditingMath.foldEdges(of: template.boxes[i], geometry: $0) } ?? []
-                template.boxes[i].frame = frame
-                if let geometry {
-                    template.boxes[i].bleedEdges = LayoutEditingMath.bleedEdges(
-                        of: template.boxes[i], foldEdgesBefore: foldEdges, geometry: geometry)
-                }
+                if let frame = frames[template.boxes[i].id] { template.boxes[i].frame = frame }
             }
         }
     }

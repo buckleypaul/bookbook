@@ -111,6 +111,32 @@ struct Phase16bLayoutEditingTests {
         #expect(model.template?.box(id)?.bleedEdges == .all)
     }
 
+    @Test func frameFieldOffTheFold_dropsTheEdgeToo() throws {
+        let (model, undo) = try make()
+        let id = rightHalfBox(model, undo)
+        // As the inspector's X field does: a plain `update` that sets the frame.
+        step(undo) { model.update(actionName: "Move Box") { $0.boxes[0].frame.x = 0.55 } }
+        #expect(model.template?.box(id)?.bleedEdges == [.top, .bottom, .trailing])
+        // Toggling bleed without moving the frame is never touched.
+        step(undo) { model.update(actionName: "Bleed") { $0.boxes[0].bleedEdges = .all } }
+        #expect(model.template?.box(id)?.bleedEdges == .all)
+    }
+
+    @Test func dragStepsOffAndBackOntoTheFold_edgeStaysDropped() throws {
+        let (model, undo) = try make()
+        let id = rightHalfBox(model, undo)
+        // A drag's continuous updates inside one interaction, as `LayoutEditingController` makes them.
+        step(undo) {
+            let token = model.beginInteraction(actionName: "Move Box")
+            model.update(actionName: "Move Box") { $0.boxes[0].frame.y = 0.01 }
+            #expect(model.template?.box(id)?.bleedEdges == .all, "still on the fold")
+            model.update(actionName: "Move Box") { $0.boxes[0].frame.x = 0.6 }
+            model.update(actionName: "Move Box") { $0.boxes[0].frame.x = 0.5 }
+            model.endInteraction(token, actionName: "Move Box")
+        }
+        #expect(model.template?.box(id)?.bleedEdges == [.top, .bottom, .trailing])
+    }
+
     // MARK: #54a
 
     @Test func newBoxes_cascadeInsteadOfStacking() throws {

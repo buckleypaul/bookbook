@@ -190,6 +190,22 @@ public final class BookDocument {
         if missing != missingFonts { missingFonts = missing }
     }
 
+    /// Adds the run fonts of `text` that don't resolve to `missingFonts` (a coalesced keystroke
+    /// or paste). Cheap on plain typing: no run overrides means no CoreText lookups. The body
+    /// and title fonts were checked by the `refreshMissingFonts` that opened the typing step.
+    private func noteMissingRunFonts(in text: RichText) {
+        var names: Set<String> = []
+        for paragraph in text.paragraphs {
+            for run in paragraph.runs where !run.text.isEmpty {
+                if let name = run.fontFamily, !missingFonts.contains(name) { names.insert(name) }
+            }
+        }
+        guard !names.isEmpty else { return }
+        let found = names.filter { !FontAvailability.isAvailable(postScriptName: $0) }
+        guard !found.isEmpty else { return }
+        missingFonts = Set(missingFonts).union(found).sorted()
+    }
+
     /// Ends the open typing undo step, so the next keystroke starts a new one (the editor
     /// closing, for example).
     public func endTypingStep() {
@@ -220,15 +236,11 @@ public final class BookDocument {
         // A typing edit that joins the open step changes the content but registers nothing: the
         // step's undo entry still restores the text from before the step began (A §6.3).
         let sameManager = typingUndoManager != nil && typingUndoManager === undoManager
-        if typing.shouldCoalesce(command), sameManager, var (_, dirty) = applyEdit(edit) {
-            content.book.modifiedAt = now()
-            dirty.book = true
-            scheduleSave(dirty)
+        if typing.shouldCoalesce(command), sameManager, let (_, dirty) = applyEdit(edit) {
+            didApply(dirty)
             // Only the edited box can bring in a missing font (a paste), so check just that.
             if case let .setText(page, box, _) = edit, let text = content.pages[page]?.text[box] {
-                let found = FontAvailability.missingFonts(in: [text], typography: content.style.typography)
-                let merged = Set(missingFonts).union(found).sorted()
-                if merged != missingFonts { missingFonts = merged }
+                noteMissingRunFonts(in: text)
             }
             return true
         }
@@ -869,12 +881,18 @@ public final class BookDocument {
     /// Applies `edit`, schedules the save and returns the inverse. Registers nothing.
     private func applyAndSave(_ edit: Edit) -> Edit? {
         guard isEditable, let (inverse, dirty) = applyEdit(edit) else { return nil }
+        didApply(dirty)
+        refreshMissingFonts()
+        return inverse
+    }
+
+    /// After any applied edit (registered or a coalesced keystroke): stamps `modifiedAt` and
+    /// schedules the save of what changed plus the book.
+    private func didApply(_ dirty: DirtySet) {
         content.book.modifiedAt = now()
         var allDirty = dirty
         allDirty.book = true
         scheduleSave(allDirty)
-        refreshMissingFonts()
-        return inverse
     }
 
     /// Registers `inverse` as one undo step; replaying it registers the redo.

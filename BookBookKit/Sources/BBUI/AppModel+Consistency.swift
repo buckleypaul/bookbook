@@ -57,6 +57,16 @@ extension AppModel {
         return consistencyEstimator(model, count, prices.current)
     }
 
+    /// The provider whose real-person notice must be acknowledged before checking this version
+    /// (it is a real-person photo and the book hasn't acknowledged the vision provider's notice,
+    /// A §11); nil = no notice needed.
+    public func realPersonNoticeNeededForCheck(bookID: BookID, versionID: VersionID) -> ProviderID? {
+        guard let model = consistencyModel, let document = openBooks.document(for: bookID),
+              ConsistencyAssembler.sendsRealPersonPhoto(versionID: versionID, content: document.content,
+                                                        provider: model.provider) else { return nil }
+        return model.provider
+    }
+
     /// Queues a check of one version at the front of the queue (it runs after the current
     /// item). Its result replaces the version's `consistency`. Not a version, not undoable.
     /// Callers show `consistencyCheckEstimate` first if they confirm costs. False if the book
@@ -66,7 +76,8 @@ extension AppModel {
     public func checkConsistency(bookID: BookID, sessionID: SessionID, versionID: VersionID) -> Bool {
         guard canCheckConsistency, let document = openBooks.document(for: bookID), document.isEditable,
               let model = consistencyModel,
-              !isConsistencyCheckPending(versionID: versionID) else { return false }
+              !isConsistencyCheckPending(versionID: versionID),
+              realPersonNoticeNeededForCheck(bookID: bookID, versionID: versionID) == nil else { return false }
         let content = document.content
         guard let session = content.sessions[sessionID], let version = session.version(versionID),
               let target = ConsistencyAssembler.target(for: session, in: content) else { return false }

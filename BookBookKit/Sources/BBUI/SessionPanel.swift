@@ -401,7 +401,7 @@ struct SessionPanel: View {
                     .disabled(!document.isEditable)
                 }
                 Button(version.consistency == nil ? "Check Consistency" : "Check Again") {
-                    confirmCostThenPerform(.checkConsistency(session: session.id, version: version.id))
+                    checkThenPerform(.checkConsistency(session: session.id, version: version.id))
                 }
                 .disabled(reason != nil)
                 .help(reason ?? "Compare this picture with the references of the assets in it.")
@@ -686,8 +686,12 @@ struct SessionPanel: View {
 
     /// The real-person notice first (once per provider and book, A §11), then the cost decision.
     private func checkThenPerform(_ action: PendingGeneration) {
-        if case .checkConsistency = action {
-            confirmCostThenPerform(action)
+        if case let .checkConsistency(_, versionID) = action {
+            if let provider = app.realPersonNoticeNeededForCheck(bookID: document.id, versionID: versionID) {
+                notice = PendingNotice(provider: provider, action: action)
+            } else {
+                confirmCostThenPerform(action)
+            }
         } else if let provider = app.realPersonNoticeNeeded(intent: action.intent, target: target, in: document) {
             notice = PendingNotice(provider: provider, action: action)
         } else {

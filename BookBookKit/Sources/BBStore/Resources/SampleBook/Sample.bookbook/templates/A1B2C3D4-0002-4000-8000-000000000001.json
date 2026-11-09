@@ -1,0 +1,64 @@
+{
+  "boxes" : [
+    {
+      "bleedEdges" : 0,
+      "content" : {
+        "image" : {
+
+        }
+      },
+      "cornerRadius" : 0,
+      "frame" : {
+        "height" : 1,
+        "width" : 1,
+        "x" : 0,
+        "y" : 0
+      },
+      "id" : "A1B2C3D4-0002-4000-8000-0000000000B1",
+      "rotationDegrees" : 0
+    },
+    {
+      "bleedEdges" : 0,
+      "content" : {
+        "text" : {
+          "_0" : {
+            "padding" : 0
+          }
+        }
+      },
+      "cornerRadius" : 0,
+      "frame" : {
+        "height" : 0.15,
+        "width" : 0.8333,
+        "x" : 0.0833,
+        "y" : 0.05
+      },
+      "id" : "A1B2C3D4-0002-4000-8000-0000000000B2",
+      "role" : "title",
+      "rotationDegrees" : 0
+    },
+    {
+      "bleedEdges" : 0,
+      "content" : {
+        "text" : {
+          "_0" : {
+            "padding" : 0
+          }
+        }
+      },
+      "cornerRadius" : 0,
+      "frame" : {
+        "height" : 0.1,
+        "width" : 0.8333,
+        "x" : 0.0833,
+        "y" : 0.82
+      },
+      "id" : "A1B2C3D4-0002-4000-8000-0000000000B3",
+      "role" : "author",
+      "rotationDegrees" : 0
+    }
+  ],
+  "id" : "A1B2C3D4-0002-4000-8000-000000000001",
+  "kind" : "cover",
+  "name" : "Cover"
+}

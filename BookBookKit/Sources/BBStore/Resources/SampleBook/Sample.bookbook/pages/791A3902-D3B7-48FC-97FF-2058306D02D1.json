@@ -1,0 +1,23 @@
+{
+  "assetChecklist" : [
+
+  ],
+  "id" : "791A3902-D3B7-48FC-97FF-2058306D02D1",
+  "images" : {
+    "A1B2C3D4-0002-4000-8000-0000000000B1" : {
+      "acknowledged" : {
+        "assetRevisions" : {
+
+        },
+        "styleRevision" : 0
+      },
+      "sessionID" : "B052A8FC-8C34-42FF-8D1A-8D8904188985"
+    }
+  },
+  "isDone" : false,
+  "kind" : "cover",
+  "templateID" : "A1B2C3D4-0002-4000-8000-000000000001",
+  "text" : {
+
+  }
+}

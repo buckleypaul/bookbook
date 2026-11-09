@@ -32,7 +32,11 @@ public actor ExportImagePreparer: ImagePreparing {
     }
 
     public func prepare(_ request: ImagePreparationRequest) async throws -> CGImage {
-        let url = try await preparedFileURL(request)
+        var url = try await preparedFileURL(request)
+        if let image = ImageFiles.decode(url: url) { return image }
+        // A cached file that won't decode (e.g. truncated by an older build) is dropped and rebuilt.
+        try? FileManager.default.removeItem(at: url)
+        url = try await preparedFileURL(request)
         guard let image = ImageFiles.decode(url: url) else { throw ExportError.imageUnreadable(request.image) }
         return image
     }
@@ -43,7 +47,13 @@ public actor ExportImagePreparer: ImagePreparing {
         let stem = Self.stem(for: request)
         for ext in ["jpg", "png"] {
             let url = cacheDirectory.appendingPathComponent("\(stem).\(ext)")
-            if FileManager.default.fileExists(atPath: url.path) { return url }
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            if ImagePixelSize.of(url: url) != nil {
+                // A hit counts as use, so `pruneCache` keeps what recent exports needed.
+                try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+                return url
+            }
+            try? FileManager.default.removeItem(at: url)
         }
 
         let (cropped, hasAlpha) = try Self.loadCrop(request)
@@ -52,6 +62,21 @@ public actor ExportImagePreparer: ImagePreparing {
         let url = cacheDirectory.appendingPathComponent("\(stem).\(hasAlpha ? "png" : "jpg")")
         try Self.write(output, hasAlpha: hasAlpha, to: url)
         return url
+    }
+
+    /// Deletes cache files not used (written or hit) for `maxAge`, and leftover temp files.
+    public func pruneCache(maxAge: TimeInterval = 14 * 24 * 3600, now: Date = Date()) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: [.contentModificationDateKey])
+        else { return }
+        for file in files {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            let isTemp = file.lastPathComponent.hasPrefix(".tmp-")
+            if isTemp ? (modified.map { now.timeIntervalSince($0) > 3600 } ?? true)
+                      : (modified.map { now.timeIntervalSince($0) > maxAge } ?? false) {
+                try? fm.removeItem(at: file)
+            }
+        }
     }
 
     // MARK: Serialising
@@ -100,12 +125,23 @@ public actor ExportImagePreparer: ImagePreparing {
     private static func write(_ image: CGImage, hasAlpha: Bool, to url: URL) throws {
         let type = hasAlpha ? UTType.png : UTType.jpeg
         let toWrite = hasAlpha ? image : try flattened(image)
-        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil) else {
+        // Written beside the final path and renamed, so a crash never leaves a truncated cache hit.
+        let temp = url.deletingLastPathComponent().appendingPathComponent(".tmp-\(UUID().uuidString)")
+        guard let dest = CGImageDestinationCreateWithURL(temp as CFURL, type.identifier as CFString, 1, nil) else {
             throw ExportError.encodingFailed
         }
         let options: [CFString: Any] = hasAlpha ? [:] : [kCGImageDestinationLossyCompressionQuality: jpegQuality]
         CGImageDestinationAddImage(dest, toWrite, options as CFDictionary)
-        guard CGImageDestinationFinalize(dest) else { throw ExportError.encodingFailed }
+        guard CGImageDestinationFinalize(dest) else {
+            try? FileManager.default.removeItem(at: temp)
+            throw ExportError.encodingFailed
+        }
+        do {
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
+        } catch {
+            try? FileManager.default.removeItem(at: temp)
+            throw error
+        }
     }
 
     /// Drops the alpha channel (onto white) so JPEG encoding is clean.

@@ -33,13 +33,29 @@ private final class NoImages: PageImageSource {
 /// A §9.4: the "Before export" checks (PD §8.8).
 @MainActor
 public enum Preflight {
+    /// The pages `options` will put in the PDF: the cover when included, and the story pages
+    /// the range selects (a range that cuts a spread widens to the whole spread).
+    public static func exportedPageIDs(_ content: BookContent, options: ExportOptions) -> Set<PageID> {
+        var ids: Set<PageID> = []
+        if options.includeCover, let cover = content.coverPage { ids.insert(cover.id) }
+        let story = content.storyPages
+        let entries = story.map { SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread) }
+        let layout = PageSequencer.layout(entries, cover: content.book.coverPageID)
+        let keep = Set(PageRangeWidening.selected(layout.pages.map { (position: $0.position, span: $0.span) },
+                                                  in: options.pageRange).map(\.position))
+        for (page, slot) in zip(story, layout.pages) where keep.contains(slot.position) { ids.insert(page.id) }
+        return ids
+    }
+
     public static func run(_ content: BookContent,
                            assessments: [BoxImageKey: ImageAssessment],
-                           spelling: any SpellingChecking) -> [PreflightIssue] {
+                           spelling: any SpellingChecking,
+                           pages selectedPages: Set<PageID>? = nil) -> [PreflightIssue] {
         let renderer = PageRenderer(images: NoImages())
         var pages: [Page] = []
         if let cover = content.coverPage { pages.append(cover) }
         pages += content.storyPages.filter { $0.id != content.book.coverPageID }
+        if let selectedPages { pages = pages.filter { selectedPages.contains($0.id) } }
 
         var issues: [PreflightIssue] = []
         var reportedFonts: Set<String> = []
@@ -65,15 +81,16 @@ public enum Preflight {
             }
 
             for (box, text) in texts {
-                for word in spelling.misspelledWords(in: text.plainText) {
+                var seen: Set<String> = []
+                for word in spelling.misspelledWords(in: text.plainText) where seen.insert(word).inserted {
                     issues.append(PreflightIssue(kind: .spelling, page: page.id, box: box.id, detail: "“\(word)”"))
                 }
             }
 
             for box in imageBoxes {
                 guard let a = assessments[BoxImageKey(page: page.id, box: box.id)], a.isSoft else { continue }
-                let have = Int(a.availablePixels.width.rounded())
-                let need = Int(a.requiredPixels.width.rounded())
+                let have = "\(Int(a.availablePixels.width.rounded()))×\(Int(a.availablePixels.height.rounded()))"
+                let need = "\(Int(a.requiredPixels.width.rounded()))×\(Int(a.requiredPixels.height.rounded()))"
                 issues.append(PreflightIssue(kind: .softImage, page: page.id, box: box.id,
                                              detail: "\(have) px available; needs \(need) px"))
             }

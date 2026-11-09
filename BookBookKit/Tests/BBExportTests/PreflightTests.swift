@@ -103,7 +103,7 @@ struct PreflightTests {
         let p = c.book.pageOrder[0]
         c.pages[p]?.text[PF.textBox.id] = RichText(plain: "A teh fox and teh hen.")
         let issues = PF.run(c, bad: ["teh"])
-        #expect(issues.map(\.kind) == [.spelling, .spelling])
+        #expect(issues.map(\.kind) == [.spelling])
         #expect(issues.allSatisfy { $0.detail == "“teh”" && $0.box == PF.textBox.id })
     }
 
@@ -118,7 +118,7 @@ struct PreflightTests {
         #expect(PF.run(c, assessments: [key: assessment(soft: false)]).isEmpty)
         let issues = PF.run(c, assessments: [key: assessment(soft: true)])
         #expect(issues.map(\.kind) == [.softImage])
-        #expect(issues[0].detail == "512 px available; needs 2550 px")
+        #expect(issues[0].detail == "512×512 px available; needs 2550×2550 px")
     }
 
     @Test func styleChanged() {

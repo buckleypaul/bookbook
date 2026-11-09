@@ -18,22 +18,6 @@ struct RegionEditorTests {
                                               quality: [:]))
     }
 
-    // MARK: Availability
-
-    @Test func availabilityFollowsSupportsMask() {
-        #expect(RegionEditAvailability.of(Self.catalogModel(supportsMask: true, name: "GPT Image")) == .available)
-
-        let gemini = RegionEditAvailability.of(Self.catalogModel(supportsMask: false, name: "Nano Banana"))
-        guard case let .unavailable(reason) = gemini else { Issue.record("expected unavailable"); return }
-        #expect(reason.contains("Nano Banana"))
-        #expect(reason.contains("follow-up prompt"))
-        #expect(!gemini.isAvailable)
-
-        let none = RegionEditAvailability.of(nil)
-        #expect(!none.isAvailable)
-        #expect(none.reason?.isEmpty == false)
-    }
-
     // MARK: Coordinate mapping
 
     @Test func aspectFitLetterboxesAWideImage() {

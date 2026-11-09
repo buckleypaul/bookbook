@@ -47,8 +47,6 @@ final class LayoutEditingController: CanvasController {
         var geometry: PageGeometry
         /// Each box's bleed-pushed edges when the drag began, to turn render rects back into frames.
         var pushedEdges: [BoxID: EdgeSet]
-        /// Each box's bleed edges on a spread's fold when the drag began (#64).
-        var foldEdges: [BoxID: EdgeSet]
         var start: CGPoint
         var current: CGPoint
         var modifiers: NSEvent.ModifierFlags
@@ -102,11 +100,6 @@ final class LayoutEditingController: CanvasController {
 
     private func pushedEdges(_ template: Template, _ geometry: PageGeometry) -> [BoxID: EdgeSet] {
         Dictionary(template.boxes.map { ($0.id, geometry.pushedBleedEdges(for: $0)) }, uniquingKeysWith: { a, _ in a })
-    }
-
-    private func foldEdges(_ template: Template, _ geometry: PageGeometry) -> [BoxID: EdgeSet] {
-        Dictionary(template.boxes.map { ($0.id, LayoutEditingMath.foldEdges(of: $0, geometry: geometry)) },
-                   uniquingKeysWith: { a, _ in a })
     }
 
     /// The one selected box, if exactly one is selected (only it gets handles).
@@ -202,7 +195,7 @@ final class LayoutEditingController: CanvasController {
                 ? .rotate(box: box)
                 : .resize(box: box, handle: handle, targets: targets(excluding: [box.id]))
             drag = Drag(kind: kind, geometry: geometry, pushedEdges: pushedEdges(template, geometry),
-                         foldEdges: foldEdges(template, geometry), start: point, current: point, modifiers: event.modifierFlags)
+                        start: point, current: point, modifiers: event.modifierFlags)
             return
         }
 
@@ -213,7 +206,7 @@ final class LayoutEditingController: CanvasController {
         let moving = boxes.filter { selection.contains($0.id) }
         drag = Drag(kind: .move(boxes: moving, targets: targets(excluding: selection)), geometry: geometry,
                     pushedEdges: pushedEdges(template, geometry),
-                         foldEdges: foldEdges(template, geometry), start: point, current: point, modifiers: event.modifierFlags)
+                    start: point, current: point, modifiers: event.modifierFlags)
     }
 
     func mouseDragged(with event: NSEvent, at point: CGPoint) {
@@ -273,8 +266,6 @@ final class LayoutEditingController: CanvasController {
                     if let rect = result.rects[id] {
                         template.boxes[index].frame = LayoutEditingMath.frame(
                             forRender: rect, pushedEdges: drag.pushedEdges[id] ?? [], geometry: geometry)
-                        template.boxes[index].bleedEdges = LayoutEditingMath.bleedEdges(
-                            of: template.boxes[index], foldEdgesBefore: drag.foldEdges[id] ?? [], geometry: geometry)
                     }
                 }
             }
@@ -287,8 +278,6 @@ final class LayoutEditingController: CanvasController {
                 if let index = template.boxes.firstIndex(where: { $0.id == box.id }) {
                     template.boxes[index].frame = LayoutEditingMath.frame(
                         forRender: result.rect, pushedEdges: drag.pushedEdges[box.id] ?? [], geometry: geometry)
-                    template.boxes[index].bleedEdges = LayoutEditingMath.bleedEdges(
-                        of: template.boxes[index], foldEdgesBefore: drag.foldEdges[box.id] ?? [], geometry: geometry)
                 }
             }
         case let .rotate(box):

@@ -52,6 +52,19 @@ enum LayoutEditingMath {
         return box.bleedEdges.subtracting(left)
     }
 
+    /// Applies `bleedEdges(of:foldEdgesBefore:geometry:)` to every box of `edited` whose frame
+    /// differs from the same box in `before`. `TemplateEditorModel` runs it on every edit, so
+    /// each drag step compares with the step before it (an edge dropped stays dropped).
+    static func dropBleedMovedOffFold(in edited: inout Template, from before: Template, geometry: PageGeometry) {
+        guard geometry.isSpread else { return }
+        let old = Dictionary(before.boxes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for i in edited.boxes.indices {
+            guard let was = old[edited.boxes[i].id], was.frame != edited.boxes[i].frame else { continue }
+            edited.boxes[i].bleedEdges = bleedEdges(
+                of: edited.boxes[i], foldEdgesBefore: foldEdges(of: was, geometry: geometry), geometry: geometry)
+        }
+    }
+
     /// Snap targets for a drag: `SnapTargets.make`, plus the bleed's outer edges when bleed
     /// is on (a full-bleed box's render edges sit there).
     static func snapTargets(geometry: PageGeometry, others: [EditableBox]) -> SnapTargets {

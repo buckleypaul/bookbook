@@ -49,6 +49,8 @@ struct TemplateList: View {
     @State private var renameText = ""
     @State private var confirmDelete: TemplateID?
     @FocusState private var renameFocused: Bool
+    @Environment(AppModel.self) private var app
+    @State private var showAISheet = false
 
     var body: some View {
         let sections = LayoutsListing.sections(in: content, presets: Presets.bundledTemplates)
@@ -66,6 +68,9 @@ struct TemplateList: View {
         }
         .onDeleteCommand { if let id = model.templateID { requestDelete(id) } }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        .sheet(isPresented: $showAISheet) {
+            TemplateGenerationSheet(app: app, document: document, editor: model)
+        }
         .confirmationDialog("Delete this layout?", isPresented: Binding(get: { confirmDelete != nil },
                                                                          set: { if !$0 { confirmDelete = nil } }),
                             presenting: confirmDelete) { id in
@@ -151,6 +156,8 @@ struct TemplateList: View {
                     .help("Add a blank single-page layout")
                 Button { model.newTemplate(kind: .spread) } label: { Label("New Spread", systemImage: "plus.rectangle") }
                     .help("Add a blank two-page spread layout")
+                Button { showAISheet = true } label: { Label("New with AI…", systemImage: "sparkles") }
+                    .help("Describe a layout and let AI draw it")
                 Button { if let id = model.templateID { model.duplicate(id) } } label: {
                     Label("Duplicate", systemImage: "plus.square.on.square")
                 }

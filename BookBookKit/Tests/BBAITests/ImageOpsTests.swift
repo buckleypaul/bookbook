@@ -1,3 +1,4 @@
+import Accelerate
 import BBModel
 import CoreGraphics
 import Foundation
@@ -201,6 +202,98 @@ struct ImageOpsTests {
         #expect(out.w == w && out.h == h)
         let i = (20 * w + 30) * 4
         #expect(Array(out.bytes[i..<i + 3]) == [200, 100, 50])
+    }
+
+    // MARK: Composite keeps the base's colour space, depth and alpha
+
+    enum BaseKind: String, CaseIterable, Sendable { case displayP3JPEG, sixteenBitPNG, alphaPNG }
+
+    /// Deterministic noisy image: `bpc` 8 or 16, RGBA non-premultiplied (alpha noisy too when `alpha`).
+    private func noisyImage(_ w: Int, _ h: Int, bpc: Int, space: CGColorSpace, alpha: Bool, seed: UInt64) -> CGImage {
+        var state = seed
+        func next() -> UInt64 { state = state &* 6364136223846793005 &+ 1442695040888963407; return state >> 33 }
+        let count = w * h * 4
+        let data: Data
+        if bpc == 16 {
+            var v = [UInt16](repeating: .max, count: count)
+            for i in 0..<count where alpha || i % 4 != 3 { v[i] = UInt16(truncatingIfNeeded: next()) }
+            data = v.withUnsafeBytes { Data($0) }
+        } else {
+            var v = [UInt8](repeating: .max, count: count)
+            for i in 0..<count where alpha || i % 4 != 3 { v[i] = UInt8(truncatingIfNeeded: next()) }
+            data = Data(v)
+        }
+        var info = CGBitmapInfo(rawValue: (alpha ? CGImageAlphaInfo.last : .noneSkipLast).rawValue)
+        if bpc == 16 { info.insert(.byteOrder16Little) }
+        return CGImage(width: w, height: h, bitsPerComponent: bpc, bitsPerPixel: bpc * 4, bytesPerRow: w * bpc / 2,
+                       space: space, bitmapInfo: info, provider: CGDataProvider(data: data as CFData)!,
+                       decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+    }
+
+    private func encode(_ image: CGImage, type: String) -> Data {
+        let out = NSMutableData()
+        let dest = CGImageDestinationCreateWithData(out, type as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+        CGImageDestinationFinalize(dest)
+        return out as Data
+    }
+
+    /// Decoded pixels as 16-bit non-premultiplied RGBA in `space` (lossless for 8- or 16-bit sources in that space).
+    private func pixels16(_ data: Data, space: CGColorSpace) throws -> (image: CGImage, values: [UInt16]) {
+        let src = CGImageSourceCreateWithData(data as CFData, nil)!
+        let img = CGImageSourceCreateImageAtIndex(src, 0, nil)!
+        var info = CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue)
+        info.insert(.byteOrder16Little)
+        let format = vImage_CGImageFormat(bitsPerComponent: 16, bitsPerPixel: 64, colorSpace: space,
+                                          bitmapInfo: info, renderingIntent: .defaultIntent)!
+        let buf = try vImage_Buffer(cgImage: img, format: format)
+        defer { buf.free() }
+        var values = [UInt16]()
+        values.reserveCapacity(img.width * img.height * 4)
+        for y in 0..<img.height {
+            let row = (buf.data + y * buf.rowBytes).assumingMemoryBound(to: UInt16.self)
+            values.append(contentsOf: UnsafeBufferPointer(start: row, count: img.width * 4))
+        }
+        return (img, values)
+    }
+
+    @Test(arguments: BaseKind.allCases)
+    func compositePreservesBaseOutsideBand(kind: BaseKind) throws {
+        let w = 120, h = 90
+        let p3 = CGColorSpace(name: CGColorSpace.displayP3)!
+        let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+        let space: CGColorSpace
+        let orig: Data
+        switch kind {
+        case .displayP3JPEG:
+            space = p3
+            orig = encode(noisyImage(w, h, bpc: 8, space: p3, alpha: false, seed: 3), type: "public.jpeg")
+        case .sixteenBitPNG:
+            space = srgb
+            orig = encode(noisyImage(w, h, bpc: 16, space: srgb, alpha: false, seed: 4), type: "public.png")
+        case .alphaPNG:
+            space = srgb
+            orig = encode(noisyImage(w, h, bpc: 8, space: srgb, alpha: true, seed: 5), type: "public.png")
+        }
+        let edit = noisyPNG(w, h, seed: 9)
+        let out = try ImageOps.composite(original: orig, edited: edit, mask: squareMask(w, h, 40, 30, 80, 60))
+        let o = try pixels16(orig, space: space), c = try pixels16(out, space: space)
+        #expect(c.image.width == w && c.image.height == h)
+        if kind == .sixteenBitPNG { #expect(c.image.bitsPerComponent == 16) }
+        if kind == .alphaPNG { #expect(![.none, .noneSkipLast, .noneSkipFirst].contains(c.image.alphaInfo)) }
+        var checked = 0, mismatched = 0, changedInside = 0
+        for y in 0..<h { for x in 0..<w {
+            let dx = max(40 - x, 0, x - 79), dy = max(30 - y, 0, y - 59)
+            let i = (y * w + x) * 4
+            if Double(dx * dx + dy * dy).squareRoot() > ImageOps.defaultFeatherPixels {
+                checked += 1
+                if c.values[i..<i + 4] != o.values[i..<i + 4] { mismatched += 1 }
+            } else if dx == 0 && dy == 0, c.values[i..<i + 4] != o.values[i..<i + 4] {
+                changedInside += 1
+            }
+        } }
+        #expect(mismatched == 0, "\(mismatched) of \(checked) pixels outside the band changed")
+        #expect(checked > 5000 && changedInside > 0)
     }
 
     @Test func compositeRejectsMaskSizeMismatch() {

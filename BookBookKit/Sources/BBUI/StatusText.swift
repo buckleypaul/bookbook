@@ -25,6 +25,8 @@ public enum ProviderErrorText {
             "Your OpenAI account is out of credit or over its spending limit. Check billing on the OpenAI website."
         case .rateLimited:
             "The provider is busy right now. Wait a minute, then try again."
+        case .noImage where RegionEditFailure.isBlankArea(error):
+            "The model returned a blank area instead of an edit. Try again, or select a slightly larger area."
         case .noImage:
             "The provider didn't send back an image. Try again."
         case let .invalidRequest(param, _):

@@ -333,6 +333,11 @@ public final class OpenBooks {
     private func storeImage(of delivery: GenerationDelivery, in store: BookStore) async -> ImageRef? {
         guard case let .success(result, _) = delivery.outcome else { return nil }
         do {
+            // A region edit's raw output first (content-addressed: storing it again is a no-op).
+            for (ref, data) in delivery.additionalImages {
+                let stored = try await store.storeImage(data, contentType: ref.contentType)
+                guard stored == ref else { throw StoreError.io("stored image doesn't match its reference") }
+            }
             return try await store.storeImage(result.imageData, contentType: result.contentType)
         } catch {
             Self.log.error("Couldn't store a generated image: \(String(describing: error), privacy: .public)")

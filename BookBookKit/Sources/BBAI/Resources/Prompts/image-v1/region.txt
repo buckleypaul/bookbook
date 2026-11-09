@@ -1,0 +1,1 @@
+Region edit: the mask sent with the current illustration marks the area to change as transparent. Change only that area, blend it smoothly into its surroundings, and keep everything outside it exactly as it is.

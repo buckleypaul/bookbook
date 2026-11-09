@@ -23,12 +23,24 @@ public enum AssemblyError: Error, Hashable, Sendable {
     case baseImageMissing
     /// The base image is larger than the model accepts.
     case baseImageTooLarge
+    /// Region edit (Phase 11): the stored mask image is missing or unreadable.
+    case maskImageMissing
+    /// Region edit: the stored mask isn't the base image's pixel size (or there's no base).
+    case maskSizeMismatch
 
     /// What a failed queue item reports.
     public var providerError: ProviderError {
         switch self {
         case .targetGone: .unknown(nil)
         case .baseVersionGone, .baseImageMissing, .baseImageTooLarge: .invalidRequest(param: "image", nil)
+        case .maskImageMissing:
+            .invalidRequest(param: "mask", ProviderErrorRaw(
+                status: nil, code: "mask_missing",
+                body: "The selected area for this edit is missing from the book. Select the area again."))
+        case .maskSizeMismatch:
+            .invalidRequest(param: "mask", ProviderErrorRaw(
+                status: nil, code: "mask_size_mismatch",
+                body: "The selected area doesn't match the picture's size. Select the area again."))
         }
     }
 }
@@ -312,6 +324,7 @@ public enum ContextAssembler {
             ("composition", composition, isPage),
             ("story", ["story": prepared.storyText], includeStory),
             ("history", ["earlier": history], !history.isEmpty),
+            ("region", [:], intent.regionMask != nil),
             ("request", ["request": requestText], !requestText.isEmpty),
             ("legend", ["lines": legend], !legend.isEmpty),
         ]
@@ -329,19 +342,33 @@ public enum ContextAssembler {
         let references = sent.dropFirst(isRefinement ? 1 : 0).map {
             ReferenceImage(payload: $0.payload, sent: SentReference(image: $0.plan.ref, role: $0.plan.role, label: $0.plan.label))
         }
+        let mask = try regionMask(intent: intent, baseImage: baseImage, imageData: imageData)
         let request = ImageRequest(model: model, quality: intent.quality,
                                    output: OutputShape(boxAspect: aspect, exactSize: exactSize),
-                                   instruction: prompt, baseImage: baseImage, references: references)
+                                   instruction: prompt, baseImage: baseImage, references: references, mask: mask)
         var report = AssemblyReport(
             promptText: prompt.rendered,
             referencesSent: sent.map { SentReference(image: $0.plan.ref, role: $0.plan.role, label: $0.plan.label) },
             referencesOmitted: selection.omitted.map(\.sentReference), storyTextIncluded: includeStory,
             styleRevision: style.visualRevision,
-            estimatedInputBytes: prompt.rendered.utf8.count + selection.bytes,
+            estimatedInputBytes: prompt.rendered.utf8.count + selection.bytes + (mask?.pngData.count ?? 0),
             storyText: includeStory ? prepared.storyText : nil)
         report.assetRevisions = Dictionary(prepared.assets.map { ($0.asset.id, $0.asset.revision) },
                                            uniquingKeysWith: { first, _ in first })
         return (request, report)
+    }
+
+    /// Region edit (A §7.6): the stored 8-bit mask, checked against the base payload's pixel size
+    /// and encoded for the wire (alpha 0 = edit area). Nil when the intent has no mask.
+    static func regionMask(intent: GenerationIntent, baseImage: ImagePayload?,
+                           imageData: [ImageRef: Data]) throws(AssemblyError) -> MaskPayload? {
+        guard let ref = intent.regionMask else { return nil }
+        guard let data = imageData[ref], !data.isEmpty else { throw .maskImageMissing }
+        let mask: RegionMask
+        do { mask = try ImageOps.decodeMask(data) } catch { throw .maskImageMissing }
+        guard let baseImage, let size = baseImage.pixelSize, size == mask.pixelSize else { throw .maskSizeMismatch }
+        guard let png = try? ImageOps.providerMaskPNG(mask) else { throw .maskImageMissing }
+        return MaskPayload(pngData: png, pixelSize: size, ref: ref)
     }
 
     // MARK: Cast and subject wording

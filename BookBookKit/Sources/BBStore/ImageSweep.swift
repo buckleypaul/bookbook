@@ -14,6 +14,8 @@ enum ImageSweep {
                 if let p = version.provenance {
                     refs.append(contentsOf: p.referencesSent.map(\.image))
                     refs.append(contentsOf: p.referencesOmitted.map(\.image))
+                    // Region edits (Phase 11): the mask and the raw provider output stay for Version details.
+                    refs.append(contentsOf: [p.maskSent, p.rawOutput, p.intent.regionMask].compactMap { $0 })
                 }
             }
         }

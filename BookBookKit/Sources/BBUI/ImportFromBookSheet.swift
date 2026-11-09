@@ -12,6 +12,9 @@ final class ImportFromBookModel {
     let document: BookDocument
     private(set) var sourceURL: URL?
     private(set) var source: BookContent?
+    /// The source's assets and templates by name, sorted once when the source loads.
+    private(set) var sourceAssets: [Asset] = []
+    private(set) var sourceTemplates: [Template] = []
     var selection = BookImportSelection()
     var renames: [BookImportItem: String] = [:]
     private(set) var step: Step = .choose
@@ -35,25 +38,22 @@ final class ImportFromBookModel {
         let store = BookStore(packageURL: url)
         await store.setReadOnly()
         do {
-            source = try await store.load()
+            let loaded = try await store.load()
+            source = loaded
             sourceURL = url
+            sourceAssets = loaded.assets.values.sorted {
+                ($0.name.lowercased(), $0.id.rawValue.uuidString) < ($1.name.lowercased(), $1.id.rawValue.uuidString)
+            }
+            sourceTemplates = loaded.templates.values.sorted {
+                ($0.name.lowercased(), $0.id.rawValue.uuidString) < ($1.name.lowercased(), $1.id.rawValue.uuidString)
+            }
         } catch {
             source = nil
             sourceURL = nil
+            sourceAssets = []
+            sourceTemplates = []
             self.error = "Couldn't read that book. \(StoreErrorText.message(for: error))"
         }
-    }
-
-    var sourceAssets: [Asset] {
-        (source?.assets.values.sorted {
-            ($0.name.lowercased(), $0.id.rawValue.uuidString) < ($1.name.lowercased(), $1.id.rawValue.uuidString)
-        }) ?? []
-    }
-
-    var sourceTemplates: [Template] {
-        (source?.templates.values.sorted {
-            ($0.name.lowercased(), $0.id.rawValue.uuidString) < ($1.name.lowercased(), $1.id.rawValue.uuidString)
-        }) ?? []
     }
 
     // MARK: Clashes
@@ -123,8 +123,11 @@ final class ImportFromBookModel {
         error = nil
     }
 
-    var canImport: Bool {
-        canContinue && !hasNameClashes
+    var canImport: Bool { canImport(clashes: remainingClashes) }
+
+    /// `canImport` with `remainingClashes` already computed (the sheet computes them once per render).
+    func canImport(clashes: [BookImportClash]) -> Bool {
+        canContinue && clashes.isEmpty
             && renames.values.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
@@ -179,11 +182,13 @@ struct ImportFromBookSheet: View {
     }
 
     var body: some View {
+        // `BookImporter.clashes` runs once per render.
+        let clashes = model.remainingClashes
         VStack(alignment: .leading, spacing: 12) {
             Text("Import from Book").font(.headline)
             switch model.step {
             case .choose: chooseStep
-            case .rename: renameStep
+            case .rename: renameStep(clashes: clashes)
             }
             if let error = model.error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -198,14 +203,14 @@ struct ImportFromBookSheet: View {
                 if model.step == .rename {
                     Button("Back") { model.back() }
                 }
-                Button(model.step == .rename || !model.hasNameClashes ? "Import" : "Continue") {
+                Button(model.step == .rename || clashes.isEmpty ? "Import" : "Continue") {
                     Task {
                         await model.advance()
                         if model.isDone { dismiss() }
                     }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(model.step == .rename ? !model.canImport : !model.canContinue)
+                .disabled(model.step == .rename ? !model.canImport(clashes: clashes) : !model.canContinue)
             }
         }
         .padding(20)
@@ -286,10 +291,10 @@ struct ImportFromBookSheet: View {
     // MARK: Rename
 
     @ViewBuilder
-    private var renameStep: some View {
+    private func renameStep(clashes: [BookImportClash]) -> some View {
         Text("These names are already used in this book. Give each copy a new name.")
             .foregroundStyle(.secondary)
-        let stillClashing = Set(model.remainingClashes.map(\.item))
+        let stillClashing = Set(clashes.map(\.item))
         ForEach(model.renameItems) { clash in
             VStack(alignment: .leading, spacing: 2) {
                 HStack {

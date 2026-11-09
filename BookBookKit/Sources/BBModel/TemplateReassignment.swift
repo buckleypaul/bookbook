@@ -10,8 +10,10 @@ import Foundation
 /// 3. Text left over (more old text boxes than new ones) is appended, as extra paragraphs,
 ///    to the last mapped new text box, so no words are lost. With no new text box at all the
 ///    text is dropped (undo brings it back).
-///    Bound `.title`/`.author` boxes are never a target of rules 2 and 3 (only of rule 1), so
-///    body text never lands in them; a template with no free text box drops the text.
+///    Bound boxes (`.title`, `.author`, `.pageNumberSlot`) are never a source or a target of
+///    rules 2 and 3 (only of rule 1): body text never lands in them, and a bound box's text
+///    with no same-role box in the new template is dropped rather than moved into body text
+///    (Phase 16b #70a/#70b). A template with no free text box drops the text.
 /// 4. Image slots left over are dropped from the page (their sessions stay in the book).
 /// 5. New image boxes that received no slot are listed in `unassignedImageBoxes`; the caller
 ///    creates their empty sessions.
@@ -26,7 +28,12 @@ public enum TemplateReassignment {
         }
     }
 
-    private static func isBound(_ box: Box) -> Bool { box.role == .title || box.role == .author }
+    private static func isBound(_ box: Box) -> Bool {
+        switch box.role {
+        case .title, .author, .pageNumberSlot: true
+        case nil: false
+        }
+    }
 
     public static func reassign(_ page: Page, from old: Template, to new: Template) -> Result {
         var result = page
@@ -56,8 +63,8 @@ public enum TemplateReassignment {
             usedOldText.insert(box.id)
             usedNewText.insert(target.id)
         }
-        let restOldText = readingOrder(oldText.filter { !usedOldText.contains($0.id) })
-        // Bound title/author boxes never receive body text (Phase 5); with no free box the text is dropped.
+        // Bound boxes neither give nor receive body text (Phase 5, 16b); with no free box the text is dropped.
+        let restOldText = readingOrder(oldText.filter { !usedOldText.contains($0.id) && !Self.isBound($0) })
         let restNewText = readingOrder(newText.filter { !usedNewText.contains($0.id) && !Self.isBound($0) })
         for (from, to) in zip(restOldText, restNewText) {
             result.text[to.id] = page.text[from.id]

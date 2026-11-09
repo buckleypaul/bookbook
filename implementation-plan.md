@@ -50,11 +50,12 @@ Sizes: **S** is a few focused days, **M** about a week, **L** about two weeks (a
 | 10 | Assets and character sheets | L | Consistent characters: references, `@mentions`, sheets, where-used. |
 | 11 | Region editing | M | Brush or lasso an area and change only that area (OpenAI). |
 | 12 | Consistency check and AI templates | M | Drift warnings with a one-click fix. Describe a layout and get a template. |
-| 13 | Gemini provider *(floating)* | L | A second provider, with "Retry with Gemini". |
 | 14 | Export and print, complete | L | Print-shop PDF with bleed and crop marks, booklets, preflight, Print, PNG/JPEG export. |
 | 15 | Release pipeline | M | `brew install --cask buckleypaul/tap/bookbook` installs a notarized build. |
 | 16 | Library import, book settings, onboarding, sample | M | First-run setup, the new-book wizard, the sample book, clean-up, import from another book. |
 | 17 | Hardening and v1.0 | M | Tagged v1.0.0, installed through the tap. |
+
+**Post-MVP (not part of this plan; decided 2026-11-08):** Phase 13, the Gemini provider (a second provider, with "Retry with Gemini"), is out of scope for v1.0. v1.0 ships with OpenAI only. Its spec is kept in `plan/post-mvp/phase-13-gemini.md` for a later release, and no session picks it up. The provider protocols (BBAICore) and the `BBGemini` target stay, so it can be added later without changing the architecture.
 
 **Milestones**
 
@@ -78,7 +79,7 @@ Sizes: **S** is a few focused days, **M** about a week, **L** about two weeks (a
 
 ### 2.2 API key hygiene (applies to everyone, including subagents)
 
-The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, account `$USER`). A Gemini key will be added later as `gemini-api-key` in the same way.
+The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, account `$USER`). A Gemini key (`gemini-api-key`) is only needed for the post-MVP Gemini phase (Phase 13), which is not part of the v1.0 plan.
 
 - **The only allowed way to use it** is to inline it into the test process's environment:
   ```sh
@@ -107,9 +108,8 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
 | Use | Allotted |
 |---|---|
 | Phase 0 OpenAI spikes | $3 |
-| Phase 0 Gemini spikes (once the key exists) | $2 |
-| Phase-end live passes (Phases 2, 8, 9, 11, 12, 13, 17: about $0.30 each) | $2.50 |
-| Re-runs and contingency | $2.50 |
+| Phase-end live passes (Phases 2, 8, 9, 11, 12, 17: about $0.30 each) | $2.50 |
+| Re-runs and contingency | $4.50 (includes the $2 once allotted to the Gemini spikes, now post-MVP) |
 
 ### 2.5 Parallel work with subagents
 
@@ -122,9 +122,9 @@ The OpenAI dev key lives in the macOS Keychain (service `openai-api-key`, accoun
 ### 2.6 Phase workflow and progress tracking
 
 - **`PROGRESS.md`** at the repo root is the single record of where the build is. It has one row per phase (in the order 1a, 0, 1b, 2, 3 … 17), with a status, branch, PR (none from Phase 5 on), live spend and notes. Each phase session updates it. It also holds the open follow-ups (grouped by target phase) and the current phase's log. When a phase is `done`, its log moves to `progress/phase-<id>-<slug>.md` and its spec to `plan/done/`, so PROGRESS.md stays small.
-- **Statuses:** `not started` → `in progress` → `done (hand checks deferred)` (code is done, local tests are green, review fixes merged, merged into main and pushed; counts as `done` for dependencies) → `done` (you've confirmed the hand checks). Hand checks are deferred to the end of the build (decided 2026-11-08): unconfirmed ones are listed under "Deferred hand checks" in PROGRESS.md and you run them after the last phase. `awaiting hand checks` is the older status. `blocked` and `skipped (floating)` are also allowed.
+- **Statuses:** `not started` → `in progress` → `done (hand checks deferred)` (code is done, local tests are green, review fixes merged, merged into main and pushed; counts as `done` for dependencies) → `done` (you've confirmed the hand checks). Hand checks are deferred to the end of the build (decided 2026-11-08): unconfirmed ones are listed under "Deferred hand checks" in PROGRESS.md and you run them after the last phase. `awaiting hand checks` is the older status. `blocked` and `post-MVP` (out of scope for this plan; never picked) are also allowed.
 - **One phase per pair of sessions.** Session A (build: contracts, lanes, merge) and Session B (verify: tests, hand checks, review) work on a branch called `phase-<id>-<slug>`, with git worktrees for parallel lanes. A **Stage** line in the current phase log tells the next session where to resume. **No PRs or CI waits:** every session ends by merging the phase branch into `main` (`--no-ff`) and pushing `main` directly to `origin`, so main always has the latest work. Session B closes the phase as `done (hand checks deferred)`, archives it, merges into main and deletes the phase branch.
-- **Which phase is next:** the first phase in `PROGRESS.md` order that isn't `done` and whose solid dependencies (§3) are all `done`. Phase 13 is skipped while no `gemini-api-key` Keychain item exists. To check, run `security find-generic-password -s gemini-api-key >/dev/null 2>&1`; this checks the item exists without reading the key.
+- **Which phase is next:** the first phase in `PROGRESS.md` order that isn't `done` and whose solid dependencies (§3) are all `done`. Phases marked `post-MVP` (Phase 13, Gemini) are never picked.
 - **Git identity** is set in the repo config (`Paul Buckley <paul@paulbuckley.me>`). Don't override it.
 
 ---
@@ -160,10 +160,6 @@ graph TD
   P10 --> P12[12 Consistency + AI templates]
   P6 --> P12
   P0 -.SP7 fixtures.-> P12
-  P9 --> P13[13 Gemini - floating]
-  GK([Gemini key added]) -.-> P13
-  P12 -.layout + vision parts.-> P13
-  P11 -.hand check: region tool off.-> P13
   P4 --> P14[14 Export + print]
   P5 --> P14
   P7 --> P14
@@ -177,7 +173,6 @@ graph TD
   P16 --> P17
   P12 --> P17
   P11 --> P17
-  P13 -.if key available.-> P17
 ```
 
 **Preflight items** (Phase 14) for the asset-changed and consistency flags are added by whichever lands later: Phase 14, or the phase that adds the flag (10 or 12).
@@ -188,7 +183,7 @@ graph TD
 |---|---|
 | Start | **1a** first (an hour or so). Then **Phase 0** (spikes, in a standalone `Spikes/` package) alongside **1b** (project and CI). |
 | After M1 (Phase 2) | Three lanes: **A** = Phase 3 (storage); **B** = Phase 4 → Phase 5 → Phase 6 → Phase 7 (canvas and text; one lane, because they share `CanvasView`); **C** = Phase 8 → Phase 9 (AI). Phase 8's build work starts at once, and its hand checks wait for Phases 5 and 6. Phase 9 needs Phase 3 merged. |
-| After Phase 9 | Phase 10 (assets, once Phase 7 is in) ∥ Phase 11 (region editing) ∥ Phase 13 image part (Gemini, if the key exists) ∥ Phase 14 (export, once Phases 4, 5, 7 and 8 are done). |
+| After Phase 9 | Phase 10 (assets, once Phase 7 is in) ∥ Phase 11 (region editing) ∥ Phase 14 (export, once Phases 4, 5, 7 and 8 are done). |
 | After Phases 10 and 14 | Phase 12 (consistency, AI templates) ∥ **Phase 15 (release)** ∥ Phase 16 (onboarding etc.) |
 | End | Phase 17 |
 
@@ -205,7 +200,7 @@ Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve 
 | Old reference | Now in |
 |---|---|
 | §4, §4.1, §4.3 (Phase 0 spikes) | `plan/done/phase-00-spikes.md` |
-| §4.2 (Gemini spikes, SG-n) | `plan/phase-13-gemini.md` |
+| §4.2 (Gemini spikes, SG-n) | `plan/post-mvp/phase-13-gemini.md` (post-MVP) |
 | §5 Phase 1 | `plan/done/phase-01-setup-ci.md` |
 | §5 Phase 2 | `plan/done/phase-02-thin-slice.md` |
 | §5 Phase 3 | `plan/done/phase-03-storage-library.md` |
@@ -218,7 +213,7 @@ Old citations such as "implementation-plan.md §4.3" or Phase 2 "Risks" resolve 
 | §5 Phase 10 | `plan/done/phase-10-assets-characters.md` |
 | §5 Phase 11 | `plan/done/phase-11-region-editing.md` |
 | §5 Phase 12 | `plan/done/phase-12-consistency-ai-templates.md` |
-| §5 Phase 13 | `plan/phase-13-gemini.md` |
+| §5 Phase 13 | `plan/post-mvp/phase-13-gemini.md` (post-MVP) |
 | §5 Phase 14 | `plan/phase-14-export-print.md` |
 | §5 Phase 15 | `plan/phase-15-release.md` |
 | §5 Phase 16 | `plan/phase-16-import-onboarding.md` |

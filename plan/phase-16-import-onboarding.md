@@ -9,7 +9,7 @@ Part of implementation-plan.md; read the core file (§0–§3) first.
 **Deliverables**
 - Import from another book: assets, templates and/or the style guide as independent copies; deduplication by hash; a rename prompt for name clashes.
 - Book Settings in full: title and author, cost breakdown by type, recent requests, budget, size on disk, **Clean up** (count, bytes freed, confirmation).
-- First-run guided setup: what a key is, steps for each provider, paste and test, typical costs from the price list, OpenAI verification and Gemini requirements text. It can be skipped and reopened from Settings.
+- First-run guided setup: what a key is, steps for OpenAI (the only v1.0 provider; Gemini is post-MVP), paste and test, typical costs from the price list, and the OpenAI verification text. It can be skipped and reopened from Settings.
 - New-book wizard: title and author, size, style preset, optional main character, then an offer to import story text.
 - Style preset sample images and the **sample book**, made by you in the app (see the content note below) and bundled.
 

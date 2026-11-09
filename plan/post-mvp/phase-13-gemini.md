@@ -1,4 +1,6 @@
-# Phase 13 — Gemini provider (L, floating)
+# Phase 13 — Gemini provider (L, post-MVP)
+
+> **Post-MVP (decided 2026-11-08):** not part of the v1.0 plan, and no phase session picks it up. Kept as the spec for a later release. Some details below (dependencies, budget) predate this decision.
 
 Part of implementation-plan.md; read the core file (§0–§3) first.
 

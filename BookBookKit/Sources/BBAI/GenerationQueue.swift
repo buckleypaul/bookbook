@@ -212,22 +212,9 @@ public actor GenerationQueue {
     public func retry(_ id: QueueItemID) {
         guard let index = entries.firstIndex(where: { $0.id == id }),
               case .failed = entries[index].state else { return }
-        var entry = entries.remove(at: index)
-        entry.state = .waiting
-        if let version = entry.item.kind.checkedVersion {
-            let alreadyChecking = entries.contains { other in
-                if case .failed = other.state { return false }
-                return other.item.kind.checkedVersion == version
-            }
-            if !alreadyChecking {
-                let front = entries.firstIndex { $0.state == .waiting && $0.id != current?.id } ?? entries.endIndex
-                entries.insert(entry, at: front)
-            }
-        } else {
-            entries.append(entry)
-        }
-        changed()
-        startNextIfIdle()
+        let item = entries.remove(at: index).item
+        // `enqueue` applies the check dedupe, publishes, saves and starts the next item.
+        enqueue([item], position: item.kind.checkedVersion == nil ? .end : .front)
     }
 
     public func pause() {

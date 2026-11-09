@@ -477,13 +477,13 @@ public actor GenerationQueue {
             await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
             return nil
         }
-        guard let planned = ContextAssembler.plan(intent: item.intent, target: item.target,
-                                                  messageID: item.messageID, content: content) else {
+        guard let prepared = ContextAssembler.prepare(intent: item.intent, target: item.target,
+                                                      messageID: item.messageID, content: content) else {
             await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
             return nil
         }
         var imageData: [ImageRef: Data] = [:]
-        for image in planned {
+        for image in ContextAssembler.plan(prepared) {
             if let data = await host.imageData(for: image.ref, in: item.bookID) { imageData[image.ref] = data }
         }
         // Region edit (A §7.6): the user's mask is read with the other images.
@@ -497,8 +497,7 @@ public actor GenerationQueue {
         }
         do throws(AssemblyError) {
             let (request, report) = try ContextAssembler.assemble(
-                intent: item.intent, target: item.target, messageID: item.messageID, content: content,
-                model: model, imageData: imageData)
+                prepared: prepared, intent: item.intent, content: content, model: model, imageData: imageData)
             return (provider, model, request, report, item.intent.regionMask.flatMap { imageData[$0] })
         } catch {
             await finishFailed(item, error.providerError, report: nil, attempts: 0)

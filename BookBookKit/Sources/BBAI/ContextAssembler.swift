@@ -92,16 +92,11 @@ public enum ContextAssembler {
             // The message's session owns the geometry: find the slot that holds it now, since the
             // target's box ID may have moved or been reused by another box.
             if content.pages[targetPage]?.images[targetBox]?.sessionID != owner.id {
-                var home: (PageID, BoxID)?
-                outer: for (id, page) in content.pages {
-                    for (box, slot) in page.images where slot.sessionID == owner.id {
-                        home = (id, box)
-                        break outer
-                    }
-                }
                 // No slot holds the session any more. If the target box now belongs to another session,
                 // its shape is not this session's: resolve to nothing rather than use it.
-                if let home { (pageID, boxID) = home } else { return nil }
+                guard case let .pageBox(home, box) = ConsistencyAssembler.target(for: owner, in: content)
+                else { return nil }
+                (pageID, boxID) = (home, box)
             }
             session = owner
         } else {
@@ -189,6 +184,8 @@ public enum ContextAssembler {
         var candidates: [ReferenceSelector.Candidate]
         var storyText: String
         var includeStory: Bool
+        /// `requestDisplayText` for the intent (untrimmed).
+        var requestText: String
     }
 
     /// The request with mention tokens shown as asset names. A token whose asset was deleted
@@ -231,16 +228,19 @@ public enum ContextAssembler {
             base: base, attached: attached, assets: assets, styleReferences: content.style.styleReferences,
             matchText: matchText, sessions: content.sessions))
         return Prepared(context: context, assets: assets, candidates: candidates, storyText: storyText,
-                        includeStory: includeStory)
+                        includeStory: includeStory, requestText: request)
     }
 
     /// The images this request needs, in send order (A §7.4 tiers). Not yet capped by the
     /// model's budget; `assemble` applies it. Nil if the target is gone.
     public static func plan(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
                             content: BookContent) -> [PlannedImage]? {
-        prepare(intent: intent, target: target, messageID: messageID, content: content)?.candidates.map {
-            PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize)
-        }
+        prepare(intent: intent, target: target, messageID: messageID, content: content).map(plan)
+    }
+
+    /// `plan` for an already prepared request, so callers that go on to `assemble` prepare once.
+    static func plan(_ prepared: Prepared) -> [PlannedImage] {
+        prepared.candidates.map { PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize) }
     }
 
     static func limits(_ model: CatalogModel) -> ReferenceSelector.Limits {
@@ -256,6 +256,12 @@ public enum ContextAssembler {
                                 imageData: [ImageRef: Data] = [:]) throws(AssemblyError) -> (ImageRequest, AssemblyReport) {
         guard let prepared = prepare(intent: intent, target: target, messageID: messageID, content: content)
         else { throw .targetGone }
+        return try assemble(prepared: prepared, intent: intent, content: content, model: model, imageData: imageData)
+    }
+
+    /// `assemble` for an already prepared request (the same `intent` and `content`).
+    static func assemble(prepared: Prepared, intent: GenerationIntent, content: BookContent, model: CatalogModel,
+                         imageData: [ImageRef: Data]) throws(AssemblyError) -> (ImageRequest, AssemblyReport) {
         let session = prepared.context.session
         if let refines = intent.refines, session.version(refines) == nil { throw .baseVersionGone }
         let style = content.style
@@ -292,7 +298,7 @@ public enum ContextAssembler {
                 .map { MentionText.displayText($0.text, assets: content.assets).trimmed }.filter { !$0.isEmpty }
         }
         let history = earlier.enumerated().map { "\($0.offset + 1)) \($0.element)" }.joined(separator: "; ")
-        let requestText = requestDisplayText(intent: intent, messageID: messageID, content: content).trimmed
+        let requestText = prepared.requestText.trimmed
         let legend = sent.enumerated().map { index, entry in
             let name = entry.plan.asset.flatMap { content.assets[$0]?.name } ?? ""
             return PromptTemplates.render(PromptTemplates.text(for: "legend-\(entry.plan.role)") ?? "Image {{n}}.",

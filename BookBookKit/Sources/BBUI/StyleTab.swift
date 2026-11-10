@@ -188,6 +188,7 @@ enum FlagText {
 struct StyleTab: View {
     let document: BookDocument
     let model: StyleTabModel
+    let onEditPageNumbers: () -> Void
     @State private var showTypography = false
 
     var body: some View {
@@ -206,8 +207,9 @@ struct StyleTab: View {
                     CommitTextEditor(text: model.visual.negativeGuidance, minHeight: 50) { model.setNegativeGuidance($0) }
                 }
             }
-            Section("Typography") {
+            Section("Typography and page numbers") {
                 Button("Edit Typography…") { showTypography = true }
+                Button("Edit Page Numbers…") { onEditPageNumbers() }
                 Text("Typography and page setup changes don't mark images as style changed.")
                     .font(.caption).foregroundStyle(.secondary)
             }

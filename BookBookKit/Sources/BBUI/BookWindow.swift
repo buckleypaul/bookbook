@@ -190,7 +190,7 @@ struct BookEditor: View {
                     if case .restored = app.queueSnapshot.pause { QueueResumeBanner(pause: app.queueSnapshot.pause) }
                 }
         }
-        .inspector(isPresented: $showSession) {
+        .inspector(isPresented: inspectorShown) {
             sessionPanel(content)
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
         }
@@ -202,6 +202,7 @@ struct BookEditor: View {
         .focusedSceneValue(\.showTypography, $showTypography)
         .focusedSceneValue(\.showExport, $showExport)
         .focusedSceneValue(\.pagesController, pages)
+        .focusedSceneValue(\.draftAll, $draftAllRequested)
         .sheet(isPresented: $showTypography) { TypographyForm(document: document) }
         .sheet(isPresented: $showExport) {
             ExportSheet(model: ExportSheetModel(document: document, services: LiveExportServices(document: document)),
@@ -265,42 +266,22 @@ struct BookEditor: View {
         if case .reorderPages = command { true } else { false }
     }
 
+    /// The toolbar shows only on the Pages tab: the Overview / Editor switch and the session
+    /// panel toggle. Everything else lives in the menus, the Pages list (+ / −), the Style tab
+    /// (typography, page numbers) and the book switcher (book settings).
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         @Bindable var pages = pages
-        ToolbarItem(placement: .navigation) {
-            Picker("View", selection: $pages.mode) {
-                Label("Overview", systemImage: "square.grid.2x2").tag(PagesController.Mode.overview)
-                Label("Editor", systemImage: "doc.richtext").tag(PagesController.Mode.editor)
+        if sidebarTab == .pages {
+            ToolbarItem(placement: .navigation) {
+                Picker("View", selection: $pages.mode) {
+                    Label("Overview", systemImage: "square.grid.2x2").tag(PagesController.Mode.overview)
+                    Label("Editor", systemImage: "doc.richtext").tag(PagesController.Mode.editor)
+                }
+                .pickerStyle(.segmented)
+                .labelStyle(.iconOnly)
+                .help("Switch between the spread overview and the page editor")
             }
-            .pickerStyle(.segmented)
-            .labelStyle(.iconOnly)
-            .help("Switch between the spread overview and the page editor")
-        }
-        ToolbarItemGroup {
-            Button {
-                pages.sheet = .addPage(index: pages.insertionIndex)
-            } label: { Label("Add Page", systemImage: "plus.rectangle.on.rectangle") }
-                .help("Add a page after the selected one")
-                .disabled(!document.isEditable)
-            Button { pages.sheet = .importStory } label: {
-                Label("Import Story Text", systemImage: "text.badge.plus")
-            }
-            .help("Import story text and split it into pages")
-            .disabled(!document.isEditable)
-            Menu {
-                Button("Book Settings…") { pages.sheet = .bookSettings }.disabled(!document.isEditable)
-                Button("Page Numbers…") { pages.sheet = .pageNumbers }.disabled(!document.isEditable)
-                Button("Import from Book…") { pages.sheet = .importFromBook }.disabled(!document.isEditable)
-                Divider()
-                Button("Draft All Empty Boxes…") { draftAllRequested = true }
-                    .disabled(!document.isEditable || !app.hasOpenAIKey || !app.isOnline)
-                Divider()
-                Toggle("Show Page Numbers in Overview", isOn: $showNumbers)
-            } label: {
-                Label("Book", systemImage: "book.closed")
-            }
-            .help("Book settings, page numbers and typography")
         }
         if !app.isOnline {
             ToolbarItem {
@@ -309,15 +290,26 @@ struct BookEditor: View {
                     .help("Offline: queued requests will run when the network returns")
             }
         }
-        ToolbarItem {
-            Button { showTypography = true } label: { Label("Typography", systemImage: "textformat") }
-                .help("Fonts, size, colour and spacing for the whole book")
-                .disabled(!document.isEditable)
+        if sidebarTab == .pages {
+            ToolbarItem {
+                Button { showSession.toggle() } label: { Label("Session", systemImage: "sidebar.trailing") }
+                    .help("Show or hide the session panel")
+            }
         }
-        ToolbarItem {
-            Button { showSession.toggle() } label: { Label("Session", systemImage: "sidebar.trailing") }
-                .help("Show or hide the session panel")
-        }
+    }
+
+    /// The inspector: the session panel on the Pages tab (toggled from the toolbar), the asset
+    /// session on Assets and the box inspector on Layouts (always shown); none on Style.
+    private var inspectorShown: Binding<Bool> {
+        Binding(
+            get: {
+                switch sidebarTab {
+                case .pages: showSession
+                case .assets, .layouts: true
+                case .style: false
+                }
+            },
+            set: { shown in if sidebarTab == .pages { showSession = shown } })
     }
 
     @ViewBuilder
@@ -381,7 +373,8 @@ struct BookEditor: View {
             } else if sidebarTab == .layouts {
                 LayoutsDetail(document: document, model: layouts, images: images)
             } else if sidebarTab == .style {
-                StyleTab(document: document, model: styleModel)
+                StyleTab(document: document, model: styleModel,
+                         onEditPageNumbers: { [pages] in pages.sheet = .pageNumbers })
             } else {
             switch pages.mode {
             case .overview:

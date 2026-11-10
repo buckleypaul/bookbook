@@ -43,6 +43,14 @@ struct PagesOverview: View {
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .clipped()
         .background(Color(nsColor: .underPageBackgroundColor))
+        .overlay(alignment: .bottomTrailing) {
+            Toggle(isOn: $showNumbers) { Label("Page Numbers", systemImage: "number") }
+                .toggleStyle(.button)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.glass)
+                .help(showNumbers ? "Hide page numbers" : "Show page numbers")
+                .padding(12)
+        }
         .onDeleteCommand {
             if let page = pages.selectedPage { pages.delete(page) }
         }

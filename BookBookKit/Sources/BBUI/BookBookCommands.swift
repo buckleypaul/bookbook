@@ -15,6 +15,8 @@ extension FocusedValues {
     /// The Pages tab's controller in the key book window (Page menu, Import Story Text…,
     /// Book Settings…, Page Numbers…).
     @Entry var pagesController: PagesController?
+    /// Starts Draft All Empty Boxes in the key book window (Page ▸ Draft All Empty Boxes…).
+    @Entry var draftAll: Binding<Bool>?
 }
 
 /// App menu commands: File ▸ New Book…, Import Story Text…, Export PDF… and Book Settings…;
@@ -25,6 +27,7 @@ public struct BookBookCommands: Commands {
     @FocusedValue(\.showTypography) private var showTypography
     @FocusedValue(\.showExport) private var showExport
     @FocusedValue(\.pagesController) private var pages
+    @FocusedValue(\.draftAll) private var draftAll
     @Environment(\.openWindow) private var openWindow
 
     public init(app: AppModel) {
@@ -132,5 +135,8 @@ public struct BookBookCommands: Commands {
             if let selected { pages?.toggleSkipNumber(selected) }
         }
         .disabled(!editable || !story)
+        Divider()
+        Button("Draft All Empty Boxes…") { draftAll?.wrappedValue = true }
+            .disabled(!editable || draftAll == nil || !app.hasOpenAIKey || !app.isOnline)
     }
 }

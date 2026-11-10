@@ -53,46 +53,63 @@ struct ReferencePickerView: View {
     var body: some View {
         let sources = ReferenceSources.list(in: content, excluding: excluding)
         VStack(alignment: .leading, spacing: 0) {
-            Text("Reference Another Image").font(.headline).padding()
+            HStack(spacing: 6) {
+                Circle().fill(Crayon.sky).frame(width: 10, height: 10).accessibilityHidden(true)
+                Text("Reference Another Image").font(Crayon.font(.title3, weight: .heavy)).foregroundStyle(Crayon.ink)
+            }
+            .padding()
             Text("Only the image you pick is sent with your next request: no conversation or other context comes with it.")
-                .font(.caption).foregroundStyle(.secondary).padding(.horizontal)
+                .font(.caption).foregroundStyle(Crayon.inkSoft).padding(.horizontal)
+                .padding(.bottom, 6)
             if sources.isEmpty {
-                ContentUnavailableView("No Other Images", systemImage: "photo.on.rectangle",
-                                       description: Text("Images from other boxes, pages and assets appear here."))
+                CrayonEmptyState("No Other Images", systemImage: "photo.on.rectangle", color: Crayon.sky,
+                                 message: "Images from other boxes, pages and assets appear here.")
                     .frame(maxHeight: .infinity)
             } else {
                 List(sources) { source in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(source.label).font(.subheadline)
+                        Text(source.label).font(Crayon.font(.subheadline, weight: .bold)).foregroundStyle(Crayon.ink)
                         ScrollView(.horizontal) {
-                            HStack(spacing: 8) {
+                            HStack(spacing: 10) {
                                 ForEach(Array(source.versions.enumerated()), id: \.element.id) { index, version in
                                     Button {
                                         onPick(VersionRef(sessionID: source.sessionID, versionID: version.id))
                                         dismiss()
                                     } label: {
-                                        VStack(spacing: 2) {
+                                        VStack(spacing: 3) {
                                             VersionThumbnail(ref: version.image, url: store.imageURL(for: version.image))
                                                 .frame(width: 64, height: 64)
-                                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                                            Text("v\(index + 1)").font(.caption2).foregroundStyle(.secondary)
+                                                .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2,
+                                                                            style: .continuous))
+                                            Text("v\(index + 1)").font(Crayon.font(.caption2, weight: .heavy))
+                                                .foregroundStyle(Crayon.inkSoft)
                                         }
+                                        .crayonCard(cornerRadius: Crayon.smallCornerRadius + 2, padding: 4)
+                                        .crayonHover(tilt: index.isMultiple(of: 2) ? -2 : 2)
                                     }
                                     .buttonStyle(.plain)
                                     .accessibilityLabel("\(source.label), version \(index + 1)")
                                 }
                             }
+                            // Room for the card shadows and the hover lift.
+                            .padding(.horizontal, 4)
+                            .padding(.top, 6)
+                            .padding(.bottom, 10)
                         }
                     }
                     .padding(.vertical, 4)
+                    .listRowBackground(Color.clear)
                 }
+                .scrollContentBackground(.hidden)
             }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+                    .buttonBorderShape(.capsule)
             }
             .padding()
         }
         .frame(minWidth: 420, minHeight: 420)
+        .crayonPaper()
     }
 }

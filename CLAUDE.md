@@ -9,6 +9,14 @@ BookBook is a macOS 27 app for writing and illustrating picture books with AI im
 - `PHASE_PROMPT.md`: how one phase session runs.
 - Don't read `architecture-decisions.md` or the `Spikes/` reports unless the task needs that history.
 
+## Commands
+
+- `scripts/test.sh [all|secrets|bootstrap|kit|spikes|xcodeproj|app|release]`: what CI runs; `all` (default) is the green gate.
+- `cd BookBookKit && swift test --filter <Target>Tests`: fast package-only loop.
+- `make build` / `make run` / `make project` (xcodegen) / `make clean`: app convenience targets; DerivedData in `build/DerivedData`.
+- Needs XcodeGen exactly 2.46.0 (`scripts/test.sh xcodeproj` enforces it).
+- Run the app on a throwaway library: `-BookBookLibraryRoot <path>` launch argument (never saved).
+
 ## Module map
 
 Targets are defined in `BookBookKit/Package.swift` (architecture.md §3). Dependencies listed are the only ones allowed.
@@ -30,7 +38,9 @@ Targets are defined in `BookBookKit/Package.swift` (architecture.md §3). Depend
 | BookBookTests | `App/BookBookTests` | app-level tests | BookBook |
 
 - The app wires up the concrete providers. Providers depend on BBAICore, never the reverse.
-- Bundled resources: `BBAI/Resources/ModelCatalog.json`, `PriceList.json`, `Prompts/`; `BBStore/Resources/Presets/` (`StylePresets.json`, `TemplatePresets.json`); `BBTestSupport/Resources/Fonts/` (test font, OFL).
+- Bundled resources: `BBAI/Resources/ModelCatalog.json`, `PriceList.json`, `SensitiveTerms.json`, `Prompts/`; `BBStore/Resources/Presets/` (`StylePresets.json`, `TemplatePresets.json`), `SampleBook/`; `BBTestSupport/Resources/Fonts/` (test font, OFL).
+- Every target builds with Swift 6 language mode, `ExistentialAny` (write `any P`) and warnings-as-errors: a single warning fails `scripts/test.sh`.
+- Snapshots: BBAI prompt snapshots are in `BookBookKit/Tests/BBAISnapshots/` (outside the test target); BBLayout/BBExport use `__Snapshots__` next to their tests.
 
 ## File ownership (implementation-plan.md §2.5)
 

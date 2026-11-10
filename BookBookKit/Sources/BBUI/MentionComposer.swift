@@ -59,10 +59,12 @@ struct MentionSuggestions: View {
                     onPick(asset)
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: AssetTypeText.symbol(asset.type)).foregroundStyle(.secondary)
-                        Text(asset.name)
+                        Image(systemName: AssetTypeText.symbol(asset.type))
+                            .foregroundStyle(Crayon.color(forKey: asset.id.rawValue.uuidString))
+                            .fontWeight(.semibold)
+                        Text(asset.name).foregroundStyle(Crayon.ink)
                         Spacer()
-                        Text(AssetTypeText.name(asset.type)).font(.caption).foregroundStyle(.secondary)
+                        Text(AssetTypeText.name(asset.type)).font(.caption).foregroundStyle(Crayon.inkSoft)
                     }
                     .contentShape(Rectangle())
                     .padding(.horizontal, 8)
@@ -73,8 +75,7 @@ struct MentionSuggestions: View {
             }
         }
         .padding(.vertical, 4)
-        .background(.background, in: RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+        .crayonCard(cornerRadius: Crayon.smallCornerRadius)
     }
 }
 

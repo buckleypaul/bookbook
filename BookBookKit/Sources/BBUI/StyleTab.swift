@@ -193,29 +193,38 @@ struct StyleTab: View {
 
     var body: some View {
         Form {
-            Section("Visual style") {
+            Section {
                 presetPicker
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Description").font(.subheadline)
+                    StyleFieldTitle("Description")
                     CommitTextEditor(text: model.visual.visualDescription, minHeight: 90) { model.setDescription($0) }
                     Text("Describes the look of every image. Placed images are flagged \"Style changed\" when this, the references or the negative guidance change.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(Crayon.inkSoft)
                 }
                 StyleReferencesView(document: document, model: model)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Negative guidance").font(.subheadline)
+                    StyleFieldTitle("Negative guidance")
                     CommitTextEditor(text: model.visual.negativeGuidance, minHeight: 50) { model.setNegativeGuidance($0) }
                 }
+            } header: {
+                CrayonHeader("Visual style", color: Crayon.grape)
             }
-            Section("Typography and page numbers") {
-                Button("Edit Typography…") { showTypography = true }
-                Button("Edit Page Numbers…") { onEditPageNumbers() }
+            Section {
+                HStack(spacing: 8) {
+                    Button("Edit Typography…") { showTypography = true }
+                    Button("Edit Page Numbers…") { onEditPageNumbers() }
+                }
+                .buttonBorderShape(.capsule)
                 Text("Typography and page setup changes don't mark images as style changed.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(Crayon.inkSoft)
+            } header: {
+                CrayonHeader("Typography and page numbers", color: Crayon.sky)
             }
             PageSetupForm(model: model)
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .crayonPaper()
         .disabled(!document.isEditable)
         .sheet(isPresented: $showTypography) { TypographyForm(document: document) }
     }
@@ -249,12 +258,25 @@ struct CommitTextEditor: View {
             .focused($focused)
             .frame(minHeight: minHeight)
             .scrollContentBackground(.hidden)
-            .padding(4)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
+            .padding(6)
+            .background(Crayon.paper, in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
+                .strokeBorder(focused ? Crayon.tomato.opacity(0.7) : Crayon.ink.opacity(0.12),
+                              lineWidth: focused ? 2 : 1.5))
             .onAppear { draft = text }
             .onChange(of: text) { _, new in if draft != new { draft = new } }
             .onChange(of: focused) { _, now in if !now, draft != text { commit(draft) } }
             .onDisappear { if draft != text { commit(draft) } }
+    }
+}
+
+/// A field title inside a Style tab section, in rounded bold type.
+private struct StyleFieldTitle: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title).font(Crayon.font(.subheadline, weight: .bold)).foregroundStyle(Crayon.ink)
     }
 }

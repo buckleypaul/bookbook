@@ -37,7 +37,7 @@ struct FormatBar: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .fixedSize(horizontal: false, vertical: true)
-        .background(.bar)
+        .background(Crayon.paperDeep)
         .accessibilityIdentifier("format-bar")
     }
 
@@ -76,8 +76,9 @@ struct FormatBar: View {
     private func toggle(_ symbol: String, _ title: String, on: Bool?, _ action: FormatAction) -> some View {
         Button { formatting.perform(action) } label: {
             Image(systemName: symbol)
+                .fontWeight(.semibold)
                 .frame(width: 24, height: 22)
-                .background(on == true ? Color.accentColor.opacity(0.3) : .clear, in: .rect(cornerRadius: 4))
+                .background(on == true ? Crayon.tomato.opacity(0.2) : .clear, in: .rect(cornerRadius: 6))
         }
         .help(title)
         .accessibilityLabel(title)

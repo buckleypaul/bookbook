@@ -15,12 +15,13 @@ struct TemplatePicker: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 12)], spacing: 12) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 14)], spacing: 16) {
                 ForEach(templates) { template in
                     cell(template)
                 }
             }
-            .padding(8)
+            // Room for the cards' shadows and hover lift.
+            .padding(12)
         }
     }
 
@@ -28,17 +29,16 @@ struct TemplatePicker: View {
         let aspect = trimSize.height > 0 ? trimSize.width / trimSize.height : 0.75
         let width = height * aspect * (template.kind == .spread ? 2 : 1)
         let selected = selection == template.id
-        return VStack(spacing: 4) {
+        return VStack(spacing: 6) {
             TemplateDiagram(template: template)
                 .frame(width: min(width, 200), height: height)
-                .padding(4)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.3),
-                                      lineWidth: selected ? 3 : 1)
-                }
+                .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
+                .padding(8)
+                .crayonCard(selected: selected, cornerRadius: Crayon.smallCornerRadius + 2)
+                .crayonHover()
             Text(template.name)
-                .font(.caption)
+                .font(Crayon.font(.caption, weight: selected ? .bold : .semibold))
+                .foregroundStyle(selected ? Crayon.tomato : Crayon.ink)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
         }
@@ -65,15 +65,16 @@ struct TemplateDiagram: View {
             for box in template.boxes {
                 let rect = CGRect(x: box.frame.x * size.width, y: box.frame.y * size.height,
                                   width: box.frame.width * size.width, height: box.frame.height * size.height)
+                // Crayon-tinted boxes on the white page (a diagram, not page art).
                 switch box.content {
                 case .image:
-                    ctx.fill(Path(rect), with: .color(.gray.opacity(0.35)))
+                    ctx.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(Crayon.sky.opacity(0.4)))
                 case .text:
-                    ctx.stroke(Path(rect), with: .color(.gray.opacity(0.5)), lineWidth: 0.5)
+                    ctx.stroke(Path(rect), with: .color(Crayon.grape.opacity(0.5)), lineWidth: 0.5)
                     var y = rect.minY + 3
                     while y < rect.maxY - 2 {
                         ctx.fill(Path(CGRect(x: rect.minX + 2, y: y, width: max(0, rect.width - 4), height: 1)),
-                                 with: .color(.gray.opacity(0.6)))
+                                 with: .color(Crayon.grape.opacity(0.55)))
                         y += 4
                     }
                 }
@@ -101,20 +102,25 @@ struct TemplatePickerSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.headline)
+            CrayonHeader(title)
             TemplatePicker(templates: templates, trimSize: trimSize, selection: $selection) { choose($0) }
                 .frame(minHeight: 260)
+                .background(Crayon.paperDeep, in: .rect(cornerRadius: Crayon.cornerRadius, style: .continuous))
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.capsule)
                 Button(confirmTitle) { if let selection { choose(selection) } }
                     .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.crayon)
                     .disabled(selection == nil)
             }
         }
         .padding(20)
         .frame(width: 560, height: 420)
+        .crayonPaper()
         .onAppear { if selection == nil { selection = initialSelection ?? templates.first?.id } }
     }
 

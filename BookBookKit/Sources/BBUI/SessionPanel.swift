@@ -122,19 +122,24 @@ struct SessionPanel: View {
                 if let pageBox {
                     AssetChecklistView(document: document, content: content, pageID: pageBox.page)
                         .padding(.horizontal)
-                        .padding(.top, 8)
+                        .padding(.top, 10)
                 }
                 composer(session)
-                    .padding()
+                    .crayonCard(padding: 12)
+                    .padding(12)
             } else {
-                ContentUnavailableView("No Session", systemImage: "photo",
-                                       description: Text(isAsset ? "This reference has no session."
-                                                         : "This image box has no session."))
+                CrayonEmptyState("No Session", systemImage: "photo", color: Crayon.sky,
+                                 message: isAsset ? "This reference has no session."
+                                     : "This image box has no session.")
             }
         }
         .overlay {
             if dropTargeted {
-                RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor, lineWidth: 3).padding(4)
+                RoundedRectangle(cornerRadius: Crayon.cornerRadius, style: .continuous)
+                    .strokeBorder(Crayon.tomato, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                    .background(Crayon.tomato.opacity(0.06),
+                                in: RoundedRectangle(cornerRadius: Crayon.cornerRadius, style: .continuous))
+                    .padding(4)
                     .allowsHitTesting(false)
             }
         }
@@ -229,8 +234,16 @@ struct SessionPanel: View {
     }
 
     private var header: some View {
-        HStack {
-            Text(isAsset ? document.ownerLabel(owner) : "Session").font(.headline)
+        HStack(spacing: 8) {
+            Circle()
+                .fill(headerColor)
+                .frame(width: 10, height: 10)
+                .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
+                .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
+                .accessibilityHidden(true)
+            Text(isAsset ? document.ownerLabel(owner) : "Session")
+                .font(Crayon.font(.headline, weight: .heavy))
+                .foregroundStyle(Crayon.ink)
             Spacer()
             Menu {
                 Button("Choose Image…") { showImporter = true }
@@ -238,13 +251,20 @@ struct SessionPanel: View {
                 Button("Reset Session…", role: .destructive) { confirmReset = true }
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(Crayon.inkSoft)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
             .accessibilityLabel("Session actions")
         }
         .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
+        .background(Crayon.paperDeep)
+    }
+
+    /// The header dot: the asset's own colour, or sky for a page box.
+    private var headerColor: Color {
+        owner.assetID.map { Crayon.color(forKey: $0.rawValue.uuidString) } ?? Crayon.sky
     }
 
     // MARK: Thread
@@ -253,25 +273,42 @@ struct SessionPanel: View {
     private func thread(_ session: Session) -> some View {
         let messages = session.visibleMessages.filter { $0.role == .user }
         if messages.isEmpty {
-            Text(isAsset ? "Describe the picture, then press Generate. Or drop in your own image."
-                 : "Describe the picture for this box, then press Generate. Or drop in your own image.")
-                .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(Crayon.sunflower)
+                    .accessibilityHidden(true)
+                Text(isAsset ? "Describe the picture, then press Generate. Or drop in your own image."
+                     : "Describe the picture for this box, then press Generate. Or drop in your own image.")
+                    .font(Crayon.font(.callout, weight: .medium))
+                    .foregroundStyle(Crayon.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Crayon.sunflower.opacity(0.12), in: ThreadBubble.shape)
+            .overlay(ThreadBubble.shape.strokeBorder(Crayon.sunflower.opacity(0.5),
+                                                     style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
         }
         ForEach(messages) { message in
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 5) {
                 if let refines = message.refines, let number = session.versionNumber(refines) {
                     Label("refined version \(number)", systemImage: "arrow.triangle.branch")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.grape)
                 }
                 Text(MentionText.displayText(message.text, assets: content.assets,
                                              fallback: VersionDetailsContent.deletedAssetName))
+                    .foregroundStyle(Crayon.ink)
                     .textSelection(.enabled)
-                    .padding(8)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    .background(Crayon.sky.opacity(0.16), in: ThreadBubble.shape)
+                    .overlay(ThreadBubble.shape.strokeBorder(Crayon.sky.opacity(0.35), lineWidth: 1))
                 ForEach(message.attachedReferences, id: \.self) { ref in
                     if let label = ReferenceSources.chipLabel(ref, in: content) {
-                        Label("With \(label)", systemImage: "paperclip").font(.caption).foregroundStyle(.secondary)
+                        Label("With \(label)", systemImage: "paperclip")
+                            .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
                     }
                 }
                 statusLine(app.status(of: message), message: message, session: session)
@@ -285,40 +322,42 @@ struct SessionPanel: View {
         case .none:
             EmptyView()
         case .waiting:
-            HStack(spacing: 6) {
+            StatusPill(color: Crayon.sunflower) {
                 ProgressView().controlSize(.small)
+            } label: {
                 Text("Waiting in the queue…")
             }
-            .font(.caption).foregroundStyle(.secondary)
         case let .running(startedAt, typical):
-            HStack(spacing: 6) {
+            StatusPill(color: Crayon.sky) {
                 ProgressView().controlSize(.small)
+            } label: {
                 TimelineView(.periodic(from: startedAt, by: 1)) { context in
                     Text("Generating… " + ElapsedTimeText.progress(elapsed: context.date.timeIntervalSince(startedAt),
                                                                      typical: typical))
                         .monospacedDigit()
                 }
             }
-            .font(.caption).foregroundStyle(.secondary)
         case let .failed(error):
             if let advice = failedEntry(for: message).flatMap({ app.advice(for: $0) }) {
                 FailureAdviceView(advice: advice)
             } else {
-                Label(ProviderErrorText.message(for: error), systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                StatusPill(color: Crayon.tomato, systemImage: "exclamationmark.triangle.fill") {
+                    Text(ProviderErrorText.message(for: error))
+                }
             }
         case let .notSaved(text):
-            Label(text, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
+            StatusPill(color: Crayon.tomato, systemImage: "exclamationmark.triangle.fill") {
+                Text(text)
+            }
         case .interrupted:
-            Label("Not finished: BookBook quit before the picture arrived.", systemImage: "clock.badge.xmark")
-                .font(.caption).foregroundStyle(.secondary)
+            StatusPill(color: Crayon.inkSoft, systemImage: "clock.badge.xmark") {
+                Text("Not finished: BookBook quit before the picture arrived.")
+            }
         case let .produced(versionID):
             if let number = session.versionNumber(versionID) {
-                Label("Version \(number)", systemImage: "photo")
-                    .font(.caption).foregroundStyle(.secondary)
+                StatusPill(color: Crayon.grass, systemImage: "photo") {
+                    Text("Version \(number)")
+                }
             }
         }
     }
@@ -333,8 +372,8 @@ struct SessionPanel: View {
 
     private func versions(_ session: Session) -> some View {
         let base = baseID(session)
-        return VStack(alignment: .leading, spacing: 6) {
-            Text("Versions").font(.headline)
+        return VStack(alignment: .leading, spacing: 8) {
+            CrayonHeader("Versions", color: Crayon.grape)
             VersionStrip(session: session, placedID: placedID,
                          placedHelp: owner.assetID == nil ? "On the page" : "Chosen", selectedID: base,
                          store: document.store,
@@ -356,8 +395,9 @@ struct SessionPanel: View {
                     Button("Delete…", role: .destructive) { pendingDelete = version.id }
                 }
                 .controlSize(.small)
+                .buttonBorderShape(.capsule)
                 if let reason {
-                    Text(reason).font(.caption).foregroundStyle(.secondary)
+                    Text(reason).font(.caption).foregroundStyle(Crayon.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -374,21 +414,37 @@ struct SessionPanel: View {
             hasKey: app.hasOpenAIKey, isPending: checking)
         VStack(alignment: .leading, spacing: 6) {
             if checking {
-                HStack(spacing: 6) {
+                StatusPill(color: Crayon.sky) {
                     ProgressView().controlSize(.small)
+                } label: {
                     Text("Checking consistency…")
                 }
-                .font(.caption).foregroundStyle(.secondary)
             } else if let report = version.consistency, report.warns, !report.dismissed {
-                Label("Consistency warning", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption.bold()).foregroundStyle(.orange)
-                ForEach(Array(ConsistencyPresentation.lines(report).enumerated()), id: \.offset) { _, line in
-                    Text(line).font(.caption).fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 4) {
+                    Label {
+                        Text("Consistency warning").foregroundStyle(Crayon.ink)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(Crayon.ink, Crayon.sunflower)
+                    }
+                    .font(Crayon.font(.caption, weight: .heavy))
+                    ForEach(Array(ConsistencyPresentation.lines(report).enumerated()), id: \.offset) { _, line in
+                        Text(line).font(.caption).foregroundStyle(Crayon.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
                 }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Crayon.sunflower.opacity(0.18),
+                            in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+                    .strokeBorder(Crayon.sunflower.opacity(0.7), lineWidth: 1.5))
             } else if let report = version.consistency {
-                Label(ConsistencyPresentation.resultText(report), systemImage: "checkmark.seal")
-                    .font(.caption).foregroundStyle(.secondary)
+                StatusPill(color: Crayon.grass, systemImage: "checkmark.seal") {
+                    Text(ConsistencyPresentation.resultText(report))
+                }
             }
             if !checking, let entry = app.consistencyCheckEntry(versionID: version.id),
                case .failed = entry.state, let advice = app.advice(for: entry) {
@@ -418,8 +474,9 @@ struct SessionPanel: View {
                 .help(reason ?? "Compare this picture with the references of the assets in it.")
             }
             .controlSize(.small)
+            .buttonBorderShape(.capsule)
             if let reason, !checking {
-                Text(reason).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(reason).font(.caption).foregroundStyle(Crayon.inkSoft).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -536,17 +593,25 @@ struct SessionPanel: View {
     @ViewBuilder
     private func details(_ session: Session) -> some View {
         if let id = baseID(session) ?? session.versions.last?.id, let version = session.version(id) {
-            DisclosureGroup("Version details", isExpanded: $detailsExpanded) {
+            DisclosureGroup(isExpanded: $detailsExpanded) {
                 VersionDetailsGrid(version: version, session: session, bookID: document.id, assets: content.assets)
                 if version.provenance != nil {
                     Button("Regenerate with Same Settings") {
                         regenerate(version)
                     }
                     .controlSize(.small)
+                    .buttonBorderShape(.capsule)
                     .disabled(!app.hasOpenAIKey || !app.isOnline)
                     .padding(.top, 6)
                 }
+            } label: {
+                Text("Version details")
+                    .font(Crayon.font(.subheadline, weight: .bold))
+                    .foregroundStyle(Crayon.ink)
             }
+            .padding(12)
+            .background(Crayon.paperDeep,
+                        in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
         }
     }
 
@@ -568,7 +633,14 @@ struct SessionPanel: View {
                       ?? (isAsset ? "Describe the picture" : "Describe the picture (type @ to mention an asset)"),
                       text: $prompt, axis: .vertical)
                 .lineLimit(2...6)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .font(Crayon.font(.body, weight: .regular))
+                .foregroundStyle(Crayon.ink)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Crayon.paper, in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
+                    .strokeBorder(Crayon.ink.opacity(0.12), lineWidth: 1.5))
                 .onSubmit {
                     if let query, let first = suggestions.first {
                         prompt = MentionCompletion.insert(first, replacing: query, in: prompt)
@@ -609,32 +681,41 @@ struct SessionPanel: View {
                 }
             }
             HStack {
-                Text(app.defaultModelName).font(.caption).foregroundStyle(.secondary)
+                Text(app.defaultModelName).font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
                 Spacer()
                 if app.isOnline {
-                    Text(CostText.estimate(estimate)).font(.caption).foregroundStyle(.secondary)
+                    Text(CostText.estimate(estimate))
+                        .font(Crayon.font(.caption, weight: .bold))
+                        .foregroundStyle(Crayon.ink)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Crayon.grass.opacity(0.18), in: Capsule())
                         .accessibilityLabel("Estimated cost: \(CostText.estimate(estimate))")
                 }
                 Button(!app.isOnline ? "Offline" : (number.map { "Refine Version \($0)" } ?? "Generate")) {
                     generate(refining: base)
                 }
+                    .buttonStyle(.crayon)
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(!app.isOnline || !app.hasOpenAIKey
                               || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if app.missingDefaultModel != nil {
                 HStack(spacing: 4) {
-                    Text("The default model isn't available to your account.")
+                    Text("The default model isn't available to your account.").foregroundStyle(Crayon.ink)
                     SettingsLink { Text("Pick another in Settings…") }.buttonStyle(.link)
                 }
-                .font(.caption).foregroundStyle(.orange)
+                .font(.caption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Crayon.sunflower.opacity(0.2), in: Capsule())
             }
             if !app.hasOpenAIKey {
                 HStack(spacing: 4) {
                     Text("Add your OpenAI key in Settings ▸ API Keys to generate.")
                     SettingsLink { Text("Open Settings…") }.buttonStyle(.link)
                 }
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(Crayon.inkSoft)
             }
         }
     }
@@ -648,21 +729,24 @@ struct SessionPanel: View {
                 Label("Reference Another Image…", systemImage: "paperclip")
             }
             .controlSize(.small)
+            .buttonBorderShape(.capsule)
             ForEach(liveAttached, id: \.self) { ref in
-                HStack(spacing: 2) {
+                HStack(spacing: 3) {
                     Text(ReferenceSources.chipLabel(ref, in: content) ?? "Image").lineLimit(1)
+                        .foregroundStyle(Crayon.ink)
                     Button {
                         attached.removeAll { $0 == ref }
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(Crayon.sky)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Remove reference")
                 }
-                .font(.caption)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.quaternary, in: Capsule())
+                .font(Crayon.font(.caption, weight: .semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Crayon.sky.opacity(0.18), in: Capsule())
+                .overlay(Capsule().strokeBorder(Crayon.sky.opacity(0.45), lineWidth: 1))
             }
         }
     }
@@ -840,8 +924,9 @@ private struct VersionDetailsGrid: View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
             ForEach(VersionDetailsContent.rows(for: version, in: session, cost: cost, assets: assets, checkCost: checkCost), id: \.self) { row in
                 GridRow {
-                    Text(row.label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
-                    Text(row.value).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    Text(row.label).fontWeight(.semibold).foregroundStyle(Crayon.inkSoft).gridColumnAlignment(.trailing)
+                    Text(row.value).foregroundStyle(Crayon.ink).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -855,6 +940,54 @@ private struct VersionDetailsGrid: View {
     }
 }
 
+/// The shape of a chat bubble in the session thread: rounded, with a small "tail" corner.
+private enum ThreadBubble {
+    static let shape = UnevenRoundedRectangle(topLeadingRadius: Crayon.cornerRadius,
+                                              bottomLeadingRadius: 4,
+                                              bottomTrailingRadius: Crayon.cornerRadius,
+                                              topTrailingRadius: Crayon.cornerRadius,
+                                              style: .continuous)
+}
+
+/// A status line in the thread: a soft colour wash with a coloured symbol and ink text, so the
+/// state reads at a glance and the text stays legible in both appearances.
+private struct StatusPill<Icon: View, Content: View>: View {
+    let color: Color
+    let icon: Icon
+    let content: Content
+
+    init(color: Color, @ViewBuilder icon: () -> Icon, @ViewBuilder label: () -> Content) {
+        self.color = color
+        self.icon = icon()
+        self.content = label()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 6) {
+            icon.foregroundStyle(color)
+            content
+                .foregroundStyle(Crayon.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(Crayon.font(.caption, weight: .semibold))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(color.opacity(0.4), lineWidth: 1))
+    }
+}
+
+private extension StatusPill where Icon == StatusSymbol {
+    init(color: Color, systemImage: String, @ViewBuilder label: () -> Content) {
+        self.init(color: color, icon: { StatusSymbol(name: systemImage) }, label: label)
+    }
+}
+
+/// A status symbol that VoiceOver skips, as a `Label`'s icon is.
+private struct StatusSymbol: View {
+    let name: String
+    var body: some View { Image(systemName: name).accessibilityHidden(true) }
+}
 
 /// The availability text for "Edit Region…" (PD §8.6: unavailable, with a short explanation).
 enum RegionEditEntry {

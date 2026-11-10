@@ -18,13 +18,19 @@ struct AssetChecklistView: View {
         DisclosureGroup(isExpanded: $expanded) {
             if assets.isEmpty {
                 Text("No assets yet. Add characters, places and objects in the Assets tab.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(Crayon.inkSoft)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(assets) { asset in
                         Toggle(isOn: Binding(get: { checklist.contains(asset.id) },
                                              set: { toggle(asset.id, on: $0) })) {
-                            Label(asset.name, systemImage: AssetTypeText.symbol(asset.type))
+                            Label {
+                                Text(asset.name).foregroundStyle(Crayon.ink)
+                            } icon: {
+                                Image(systemName: AssetTypeText.symbol(asset.type))
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(Crayon.color(forKey: asset.id.rawValue.uuidString))
+                            }
                         }
                         .toggleStyle(.checkbox)
                     }
@@ -32,7 +38,12 @@ struct AssetChecklistView: View {
                 .padding(.top, 4)
             }
         } label: {
-            Text(ticked == 0 ? "Assets on this page" : "Assets on this page (\(ticked))").font(.headline)
+            HStack(spacing: 6) {
+                Circle().fill(Crayon.grass).frame(width: 8, height: 8).accessibilityHidden(true)
+                Text(ticked == 0 ? "Assets on this page" : "Assets on this page (\(ticked))")
+                    .font(Crayon.font(.headline, weight: .heavy))
+                    .foregroundStyle(Crayon.ink)
+            }
         }
     }
 

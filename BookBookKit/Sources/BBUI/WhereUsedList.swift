@@ -50,19 +50,27 @@ struct WhereUsedList: View {
 
     var body: some View {
         if sites.isEmpty {
-            Text("Not used on any page.").foregroundStyle(.secondary)
+            Text("Not used on any page.").font(Crayon.font(.callout, weight: .medium)).foregroundStyle(Crayon.inkSoft)
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(sites, id: \.self) { site in
                     Button { onOpen(site.page, site.box) } label: {
                         HStack {
                             Image(systemName: site.box == nil ? "doc" : "photo")
+                                .fontWeight(.semibold)
+                                .foregroundStyle(site.box == nil ? Crayon.sky : Crayon.grape)
                             Text(WhereUsedText.siteLabel(site, in: content))
-                            Text(WhereUsedText.reasons(site.reasons)).foregroundStyle(.secondary)
+                                .font(Crayon.font(.body, weight: .semibold)).foregroundStyle(Crayon.ink)
+                            Text(WhereUsedText.reasons(site.reasons)).foregroundStyle(Crayon.inkSoft)
                             Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.right").fontWeight(.bold).foregroundStyle(Crayon.tomato)
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Crayon.paperDeep,
+                                    in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
                         .contentShape(Rectangle())
+                        .crayonHover(tilt: -0.5, scale: 1.01)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Open \(WhereUsedText.siteLabel(site, in: content))")

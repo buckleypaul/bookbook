@@ -26,12 +26,15 @@ struct VersionStrip: View {
 
     var body: some View {
         ScrollView(.horizontal) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 ForEach(Array(session.versions.enumerated()), id: \.element.id) { index, version in
                     cell(version, number: index + 1)
                 }
             }
-            .padding(4)
+            // Room for the card shadows and the hover lift.
+            .padding(.horizontal, 6)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
     }
 
@@ -41,26 +44,28 @@ struct VersionStrip: View {
         return Button {
             onChoose(version)
         } label: {
-            VStack(spacing: 3) {
+            VStack(spacing: 4) {
                 VersionThumbnail(ref: version.image, url: store.imageURL(for: version.image))
                     .frame(width: 64, height: 64)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(selected ? Color.accentColor : Color.secondary.opacity(0.3),
-                                      lineWidth: selected ? 3 : 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2, style: .continuous))
                     .overlay(alignment: .topTrailing) { starButton(version) }
                     .overlay(alignment: .bottomTrailing) { consistencyBadge(version) }
                     .overlay(alignment: .bottomLeading) {
                         if placed {
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.white, Color.accentColor)
+                                .font(.callout.weight(.bold))
+                                .foregroundStyle(.white, Crayon.grass)
+                                .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
                                 .padding(3)
                                 .help(placedHelp)
                         }
                     }
-                Text("v\(number)").font(.caption2).monospacedDigit()
-                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                Text("v\(number)")
+                    .font(Crayon.font(.caption2, weight: .heavy)).monospacedDigit()
+                    .foregroundStyle(selected ? Crayon.tomato : Crayon.inkSoft)
             }
+            .crayonCard(selected: selected, tint: Crayon.tomato, cornerRadius: Crayon.smallCornerRadius + 2, padding: 4)
+            .crayonHover(tilt: number.isMultiple(of: 2) ? 2 : -2)
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -83,7 +88,8 @@ struct VersionStrip: View {
                 .accessibilityLabel("Checking consistency")
         } else if version.consistency?.showsWarning == true {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.black, .yellow)
+                .foregroundStyle(.black, Crayon.sunflower)
+                .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
                 .padding(3)
                 .help("This picture differs from the references. Open Version details to fix or dismiss.")
                 .accessibilityLabel("Consistency warning")
@@ -95,9 +101,9 @@ struct VersionStrip: View {
             onToggleStar(version)
         } label: {
             Image(systemName: version.starred ? "star.fill" : "star")
-                .font(.caption)
-                .foregroundStyle(version.starred ? Color.yellow : Color.white)
-                .shadow(radius: 1)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(version.starred ? Crayon.sunflower : Color.white)
+                .shadow(color: .black.opacity(0.45), radius: 1)
                 .padding(3)
         }
         .buttonStyle(.plain)
@@ -117,7 +123,7 @@ struct VersionThumbnail: View {
             if let image {
                 Image(decorative: image, scale: 1).resizable().scaledToFill()
             } else {
-                Rectangle().fill(.quaternary).overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+                Rectangle().fill(Crayon.paperDeep).overlay(Image(systemName: "photo").foregroundStyle(Crayon.inkSoft))
             }
         }
         .task(id: ref) {

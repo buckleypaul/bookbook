@@ -126,7 +126,13 @@ struct CommittedTextField: View {
                 TextEditor(text: $draft)
                     .font(.body)
                     .frame(minHeight: 70)
-                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(.quaternary))
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(Crayon.paper,
+                                in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
+                        .strokeBorder(focused ? Crayon.tomato.opacity(0.7) : Crayon.ink.opacity(0.12),
+                                      lineWidth: focused ? 2 : 1.5))
             } else {
                 TextField(title, text: $draft).onSubmit(flush)
             }
@@ -171,32 +177,40 @@ struct AssetEditor: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                field("Description") {
-                    CommittedTextField(title: "Description", value: asset.description, multiline: true) { text in
-                        model.update(asset, in: document, actionName: "Edit Description") { $0.description = text }
+                VStack(alignment: .leading, spacing: 14) {
+                    field("Description", color: Crayon.sky) {
+                        CommittedTextField(title: "Description", value: asset.description, multiline: true) { text in
+                            model.update(asset, in: document, actionName: "Edit Description") { $0.description = text }
+                        }
+                    }
+                    field("Tags", color: Crayon.sunflower) {
+                        CommittedTextField(title: "Tags, separated by commas", value: AssetEditing.tagsText(asset.tags)) { text in
+                            model.update(asset, in: document, actionName: "Edit Tags") { $0.tags = AssetEditing.parseTags(text) }
+                        }
                     }
                 }
-                field("Tags") {
-                    CommittedTextField(title: "Tags, separated by commas", value: AssetEditing.tagsText(asset.tags)) { text in
-                        model.update(asset, in: document, actionName: "Edit Tags") { $0.tags = AssetEditing.parseTags(text) }
-                    }
-                }
+                .crayonCard(padding: 14)
                 slots
+                    .crayonCard(padding: 14)
                 if asset.type == .character {
-                    Divider()
                     CharacterSheetView(document: document, content: content, asset: asset, images: images,
                                        model: model, onGenerate: onGenerateSheet)
+                        .crayonCard(padding: 14)
                 }
-                Divider()
-                Text("Where Used").font(.headline)
-                WhereUsedList(sites: sites, content: content, onOpen: onOpenPage)
-                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    CrayonHeader("Where Used", color: Crayon.grass)
+                    WhereUsedList(sites: sites, content: content, onOpen: onOpenPage)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .crayonCard(padding: 14)
                 Button("Delete Asset…", role: .destructive) { confirmDelete = true }
+                    .buttonBorderShape(.capsule)
                     .disabled(!editable)
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .crayonPaper()
         .disabled(!editable)
         .alert("Delete \(asset.name)?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) {
@@ -208,22 +222,28 @@ struct AssetEditor: View {
         }
     }
 
+    /// The asset's own colour: its avatar ring, sticker and selection wash.
+    private var color: Color { Crayon.color(forKey: asset.id.rawValue.uuidString) }
+
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Image(systemName: AssetEditing.typeSymbol(asset.type)).foregroundStyle(.secondary)
-            CommittedTextField(title: "Name", value: asset.name) { text in
-                let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty else { return }
-                model.update(asset, in: document, actionName: "Rename Asset") { $0.name = name }
+        HStack(alignment: .center, spacing: 12) {
+            AssetThumbnail(ref: AssetEditing.thumbnail(of: asset, in: content), images: images, size: 52, ring: color)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                CommittedTextField(title: "Name", value: asset.name) { text in
+                    let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !name.isEmpty else { return }
+                    model.update(asset, in: document, actionName: "Rename Asset") { $0.name = name }
+                }
+                .font(Crayon.font(.title2, weight: .bold))
+                AssetTypeChip(type: asset.type, color: color)
             }
-            .font(.title2)
-            Text(AssetEditing.typeTitle(asset.type)).foregroundStyle(.secondary)
         }
     }
 
-    private func field(_ title: String, @ViewBuilder _ body: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.headline)
+    private func field(_ title: String, color: Color, @ViewBuilder _ body: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            CrayonHeader(title, color: color)
             body()
         }
     }
@@ -231,11 +251,13 @@ struct AssetEditor: View {
     private var slots: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Reference Images").font(.headline)
+                CrayonHeader("Reference Images", color: color)
                 Spacer()
                 Button("Add Reference") {
                     model.update(asset, in: document, actionName: "Add Reference") { AssetEditing.addSlot(to: &$0) }
                 }
+                .buttonStyle(.crayon(Crayon.grass))
+                .controlSize(.small)
             }
             ForEach(asset.references) { slot in
                 let owner = SessionOwner.assetReference(asset.id, slot.id)
@@ -244,12 +266,17 @@ struct AssetEditor: View {
                         model.update(asset, in: document, actionName: "Change Primary Reference") {
                             AssetEditing.makePrimary(slot.id, in: &$0)
                         }
-                    } label: { Image(systemName: slot.isPrimary ? "largecircle.fill.circle" : "circle") }
+                    } label: {
+                        Image(systemName: slot.isPrimary ? "largecircle.fill.circle" : "circle")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(slot.isPrimary ? color : Crayon.inkSoft)
+                    }
                         .buttonStyle(.borderless)
                         .help("Primary reference")
                         .accessibilityLabel(slot.isPrimary ? "Primary reference" : "Make primary")
                     AssetThumbnail(ref: AssetEditing.chosenImage(sessionID: slot.sessionID, chosen: slot.chosen,
-                                                                 in: content), images: images)
+                                                                 in: content), images: images,
+                                   ring: slot.isPrimary ? color : nil)
                     CommittedTextField(title: "Reference name", value: slot.label) { text in
                         model.update(asset, in: document, actionName: "Rename Reference") {
                             AssetEditing.renameSlot(slot.id, to: text, in: &$0)
@@ -261,13 +288,43 @@ struct AssetEditor: View {
                         .help("Remove reference")
                         .disabled(!AssetEditing.canRemoveSlot(slot.id, from: asset))
                     Button("Open") { model.selectedOwner = owner }
+                        .buttonBorderShape(.capsule)
                 }
-                .padding(6)
-                .background(model.selectedOwner == owner ? Color.accentColor.opacity(0.18) : .clear,
-                            in: RoundedRectangle(cornerRadius: 8))
+                .padding(8)
+                .background(model.selectedOwner == owner ? color.opacity(0.16) : Crayon.paperDeep.opacity(0.5),
+                            in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+                    .strokeBorder(model.selectedOwner == owner ? color : .clear, lineWidth: 2))
                 .contentShape(Rectangle())
                 .onTapGesture { model.selectedOwner = owner }
             }
         }
+    }
+}
+
+/// The asset's type as a sticker-like chip in the asset's colour: a solid symbol badge and ink
+/// text on a soft wash, so it stays legible for every colour in both appearances.
+private struct AssetTypeChip: View {
+    let type: AssetType
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: AssetEditing.typeSymbol(type))
+                .font(.caption2.weight(.heavy))
+                .foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(color))
+                .accessibilityHidden(true)
+            Text(AssetEditing.typeTitle(type))
+                .font(Crayon.font(.caption, weight: .heavy))
+                .foregroundStyle(Crayon.ink)
+        }
+        .padding(.leading, 3)
+        .padding(.trailing, 9)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(color.opacity(0.18)))
+        .overlay(Capsule().strokeBorder(color.opacity(0.55), lineWidth: 1.5))
+        .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
     }
 }

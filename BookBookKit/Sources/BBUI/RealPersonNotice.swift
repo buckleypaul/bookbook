@@ -40,9 +40,20 @@ struct RealPersonQuestionSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(RealPersonNoticeText.question).font(.headline)
-            Text(fileName).font(.caption).foregroundStyle(.secondary)
-            Text(RealPersonNoticeText.questionDetail).font(.callout).fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .center, spacing: 12) {
+                CrayonBlobIcon(systemImage: "person.crop.square", color: Crayon.sky, size: 44)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(RealPersonNoticeText.question)
+                        .font(Crayon.font(.title3, weight: .bold))
+                        .foregroundStyle(Crayon.ink)
+                    Text(fileName).font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
+                }
+            }
+            Text(RealPersonNoticeText.questionDetail)
+                .font(.callout)
+                .foregroundStyle(Crayon.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .crayonCard(padding: 12)
             HStack {
                 Button("Cancel", role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
                 Spacer()
@@ -52,12 +63,13 @@ struct RealPersonQuestionSheet: View {
         }
         .padding(20)
         .frame(width: 400)
+        .crayonPaper()
     }
 
     @ViewBuilder
     private func answerButton(_ title: String, answer: Bool) -> some View {
         if answer == defaultAnswer {
-            Button(title) { onAnswer(answer) }.keyboardShortcut(.defaultAction)
+            Button(title) { onAnswer(answer) }.keyboardShortcut(.defaultAction).buttonStyle(.crayon(Crayon.sky))
         } else {
             Button(title) { onAnswer(answer) }
         }
@@ -73,19 +85,46 @@ struct RealPersonNoticeSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(RealPersonNoticeText.title(provider), systemImage: "person.crop.square.badge.exclamationmark")
-                .font(.headline)
-            Text(RealPersonNoticeText.body(provider)).font(.callout).fixedSize(horizontal: false, vertical: true)
-            if let url = RealPersonNoticeText.policyURL(provider) {
-                Link("\(VersionDetailsContent.providerName(provider)) data policy", destination: url)
+            Label {
+                Text(RealPersonNoticeText.title(provider))
+                    .font(Crayon.font(.title3, weight: .bold))
+                    .foregroundStyle(Crayon.ink)
+            } icon: {
+                CrayonBlobIcon(systemImage: "person.crop.square.badge.exclamationmark", color: Crayon.bubblegum,
+                               size: 40)
             }
+            .labelStyle(NoticeTitleLabelStyle())
+            VStack(alignment: .leading, spacing: 10) {
+                Text(RealPersonNoticeText.body(provider))
+                    .font(.callout)
+                    .foregroundStyle(Crayon.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let url = RealPersonNoticeText.policyURL(provider) {
+                    Link("\(VersionDetailsContent.providerName(provider)) data policy", destination: url)
+                        .font(Crayon.font(.callout, weight: .semibold))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .crayonCard(tint: Crayon.bubblegum, padding: 12)
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
                 Button("Continue", action: onContinue).keyboardShortcut(.defaultAction)
+                    .buttonStyle(.crayon(Crayon.bubblegum))
             }
         }
         .padding(20)
         .frame(width: 440)
+        .crayonPaper()
+    }
+}
+
+/// The notice's title: the blob icon beside wrapping rounded text.
+private struct NoticeTitleLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            configuration.icon
+            configuration.title.fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

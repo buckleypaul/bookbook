@@ -99,7 +99,7 @@ struct StoryImportSheet: View {
         let content = document.content
         let preview = model.pages
         VStack(alignment: .leading, spacing: 12) {
-            Text("Import Story Text").font(.headline)
+            CrayonHeader("Import Story Text", color: Crayon.sky)
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -113,7 +113,9 @@ struct StoryImportSheet: View {
                     TextEditor(text: $model.pastedText)
                         .font(.body)
                         .frame(minHeight: 200)
-                        .border(.separator)
+                        .scrollContentBackground(.hidden)
+                        .padding(6)
+                        .crayonCard(cornerRadius: Crayon.smallCornerRadius)
                         .accessibilityLabel("Story text")
                     if let error = model.readError {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -133,18 +135,23 @@ struct StoryImportSheet: View {
                 .frame(minWidth: 320)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(preview.count == 1 ? "1 page" : "\(preview.count) pages")
-                        .font(.callout.weight(.semibold))
+                        .font(Crayon.font(.callout, weight: .bold))
                     List(Array(preview.enumerated()), id: \.offset) { index, page in
                         HStack(alignment: .firstTextBaseline) {
-                            Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary)
+                            Text("\(index + 1)")
+                                .font(Crayon.font(.callout, weight: .heavy))
+                                .monospacedDigit()
+                                .foregroundStyle(Crayon.tomato)
                             Text(StoryImportModel.previewLine(page)).lineLimit(2)
                         }
                     }
+                    .scrollContentBackground(.hidden)
+                    .crayonCard(cornerRadius: Crayon.smallCornerRadius)
                     .frame(minHeight: 200)
                 }
                 .frame(minWidth: 260)
             }
-            Text("Template").font(.callout.weight(.semibold))
+            Text("Template").font(Crayon.font(.callout, weight: .bold))
             TemplatePicker(templates: Self.templates(content), trimSize: content.style.pageSetup.trimSize,
                            selection: $model.templateID)
                 .frame(height: 130)
@@ -158,11 +165,13 @@ struct StoryImportSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Import") { importPages(preview) }
                     .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.crayon)
                     .disabled(!model.canImport || !document.isEditable)
             }
         }
         .padding(20)
         .frame(minWidth: 700, minHeight: 560)
+        .crayonPaper()
     }
 
     /// The file types the open panel offers: the importer's plain-text and rich-text

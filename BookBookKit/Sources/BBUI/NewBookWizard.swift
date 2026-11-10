@@ -80,12 +80,16 @@ struct PresetSampleImage: View {
             if let image {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
             } else {
-                Rectangle().fill(.quaternary)
-                    .overlay { Image(systemName: "paintpalette").foregroundStyle(.secondary) }
+                Rectangle().fill(preset.map { Crayon.color(forKey: $0.id) } ?? Crayon.inkSoft.opacity(0.35))
+                    .overlay {
+                        Image(systemName: "paintpalette.fill")
+                            .font(.system(size: size * 0.36, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                    }
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
         .accessibilityHidden(true)
         .task(id: preset?.sampleImage) {
             // Read the file off the main actor (#3g).
@@ -113,29 +117,56 @@ struct NewBookWizard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(heading).font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding([.horizontal, .top], 20)
+            HStack(spacing: 12) {
+                CrayonBlobIcon(systemImage: stepSymbol, color: stepColor, size: 40)
+                Text(heading)
+                    .font(Crayon.font(.title2, weight: .heavy))
+                    .foregroundStyle(Crayon.ink)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding([.horizontal, .top], 20)
             content.padding(20).frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
             if let error {
-                Text(error).foregroundStyle(.red).font(.callout).padding(.horizontal, 20)
+                Text(error).foregroundStyle(.red).font(Crayon.font(.callout, weight: .medium)).padding(.horizontal, 20)
             }
-            Divider()
             HStack {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Text("Step \(model.step.rawValue + 1) of \(NewBookWizardModel.Step.allCases.count)")
-                    .font(.caption).foregroundStyle(.secondary)
+                VStack(spacing: 4) {
+                    StepDots(current: model.step.rawValue, count: NewBookWizardModel.Step.allCases.count)
+                    Text("Step \(model.step.rawValue + 1) of \(NewBookWizardModel.Step.allCases.count)")
+                        .font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.inkSoft)
+                }
                 Spacer()
                 Button("Back") { model.back() }.disabled(model.isFirst || creating)
                 Button("Skip") { skip() }.disabled(creating)
                 if model.isLast {
                     Button("Create") { create() }.keyboardShortcut(.defaultAction).disabled(creating)
+                        .buttonStyle(.crayon(Crayon.grass))
                 } else {
                     Button("Next") { model.next() }.keyboardShortcut(.defaultAction)
+                        .buttonStyle(.crayon)
                 }
             }
             .padding(12)
+            .background(Crayon.paperDeep)
         }
         .frame(width: 460)
+        .crayonPaper()
+    }
+
+    /// Each step gets its own crayon and picture.
+    private var stepColor: Color { Crayon.color(for: model.step.rawValue) }
+
+    private var stepSymbol: String {
+        switch model.step {
+        case .title: "character.book.closed.fill"
+        case .pageSize: "rectangle.portrait.fill"
+        case .style: "paintpalette.fill"
+        case .character: "face.smiling.inverse"
+        case .story: "text.book.closed.fill"
+        }
     }
 
     private var heading: String {
@@ -178,10 +209,13 @@ struct NewBookWizard: View {
             }
         case .style:
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     styleRow(nil)
                     ForEach(model.presets) { styleRow($0) }
                 }
+                // Room for the cards' rings and shadows.
+                .padding(.horizontal, 4)
+                .padding(.vertical, 6)
             }
             .frame(maxHeight: 280)
         case .character:
@@ -210,16 +244,22 @@ struct NewBookWizard: View {
             HStack(spacing: 10) {
                 PresetSampleImage(preset: preset)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(preset?.name ?? "No preset").font(.body.weight(.medium))
+                    Text(preset?.name ?? "No preset")
+                        .font(Crayon.font(.body, weight: .bold))
+                        .foregroundStyle(Crayon.ink)
                     if let preset {
-                        Text(preset.visualDescription).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        Text(preset.visualDescription).font(.caption).foregroundStyle(Crayon.inkSoft).lineLimit(2)
                     }
                 }
                 Spacer()
-                if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor) }
+                if selected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Crayon.tomato)
+                }
             }
-            .padding(6)
-            .background(RoundedRectangle(cornerRadius: 8).fill(selected ? Color.accentColor.opacity(0.15) : .clear))
+            .padding(8)
+            .crayonCard(selected: selected, cornerRadius: 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -239,5 +279,23 @@ struct NewBookWizard: View {
                 self.error = "Couldn't create the book. \(StoreErrorText.message(for: error))"
             }
         }
+    }
+}
+
+/// The wizard's progress: one little crayon stroke per step, coloured up to the current one.
+private struct StepDots: View {
+    let current: Int
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<count, id: \.self) { index in
+                Capsule()
+                    .fill(index <= current ? Crayon.color(for: index) : Crayon.ink.opacity(0.12))
+                    .frame(width: index == current ? 18 : 8, height: 6)
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: current)
+        .accessibilityHidden(true)
     }
 }

@@ -19,14 +19,16 @@ public struct LibraryView: View {
         @Bindable var app = app
         Group {
             if app.libraryEntries.isEmpty {
-                ContentUnavailableView {
-                    Label("No Books Yet", systemImage: "books.vertical")
-                } description: {
-                    Text("Your books will appear here.")
-                } actions: {
+                CrayonEmptyState("No Books Yet", systemImage: "books.vertical", color: Crayon.tomato,
+                                 message: "Your books will appear here.") {
                     Button("New Book…") { app.newBookRequest = .blank }
-                    Button("New Book from Story…") { app.newBookRequest = .fromStory }
-                    Button("Open Sample Book") { openSample() }
+                        .buttonStyle(.crayon)
+                    HStack(spacing: 10) {
+                        Button("New Book from Story…") { app.newBookRequest = .fromStory }
+                            .buttonStyle(.crayon(Crayon.sky))
+                        Button("Open Sample Book") { openSample() }
+                            .buttonStyle(.crayon(Crayon.grass))
+                    }
                 }
             } else {
                 grid
@@ -79,16 +81,19 @@ public struct LibraryView: View {
 
     private var grid: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 210), spacing: 20)], spacing: 24) {
-                // Keyed by URL: two packages can carry the same book ID (a Finder copy).
-                ForEach(app.libraryEntries, id: \.url) { entry in
-                    LibraryCell(entry: entry, isSelected: selection == entry.id)
-                        .onTapGesture(count: 2) { openWindow(value: entry.id) }
-                        .simultaneousGesture(TapGesture().onEnded { selection = entry.id })
-                        .contextMenu { menu(for: entry) }
+            VStack(alignment: .leading, spacing: 18) {
+                LibraryHeader(count: app.libraryEntries.count)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 22)], spacing: 26) {
+                    // Keyed by URL: two packages can carry the same book ID (a Finder copy).
+                    ForEach(app.libraryEntries, id: \.url) { entry in
+                        LibraryCell(entry: entry, isSelected: selection == entry.id)
+                            .onTapGesture(count: 2) { openWindow(value: entry.id) }
+                            .simultaneousGesture(TapGesture().onEnded { selection = entry.id })
+                            .contextMenu { menu(for: entry) }
+                    }
                 }
             }
-            .padding(20)
+            .padding(24)
         }
         .contentShape(Rectangle())
         .onTapGesture { selection = nil }
@@ -128,6 +133,31 @@ public struct LibraryView: View {
     }
 }
 
+/// The friendly heading above the grid: a big rounded title over a short crayon stripe.
+private struct LibraryHeader: View {
+    let count: Int
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("Your Books")
+                .font(Crayon.font(.largeTitle, weight: .heavy))
+                .foregroundStyle(Crayon.ink)
+                .accessibilityAddTraits(.isHeader)
+            CrayonSticker(count == 1 ? "1 book" : "\(count) books", color: Crayon.grape)
+        }
+        .overlay(alignment: .bottomLeading) {
+            HStack(spacing: 4) {
+                ForEach(Array(Crayon.rainbow.enumerated()), id: \.offset) { _, color in
+                    Capsule().fill(color).frame(width: 22, height: 5)
+                }
+            }
+            .offset(y: 10)
+            .accessibilityHidden(true)
+        }
+        .padding(.bottom, 10)
+    }
+}
+
 /// One book in the grid: its thumbnail (or a placeholder), title and modified date.
 struct LibraryCell: View {
     let entry: LibraryEntry
@@ -140,35 +170,39 @@ struct LibraryCell: View {
         var modifiedAt: Date
     }
 
+    /// The same book always gets the same colour and the same lean.
+    private var key: String { entry.id.rawValue.uuidString }
+    private var tilt: Double { entry.id.rawValue.uuid.0.isMultiple(of: 2) ? -1.5 : 1.5 }
+
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 10) {
             ZStack {
                 if let image {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .shadow(radius: 2, y: 1)
+                        .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
+                        .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 3)
                 } else {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.quaternary)
-                        .aspectRatio(3 / 4, contentMode: .fit)
-                        .overlay {
-                            Image(systemName: "book.closed").font(.largeTitle).foregroundStyle(.secondary)
-                        }
+                    PlaceholderCover(color: Crayon.color(forKey: key))
                 }
             }
             .frame(height: 180)
-            .padding(6)
-            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.accentColor.opacity(0.25) : .clear))
-            Text(entry.title)
-                .font(.callout.weight(.medium))
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-            Text(entry.modifiedAt, format: .dateTime.day().month().year().hour().minute())
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(spacing: 3) {
+                Text(entry.title)
+                    .font(Crayon.font(.callout, weight: .bold))
+                    .foregroundStyle(Crayon.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                Text(entry.modifiedAt, format: .dateTime.day().month().year().hour().minute())
+                    .font(Crayon.font(.caption, weight: .medium))
+                    .foregroundStyle(Crayon.inkSoft)
+            }
+            .frame(maxWidth: .infinity)
         }
+        .padding(12)
+        .crayonCard(selected: isSelected)
+        .crayonHover(tilt: tilt)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -183,5 +217,41 @@ struct LibraryCell: View {
             let data = await Task.detached { rendition.flatMap { try? Data(contentsOf: $0) } }.value
             image = data.flatMap { NSImage(data: $0) }
         }
+    }
+}
+
+/// A book with no thumbnail yet: a coloured cover with a darker spine stripe, a book symbol and
+/// a little title plate, like a picture book on a toy shelf.
+private struct PlaceholderCover: View {
+    let color: Color
+
+    var body: some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 4,
+                                           bottomTrailingRadius: Crayon.cornerRadius,
+                                           topTrailingRadius: Crayon.cornerRadius, style: .continuous)
+        ZStack(alignment: .leading) {
+            shape.fill(color)
+            // The spine, plus a lighter crease beside it.
+            HStack(spacing: 0) {
+                Rectangle().fill(.black.opacity(0.18)).frame(width: 14)
+                Rectangle().fill(.white.opacity(0.25)).frame(width: 2)
+                Spacer(minLength: 0)
+            }
+            .clipShape(shape)
+            VStack(spacing: 8) {
+                Image(systemName: "book.closed.fill")
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.15), radius: 0, x: 0, y: 2)
+                // A cover "title plate".
+                Capsule().fill(.white.opacity(0.85)).frame(width: 56, height: 8)
+                Capsule().fill(.white.opacity(0.55)).frame(width: 36, height: 6)
+            }
+            .padding(.leading, 16)
+            .frame(maxWidth: .infinity)
+        }
+        .aspectRatio(3 / 4, contentMode: .fit)
+        .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 3)
+        .accessibilityHidden(true)
     }
 }

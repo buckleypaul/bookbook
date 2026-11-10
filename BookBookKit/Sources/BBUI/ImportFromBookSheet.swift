@@ -185,7 +185,7 @@ struct ImportFromBookSheet: View {
         // `BookImporter.clashes` runs once per render.
         let clashes = model.remainingClashes
         VStack(alignment: .leading, spacing: 12) {
-            Text("Import from Book").font(.headline)
+            CrayonHeader("Import from Book", color: Crayon.grape)
             switch model.step {
             case .choose: chooseStep
             case .rename: renameStep(clashes: clashes)
@@ -210,11 +210,13 @@ struct ImportFromBookSheet: View {
                     }
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.crayon(Crayon.grape))
                 .disabled(model.step == .rename ? !model.canImport(clashes: clashes) : !model.canContinue)
             }
         }
         .padding(20)
         .frame(width: 480)
+        .crayonPaper()
     }
 
     // MARK: Choose
@@ -241,7 +243,7 @@ struct ImportFromBookSheet: View {
                         Text("This book has no assets or templates.").foregroundStyle(.secondary)
                     }
                     if !model.sourceAssets.isEmpty {
-                        Text("Assets").font(.subheadline.bold())
+                        Text("Assets").font(Crayon.font(.subheadline, weight: .heavy))
                         ForEach(model.sourceAssets) { asset in
                             Toggle(isOn: binding(asset: asset.id)) {
                                 HStack {
@@ -252,12 +254,12 @@ struct ImportFromBookSheet: View {
                         }
                     }
                     if !model.sourceTemplates.isEmpty {
-                        Text("Templates").font(.subheadline.bold()).padding(.top, 4)
+                        Text("Templates").font(Crayon.font(.subheadline, weight: .heavy)).padding(.top, 4)
                         ForEach(model.sourceTemplates) { template in
                             Toggle(template.name, isOn: binding(template: template.id))
                         }
                     }
-                    Text("Style").font(.subheadline.bold()).padding(.top, 4)
+                    Text("Style").font(Crayon.font(.subheadline, weight: .heavy)).padding(.top, 4)
                     Toggle("Style guide", isOn: Binding(
                         get: { model.selection.styleGuide },
                         set: { model.selection.styleGuide = $0 }))
@@ -271,8 +273,10 @@ struct ImportFromBookSheet: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
             }
             .frame(height: 240)
+            .crayonCard(cornerRadius: Crayon.smallCornerRadius)
             Text("Imports are independent copies: editing one doesn't change the other.")
                 .font(.caption).foregroundStyle(.secondary)
         }

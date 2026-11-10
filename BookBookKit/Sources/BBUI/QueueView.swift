@@ -16,15 +16,16 @@ public struct QueueView: View {
         VStack(spacing: 0) {
             QueueResumeBanner(pause: snapshot.pause)
             if snapshot.entries.isEmpty {
-                ContentUnavailableView(
-                    "Queue Is Empty",
-                    systemImage: "tray",
-                    description: Text("Image generation jobs will appear here.")
-                )
+                CrayonEmptyState("Queue Is Empty", systemImage: "tray", color: Crayon.sky,
+                                 message: "Image generation jobs will appear here.")
             } else {
                 List {
                     ForEach(snapshot.entries) { entry in
                         QueueRowView(entry: entry, onCancel: { confirmCancel = true })
+                            .crayonCard(cornerRadius: Crayon.cornerRadius, padding: 12)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
                             .moveDisabled(!QueueRowModel(entry: entry).canReorder)
                     }
                     .onMove { source, destination in
@@ -34,11 +35,12 @@ public struct QueueView: View {
                         app.moveQueueItem(entries[from].id, to: destination > from ? destination - 1 : destination)
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
             if let text = snapshot.undeliveredText {
-                Divider()
+                Rectangle().fill(Crayon.ink.opacity(0.08)).frame(height: 1)
                 Label(text, systemImage: "lock")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.inkSoft)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -79,18 +81,34 @@ struct QueueRowView: View {
         let model = QueueRowModel(entry: entry)
         let advice: FailureAdvice? = model.isFailed ? app.advice(for: entry) : nil
         HStack(alignment: .top, spacing: 10) {
+            Circle()
+                .fill(stateColor)
+                .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
+                .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
+                .frame(width: 12, height: 12)
+                .padding(.top, 4)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(model.title).font(.headline)
+                Text(model.title).font(Crayon.font(.headline, weight: .bold)).foregroundStyle(Crayon.ink)
                 Text(model.location + (model.location.isEmpty ? "" : " · ") + model.estimateText)
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
                 stateLine(advice: advice)
                 if let advice { FailureAdviceView(advice: advice).padding(.top, 2) }
             }
             Spacer()
             actions(model)
         }
-        .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
+    }
+
+    /// The row's crayon: grape waiting, sky running, sunflower retrying, tomato failed.
+    private var stateColor: Color {
+        switch entry.state {
+        case .waiting: Crayon.grape
+        case .running: Crayon.sky
+        case .retrying: Crayon.sunflower
+        case .failed: Crayon.tomato
+        }
     }
 
     @ViewBuilder
@@ -101,12 +119,13 @@ struct QueueRowView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(QueueRowModel.stateText(entry.state, now: context.date, typical: typical, headline: nil,
                                                   isConsistencyCheck: entry.item.kind != .image))
-                    .font(.caption).monospacedDigit()
+                    .font(Crayon.font(.caption, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(Crayon.ink)
             }
         case .waiting:
-            Text("Waiting").font(.caption)
+            Text("Waiting").font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.ink)
         case .failed:
-            if advice == nil { Text("Failed").font(.caption).foregroundStyle(.red) }
+            if advice == nil { Text("Failed").font(Crayon.font(.caption, weight: .bold)).foregroundStyle(Crayon.tomato) }
         }
     }
 
@@ -115,6 +134,8 @@ struct QueueRowView: View {
         HStack {
             if model.actions.contains(.retry) {
                 Button("Retry") { app.retryQueueItem(entry.id) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Crayon.grass)
             }
             if model.actions.contains(.cancel) {
                 Button("Cancel", action: onCancel)
@@ -123,6 +144,9 @@ struct QueueRowView: View {
                 Button("Remove", role: .destructive) { app.removeQueueItem(entry.id) }
             }
         }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .font(Crayon.font(.callout, weight: .semibold))
         .controlSize(.small)
     }
 }

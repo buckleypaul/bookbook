@@ -114,10 +114,13 @@ struct CrayonCardModifier: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         content
             .padding(padding)
-            .background(shape.fill(Crayon.card))
+            // Shadows go on the background shape only: on the whole view they'd ghost the text.
+            .background(
+                shape.fill(Crayon.card)
+                    .shadow(color: Crayon.shadow, radius: 0, x: 0, y: selected ? 5 : 3)
+                    .shadow(color: Crayon.shadow.opacity(0.5), radius: 10, x: 0, y: 6)
+            )
             .overlay(shape.strokeBorder(selected ? tint : Crayon.ink.opacity(0.06), lineWidth: selected ? 3 : 1))
-            .shadow(color: Crayon.shadow, radius: 0, x: 0, y: selected ? 5 : 3)
-            .shadow(color: Crayon.shadow.opacity(0.5), radius: 10, x: 0, y: 6)
     }
 }
 
@@ -203,9 +206,8 @@ public struct CrayonSticker: View {
         .foregroundStyle(.white)
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .background(Capsule().fill(color))
+        .background(Capsule().fill(color).shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5))
         .overlay(Capsule().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
-        .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
     }
 }
 

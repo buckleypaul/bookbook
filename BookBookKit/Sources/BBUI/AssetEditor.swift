@@ -323,8 +323,8 @@ private struct AssetTypeChip: View {
         .padding(.leading, 3)
         .padding(.trailing, 9)
         .padding(.vertical, 3)
+        .background(Capsule().fill(Crayon.card).shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5))
         .background(Capsule().fill(color.opacity(0.18)))
         .overlay(Capsule().strokeBorder(color.opacity(0.55), lineWidth: 1.5))
-        .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
     }
 }

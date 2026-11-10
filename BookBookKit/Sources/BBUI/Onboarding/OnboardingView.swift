@@ -42,7 +42,11 @@ public struct OnboardingView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Guided Setup").font(.caption).foregroundStyle(.secondary)
+            HStack {
+                CrayonSticker("Guided Setup", systemImage: "sparkles", color: Crayon.grape)
+                Spacer()
+                OnboardingStepDots(current: model.step.rawValue, count: OnboardingModel.Step.allCases.count)
+            }
             content
             Spacer(minLength: 0)
             HStack {
@@ -52,13 +56,16 @@ public struct OnboardingView: View {
                 if !model.isLast {
                     Button("Skip this step") { model.skipStep() }
                     Button("Continue") { model.next() }.keyboardShortcut(.defaultAction)
+                        .buttonStyle(.crayon)
                 } else {
                     Button("Done") { model.finish(); close() }.keyboardShortcut(.defaultAction)
+                        .buttonStyle(.crayon(Crayon.grass))
                 }
             }
         }
         .padding(24)
         .frame(width: 540, height: 460)
+        .crayonPaper()
         .onAppear { model.reset(); app.refreshKeyStatus() }
         // The close button counts as skipping: otherwise it reopens every launch (#4a).
         .onDisappear { model.skipSetup(); draft = ""; testResult = nil }
@@ -73,7 +80,7 @@ public struct OnboardingView: View {
             page("What is an API key?") {
                 Text("BookBook makes pictures with OpenAI's image models. An API key is a private password that lets BookBook ask OpenAI for images on your behalf. You pay OpenAI directly for what you use; BookBook itself charges nothing.")
                 Text("Your key is stored in the macOS Keychain and is sent only to OpenAI.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Crayon.inkSoft)
             }
         case .getAKey:
             page("Get an OpenAI key") {
@@ -98,14 +105,14 @@ public struct OnboardingView: View {
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || testing)
                     if testing { ProgressView().controlSize(.small) }
                     if app.hasOpenAIKey {
-                        Label("Saved in your Keychain", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+                        Label("Saved in your Keychain", systemImage: "checkmark.seal.fill").foregroundStyle(Crayon.grass)
                     }
                 }
                 if let error { Text(error).foregroundStyle(.red).font(.callout) }
                 switch testResult {
                 case let .success(count):
                     Label("Connected — \(count) models available", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Crayon.grass)
                 case let .failure(advice): FailureAdviceView(advice: advice)
                 case nil: EmptyView()
                 }
@@ -132,14 +139,36 @@ public struct OnboardingView: View {
                 }
             }
             Text("Estimates for \(costs.modelName) at \(TypicalCosts.imageSize.width)×\(TypicalCosts.imageSize.height). Each refinement adds roughly the cost of another image. BookBook shows an estimate before you generate and asks first if it is high.")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.callout).foregroundStyle(Crayon.inkSoft)
         }
     }
 
     private func page<C: View>(_ title: String, @ViewBuilder _ body: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.title2.bold())
-            body()
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                CrayonBlobIcon(systemImage: stepSymbol, color: Crayon.color(for: model.step.rawValue), size: 40)
+                Text(title)
+                    .font(Crayon.font(.title, weight: .heavy))
+                    .foregroundStyle(Crayon.ink)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                body()
+            }
+            .foregroundStyle(Crayon.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .crayonCard(padding: 16)
+        }
+    }
+
+    /// Each step gets its own crayon and picture.
+    private var stepSymbol: String {
+        switch model.step {
+        case .whatIsAKey: "key.fill"
+        case .getAKey: "person.badge.key.fill"
+        case .pasteKey: "doc.on.clipboard.fill"
+        case .costs: "dollarsign"
+        case .verifyOrganization: "checkmark.shield.fill"
         }
     }
 
@@ -160,5 +189,23 @@ public struct OnboardingView: View {
             testResult = await app.testConnection(.openai)
             testing = false
         }
+    }
+}
+
+/// Setup progress: one little crayon stroke per step, coloured up to the current one.
+private struct OnboardingStepDots: View {
+    let current: Int
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<count, id: \.self) { index in
+                Capsule()
+                    .fill(index <= current ? Crayon.color(for: index) : Crayon.ink.opacity(0.12))
+                    .frame(width: index == current ? 18 : 8, height: 6)
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: current)
+        .accessibilityHidden(true)
     }
 }

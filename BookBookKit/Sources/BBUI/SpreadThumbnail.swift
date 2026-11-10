@@ -85,32 +85,37 @@ struct PageThumbnailView: View {
                             Rectangle().fill(.black.opacity(0.15)).frame(width: 1)
                         }
                     }
-                    .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
-                if let status { StatusBadge(status: status).padding(4) }
+                    .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2)
+                if let status { StatusBadge(status: status).padding(5) }
                 if !flags.isEmpty {
                     ImageFlagIcons(flags: flags)
-                        .padding(2)
-                        .background(.regularMaterial, in: Capsule())
-                        .padding(4)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Crayon.card))
+                        .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
+                        .padding(5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
                 if part != .single {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                        .padding(4)
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, Crayon.tomato)
+                        .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
+                        .padding(5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                         .help("This spread is split across two sheets")
                 }
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 3)
-                    .strokeBorder(isDropTarget ? Color.accentColor : (isSelected ? Color.accentColor : .clear),
-                                  lineWidth: isDropTarget ? 3 : 2)
-                    .padding(-3)
+                // Selection (tomato) and drop target (sky) rings, outside the page art.
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(isDropTarget ? Crayon.sky : (isSelected ? Crayon.tomato : .clear),
+                                  lineWidth: isDropTarget ? 4 : 3)
+                    .padding(-5)
             }
             Text(label ?? " ")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Crayon.font(.caption, weight: .bold))
+                .foregroundStyle(isSelected ? Crayon.tomato : Crayon.inkSoft)
         }
     }
 
@@ -134,22 +139,34 @@ struct PageThumbnailView: View {
     }
 }
 
-/// Empty / In progress / Done (A §4.4).
+/// Empty / In progress / Done (A §4.4), as a crayon sticker: grape for a page not started, sky
+/// while it's being drafted, grass once it's done. `compact` shows the symbol only (the page list).
 struct StatusBadge: View {
     let status: PageStatus
+    var compact = false
 
     var body: some View {
         let (symbol, color, text): (String, Color, String) = switch status {
-        case .empty: ("circle.dashed", .secondary, "Empty")
-        case .inProgress: ("circle.lefthalf.filled", .orange, "In progress")
-        case .done: ("checkmark.circle.fill", .green, "Done")
+        case .empty: ("circle.dashed", Crayon.grape, "Empty")
+        case .inProgress: ("circle.lefthalf.filled", Crayon.sky, "In progress")
+        case .done: ("checkmark.circle.fill", Crayon.grass, "Done")
         }
-        Image(systemName: symbol)
-            .foregroundStyle(color)
-            .padding(2)
-            .background(.regularMaterial, in: Circle())
-            .help(text)
-            .accessibilityLabel(text)
+        Group {
+            if compact {
+                Image(systemName: symbol)
+                    .font(.system(size: 9, weight: .heavy, design: .rounded))
+                    .foregroundStyle(.white)
+                    .frame(width: 18, height: 18)
+                    .background(Circle().fill(color))
+                    .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
+                    .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
+            } else {
+                CrayonSticker(text, systemImage: symbol, color: color)
+            }
+        }
+        .help(text)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
     }
 }
 

@@ -13,6 +13,7 @@ struct BookBookApp: App {
         Window("Library", id: SceneID.library) {
             LibraryView()
                 .environment(model)
+                .crayonTheme()
                 .opensOnboardingOnFirstLaunch(model)
         }
         .commands { BookBookCommands(app: model) }
@@ -21,6 +22,7 @@ struct BookBookApp: App {
             if let bookID {
                 BookWindow(bookID: bookID)
                     .environment(model)
+                    .crayonTheme()
             }
         }
         // Wide enough that the format bar fits beside the sidebar and session panel (~1130 pt).
@@ -29,17 +31,20 @@ struct BookBookApp: App {
         Window("Queue", id: SceneID.queue) {
             QueueView()
                 .environment(model)
+                .crayonTheme()
         }
 
         Window("Guided Setup", id: OnboardingScene.id) {
             OnboardingView()
                 .environment(model)
+                .crayonTheme()
         }
         .windowResizability(.contentSize)
 
         Settings {
             SettingsView()
                 .environment(model)
+                .crayonTheme()
         }
     }
 }

@@ -33,21 +33,26 @@ public struct BookWindow: View {
             if let document {
                 BookEditor(document: document)
             } else if let loadError {
-                ContentUnavailableView("Couldn't Open the Book", systemImage: "exclamationmark.triangle",
-                                       description: Text(loadError))
+                CrayonEmptyState("Couldn't Open the Book", systemImage: "exclamationmark.triangle",
+                                 color: Crayon.tomato, message: loadError)
             } else if let lockOwner {
-                ContentUnavailableView {
-                    Label("Book in Use", systemImage: "lock")
-                } description: {
-                    Text("\(StoreErrorText.message(for: .locked(lockOwner))) \(LockAdviceText.message(offersOpenAnyway: LockTakeOver.offersOpenAnyway(lockOwner)))")
-                } actions: {
+                CrayonEmptyState("Book in Use", systemImage: "lock", color: Crayon.grape,
+                                 message: "\(StoreErrorText.message(for: .locked(lockOwner))) \(LockAdviceText.message(offersOpenAnyway: LockTakeOver.offersOpenAnyway(lockOwner)))") {
                     Button("Open Read-Only") { Task { await load(readOnly: true) } }
+                        .buttonStyle(.crayon)
                     if LockTakeOver.offersOpenAnyway(lockOwner) {
                         Button("Open Anyway…") { confirmTakeOver = true }
+                            .buttonStyle(.crayon(Crayon.sky))
                     }
                 }
             } else {
-                ProgressView("Opening…")
+                VStack(spacing: 18) {
+                    CrayonBlobIcon(systemImage: "book.fill", color: Crayon.sky, size: 64)
+                    ProgressView("Opening…")
+                        .font(Crayon.font(.headline, weight: .bold))
+                        .foregroundStyle(Crayon.inkSoft)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(minWidth: Self.minimumWidth, minHeight: 520)
@@ -163,18 +168,15 @@ struct BookEditor: View {
         let content = document.content
         NavigationSplitView {
             sidebar(content)
+                // Lists in every tab sit on the sidebar's deeper paper.
+                .scrollContentBackground(.hidden)
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    Picker("Sidebar", selection: $sidebarTab) {
-                        ForEach(SidebarTab.allCases) { tab in Label(tab.title, systemImage: tab.symbol).help(tab.title).tag(tab) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelStyle(.iconOnly)
-                    .labelsHidden()
-                    .padding(8)
+                    SidebarTabPicker(selection: $sidebarTab)
+                        .padding(8)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 0) {
-                        Divider()
+                        Rectangle().fill(Crayon.ink.opacity(0.08)).frame(height: 1)
                         QueueBadge()
                             .padding(.horizontal, 10)
                             .padding(.top, 6)
@@ -183,6 +185,7 @@ struct BookEditor: View {
                             .padding(.vertical, 8)
                     }
                 }
+                .background(Crayon.paperDeep.ignoresSafeArea())
                 .navigationSplitViewColumnWidth(min: 160, ideal: 190, max: 260)
         } detail: {
             detail(content)
@@ -350,10 +353,11 @@ struct BookEditor: View {
             if document.isReadOnly {
                 Label("Read-only: this book is open in BookBook somewhere else, so changes can't be made here.",
                       systemImage: "lock.fill")
-                    .font(.callout)
+                    .font(Crayon.font(.callout, weight: .semibold))
+                    .foregroundStyle(Crayon.ink)
                     .padding(8)
                     .frame(maxWidth: .infinity)
-                    .background(.secondary.opacity(0.15))
+                    .background(Crayon.grape.opacity(0.18))
             }
             if !document.missingFonts.isEmpty { MissingFontsBanner(fonts: document.missingFonts) }
             if sidebarTab == .pages && pages.mode == .editor {
@@ -362,10 +366,11 @@ struct BookEditor: View {
             }
             if let error = document.lastSaveError {
                 Label("Couldn't save changes: \(StoreErrorText.message(for: error))", systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
+                    .font(Crayon.font(.callout, weight: .semibold))
+                    .foregroundStyle(Crayon.ink)
                     .padding(8)
                     .frame(maxWidth: .infinity)
-                    .background(.yellow.opacity(0.25))
+                    .background(Crayon.sunflower.opacity(0.35))
             }
             if sidebarTab == .assets {
                 AssetsDetail(document: document, content: content, model: assetsModel, images: images,
@@ -391,8 +396,8 @@ struct BookEditor: View {
                             Button("OK", role: .cancel) {}
                         } message: { Text(canvasImportError ?? "") }
                 } else {
-                    ContentUnavailableView("No Page Selected", systemImage: "doc",
-                                           description: Text("Choose a page, or add one with +."))
+                    CrayonEmptyState("No Page Selected", systemImage: "doc", color: Crayon.sky,
+                                     message: "Choose a page, or add one with +.")
                 }
             }
             }
@@ -433,10 +438,10 @@ struct BookEditor: View {
             }
             .disabled(!document.isEditable)
         } else {
-            ContentUnavailableView("No Image Box Selected", systemImage: "photo",
-                                   description: Text(pages.mode == .editor
-                                                     ? "Click an image box on the page to see its session."
-                                                     : "Double-click a page to open it, then click an image box."))
+            CrayonEmptyState("No Image Box Selected", systemImage: "photo", color: Crayon.bubblegum,
+                             message: pages.mode == .editor
+                                 ? "Click an image box on the page to see its session."
+                                 : "Double-click a page to open it, then click an image box.")
         }
     }
 }
@@ -486,6 +491,7 @@ struct PageList: View {
                 Spacer()
             }
             .buttonStyle(.borderless)
+            .font(.system(.body, design: .rounded, weight: .bold))
             .padding(8)
         }
     }
@@ -493,9 +499,63 @@ struct PageList: View {
     private func row(_ title: String, status: PageStatus, flags: ImageFlags) -> some View {
         HStack {
             Text(title)
+                .font(Crayon.font(.body, weight: .semibold))
             Spacer()
             ImageFlagIcons(flags: flags).font(.caption)
-            StatusBadge(status: status).font(.caption)
+            StatusBadge(status: status, compact: true)
+        }
+    }
+}
+
+/// The sidebar's tab switcher: a chunky card of icon buttons, the chosen tab filled with its own
+/// crayon colour. Stands in for the segmented "Sidebar" picker, with the same labels and help.
+private struct SidebarTabPicker: View {
+    @Binding var selection: SidebarTab
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let tile = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2, style: .continuous)
+        HStack(spacing: 3) {
+            ForEach(SidebarTab.allCases) { tab in
+                let selected = selection == tab
+                Button { selection = tab } label: {
+                    Image(systemName: tab.symbol)
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(selected ? Color.white : Crayon.inkSoft)
+                        .frame(maxWidth: .infinity, minHeight: 26)
+                        .background {
+                            if selected {
+                                tile.fill(tab.crayonColor)
+                                    .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2)
+                            }
+                        }
+                        .contentShape(tile)
+                }
+                .buttonStyle(.plain)
+                .help(tab.title)
+                .accessibilityLabel(tab.title)
+                .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+        .padding(4)
+        .background {
+            RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+                .fill(Crayon.card)
+                .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2)
+        }
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: selection)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Sidebar")
+    }
+}
+
+private extension SidebarTab {
+    var crayonColor: Color {
+        switch self {
+        case .pages: Crayon.tomato
+        case .assets: Crayon.grape
+        case .layouts: Crayon.sky
+        case .style: Crayon.grass
         }
     }
 }

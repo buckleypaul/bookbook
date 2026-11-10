@@ -6,18 +6,27 @@ struct AssetThumbnail: View {
     let ref: ImageRef?
     let images: ImageCache
     var size: CGFloat = 56
+    /// A coloured avatar ring around the thumbnail (the asset's colour); nil for none.
+    var ring: Color?
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: min(Crayon.smallCornerRadius + 2, size * 0.28), style: .continuous)
         ZStack {
-            RoundedRectangle(cornerRadius: 6).fill(.quaternary)
+            shape.fill(Crayon.paperDeep)
             if let ref, let cg = images.image(for: ref) {
                 Image(decorative: cg, scale: 1).resizable().scaledToFill()
             } else {
-                Image(systemName: "photo").foregroundStyle(.tertiary)
+                Image(systemName: "photo").foregroundStyle(Crayon.inkSoft.opacity(0.7))
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(shape)
+        .overlay {
+            if let ring {
+                shape.strokeBorder(ring, lineWidth: size >= 48 ? 3 : 2).padding(-(size >= 48 ? 3 : 2))
+            }
+        }
+        .padding(ring == nil ? 0 : (size >= 48 ? 3 : 2))
     }
 }
 
@@ -38,16 +47,19 @@ struct CharacterSheetView: View {
         let items = asset.sheet?.items ?? []
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Character Sheet").font(.headline)
+                CrayonHeader("Character Sheet", color: Crayon.bubblegum)
                 Spacer()
                 Button("Add Expression…") { expressionName = ""; addingExpression = true }
+                    .buttonBorderShape(.capsule)
                     .disabled(!editable)
                 Button("Generate Whole Sheet…", action: onGenerate)
+                    .buttonStyle(.crayon(Crayon.grape))
                     .disabled(!editable)
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 10)], alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 12)], alignment: .leading, spacing: 12) {
                 ForEach(items) { item in cell(item) }
             }
+            .padding(.vertical, 4)
         }
         .alert("Add Expression", isPresented: $addingExpression) {
             TextField("Name", text: $expressionName)
@@ -62,17 +74,24 @@ struct CharacterSheetView: View {
     private func cell(_ item: SheetItem) -> some View {
         let owner = SessionOwner.sheetItem(asset.id, item.id)
         let selected = model.selectedOwner == owner
+        let color = Crayon.color(forKey: asset.id.rawValue.uuidString)
         return VStack(spacing: 4) {
             AssetThumbnail(ref: AssetEditing.chosenImage(sessionID: item.sessionID, chosen: item.chosen, in: content),
                            images: images, size: 96)
-            Text(AssetEditing.title(of: item.kind)).font(.callout).lineLimit(1)
-            if item.chosen == nil { Text("Empty").font(.caption).foregroundStyle(.secondary) }
+            Text(AssetEditing.title(of: item.kind)).font(Crayon.font(.callout, weight: .bold))
+                .foregroundStyle(Crayon.ink).lineLimit(1)
+            if item.chosen == nil {
+                Text("Empty").font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
+            }
             HStack(spacing: 6) {
                 Toggle(isOn: Binding(get: { item.locked }, set: { locked in
                     model.update(asset, in: document, actionName: locked ? "Lock Sheet Item" : "Unlock Sheet Item") {
                         AssetEditing.setLocked(locked, item: item.id, in: &$0)
                     }
-                })) { Image(systemName: item.locked ? "lock.fill" : "lock.open") }
+                })) {
+                    Image(systemName: item.locked ? "lock.fill" : "lock.open")
+                        .foregroundStyle(item.locked ? Crayon.tomato : Crayon.inkSoft)
+                }
                     .toggleStyle(.button)
                     .buttonStyle(.borderless)
                     .help(item.locked ? "Locked: skipped by Generate Whole Sheet" : "Lock to keep this item")
@@ -84,9 +103,9 @@ struct CharacterSheetView: View {
                     .disabled(!editable)
             }
         }
-        .padding(6)
         .frame(maxWidth: .infinity)
-        .background(selected ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .crayonCard(selected: selected, tint: color, cornerRadius: Crayon.cornerRadius - 2, padding: 8)
+        .crayonHover(tilt: -1.5, scale: 1.03)
         .contentShape(Rectangle())
         .onTapGesture { model.selectedOwner = owner }
         .accessibilityElement(children: .contain)

@@ -17,8 +17,8 @@ struct LayoutsDetail: View {
                 TemplateCanvas(model: model, imageSource: images)
                     .allowsHitTesting(document.isEditable)
             } else {
-                ContentUnavailableView("No Layout Selected", systemImage: "rectangle.3.group",
-                                       description: Text("Choose a layout, or add one with New Layout."))
+                CrayonEmptyState("No Layout Selected", systemImage: "rectangle.3.group", color: Crayon.sky,
+                                 message: "Choose a layout, or add one with New Layout.")
             }
         }
     }
@@ -96,8 +96,10 @@ struct LayoutsToolbar: View {
         }
         .labelStyle(.iconOnly)
         .controlSize(.small)
+        .fontWeight(.semibold)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+        .background(Crayon.paperDeep)
     }
 }
 

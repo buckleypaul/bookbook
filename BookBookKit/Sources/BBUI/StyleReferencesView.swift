@@ -21,30 +21,44 @@ struct StyleReferencesView: View {
 
     var body: some View {
         let refs = model.visual.styleReferences
+        let shape = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Reference images").font(.subheadline)
+                Text("Reference images").font(Crayon.font(.subheadline, weight: .bold)).foregroundStyle(Crayon.ink)
                 Spacer()
                 Button("Add…") { showImporter = true }
+                    .buttonStyle(.crayon(Crayon.sky))
+                    .controlSize(.small)
             }
             if refs.isEmpty {
-                Text("Drop images here to show the model the look you want.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 56)
+                HStack(spacing: 8) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(Crayon.grape)
+                        .accessibilityHidden(true)
+                    Text("Drop images here to show the model the look you want.")
+                        .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
+                }
+                .frame(maxWidth: .infinity, minHeight: 56)
             } else {
                 ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         ForEach(refs, id: \.sha256) { thumbnail($0) }
                     }
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 2)
+                    .padding(.top, 4)
+                    .padding(.bottom, 8)
                 }
             }
-            if let errorText { Text(errorText).font(.caption).foregroundStyle(.red) }
+            if let errorText {
+                Text(errorText).font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.tomato)
+            }
         }
-        .padding(6)
-        .overlay(RoundedRectangle(cornerRadius: 6)
-            .strokeBorder(isTargeted ? Color.accentColor : Color.secondary.opacity(0.3),
-                          style: StrokeStyle(lineWidth: isTargeted ? 2 : 1, dash: [4])))
+        .padding(8)
+        .background((isTargeted ? Crayon.tomato.opacity(0.08) : Crayon.paperDeep.opacity(0.6)), in: shape)
+        .overlay(shape
+            .strokeBorder(isTargeted ? Crayon.tomato : Crayon.ink.opacity(0.18),
+                          style: StrokeStyle(lineWidth: isTargeted ? 2.5 : 1.5, dash: [6, 4])))
         .dropDestination(for: URL.self) { urls, _ in
             let files = urls.filter(\.isFileURL)
             add(files)
@@ -64,11 +78,12 @@ struct StyleReferencesView: View {
                 if let image = cache.image(for: ref) {
                     Image(decorative: image, scale: 1).resizable().scaledToFill()
                 } else {
-                    Color.secondary.opacity(0.2)
+                    Crayon.paperDeep
                 }
             }
             .frame(width: 72, height: 72)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2, style: .continuous))
+            .crayonCard(cornerRadius: Crayon.smallCornerRadius, padding: 3)
             Button { model.removeReference(ref) } label: {
                 Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette)
                     .foregroundStyle(.white, .black.opacity(0.6))

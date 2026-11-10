@@ -76,7 +76,11 @@ struct AssetsList: View {
                             newType = type
                         }
                     }
-                } label: { Image(systemName: "plus") }
+                } label: {
+                    Image(systemName: "plus")
+                        .fontWeight(.heavy)
+                        .foregroundStyle(Crayon.tomato)
+                }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                     .help("New asset")
@@ -87,20 +91,27 @@ struct AssetsList: View {
             List(selection: Binding(get: { model.selectedAsset },
                                     set: { id in if let id, let a = content.assets[id] { model.select(a) } })) {
                 ForEach(assets) { asset in
-                    HStack {
-                        AssetThumbnail(ref: AssetEditing.thumbnail(of: asset, in: content), images: images, size: 32)
-                        VStack(alignment: .leading) {
-                            Text(asset.name).lineLimit(1)
-                            Text(AssetEditing.typeTitle(asset.type)).font(.caption).foregroundStyle(.secondary)
+                    let color = Crayon.color(forKey: asset.id.rawValue.uuidString)
+                    HStack(spacing: 10) {
+                        AssetThumbnail(ref: AssetEditing.thumbnail(of: asset, in: content), images: images, size: 32,
+                                       ring: color)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(asset.name).font(Crayon.font(.body, weight: .semibold)).lineLimit(1)
+                            HStack(spacing: 4) {
+                                Circle().fill(color).frame(width: 6, height: 6).accessibilityHidden(true)
+                                Text(AssetEditing.typeTitle(asset.type)).font(.caption).foregroundStyle(Crayon.inkSoft)
+                            }
                         }
                     }
+                    .padding(.vertical, 2)
                     .tag(asset.id)
                 }
             }
+            .scrollContentBackground(.hidden)
             .overlay {
                 if assets.isEmpty {
-                    ContentUnavailableView("No Assets", systemImage: "person.crop.square",
-                                           description: Text("Add characters, places and objects with +."))
+                    CrayonEmptyState("No Assets", systemImage: "person.crop.square", color: Crayon.grape,
+                                     message: "Add characters, places and objects with +.")
                 }
             }
         }
@@ -127,8 +138,8 @@ struct AssetsDetail: View {
                         onOpenPage: onOpenPage, onGenerateSheet: { onGenerateSheet(id) })
                 .id(id)
         } else {
-            ContentUnavailableView("No Asset Selected", systemImage: "person.crop.square",
-                                   description: Text("Choose an asset, or add one with +."))
+            CrayonEmptyState("No Asset Selected", systemImage: "person.crop.square", color: Crayon.grape,
+                             message: "Choose an asset, or add one with +.")
         }
     }
 }
@@ -146,8 +157,8 @@ struct AssetsSessionPanel: View {
                 .id(owner)
                 .disabled(!document.isEditable)
         } else {
-            ContentUnavailableView("No Reference Selected", systemImage: "photo",
-                                   description: Text("Choose a reference image or sheet item to see its session."))
+            CrayonEmptyState("No Reference Selected", systemImage: "photo", color: Crayon.sky,
+                             message: "Choose a reference image or sheet item to see its session.")
         }
     }
 }

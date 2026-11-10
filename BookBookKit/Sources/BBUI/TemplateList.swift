@@ -95,13 +95,14 @@ struct TemplateList: View {
                     .onExitCommand { renaming = nil }
             } else {
                 Text(template.name).lineLimit(2)
-                    .foregroundStyle(inBook ? .primary : .secondary)
+                    .font(Crayon.font(.body, weight: inBook ? .semibold : .regular))
+                    .foregroundStyle(inBook ? Crayon.ink : Crayon.inkSoft)
                     .onTapGesture(count: 2) { beginRename(template) }
             }
             Spacer(minLength: 0)
             if inBook {
                 let n = content.pages(using: template.id).count
-                if n > 0 { Text("\(n)").font(.caption).foregroundStyle(.secondary).help("Used on \(n) page(s)") }
+                if n > 0 { CrayonSticker("\(n)", color: Crayon.sky).help("Used on \(n) page(s)") }
             }
         }
     }
@@ -142,12 +143,12 @@ struct TemplateList: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Divider()
+            Rectangle().fill(Crayon.ink.opacity(0.08)).frame(height: 1)
             if let id = model.templateID, content.templates[id] != nil {
                 let used = LayoutsListing.usage(of: id, in: content)
                 if !used.isEmpty {
                     Text("Used on: \(used.joined(separator: ", ")). Change those pages' layout before deleting.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
                         .padding(.horizontal, 8)
                 }
             }
@@ -172,11 +173,12 @@ struct TemplateList: View {
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
+            .font(.system(.body, design: .rounded, weight: .bold))
             .disabled(!document.isEditable)
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
         }
-        .background(.bar)
+        .background(Crayon.paperDeep)
     }
 
     private var deleteHelp: String {

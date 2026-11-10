@@ -42,10 +42,21 @@ struct BookSwitcher: View {
             Button("Book Settings…", action: onBookSettings)
                 .disabled(!document.isEditable)
         } label: {
-            Label(document.content.book.title, systemImage: "book.closed")
-                .lineLimit(1)
+            Label {
+                Text(document.content.book.title)
+                    .font(Crayon.font(.callout, weight: .bold))
+                    .foregroundStyle(Crayon.ink)
+            } icon: {
+                Image(systemName: "book.closed.fill")
+                    .foregroundStyle(Crayon.color(forKey: document.id.rawValue.uuidString))
+            }
+            .lineLimit(1)
         }
         .menuStyle(.borderlessButton)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .crayonCard(cornerRadius: Crayon.smallCornerRadius)
+        .crayonHover(tilt: -1, scale: 1.02)
         .help("Switch, create, duplicate or delete books")
         .bookActions($actions)
     }

@@ -17,6 +17,8 @@ struct PagesOverview: View {
     @State private var endIsTargeted = false
 
     static let pageHeight: CGFloat = 160
+    /// Room inside each opening's card around its pages.
+    private static let cardPadding: CGFloat = 12
 
     var body: some View {
         let content = document.content
@@ -29,8 +31,8 @@ struct PagesOverview: View {
         let context = RowContext(content: content, layout: layout, numbers: numbers, side: side,
                                  startNumber: style.startNumber)
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: side.width * 2 + 8), spacing: 36)],
-                      alignment: .leading, spacing: 24) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: side.width * 2 + 8 + Self.cardPadding * 2), spacing: 28)],
+                      alignment: .leading, spacing: 28) {
                 ForEach(rows) { row in
                     rowView(row, context)
                 }
@@ -42,7 +44,7 @@ struct PagesOverview: View {
         // the session panel is shown (`BookWindow.minimumWidth`); narrower, the grid clips.
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .clipped()
-        .background(Color(nsColor: .underPageBackgroundColor))
+        .background(Crayon.paper)
         .overlay(alignment: .bottomTrailing) {
             Toggle(isOn: $showNumbers) { Label("Page Numbers", systemImage: "number") }
                 .toggleStyle(.button)
@@ -83,6 +85,9 @@ struct PagesOverview: View {
                 slotView(row.right, ctx)
             }
         }
+        // Each opening is a card on the paper; the page art inside is untouched.
+        .crayonCard(padding: Self.cardPadding)
+        .crayonHover(tilt: -1, scale: 1.02)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(row.isCover ? "Cover" : "Opening \(row.id)")
     }
@@ -93,7 +98,11 @@ struct PagesOverview: View {
             pageCell(page, part: slot.part, sides: 1,
                      label: PagesOverviewModel.positionLabel(slot.position, startNumber: ctx.startNumber), ctx)
         } else {
-            Color.clear.frame(width: ctx.side.width, height: ctx.side.height + 18)
+            // The empty side of an opening (inside the cover): a soft paper well.
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Crayon.paperDeep)
+                .frame(width: ctx.side.width, height: ctx.side.height)
+                .padding(.bottom, 18)
         }
     }
 
@@ -145,20 +154,25 @@ struct PagesOverview: View {
 
     /// Dropping here moves a page to the end of the book.
     private func endDropZone(_ side: CGSize) -> some View {
-        RoundedRectangle(cornerRadius: 6)
-            .strokeBorder(style: StrokeStyle(lineWidth: endIsTargeted ? 3 : 1, dash: [5]))
-            .foregroundStyle(endIsTargeted ? Color.accentColor : Color.secondary.opacity(0.4))
+        let shape = RoundedRectangle(cornerRadius: Crayon.cornerRadius, style: .continuous)
+        return shape
+            .fill(endIsTargeted ? Crayon.sky.opacity(0.15) : Crayon.paperDeep)
+            .overlay {
+                shape.strokeBorder(style: StrokeStyle(lineWidth: endIsTargeted ? 3 : 2, dash: [7, 5]))
+                    .foregroundStyle(endIsTargeted ? Crayon.sky : Crayon.inkSoft.opacity(0.45))
+            }
             .overlay {
                 Button {
                     pages.sheet = .addPage(index: document.content.book.pageOrder.count)
                 } label: {
                     Label("Add Page", systemImage: "plus")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.crayon)
                 .disabled(!document.isEditable)
             }
-            .frame(width: side.width, height: side.height)
-            .padding(.bottom, 18)
+            // The same size as a one-page opening's card, so the grid stays even.
+            .frame(width: side.width + Self.cardPadding * 2, height: side.height + 22 + Self.cardPadding * 2)
+            .crayonHover()
             .dropDestination(for: String.self) { items, _ in
                 guard document.isEditable, let moving = items.first.flatMap(PageDragDrop.pageID(from:)) else { return false }
                 pages.moveToEnd(moving)

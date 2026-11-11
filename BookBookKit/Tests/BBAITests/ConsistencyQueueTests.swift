@@ -455,6 +455,13 @@ func pngData(width: Int, height: Int, alpha: Bool = false) throws -> Data {
         #expect(ConsistencyAssembler.downscaled(small, contentType: "public.png").data == small)
     }
 
+    @Test func downscaleReencodesOpaqueImagesAsJPEG() throws {
+        let opaque = ConsistencyAssembler.downscaled(try pngData(width: 2048, height: 1536), contentType: "public.png")
+        #expect(opaque.pixelSize == PixelSize(width: 1024, height: 768))
+        #expect(opaque.contentType == UTType.jpeg.identifier)
+        #expect(ImageHeader.pixelSize(of: opaque.data) == PixelSize(width: 1024, height: 768))
+    }
+
     @Test func realPersonPhotosNeedTheProvidersAcknowledgement() throws {
         var (content, version, _, _) = makeBook()
         var options = Cast.Options()

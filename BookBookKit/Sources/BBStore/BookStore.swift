@@ -18,6 +18,12 @@ public actor BookStore {
     private var lockKey: String?
     /// Test hook (fault injection): see `SaveStep`.
     private var saveFaultHook: SaveFaultHook?
+    /// Counts `storeImage` calls. Clean Up reads it before planning and passes it to
+    /// `deleteImages(named:keepingImagesStoredAfter:)`, which keeps any file handed out since.
+    public private(set) var imageStoreGeneration = 0
+    /// The `imageStoreGeneration` at which `storeImage` last returned each file name (a new
+    /// file or a dedup hit on an existing one). One entry per file stored in this session.
+    private(set) var imageHandOuts: [String: Int] = [:]
 
     public init(packageURL: URL) {
         self.init(packageURL: packageURL, debounce: .seconds(1))
@@ -232,6 +238,10 @@ public actor BookStore {
             }
             try PackageCoding.writeAtomically(data, to: dest, tempIn: dir)
         }
+        // The caller may put this ref into content later; a Clean Up already under way must not
+        // delete the file from under it (`deleteImages(named:keepingImagesStoredAfter:)`).
+        imageStoreGeneration += 1
+        imageHandOuts[ref.fileName] = imageStoreGeneration
         return ref
     }
 

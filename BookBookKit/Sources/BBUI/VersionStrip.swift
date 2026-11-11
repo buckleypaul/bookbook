@@ -11,8 +11,6 @@ import UniformTypeIdentifiers
 struct VersionStrip: View {
     let session: Session
     let placedID: VersionID?
-    /// Tooltip for the placed/chosen badge ("On the page", or "Chosen" in asset sessions).
-    var placedHelp: String = "On the page"
     let selectedID: VersionID?
     let store: BookStore
     let onChoose: (Version) -> Void
@@ -57,7 +55,7 @@ struct VersionStrip: View {
                                 .foregroundStyle(.white, Crayon.grass)
                                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
                                 .padding(3)
-                                .help(placedHelp)
+                                .help("On the page")
                         }
                     }
                 Text("v\(number)")

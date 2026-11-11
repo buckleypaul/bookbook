@@ -16,15 +16,10 @@ struct SessionPanel: View {
     @Environment(AppModel.self) private var app
     let document: BookDocument
     let content: BookContent
-    let owner: SessionOwner
-    let images: ImageCache
+    let pageID: PageID
+    let boxID: BoxID
 
-    init(document: BookDocument, content: BookContent, pageID: PageID, boxID: BoxID, images: ImageCache) {
-        self.document = document
-        self.content = content
-        self.owner = .pageBox(pageID, boxID)
-        self.images = images
-    }
+    private var owner: SessionOwner { .pageBox(pageID, boxID) }
 
     @State private var prompt = ""
     @State private var selectedVersion: VersionID?
@@ -49,14 +44,9 @@ struct SessionPanel: View {
 
     private var target: GenerationTarget { GenerationTarget(owner: owner) }
 
-    private var pageBox: (page: PageID, box: BoxID)? {
-        if case let .pageBox(page, box) = owner { return (page, box) }
-        return nil
-    }
-
     private var session: Session? { SessionPanelState.session(for: owner, in: content) }
 
-    /// The placed version (page boxes) or the asset's chosen image.
+    /// The version placed in the box.
     private var placedID: VersionID? { SessionPanelState.placedVersion(for: owner, in: content) }
 
     /// The version Details and refinement use: the selection if it still exists, else the placed one.
@@ -92,11 +82,9 @@ struct SessionPanel: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Divider()
-                if let pageBox {
-                    AssetChecklistView(document: document, content: content, pageID: pageBox.page)
-                        .padding(.horizontal)
-                        .padding(.top, 10)
-                }
+                AssetChecklistView(document: document, content: content, pageID: pageID)
+                    .padding(.horizontal)
+                    .padding(.top, 10)
                 composer(session)
                     .crayonCard(padding: 12)
                     .padding(12)
@@ -198,7 +186,7 @@ struct SessionPanel: View {
     private var header: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(headerColor)
+                .fill(Crayon.sky)
                 .frame(width: 10, height: 10)
                 .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
@@ -222,11 +210,6 @@ struct SessionPanel: View {
         .padding(.horizontal)
         .padding(.vertical, 10)
         .background(Crayon.paperDeep)
-    }
-
-    /// The header dot: the asset's own colour, or sky for a page box.
-    private var headerColor: Color {
-        owner.assetID.map { Crayon.color(forKey: $0.rawValue.uuidString) } ?? Crayon.sky
     }
 
     // MARK: Thread
@@ -283,8 +266,7 @@ struct SessionPanel: View {
         let base = baseID(session)
         return VStack(alignment: .leading, spacing: 8) {
             CrayonHeader("Versions", color: Crayon.grape)
-            VersionStrip(session: session, placedID: placedID,
-                         placedHelp: owner.assetID == nil ? "On the page" : "Chosen", selectedID: base,
+            VersionStrip(session: session, placedID: placedID, selectedID: base,
                          store: document.store,
                          onChoose: { choose($0) },
                          onToggleStar: { document.setStarred(!$0.starred, version: $0.id, owner: owner) },
@@ -424,8 +406,7 @@ struct SessionPanel: View {
         selectedVersion = version.id
         freshEpoch = nil
         guard version.id != placedID else { return }
-        guard let pageBox else { return }
-        document.perform(.chooseVersion(page: pageBox.page, box: pageBox.box, version: version.id))
+        document.perform(.chooseVersion(page: pageID, box: boxID, version: version.id))
     }
 
     private func delete(_ id: VersionID) {
@@ -441,15 +422,8 @@ struct SessionPanel: View {
 
     private func export(_ version: Version, in session: Session) {
         let number = session.versionNumber(version.id) ?? 1
-        let name: String
-        if let pageBox {
-            name = VersionExport.suggestedName(book: content.book.title, page: pageBox.page, in: content,
+        let name = VersionExport.suggestedName(book: content.book.title, page: pageID, in: content,
                                                number: number, ref: version.image)
-        } else {
-            let label = document.ownerLabel(owner).replacingOccurrences(of: " · ", with: " ")
-                .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-            name = "\(label) v\(number).\(version.image.fileExtension)"
-        }
         if let text = VersionExport.run(ref: version.image, from: document.store.imageURL(for: version.image),
                                         suggestedName: name) {
             problem = text
@@ -458,12 +432,11 @@ struct SessionPanel: View {
 
     private func importImages(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
-        let document = document
-        guard let pageBox else { return }
+        let document = document, pageID = pageID, boxID = boxID
         Task {
             for url in urls {
                 do {
-                    selectedVersion = try await document.importImage(from: url, page: pageBox.page, box: pageBox.box)
+                    selectedVersion = try await document.importImage(from: url, page: pageID, box: boxID)
                 } catch {
                     problem = ImageImportFailure.message(for: error)
                 }

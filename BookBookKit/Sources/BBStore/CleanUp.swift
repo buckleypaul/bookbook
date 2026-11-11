@@ -58,8 +58,9 @@ public enum CleanUp {
         return CleanUpPlan(versionIDs: doomed, fileNames: freed, bytesFreed: bytes)
     }
 
-    /// Removes the plan's versions from their sessions. Messages keep their text; the files are
-    /// deleted separately with `BookStore.deleteImages(named:)` after the content is saved.
+    /// Removes the plan's versions from their sessions. Messages keep their text (and forget the
+    /// version they produced); the files are deleted separately with
+    /// `BookStore.deleteImages(named:)` after the content is saved (`filesToDelete`).
     public static func apply(_ plan: CleanUpPlan, to content: inout BookContent) {
         remove(plan.versionIDs, from: &content)
     }
@@ -69,9 +70,36 @@ public enum CleanUp {
         Set(content.sessions.values.filter { s in s.versions.contains { plan.versionIDs.contains($0.id) } }.map(\.id))
     }
 
+    /// The plan's files that are still safe to delete from `content`'s package right now: those
+    /// nothing in `content` uses (a file stored again since the plan, `storeImage` returning
+    /// the existing file, is kept), nor queued work (`SweepProtection`), nor `keeping` (files
+    /// the undo history could bring back).
+    public static func filesToDelete(_ plan: CleanUpPlan, in content: BookContent, keeping: Set<String> = [],
+                                     protection: SweepProtection = .shared) -> Set<String> {
+        plan.fileNames
+            .subtracting(ImageSweep.referencedFileNames(in: content))
+            .subtracting(protection.names(for: content.book.id))
+            .subtracting(keeping)
+    }
+
+    /// Like `BookMutations.deleteVersion` for each version: messages that produced one forget
+    /// it, and a remaining version whose parent goes takes the nearest remaining ancestor.
     private static func remove(_ ids: Set<VersionID>, from content: inout BookContent) {
         for (sid, var session) in content.sessions where session.versions.contains(where: { ids.contains($0.id) }) {
+            var parentOf: [VersionID: VersionID?] = [:]
+            for v in session.versions where ids.contains(v.id) { parentOf[v.id] = v.parent }
             session.versions.removeAll { ids.contains($0.id) }
+            for index in session.versions.indices {
+                var parent = session.versions[index].parent
+                var seen: Set<VersionID> = []
+                while let p = parent, let next = parentOf[p], seen.insert(p).inserted { parent = next }
+                session.versions[index].parent = parent
+            }
+            for index in session.messages.indices {
+                if let v = session.messages[index].producedVersion, ids.contains(v) {
+                    session.messages[index].producedVersion = nil
+                }
+            }
             content.sessions[sid] = session
         }
     }

@@ -288,7 +288,8 @@ public enum RichTextBridge {
         NSColor(srgbRed: CGFloat(c.red), green: CGFloat(c.green), blue: CGFloat(c.blue), alpha: CGFloat(c.alpha))
     }
 
-    static func rgba(_ color: NSColor) -> RGBA? {
+    /// `color`'s sRGB components; nil if it has no sRGB equivalent (a pattern colour).
+    public nonisolated static func rgba(_ color: NSColor) -> RGBA? {
         guard let srgb = color.usingColorSpace(.sRGB) else { return nil }
         return RGBA(red: Double(srgb.redComponent), green: Double(srgb.greenComponent),
                     blue: Double(srgb.blueComponent), alpha: Double(srgb.alphaComponent))
@@ -303,7 +304,8 @@ public enum RichTextBridge {
         }
     }
 
-    static func modelAlignment(_ alignment: NSTextAlignment) -> TextAlignment {
+    /// The model alignment for a paragraph style's alignment (`.natural`, `.left` → leading).
+    public nonisolated static func modelAlignment(_ alignment: NSTextAlignment) -> TextAlignment {
         switch alignment {
         case .center: .center
         case .right: .trailing

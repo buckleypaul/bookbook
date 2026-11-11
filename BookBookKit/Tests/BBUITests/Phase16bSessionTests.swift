@@ -54,7 +54,7 @@ struct Phase16bSessionTests {
     }
 
     @Test func committedTextOnlyCommitsATypedDraft() {
-        #expect(CommittedText.textToCommit(draft: "old", synced: "old") == nil)
-        #expect(CommittedText.textToCommit(draft: "new", synced: "old") == "new")
+        #expect(CommittedText.textToCommit(draft: "old", value: "old") == nil)
+        #expect(CommittedText.textToCommit(draft: "new", value: "old") == "new")
     }
 }

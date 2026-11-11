@@ -421,7 +421,7 @@ extension InlineTextEditor {
                 transform(&run)
             }
             if let style = textView.typingAttributes[.paragraphStyle] as? NSParagraphStyle {
-                let current = RichTextFormatting.modelAlignment(style.alignment)
+                let current = RichTextBridge.modelAlignment(style.alignment)
                 alignment = current == typography.alignment ? nil : current
             }
         }
@@ -439,16 +439,6 @@ enum RichTextFormatting {
     /// Points per step for Bigger / Smaller.
     static let sizeStep: Double = 1
     static let minimumSize: Double = 1
-
-    /// The model alignment for a paragraph style's alignment (as `RichTextBridge` maps it).
-    static func modelAlignment(_ alignment: NSTextAlignment) -> TextAlignment {
-        switch alignment {
-        case .center: .center
-        case .right: .trailing
-        case .justified: .justified
-        default: .leading
-        }
-    }
 
     /// The runs inside `range` (whole runs, unsplit); empty for an empty range.
     static func runs(in range: NSRange, of text: RichText) -> [Run] {

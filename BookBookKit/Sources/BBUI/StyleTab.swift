@@ -301,19 +301,9 @@ struct CommitTextEditor: View {
 
     var body: some View {
         TextEditor(text: $draft)
-            .font(.body)
             .focused($focused)
-            .frame(minHeight: minHeight)
-            .scrollContentBackground(.hidden)
-            .padding(6)
-            .background(Crayon.paper, in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
-                .strokeBorder(focused ? Crayon.tomato.opacity(0.7) : Crayon.ink.opacity(0.12),
-                              lineWidth: focused ? 2 : 1.5))
-            .onAppear { draft = text }
-            .onChange(of: text) { _, new in if draft != new { draft = new } }
-            .onChange(of: focused) { _, now in if !now, draft != text { commit(draft) } }
-            .onDisappear { if draft != text { commit(draft) } }
+            .crayonTextEditor(focused: focused, minHeight: minHeight)
+            .committingDraft($draft, of: text, focused: focused, commit: commit)
     }
 }
 

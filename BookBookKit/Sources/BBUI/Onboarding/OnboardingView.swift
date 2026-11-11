@@ -45,7 +45,7 @@ public struct OnboardingView: View {
             HStack {
                 CrayonSticker("Guided Setup", systemImage: "sparkles", color: Crayon.grape)
                 Spacer()
-                OnboardingStepDots(current: model.step.rawValue, count: OnboardingModel.Step.allCases.count)
+                StepDots(current: model.step.rawValue, count: OnboardingModel.Step.allCases.count)
             }
             content
             Spacer(minLength: 0)
@@ -189,23 +189,5 @@ public struct OnboardingView: View {
             testResult = await app.testConnection(.openai)
             testing = false
         }
-    }
-}
-
-/// Setup progress: one little crayon stroke per step, coloured up to the current one.
-private struct OnboardingStepDots: View {
-    let current: Int
-    let count: Int
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<count, id: \.self) { index in
-                Capsule()
-                    .fill(index <= current ? Crayon.color(for: index) : Crayon.ink.opacity(0.12))
-                    .frame(width: index == current ? 18 : 8, height: 6)
-            }
-        }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: current)
-        .accessibilityHidden(true)
     }
 }

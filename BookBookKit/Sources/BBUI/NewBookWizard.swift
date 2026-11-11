@@ -282,8 +282,9 @@ struct NewBookWizard: View {
     }
 }
 
-/// The wizard's progress: one little crayon stroke per step, coloured up to the current one.
-private struct StepDots: View {
+/// Progress through the wizard's (or setup's) steps: one little crayon stroke per step,
+/// coloured up to the current one.
+struct StepDots: View {
     let current: Int
     let count: Int
 

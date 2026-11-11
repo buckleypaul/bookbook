@@ -269,23 +269,24 @@ final class StorageModel {
             CleanUp.apply(plan, to: &content)
             return DirtySet(sessions: affected)
         }
-        // The versions are already gone from memory, so earlier undo steps may point at them (PD
-        // §8.12: Clean up cannot be undone). Drop the history now, before any await, and end the
-        // open typing step so later typing doesn't join an entry that no longer exists.
-        document.endTypingStep()
-        document.undoManager?.removeAllActions()
+        // Clean up itself can't be undone (PD §8.12), but the undo history stays: replaying an
+        // earlier step never brings back a removed version (placements and asset choices of it
+        // are dropped, as after Delete Version), and the files it could restore are kept below.
         await document.flush()
         var message: String?
         if document.lastSaveError != nil {
             message = "Couldn't save the cleaned-up book, so no picture files were deleted."
         } else {
+            // Re-check now, after the await: a file stored again meanwhile (`storeImage` dedups
+            // by hash) is in use again and must stay.
+            let files = CleanUp.filesToDelete(plan, in: document.content, keeping: document.undoImageFileNames)
             do {
-                try await store.deleteImages(named: plan.fileNames)
+                try await store.deleteImages(named: files)
             } catch {
                 message = "Some picture files couldn't be deleted. \(StoreErrorText.message(for: error))"
             }
         }
-        await refresh(document)
+        await refresh(document, protecting: protecting)
         return message
     }
 }

@@ -196,7 +196,8 @@ struct Phase9WiringTests {
         await QueueFileStore(files: h.appSupport).save(PersistedQueue(entries: [.init(item: restored)]))
 
         let app = h.makeApp()
-        #expect(app.generate(prompt: "new", quality: .draft, includeStoryText: true, refines: nil, page: page, box: box,
+        #expect(app.generate(prompt: "new", quality: .draft, includeStoryText: true, refines: nil,
+                             attachedReferences: [], target: .pageBox(page, box),
                              in: document))
         await app.queueOperationsSettled()
         let snapshot = await app.queue.snapshot()
@@ -261,7 +262,7 @@ struct Phase9WiringTests {
         let ref = ImageRef(sha256: String(repeating: "a", count: 64), contentType: "public.png")
         let size = PixelSize(width: 1024, height: 1024)
         let imported = Version(image: ref, pixelSize: size, source: .imported, createdAt: Date())
-        #expect(app.regenerateEstimate(imported, page: PageID(), box: BoxID(), in: document) == nil)
+        #expect(app.regenerateEstimate(imported, target: .pageBox(PageID(), BoxID()), in: document) == nil)
 
         let intent = GenerationIntent(messageText: "a fox", provider: .openai, model: "gpt-image-2.5-sunburst",
                                       quality: .high)
@@ -269,7 +270,7 @@ struct Phase9WiringTests {
                                     promptSent: "a fox", styleRevision: 1, storyTextIncluded: false, intent: intent)
         let generated = Version(image: ref, pixelSize: size, source: .generated, createdAt: Date(), provenance: provenance)
         // Box is not in the book, so the estimate is unknown, which always needs confirmation.
-        let estimate = try #require(app.regenerateEstimate(generated, page: PageID(), box: BoxID(), in: document))
+        let estimate = try #require(app.regenerateEstimate(generated, target: .pageBox(PageID(), BoxID()), in: document))
         let decision = await app.costDecision(for: estimate, in: document)
         #expect(decision.needsConfirmation)
         await app.closeBook(entry.id)
@@ -419,7 +420,8 @@ struct Phase9WiringTests {
         let expected = CostCalculator(priceList: list)
             .actualCost(of: try #require(Phase9Harness.result().usage), provider: .openai, model: "gpt-image-2.5-sunburst")
 
-        #expect(app.generate(prompt: "a fox", quality: .draft, includeStoryText: true, refines: nil, page: page, box: box,
+        #expect(app.generate(prompt: "a fox", quality: .draft, includeStoryText: true, refines: nil,
+                             attachedReferences: [], target: .pageBox(page, box),
                              in: document))
         await until("delivered") {
             document.content.pages[page]?.images[box]?.placement != nil
@@ -450,8 +452,8 @@ struct Phase9WiringTests {
         let (page, box) = try Phase9Harness.firstImageBox(document.content)
         app.pauseQueue()
         for prompt in ["one", "two", "three"] {
-            #expect(app.generate(prompt: prompt, quality: .draft, includeStoryText: false, refines: nil, page: page,
-                                 box: box, in: document))
+            #expect(app.generate(prompt: prompt, quality: .draft, includeStoryText: false, refines: nil,
+                                 attachedReferences: [], target: .pageBox(page, box), in: document))
         }
         await app.queueOperationsSettled()
         var snapshot = await app.queue.snapshot()

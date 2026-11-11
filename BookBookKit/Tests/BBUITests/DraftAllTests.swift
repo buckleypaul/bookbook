@@ -81,8 +81,9 @@ struct DraftAllTests {
         defer { s.h.tearDown() }
         let page = s.document.content.book.pageOrder[0]
         s.app.pauseQueue()
-        #expect(s.app.generate(prompt: "a fox", quality: .standard, includeStoryText: true, refines: nil, page: page,
-                               box: box(of: page, in: s.document.content), in: s.document))
+        #expect(s.app.generate(prompt: "a fox", quality: .standard, includeStoryText: true, refines: nil,
+                               attachedReferences: [], target: .pageBox(page, box(of: page, in: s.document.content)),
+                               in: s.document))
         // Pending before the queue's snapshot has it (this launch) and after.
         #expect(!s.app.draftAllPlan(in: s.document).targets.contains { $0.page == page })
         await s.app.queueOperationsSettled()

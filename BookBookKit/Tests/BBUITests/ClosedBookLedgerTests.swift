@@ -25,10 +25,8 @@ struct ClosedBookLedgerTests {
         let store = BookStore(packageURL: entry.url)
         var content = try await store.load()
         let (page, box) = try Phase9Harness.firstImageBox(content)
-        let (message, item) = BookMutations.makeGeneration(prompt: "a fox", refines: nil, defaults: GenerationDefaults(),
-                                                           bookID: content.book.id, page: page, box: box,
-                                                           now: Fixtures.date)
-        let dirty = BookMutations.appendPendingMessage(message, page: page, box: box, to: &content)
+        let (message, item) = Fixtures.generation("a fox", bookID: content.book.id, page: page, box: box)
+        let dirty = BookMutations.appendPendingMessage(message, target: .pageBox(page, box), to: &content)
         try await store.save(content, dirty: dirty)
         var provenance = Fixtures.provenance()
         provenance.cost = CostRecordID()

@@ -129,10 +129,8 @@ struct SessionMutationsTests {
     @Test func delivery_resolvesSessionByMessage_afterTheBoxMoved() throws {
         var content = Fixtures.book()
         let page = Fixtures.firstPage(content)
-        let (message, item) = BookMutations.makeGeneration(
-            prompt: "a fox", refines: nil, defaults: GenerationDefaults(), bookID: content.book.id,
-            page: page, box: box, now: Fixtures.date)
-        _ = BookMutations.appendPendingMessage(message, page: page, box: box, to: &content)
+        let (message, item) = Fixtures.generation("a fox", bookID: content.book.id, page: page, box: box)
+        _ = BookMutations.appendPendingMessage(message, target: .pageBox(page, box), to: &content)
         let sessionID = content.pages[page]!.images[box]!.sessionID
         // The slot now lives under another box ID: the item's target no longer names it.
         let slot = content.pages[page]!.images.removeValue(forKey: box)!
@@ -157,8 +155,8 @@ struct SessionMutationsTests {
         let refines = VersionID()
         let intent = GenerationIntent(messageText: "make the sky blue", refines: refines, provider: .openai,
                                       model: "m", quality: .high, includeStoryText: false)
-        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: BookID(), page: PageID(),
-                                                           box: BoxID(), now: Fixtures.date)
+        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: BookID(),
+                                                           target: .pageBox(PageID(), BoxID()), now: Fixtures.date)
         #expect(item.intent == intent)
         #expect(message.text == "make the sky blue")
         #expect(message.refines == refines)

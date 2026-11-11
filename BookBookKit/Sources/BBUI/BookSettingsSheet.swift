@@ -252,7 +252,9 @@ final class StorageModel {
 
     func refresh(_ document: BookDocument, protecting: Set<VersionID> = []) async {
         let store = document.store
-        plan = CleanUp.plan(for: document.content, protecting: protecting) { store.imageFileSize($0) }
+        plan = CleanUp.plan(for: document.content, protecting: protecting, keeping: document.undoImageFileNames) {
+            store.imageFileSize($0)
+        }
         size = await Task.detached { store.sizeOnDisk() }.value
     }
 
@@ -263,7 +265,9 @@ final class StorageModel {
         isWorking = true
         defer { isWorking = false }
         let store = document.store
-        let plan = CleanUp.plan(for: document.content, protecting: protecting) { store.imageFileSize($0) }
+        let plan = CleanUp.plan(for: document.content, protecting: protecting, keeping: document.undoImageFileNames) {
+            store.imageFileSize($0)
+        }
         let affected = CleanUp.affectedSessions(plan, in: document.content)
         document.performIrreversible { content in
             CleanUp.apply(plan, to: &content)

@@ -4,7 +4,8 @@ import Foundation
 /// What Clean up would delete. Deletable = unstarred versions not referenced by any page
 /// placement (cover included), reference slot `chosen` or sheet item `chosen`.
 /// `fileNames`/`bytesFreed` cover only image files that no remaining version, provenance,
-/// style reference or other reference still uses (`ImageSweep.referencedFileNames`).
+/// style reference or other reference still uses (`ImageSweep.referencedFileNames`), and that
+/// Clean up would really delete: files queued work protects or undo could restore are left out.
 public struct CleanUpPlan: Hashable, Sendable {
     public var versionIDs: Set<VersionID>
     public var fileNames: Set<String>
@@ -27,8 +28,12 @@ public enum CleanUp {
     /// `chosen` versions, lineage included.
     /// `fileNames` are the image files used only by those versions
     /// (including their provenance images), computed as `ImageSweep.referencedFileNames` before
-    /// minus after. `fileSize` returns a file's size in bytes by name (nil = missing, counts 0).
+    /// minus after, less the files `filesToDelete` would keep anyway (`keeping`, the files undo
+    /// could restore, and `protection`'s files for the book), so the counts and bytes shown
+    /// match what is deleted. `fileSize` returns a file's size in bytes by name (nil = missing,
+    /// counts 0).
     public static func plan(for content: BookContent, protecting: Set<VersionID> = [],
+                            keeping: Set<String> = [], protection: SweepProtection = .shared,
                             fileSize: (String) -> Int64?) -> CleanUpPlan {
         var keep: Set<VersionID> = protecting
         for page in content.pages.values {
@@ -54,6 +59,8 @@ public enum CleanUp {
         var after = content
         remove(doomed, from: &after)
         let freed = ImageSweep.referencedFileNames(in: content).subtracting(ImageSweep.referencedFileNames(in: after))
+            .subtracting(protection.names(for: content.book.id))
+            .subtracting(keeping)
         let bytes = freed.reduce(Int64(0)) { $0 + (fileSize($1) ?? 0) }
         return CleanUpPlan(versionIDs: doomed, fileNames: freed, bytesFreed: bytes)
     }

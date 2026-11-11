@@ -158,6 +158,24 @@ import Testing
         #expect(files == plan.fileNames.subtracting(names[0...2]))
     }
 
+    @Test func planLeavesOutFilesKeptForUndoOrProtected() async throws {
+        let f = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.book.dir) }
+        let full = CleanUp.plan(for: f.book.content, protection: SweepProtection()) { _ in 10 }
+        let names = Array(full.fileNames).sorted()
+        #expect(names.count >= 3)
+        let protection = SweepProtection()
+        protection.set([names[0]], for: f.book.content.book.id)
+        let plan = CleanUp.plan(for: f.book.content, keeping: [names[1]], protection: protection) { _ in 10 }
+        // The same versions go, but the shown files and bytes are only those really deleted.
+        #expect(plan.versionIDs == full.versionIDs)
+        #expect(plan.fileNames == full.fileNames.subtracting(names[0...1]))
+        #expect(plan.bytesFreed == full.bytesFreed - 20)
+        var cleaned = f.book.content
+        CleanUp.apply(plan, to: &cleaned)
+        #expect(CleanUp.filesToDelete(plan, in: cleaned, keeping: [names[1]], protection: protection) == plan.fileNames)
+    }
+
     @Test func deleteImagesIgnoresPathsAndMissingFiles() async throws {
         let f = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: f.book.dir) }

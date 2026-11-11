@@ -167,7 +167,10 @@ struct UndoAfterVersionRemovalTests {
 
         let model = StorageModel()
         await model.refresh(s.document)
-        #expect(model.plan.fileNames.contains(ref.fileName))
+        // The loose version goes, but its file stays for undo, so the sheet doesn't count it.
+        #expect(model.plan.versionIDs.count == 1)
+        #expect(!model.plan.fileNames.contains(ref.fileName))
+        #expect(model.plan.bytesFreed == 0)
         #expect(await model.cleanUp(s.document) == nil)
         let path = s.store.imageURL(for: ref).path(percentEncoded: false)
         #expect(FileManager.default.fileExists(atPath: path))

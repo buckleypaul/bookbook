@@ -64,6 +64,14 @@ extension AppModel {
         return (decision, total)
     }
 
+    /// The "Confirm Cost" text before one request, or nil when it can go ahead without asking
+    /// (`CostText.requestAlert` on the cost decision).
+    func costAlertText(for estimate: CostEstimate, in document: BookDocument) async -> String? {
+        let (decision, spent) = await costDecisionAndSpent(for: estimate, in: document)
+        return CostText.requestAlert(estimate: estimate, decision: decision, spent: spent,
+                                     budget: document.content.book.budget)
+    }
+
     /// The book's ledger totals (Book Settings → Cost, PD §8.12). Read off the main actor.
     public func ledgerSummary(for bookID: BookID) async -> LedgerSummary {
         let read = await openBooks.costLedgerRead(for: bookID)

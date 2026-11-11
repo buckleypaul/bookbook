@@ -36,11 +36,9 @@ struct SessionPanel: View {
     @State private var dropTargeted = false
     @State private var problem: String?
     @State private var estimate = CostEstimate.unknown
-    @State private var costAlert: String?
-    @State private var pendingAction: PendingGeneration?
+    /// The generation waiting on the real-person notice or the cost confirmation.
+    @State private var confirmation: PendingConfirmation<PendingGeneration>?
     @State private var regionEditing: RegionEditSubject?
-    /// The real-person notice waiting for Continue/Cancel, and the action it guards.
-    @State private var notice: PendingNotice?
 
     private var target: GenerationTarget { GenerationTarget(owner: owner) }
 
@@ -135,15 +133,6 @@ struct SessionPanel: View {
                                   submitRegionEdit(subject.version, drawing: drawing, prompt: text)
                               })
         }
-        .sheet(item: $notice) { pending in
-            RealPersonNoticeSheet(provider: pending.provider,
-                                  onContinue: {
-                                      notice = nil
-                                      app.acknowledgeRealPersonNotice(pending.provider, in: document)
-                                      confirmCostThenPerform(pending.action)
-                                  },
-                                  onCancel: { notice = nil })
-        }
         .confirmationDialog("Delete this version?", isPresented: $pendingDelete.isPresent(), titleVisibility: .visible) {
             Button("Delete Version", role: .destructive) {
                 if let id = pendingDelete { delete(id) }
@@ -160,21 +149,8 @@ struct SessionPanel: View {
         } message: {
             Text("The chat clears. Discarding versions also empties this box. This can't be undone.")
         }
-        .alert("Confirm Cost", isPresented: $costAlert.isPresent()) {
-            Button(pendingAction?.kind.buttonTitle ?? "Generate") {
-                if let pending = pendingAction { perform(pending) }
-                pendingAction = nil
-            }
-            .keyboardShortcut(.defaultAction)
-            Button("Cancel", role: .cancel) { pendingAction = nil }
-        } message: {
-            Text(costAlert ?? "")
-        }
-        .alert("Couldn't Complete That", isPresented: $problem.isPresent()) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(problem ?? "")
-        }
+        .generationConfirmation(confirmFlow) { $0.kind.buttonTitle }
+        .problemAlert($problem)
     }
 
     private var deleteMessage: String {
@@ -516,14 +492,7 @@ struct SessionPanel: View {
             }
             attachments
             HStack {
-                Picker("Quality", selection: Binding(get: { quality ?? app.defaults.quality },
-                                                     set: { quality = $0 })) {
-                    ForEach(QualityLevel.allCases, id: \.self) {
-                        Text(VersionDetailsContent.qualityName($0)).tag($0)
-                    }
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
+                QualityPicker(selection: Binding(get: { quality ?? app.defaults.quality }, set: { quality = $0 }))
                 Button {
                     showImporter = true
                 } label: {
@@ -541,15 +510,7 @@ struct SessionPanel: View {
             HStack {
                 Text(app.defaultModelName).font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
                 Spacer()
-                if app.isOnline {
-                    Text(CostText.estimate(estimate))
-                        .font(Crayon.font(.caption, weight: .bold))
-                        .foregroundStyle(Crayon.ink)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Crayon.grass.opacity(0.18), in: Capsule())
-                        .accessibilityLabel("Estimated cost: \(CostText.estimate(estimate))")
-                }
+                if app.isOnline { CostEstimatePill(estimate: estimate) }
                 Button(!app.isOnline ? "Offline" : (number.map { "Refine Version \($0)" } ?? "Generate")) {
                     generate(refining: base)
                 }
@@ -558,23 +519,7 @@ struct SessionPanel: View {
                     .disabled(!app.isOnline || !app.hasOpenAIKey
                               || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            if app.missingDefaultModel != nil {
-                HStack(spacing: 4) {
-                    Text("The default model isn't available to your account.").foregroundStyle(Crayon.ink)
-                    SettingsLink { Text("Pick another in Settings…") }.buttonStyle(.link)
-                }
-                .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Crayon.sunflower.opacity(0.2), in: Capsule())
-            }
-            if !app.hasOpenAIKey {
-                HStack(spacing: 4) {
-                    Text("Add your OpenAI key in Settings ▸ API Keys to generate.")
-                    SettingsLink { Text("Open Settings…") }.buttonStyle(.link)
-                }
-                .font(.caption).foregroundStyle(Crayon.inkSoft)
-            }
+            GenerationSetupNotes()
         }
     }
 
@@ -635,45 +580,39 @@ struct SessionPanel: View {
 
     /// The real-person notice first (once per provider and book, A §11), then the cost decision.
     private func checkThenPerform(_ action: PendingGeneration) {
-        if case let .checkConsistency(_, versionID) = action {
-            if let provider = app.realPersonNoticeNeededForCheck(bookID: document.id, versionID: versionID) {
-                notice = PendingNotice(provider: provider, action: action)
-            } else {
-                confirmCostThenPerform(action)
-            }
-        } else if let provider = app.realPersonNoticeNeeded(intent: action.intent, target: target, in: document) {
-            notice = PendingNotice(provider: provider, action: action)
-        } else {
-            confirmCostThenPerform(action)
+        confirmFlow.start(action, notice: noticeProvider(for: action))
+    }
+
+    private var confirmFlow: GenerationConfirmFlow<PendingGeneration> {
+        GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
+                              estimate: { costEstimate(for: $0) }, perform: { perform($0) })
+    }
+
+    /// The provider whose real-person notice `action` needs first; nil = none.
+    private func noticeProvider(for action: PendingGeneration) -> ProviderID? {
+        switch action {
+        case let .checkConsistency(_, versionID):
+            app.realPersonNoticeNeededForCheck(bookID: document.id, versionID: versionID)
+        case let .generate(intent), let .fixConsistency(intent):
+            app.realPersonNoticeNeeded(intent: intent, target: target, in: document)
+        case let .regionEdit(request):
+            app.realPersonNoticeNeeded(intent: request.intent, target: target, in: document)
+        case let .regenerate(version):
+            version.provenance.flatMap { app.realPersonNoticeNeeded(intent: $0.intent, target: target, in: document) }
         }
     }
 
-    /// Asks `costDecision` first; a confirmation or budget warning is shown but never blocks (A §7.10).
-    private func confirmCostThenPerform(_ action: PendingGeneration) {
-        let current: CostEstimate
+    /// The estimate the cost decision for `action` is made on.
+    private func costEstimate(for action: PendingGeneration) -> CostEstimate {
         switch action {
         case let .generate(intent), let .fixConsistency(intent):
-            current = app.estimate(for: intent, target: target, in: document)
+            app.estimate(for: intent, target: target, in: document)
         case let .regenerate(version):
-            current = app.regenerateEstimate(version, target: target, in: document) ?? .unknown
+            app.regenerateEstimate(version, target: target, in: document) ?? .unknown
         case let .regionEdit(request):
-            current = app.estimate(for: request.intent, target: target, in: document)
+            app.estimate(for: request.intent, target: target, in: document)
         case let .checkConsistency(sessionID, versionID):
-            current = app.consistencyCheckEstimate(bookID: document.id, sessionID: sessionID, versionID: versionID)
-        }
-        Task {
-            let (decision, spent) = await app.costDecisionAndSpent(for: current, in: document)
-            guard decision.needsConfirmation || decision.overBudget else {
-                perform(action)
-                return
-            }
-            if let text = CostText.requestAlert(estimate: current, decision: decision, spent: spent,
-                                                budget: document.content.book.budget) {
-                pendingAction = action
-                costAlert = text
-            } else {
-                perform(action)
-            }
+            app.consistencyCheckEstimate(bookID: document.id, sessionID: sessionID, versionID: versionID)
         }
     }
 
@@ -714,14 +653,14 @@ struct SessionPanel: View {
         var imageData: Data
     }
 
-    private struct RegionEditRequest {
+    private struct RegionEditRequest: Sendable {
         var version: Version
         var drawing: RegionMaskDrawing
         /// The prompt and settings; `generateRegionEdit` adds the mask.
         var intent: GenerationIntent
     }
 
-    private enum PendingGeneration {
+    private enum PendingGeneration: Sendable {
         var kind: CostConfirmKind {
             switch self {
             case .generate, .regenerate: .generate
@@ -738,27 +677,6 @@ struct SessionPanel: View {
         case fixConsistency(GenerationIntent)
         /// Phase 12: an on-demand check of one version.
         case checkConsistency(session: SessionID, version: VersionID)
-
-        var intent: GenerationIntent {
-            switch self {
-            case let .generate(intent): intent
-            case let .regionEdit(request):
-                request.intent
-            case let .fixConsistency(intent):
-                intent
-            case .checkConsistency:
-                GenerationIntent(messageText: "", provider: .openai, model: "", quality: .standard)
-            case let .regenerate(version):
-                version.provenance?.intent ?? GenerationIntent(messageText: "", provider: .openai, model: "",
-                                                               quality: .standard)
-            }
-        }
-    }
-
-    private struct PendingNotice: Identifiable {
-        let id = UUID()
-        var provider: ProviderID
-        var action: PendingGeneration
     }
 }
 

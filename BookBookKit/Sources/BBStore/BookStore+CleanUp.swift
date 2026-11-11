@@ -14,9 +14,13 @@ extension BookStore {
     /// Deletes the named files from `images/` now (not via the 24 h sweep). Call after the cleaned
     /// content has been saved, so no saved JSON refers to them. Names with a path separator or a
     /// leading dot are ignored; an `images/` that resolves outside the package is refused.
+    /// With `generation` (an `imageStoreGeneration` read earlier), a file that `storeImage`
+    /// handed out since then is kept: its caller may be about to use it (a dedup hit returns
+    /// the existing file). The 24 h sweep removes it later if nothing does.
     /// Returns the number removed.
     @discardableResult
-    public func deleteImages(named fileNames: Set<String>) throws(StoreError) -> Int {
+    public func deleteImages(named fileNames: Set<String>,
+                             keepingImagesStoredAfter generation: Int? = nil) throws(StoreError) -> Int {
         if isReadOnly { throw StoreError.readOnly }
         let fm = FileManager.default
         let dir = packageURL.appending(path: "images", directoryHint: .isDirectory)
@@ -26,6 +30,7 @@ extension BookStore {
             }
             var removed = 0
             for name in fileNames where !name.contains("/") && !name.isEmpty && !name.hasPrefix(".") {
+                if let generation, let handedOut = imageHandOuts[name], handedOut > generation { continue }
                 let url = dir.appending(path: name)
                 guard fm.fileExists(atPath: url.path(percentEncoded: false)) else { continue }
                 try fm.removeItem(at: url)

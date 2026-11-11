@@ -158,6 +158,61 @@ import Testing
         #expect(files == plan.fileNames.subtracting(names[0...2]))
     }
 
+    @Test func planLeavesOutFilesKeptForUndoOrProtected() async throws {
+        let f = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.book.dir) }
+        let full = CleanUp.plan(for: f.book.content, protection: SweepProtection()) { _ in 10 }
+        let names = Array(full.fileNames).sorted()
+        #expect(names.count >= 3)
+        let protection = SweepProtection()
+        protection.set([names[0]], for: f.book.content.book.id)
+        let plan = CleanUp.plan(for: f.book.content, keeping: [names[1]], protection: protection) { _ in 10 }
+        // The same versions go, but the shown files and bytes are only those really deleted.
+        #expect(plan.versionIDs == full.versionIDs)
+        #expect(plan.fileNames == full.fileNames.subtracting(names[0...1]))
+        #expect(plan.bytesFreed == full.bytesFreed - 20)
+        var cleaned = f.book.content
+        CleanUp.apply(plan, to: &cleaned)
+        #expect(CleanUp.filesToDelete(plan, in: cleaned, keeping: [names[1]], protection: protection) == plan.fileNames)
+    }
+
+    @Test func deleteImagesKeepsAFileStoredAgainSinceTheGeneration() async throws {
+        let f = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.book.dir) }
+        let store = f.book.store
+        let a = try await store.storeImage(Data("race-a".utf8), contentType: "public.png")
+        let b = try await store.storeImage(Data("race-b".utf8), contentType: "public.png")
+        // Clean Up reads the generation, then (before its delete runs) a delivery gets a dedup hit on `a`.
+        let generation = await store.imageStoreGeneration
+        let again = try await store.storeImage(Data("race-a".utf8), contentType: "public.png")
+        #expect(again == a)
+        #expect(await store.imageStoreGeneration > generation)
+
+        let removed = try await store.deleteImages(named: [a.fileName, b.fileName], keepingImagesStoredAfter: generation)
+        #expect(removed == 1)
+        #expect(exists(store.imageURL(for: a)))
+        #expect(!exists(store.imageURL(for: b)))
+        // A later Clean Up (generation read after the hand-out) may delete it.
+        let later = await store.imageStoreGeneration
+        #expect(try await store.deleteImages(named: [a.fileName], keepingImagesStoredAfter: later) == 1)
+        #expect(!exists(store.imageURL(for: a)))
+    }
+
+    @Test func sweepStillDeletesTrueOrphansAfterHandOuts() async throws {
+        let f = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.book.dir) }
+        let store = f.book.store
+        try await store.save(f.book.content, dirty: .all(f.book.content))
+        let orphan = try await store.storeImage(Data("orphan".utf8), contentType: "public.png")
+        _ = try await store.storeImage(Data("orphan".utf8), contentType: "public.png")
+        #expect(await store.imageStoreGeneration > 0)
+        let removed = try await store.sweepOrphanImages(referencedBy: f.book.content, minimumAge: 0)
+        #expect(removed == 1)
+        #expect(!exists(store.imageURL(for: orphan)))
+        #expect(exists(store.imageURL(for: f.storyV.image)))
+        #expect(exists(store.imageURL(for: f.loose[0].image)))
+    }
+
     @Test func deleteImagesIgnoresPathsAndMissingFiles() async throws {
         let f = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: f.book.dir) }

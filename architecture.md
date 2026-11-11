@@ -339,6 +339,8 @@ The in-memory model tracks dirty entities. Each save is one **transaction**:
 
 Image files that no JSON refers to are swept only when the book is opened, and only if they are more than 24 hours old, so a generation that is still being delivered never loses its file. Ledger lines are appended with `O_APPEND`. A truncated last line is ignored and repaired.
 
+- **As built (2026-11-11), style reference repair:** style references saved before they went through `ImageImportNormalizer` kept the file's raw bytes and an extension-guessed type (HEIC, WebP, or bytes that don't match `contentType`), which providers reject. When a book opens with its lock, `BookDocument.open` calls `BookStore.repairingStyleReferences(in:)` after `load()`: each reference whose bytes aren't PNG/JPEG matching its `contentType` is re-normalized with `normalizeReferencePhoto`, stored, and `style.json` is saved in one journaled transaction. It's a data repair, not a `BookCommand`, so it never appears in undo. Undecodable or missing files are left as they are; a sound book writes nothing, so the repair is idempotent; the old file is left to the orphan sweep. Asset reference photos and imported versions always went through the normalizer, so they need no repair.
+
 ### 5.3 Autosave
 
 - `BookStore` is an actor (one per open book) that serializes all I/O for that book.
@@ -364,7 +366,7 @@ Image files that no JSON refers to are swept only when the book is opened, and o
   - An imported style guide keeps the target book's page setup; only the visual style and typography come across. Importing is one undoable `BookCommand` (`.importFromBook`). Undo removes the assets and templates and restores the style guide, but leaves the new sessions behind as orphans, as for any new session.
   - Duplicate `Book.id`s (a Finder copy) are resolved on library refresh. The package already indexed keeps its ID. Otherwise the earliest-created folder keeps it. The other package gets a new ID through a locked, journaled save.
   - Clean up deletes the freed image files at once, not through the 24-hour orphan sweep.
-  - Clean up keeps the undo history (changed 2026-11-11). Undo and redo replay skip or clear any placement or asset choice whose version is gone, as after Delete Version. Before deleting, Clean Up re-checks the files against the current content, the queue's protected set and the image files that undo steps can restore (`CleanUp.filesToDelete`), and it clears `Message.producedVersion` for the versions it removes.
+  - Clean up keeps the undo history (changed 2026-11-11). Undo and redo replay skip or clear any placement or asset choice whose version is gone, as after Delete Version. Before deleting, Clean Up re-checks the files against the current content, the queue's protected set and the image files that undo steps can restore (`CleanUp.filesToDelete`), and it clears `Message.producedVersion` for the versions it removes. The plan shown in Book Settings already leaves out the files kept for undo or the queue, so "frees N" matches what is deleted. `BookStore` counts `storeImage` calls (`imageStoreGeneration`); Clean Up reads the count before planning, and `deleteImages(named:keepingImagesStoredAfter:)` keeps any file `storeImage` handed out since (a dedup hit can return a planned file). The 24-hour sweep removes such a file later if nothing uses it.
   - The sample book is bundled at `BBStore/Resources/SampleBook/Sample.bookbook`. The ID of its library copy is kept in `UserDefaults` (`sampleBookCopyID`). The bundled one is a text-only placeholder until the real one is made in the app (see its README).
 
 ### 5.5 App-level files
@@ -697,6 +699,7 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
 - Queue items carry a kind (image or consistency check) and a `parent`; `queue.json` is schema 2 (schema 1 files still load; older builds ignore schema 2 files). The queue assigns the new version's ID before delivery, and the follow-up is inserted ahead of every waiting item once that delivery lands, including a later redelivery to a locked book. A second check of a version already queued is skipped.
 - Follow-ups and on-demand checks need a wired `VisionProvider` and a catalog vision model; without them nothing is queued or estimated. The switch and the vision model are captured at enqueue time.
 - `ConsistencyAssembler` leaves out the checked image itself from the references and leaves out real-person photos unless the book has acknowledged that provider's notice (§11).
+- A refused or failed check carries an `AssemblyReport` of what it sent (prompt and images, no story text; `AssembledConsistency.report`), and `PlannedImage.depictsRealPerson` reaches its `SentReference`s, so refusal advice works for checks as for pictures (2026-11-11).
 - A failed check fails like any item and leaves the version untouched; a check whose version (or page box) is gone is dropped quietly. Checks write a `consistency` ledger line; the parent's line prices only its own request.
 
 ### 7.9 Generation queue (§5)

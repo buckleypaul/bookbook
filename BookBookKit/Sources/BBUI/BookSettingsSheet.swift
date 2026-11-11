@@ -252,7 +252,9 @@ final class StorageModel {
 
     func refresh(_ document: BookDocument, protecting: Set<VersionID> = []) async {
         let store = document.store
-        plan = CleanUp.plan(for: document.content, protecting: protecting) { store.imageFileSize($0) }
+        plan = CleanUp.plan(for: document.content, protecting: protecting, keeping: document.undoImageFileNames) {
+            store.imageFileSize($0)
+        }
         size = await Task.detached { store.sizeOnDisk() }.value
     }
 
@@ -263,7 +265,13 @@ final class StorageModel {
         isWorking = true
         defer { isWorking = false }
         let store = document.store
-        let plan = CleanUp.plan(for: document.content, protecting: protecting) { store.imageFileSize($0) }
+        // Files `storeImage` hands out from here on are kept (it dedups by hash, so a caller may
+        // get one of the planned files back and put it into content before the delete runs).
+        let generation = await store.imageStoreGeneration
+        guard document.isEditable else { return nil }
+        let plan = CleanUp.plan(for: document.content, protecting: protecting, keeping: document.undoImageFileNames) {
+            store.imageFileSize($0)
+        }
         let affected = CleanUp.affectedSessions(plan, in: document.content)
         document.performIrreversible { content in
             CleanUp.apply(plan, to: &content)
@@ -278,10 +286,11 @@ final class StorageModel {
             message = "Couldn't save the cleaned-up book, so no picture files were deleted."
         } else {
             // Re-check now, after the await: a file stored again meanwhile (`storeImage` dedups
-            // by hash) is in use again and must stay.
+            // by hash) is in use again and must stay; one handed out but not yet in content is
+            // kept by the store (`generation`).
             let files = CleanUp.filesToDelete(plan, in: document.content, keeping: document.undoImageFileNames)
             do {
-                try await store.deleteImages(named: files)
+                try await store.deleteImages(named: files, keepingImagesStoredAfter: generation)
             } catch {
                 message = "Some picture files couldn't be deleted. \(StoreErrorText.message(for: error))"
             }

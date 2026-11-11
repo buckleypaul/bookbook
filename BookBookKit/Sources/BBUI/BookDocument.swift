@@ -143,12 +143,17 @@ public final class BookDocument {
         } else if case let .heldByOther(owner) = try await store.acquireLock() {
             throw .locked(owner)
         }
-        let content: BookContent
+        var content: BookContent
         do {
             content = try await store.load()
         } catch {
             await store.releaseLock()
             throw error
+        }
+        // Load-time data repair, not an edit (never in undo): style references saved before they
+        // were normalized (HEIC, mislabelled bytes) become PNG/JPEG. Never blocks the open.
+        if !readOnly, let repaired = await store.repairingStyleReferences(in: content) {
+            content = repaired
         }
         let document = BookDocument(content: content, store: store, readOnly: readOnly)
         // A book that has never had a library thumbnail (new, or copied in) gets one soon.

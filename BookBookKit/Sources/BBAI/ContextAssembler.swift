@@ -11,9 +11,14 @@ public struct PlannedImage: Hashable, Sendable {
     public var label: String
     /// Known for versions; nil for style references until the bytes are read.
     public var pixelSize: PixelSize?
+    /// The image was imported as a photo of a real person (A §11), so a refusal of a request
+    /// that sent it gets rule 1's advice (A §7.11).
+    public var depictsRealPerson = false
 
     /// How provenance records it when sent.
-    public var sentReference: SentReference { SentReference(image: ref, role: role.rawValue, label: label) }
+    public var sentReference: SentReference {
+        SentReference(image: ref, role: role.rawValue, label: label, depictsRealPerson: depictsRealPerson)
+    }
 }
 
 /// Why assembly could not produce a request.
@@ -239,7 +244,10 @@ public enum ContextAssembler {
 
     /// `plan` for an already prepared request, so callers that go on to `assemble` prepare once.
     static func plan(_ prepared: Prepared) -> [PlannedImage] {
-        prepared.candidates.map { PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize) }
+        prepared.candidates.map {
+            PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize,
+                         depictsRealPerson: $0.depictsRealPerson)
+        }
     }
 
     static func limits(_ model: CatalogModel) -> ReferenceSelector.Limits {

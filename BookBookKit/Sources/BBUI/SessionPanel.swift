@@ -580,11 +580,12 @@ struct SessionPanel: View {
 
     /// The real-person notice first (once per provider and book, A §11), then the cost decision.
     private func checkThenPerform(_ action: PendingGeneration) {
-        confirmFlow.start(action, notice: noticeProvider(for: action))
+        confirmFlow.start(action)
     }
 
     private var confirmFlow: GenerationConfirmFlow<PendingGeneration> {
         GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
+                              notice: { noticeProvider(for: $0) },
                               estimate: { costEstimate(for: $0) }, perform: { perform($0) })
     }
 

@@ -36,6 +36,31 @@ struct VersionStrip: View {
         }
     }
 
+    /// A picture's thumbnail; for an AI text style (A §7.13), its decoration on paper with an
+    /// "Aa" sample in the style's font and colour.
+    @ViewBuilder
+    private func thumbnail(_ version: Version) -> some View {
+        if let style = version.textStyle {
+            ZStack {
+                Color.white
+                if style.decorationPrompt != nil {
+                    VersionThumbnail(ref: version.image, url: store.imageURL(for: version.image))
+                }
+                Text("Aa")
+                    .font(style.styling.font.map { Font.custom($0.postScriptName, size: 20) } ?? .system(size: 20))
+                    .foregroundStyle(style.styling.color.map {
+                        Color(.sRGB, red: $0.red, green: $0.green, blue: $0.blue, opacity: $0.alpha)
+                    } ?? Crayon.ink)
+                    .padding(4)
+                    .background(style.styling.background.map {
+                        Color(.sRGB, red: $0.red, green: $0.green, blue: $0.blue, opacity: $0.alpha)
+                    } ?? .clear, in: RoundedRectangle(cornerRadius: 4))
+            }
+        } else {
+            VersionThumbnail(ref: version.image, url: store.imageURL(for: version.image))
+        }
+    }
+
     private func cell(_ version: Version, number: Int) -> some View {
         let placed = version.id == placedID
         let selected = version.id == selectedID
@@ -43,7 +68,7 @@ struct VersionStrip: View {
             onChoose(version)
         } label: {
             VStack(spacing: 4) {
-                VersionThumbnail(ref: version.image, url: store.imageURL(for: version.image))
+                thumbnail(version)
                     .frame(width: 64, height: 64)
                     .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2, style: .continuous))
                     .overlay(alignment: .topTrailing) { starButton(version) }

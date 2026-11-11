@@ -15,6 +15,8 @@ extension BookMutations {
             return content.pages[page]?.images[box]?.sessionID
         case let .asset(asset):
             return content.assets[asset]?.sessionID
+        case let .textBox(page, box):
+            return content.pages[page]?.textStyles[box]?.sessionID
         }
     }
 

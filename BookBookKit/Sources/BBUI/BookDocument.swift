@@ -498,6 +498,9 @@ public final class BookDocument {
         /// `baseline` non-nil also replaces the slot's `acknowledged` (placing a new version
         /// clears its `boxAspect`; the inverse restores the old baseline).
         case setPlacement(page: PageID, box: BoxID, placement: ImagePlacement?, baseline: FlagBaseline? = nil)
+        /// AI text styling: the version shown on a text box (nil = unstyled). No-op if the box
+        /// has no styling slot or the version is gone.
+        case setTextStyle(page: PageID, box: BoxID, version: VersionID?)
         case insertPage(Page, index: Int)
         case removePage(PageID)
         case setTypography(Typography)
@@ -647,6 +650,11 @@ public final class BookDocument {
             // A different picture starts unacknowledged: the old one's "OK" doesn't carry over (A §4.4).
             let baseline = FlagBaseline()
             edit = .setPlacement(page: pageID, box: boxID, placement: placement, baseline: baseline)
+
+        case let .chooseTextStyle(pageID, boxID, versionID):
+            guard let slot = content.pages[pageID]?.textStyles[boxID], slot.versionID != versionID else { return nil }
+            if let versionID, content.sessions[slot.sessionID]?.version(versionID)?.textStyle == nil { return nil }
+            edit = .setTextStyle(page: pageID, box: boxID, version: versionID)
 
         case let .addPage(index, templateID, fix):
             guard let template = resolveTemplate(templateID, into: &created), PageKind.story.accepts(template.kind)
@@ -833,6 +841,16 @@ public final class BookDocument {
                 page.images[boxID]?.placement = nil
             }
         }
+        // AI text styles (A §7.13): each styled box's session is copied the same way.
+        for (boxID, slot) in source.textStyles {
+            var session = content.sessions[slot.sessionID] ?? Session(owner: .textBox(page.id, boxID))
+            session.id = SessionID()
+            session.owner = .textBox(page.id, boxID)
+            for i in session.messages.indices { session.messages[i].queueItemID = nil }
+            sessions[session.id] = session
+            page.textStyles[boxID]?.sessionID = session.id
+            if let shown = slot.versionID, session.version(shown) == nil { page.textStyles[boxID]?.versionID = nil }
+        }
         return page
     }
 
@@ -958,6 +976,12 @@ public final class BookDocument {
                                   baseline: baseline == nil ? nil : slot.acknowledged),
                     DirtySet(pages: [pageID]))
 
+        case let .setTextStyle(pageID, boxID, versionID):
+            guard let slot = content.pages[pageID]?.textStyles[boxID] else { return nil }
+            if let versionID, content.sessions[slot.sessionID]?.version(versionID) == nil { return nil }
+            content.pages[pageID]?.textStyles[boxID]?.versionID = versionID
+            return (.setTextStyle(page: pageID, box: boxID, version: slot.versionID), DirtySet(pages: [pageID]))
+
         case let .setStyleVisual(visual, revision):
             let old = content.style
             content.style.presetID = visual.presetID
@@ -1034,6 +1058,9 @@ public final class BookDocument {
             for (boxID, slot) in page.images {
                 if let current = live[slot.sessionID] { page.images[boxID] = current }
             }
+            // AI text styles stay keyed by box and live (a layout change never edits them; a
+            // style on a box the new layout lacks just isn't drawn, and comes back on undo).
+            page.textStyles = old.textStyles
             content.pages[page.id] = clearingGonePlacements(of: page, in: content)
             var dirty = DirtySet(pages: [page.id])
             dirty.sessions = fillMissingSlots(of: page.id, in: &content)

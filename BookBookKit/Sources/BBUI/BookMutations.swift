@@ -51,6 +51,10 @@ public enum BookMutations {
         if case .success = delivery.outcome, content.sessions.values.contains(where: { $0.version(versionID) != nil }) {
             return DirtySet()
         }
+        if case .textBox = delivery.item.target {
+            return applyTextStyleDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID,
+                                          now: now)
+        }
         guard case let .pageBox(pageID, boxID) = delivery.item.target else {
             return applyAssetDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID, now: now)
         }
@@ -182,6 +186,7 @@ public enum BookMutations {
         content.sessions[sessionID] = session
         var dirty = DirtySet(sessions: [sessionID])
         dirty.pages = clearPlacements(of: [version], in: &content)
+            .union(clearTextStyles(of: [version], in: &content))
         dirty.assets = clearAssetChoices(of: [version], in: &content)
         return dirty
     }
@@ -197,6 +202,7 @@ public enum BookMutations {
             let removed = Set(session.versions.map(\.id))
             session.versions = []
             dirty.pages = clearPlacements(of: removed, in: &content)
+                .union(clearTextStyles(of: removed, in: &content))
             dirty.assets = clearAssetChoices(of: removed, in: &content)
         }
         content.sessions[sessionID] = session

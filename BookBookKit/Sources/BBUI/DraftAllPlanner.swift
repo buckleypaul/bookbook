@@ -33,4 +33,27 @@ public enum DraftAllPlanner {
         let boxLabel = boxes.firstIndex { $0.id == boxID }.map { "Image \($0 + 1)" } ?? "Image"
         return QueueItemDisplay(bookTitle: content.book.title, pageLabel: pageLabel, boxLabel: boxLabel)
     }
+
+    /// Queue labels for a text box's styling decoration: "Page 3", "Text Style" (or "Title Style").
+    public static func textStyleDisplay(page pageID: PageID, box boxID: BoxID, in content: BookContent) -> QueueItemDisplay {
+        QueueItemDisplay(bookTitle: content.book.title, pageLabel: WhereUsedText.pageLabel(pageID, in: content),
+                         boxLabel: TextStyleLabels.boxLabel(page: pageID, box: boxID, in: content) + " Style")
+    }
+}
+
+/// Names for text boxes in the styling UI.
+enum TextStyleLabels {
+    /// "Title", "Author", or "Text" / "Text 2" for the n-th plain text box.
+    static func boxLabel(page pageID: PageID, box boxID: BoxID, in content: BookContent) -> String {
+        guard let page = content.pages[pageID], let template = content.template(for: page),
+              let box = template.box(boxID) else { return "Text" }
+        switch box.role {
+        case .title: return "Title"
+        case .author: return "Author"
+        default:
+            let plain = template.textBoxes.filter { $0.role == nil }
+            guard plain.count > 1, let index = plain.firstIndex(where: { $0.id == boxID }) else { return "Text" }
+            return "Text \(index + 1)"
+        }
+    }
 }

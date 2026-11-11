@@ -109,11 +109,22 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Drag the sidebar and Session gaps: the column-resize cursor shows, widths stay in range and persist after relaunch.
 - The selected page row shows no grey system highlight peeking above the tomato card.
 
+### AI text styling (2026-11-11)
+- Click a story page's text box: the panel shows "Text Style". "Gold storybook frame with vines, playful font": "Designing the style…" shows, then the queued decoration; when it lands, the frame draws behind the text, the font/size/colour change, and the words stay editable (type in the box), spell-checked and inside the frame (needs a design and an image call).
+- Transparency: no gpt-image model in the catalog claims `background: transparent` (unverified), so decorations are asked for on plain white and the white is keyed out locally. Check the frame's edges on a coloured illustration behind it for a white halo; if OpenAI supports transparency for the catalog models, set `supportsTransparentBackground` in `ModelCatalog.json` and re-check.
+- Follow-up "make the frame blue" restyles the selected version (the old decoration is the base image); typography only ("bigger, bold font, no frame") makes a version at once without a picture.
+- Cover title: single-click selects it for styling (double-click still opens Book Settings); a banner behind the title prints correctly.
+- Version strip shows "Aa" samples; choosing an older style, Remove Style, and Undo/Redo of both work; Delete and Reset (discard) remove the style from the page.
+- Version details lists the design (font, size, colour, inset, panel, decoration), the design prompts and parameters, and both costs; Repaint with Same Settings re-paints the decoration with the same typography.
+- Export PDF and booklet: decorations print behind real text at full resolution; the text stays selectable.
+- Duplicate a styled page: the copy keeps the style and has its own session. Change the page's layout: a style on a box the new layout lacks disappears and comes back on Undo.
+
 ## Open follow-ups
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
 ### Phase 17
+- AI text styling (2026-11-11): changing a page's layout doesn't carry a text box's style over to the matching box of the new layout (it stays keyed by the old box); the font list is a curated set plus the book's fonts, so a family the user installed but didn't use isn't offered; `TextStyleFonts.allowed` scans the installed families on every estimate (cache it with the font-registration revision); confirm `background: transparent` support for the catalog's gpt-image models (live) and turn off the local white key where it works.
 - Layouts chat: replies are only a summary line plus a diagram, since the shared `TemplateDraft` schema has no message field; consider adding a short `reply` field (changes the wire schema for every adapter). Threads aren't saved (decided 2026-11-11) (from the Layouts chat change).
 - Simplify leftovers (from the 2026-11-09 whole-codebase simplify pass): cache `FontFamilies.all` with an app-wide font-registration revision; add `PageStatus.title` shared by `StatusBadge`, `PagesOverview` and `BookWindow`.
 - Simplify pass 2026-11-11 leftovers. **Wording (needs a product call):** `ProviderErrorText` duplicates `RefusalAdvisor` with drifted wording; asset type names/symbols differ between `AssetEditing` ("Place / Scene", `person`) and `AssetTypeText` ("Place", `person.crop.circle`); cost kinds read "Images"/"Templates" in `BookSettingsSheet` but "Pictures"/"Layout suggestions" in `CostText`; onboarding `TypicalCosts.format` formats money unlike `CostText.amount`; `FontFamilies.regularFace` and `PageNumberFontNames` pick a family's regular face differently. **Larger refactors:** narrow what `BookEditor` observes and skip unchanged canvas redraws; per-edit font/usage bookkeeping in `scheduleSave`; give `QueueItem.Kind` its per-kind behaviour (consistency checks); one BBModel "home of a session" query; merge `GenerationTarget` into `SessionOwner`; share the region-mask replay between `RegionMaskPreview` and `ImageOps.rasterize`, and redraw the region editor incrementally; lift `fixSplits` out of the BookCommand payloads; a content-addressed `ImageRef` helper shared by the queue and `BookStore` (needs CryptoKit in BBModel); ~250 stale phase/lane comments in production code.

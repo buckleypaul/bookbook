@@ -103,7 +103,7 @@ extension BookDocument {
     /// The version an asset uses as its image (nil for page boxes).
     public func chosenVersion(for owner: SessionOwner) -> VersionID? {
         switch owner {
-        case .pageBox: nil
+        case .pageBox, .textBox: nil
         case let .asset(asset): content.assets[asset]?.chosen
         }
     }
@@ -130,6 +130,9 @@ extension BookDocument {
             return "\(display.pageLabel) · \(display.boxLabel)"
         case let .asset(id):
             return content.assets[id]?.name ?? "Asset"
+        case let .textBox(page, box):
+            let display = DraftAllPlanner.textStyleDisplay(page: page, box: box, in: content)
+            return "\(display.pageLabel) · \(display.boxLabel)"
         }
     }
 }

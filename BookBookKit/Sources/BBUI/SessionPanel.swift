@@ -732,6 +732,7 @@ enum SessionPanelState {
         switch owner {
         case let .pageBox(page, box): content.pages[page]?.images[box]?.placement?.versionID
         case let .asset(asset): content.assets[asset]?.chosen
+        case let .textBox(page, box): content.pages[page]?.textStyles[box]?.versionID
         }
     }
 }

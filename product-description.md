@@ -182,6 +182,12 @@ The page editor shows the page canvas, with the session panel alongside it.
 - **Refining:** follow-up prompts refine the currently selected version. The thread stays a single conversation, and each message shows which version it refined, so refining an older version never removes later ones.
 - **Region editing:** select an area of the selected version (brush or lasso) and describe the change. Only that area is altered. If the model doesn't support region edits, the option is unavailable, with a short explanation. In v1 only OpenAI's GPT Image models support it. With Gemini (post-MVP), changes will be made by describing them in a follow-up prompt.
 - **Reset session:** clears that box's conversation and starts fresh with the same base context. The user chooses whether to keep or discard existing versions. Reset can't be undone, so it asks for confirmation.
+- **Styling a text box with AI** (added 2026-11-11): click a text box (including the cover's title and author) and the panel shows that box's **text style session**. Describe a look ("a gold storybook frame with vines, playful font", "a torn-paper banner behind the title") and the app:
+  - asks a text model to choose the **typography** (a font from a curated list of installed fonts plus the book's own, size, colour, alignment, an optional flat panel, and how far the text sits inside a frame), and to describe a **decoration**;
+  - asks the image model to paint that decoration (frame, border, flourishes, banner, shapes) on a transparent background, in the book's art style, with no lettering and a plain centre;
+  - draws the decoration **behind the real text**, which stays editable, spell-checked and sharp in print. A request may be typography only, with no picture.
+  - Styling applies to **that page's box only**; other pages using the layout are unchanged.
+  - It works like a picture session: a chat thread, follow-ups restyle the selected version ("make the frame blue"), a version strip, Version details (the design, everything sent to both models, and both costs), Repaint with same settings, Reset session, and **Remove Style** (back to the layout's look). Choosing a version or removing the style is undoable. The cost estimate covers both requests.
 - Sessions are fully **separate**. Nothing from one box or page reaches another unless the user explicitly attaches it as a reference.
 
 ### 8.7 Cover

@@ -107,6 +107,15 @@ public enum BookThumbnail {
             uses[ref, default: []].append(PlacedImageSource.Use(
                 boxPixelSize: CGSize(width: rect.width * xScale, height: rect.height * yScale), placement: placement))
         }
+        // AI text-box decorations (A §7.13) are stretched to the box: decode for about its size.
+        for box in content.template(for: page)?.textBoxes ?? [] {
+            guard let applied = content.appliedTextStyle(page: page.id, box: box.id), let ref = applied.decoration
+            else { continue }
+            let rect = geometry.renderRect(for: box)
+            uses[ref, default: []].append(PlacedImageSource.Use(
+                boxPixelSize: CGSize(width: rect.width * xScale, height: rect.height * yScale),
+                placement: ImagePlacement(versionID: applied.version.id, boxAspectWhenPlaced: 1)))
+        }
         let image = withoutActuallyEscaping(imageURL) { escapable in
             ThumbnailRendering.render(page: page, in: content, trim: trim,
                                       pixelWidth: width, pixelHeight: height,

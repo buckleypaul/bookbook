@@ -35,6 +35,9 @@ public final class AppModel {
     /// Phase 12: the template-generation provider (A §7.7), set by the app's wiring. nil = AI
     /// templates unavailable.
     @ObservationIgnored public var layoutProvider: (any LayoutProvider)?
+    /// AI text styling (A §7.13): the text model that designs a text box's style, set by the
+    /// app's wiring. nil = text styling unavailable.
+    @ObservationIgnored public var textStyleProvider: (any TextStyleProvider)?
     @ObservationIgnored public let writer: BookWriter
     @ObservationIgnored public let thumbnails: ThumbnailCache
     public let openBooks: OpenBooks
@@ -531,6 +534,7 @@ public final class AppModel {
     func prepared(_ item: QueueItem, content: BookContent) -> QueueItem {
         var item = item
         if item.intent.checkConsistency == nil { item.intent.checkConsistency = preferences.consistencyCheckEnabled }
+        if case .textBox = item.target { item.intent.checkConsistency = false }
         item.estimate = ownEstimate(item.intent, target: item.target, content: content)
         item.consistencyFollowUp = consistencyFollowUp(for: item.intent, target: item.target, content: content)
         switch item.target {
@@ -538,6 +542,8 @@ public final class AppModel {
             item.display = DraftAllPlanner.display(page: page, box: box, in: content)
         case .asset:
             item.display = AssetQueueDisplay.display(item.target.owner, in: content)
+        case let .textBox(page, box):
+            item.display = DraftAllPlanner.textStyleDisplay(page: page, box: box, in: content)
         }
         item.enqueuedAt = now()
         return item

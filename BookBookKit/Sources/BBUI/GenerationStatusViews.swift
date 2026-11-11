@@ -73,10 +73,11 @@ struct VersionDetailsGrid: View {
     let assets: [AssetID: Asset]
     @State private var cost: CostRecord?
     @State private var checkCost: CostRecord?
+    @State private var designCost: CostRecord?
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
-            ForEach(VersionDetailsContent.rows(for: version, in: session, cost: cost, assets: assets, checkCost: checkCost), id: \.self) { row in
+            ForEach(VersionDetailsContent.rows(for: version, in: session, cost: cost, assets: assets, checkCost: checkCost, designCost: designCost), id: \.self) { row in
                 GridRow {
                     Text(row.label).fontWeight(.semibold).foregroundStyle(Crayon.inkSoft).gridColumnAlignment(.trailing)
                     Text(row.value).foregroundStyle(Crayon.ink).textSelection(.enabled)
@@ -86,10 +87,13 @@ struct VersionDetailsGrid: View {
         }
         .font(.caption)
         .padding(.top, 6)
-        .task(id: [version.provenance?.cost, version.consistency?.cost]) {
-            let records = await app.costRecords([version.provenance?.cost, version.consistency?.cost], in: bookID)
+        .task(id: [version.provenance?.cost, version.consistency?.cost, version.textStyle?.call.cost]) {
+            let records = await app.costRecords([version.provenance?.cost, version.consistency?.cost,
+                                                 version.textStyle?.call.cost], in: bookID)
             cost = records[0]
             checkCost = records[1]
+            // A typography-only version's own cost is the design request: don't list it twice.
+            designCost = version.textStyle?.call.cost == version.provenance?.cost ? nil : records[2]
         }
     }
 }

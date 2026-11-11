@@ -335,7 +335,7 @@ struct PageCanvas: NSViewRepresentable {
         let document = document, selection = $selectedImageBox
         let undoManager = context.environment.undoManager
         let placement = view.placement
-        placement.onSelectImageBox = { selection.wrappedValue = $0 }
+        placement.onSelectBox = { selection.wrappedValue = $0 }
         placement.textEditing.onTextChange = { page, box, text, coalescing in
             document.perform(.setRichText(page: page, box: box, text: text, coalescing: coalescing))
         }

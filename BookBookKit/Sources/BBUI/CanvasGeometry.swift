@@ -42,14 +42,15 @@ struct CanvasTransform: Equatable {
 
 /// What a click on the canvas does.
 enum CanvasClick: Equatable {
-    /// Clicked outside every box: end editing, clear the image selection.
+    /// Clicked outside every box: end editing, clear the selection.
     case deselect
     case selectImage(BoxID)
+    /// Select the text box (its styling session shows in the panel) and edit its text.
     case editText(BoxID)
     /// A double-click on a `.title`/`.author` box: its text is the book's (PD §8.7).
     case openBookSettings
-    /// A single click on a bound box: end editing, nothing else.
-    case ignore
+    /// A single click on a bound box: end editing and select it for styling (A §7.13).
+    case selectText(BoxID)
 }
 
 enum CanvasHitTest {
@@ -59,7 +60,7 @@ enum CanvasHitTest {
         switch box.content {
         case .image: return .selectImage(box.id)
         case .text:
-            if CoverText.isBound(box.role) { return clickCount >= 2 ? .openBookSettings : .ignore }
+            if CoverText.isBound(box.role) { return clickCount >= 2 ? .openBookSettings : .selectText(box.id) }
             return .editText(box.id)
         }
     }

@@ -320,7 +320,7 @@ struct CropCommandTests {
         // Dragging a box that wasn't selected only selects it.
         (_, controller, counter) = canvas(doc, page: page, selected: nil)
         var selected: BoxID?
-        controller.onSelectImageBox = { selected = $0 }
+        controller.onSelectBox = { selected = $0 }
         controller.mouseDown(with: mouseEvent(.leftMouseDown), at: centre)
         controller.mouseDragged(with: mouseEvent(.leftMouseDragged), at: CGPoint(x: centre.x + 30, y: centre.y))
         controller.mouseUp(with: mouseEvent(.leftMouseUp), at: CGPoint(x: centre.x + 30, y: centre.y))

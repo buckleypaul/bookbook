@@ -35,6 +35,8 @@ extension AppModel {
     /// can't run (`canCheckConsistency`): then nothing is queued and estimates leave it out.
     func consistencyFollowUp(for intent: GenerationIntent, target: GenerationTarget,
                              content: BookContent) -> ConsistencyFollowUp? {
+        // Text-box decorations (A §7.13) are never checked: there are no assets to compare.
+        if case .textBox = target { return nil }
         guard intent.checkConsistency ?? preferences.consistencyCheckEnabled, canCheckConsistency,
               let model = consistencyModel else { return nil }
         let count = ConsistencyAssembler.imageCount(intent: intent, target: target, content: content,
@@ -88,6 +90,7 @@ extension AppModel {
         switch target {
         case let .pageBox(page, box): display = DraftAllPlanner.display(page: page, box: box, in: content)
         case .asset: display = AssetQueueDisplay.display(target.owner, in: content)
+        case let .textBox(page, box): display = DraftAllPlanner.textStyleDisplay(page: page, box: box, in: content)
         }
         display.boxLabel = ConsistencyQueueLabel.label(for: display.boxLabel)
         let item = QueueItem(bookID: bookID, target: target,

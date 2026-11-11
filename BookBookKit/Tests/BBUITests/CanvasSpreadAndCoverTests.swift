@@ -57,7 +57,7 @@ struct CanvasSpreadAndCoverTests {
                          role: .author)
         let body = Box(frame: NormalizedRect(x: 0, y: 0.3, width: 1, height: 0.4), content: .text(TextBoxStyle()))
         for box in [title, author] {
-            #expect(CanvasHitTest.click(on: box, clickCount: 1) == .ignore)
+            #expect(CanvasHitTest.click(on: box, clickCount: 1) == .selectText(box.id))
             #expect(CanvasHitTest.click(on: box, clickCount: 2) == .openBookSettings)
         }
         #expect(CanvasHitTest.click(on: body, clickCount: 1) == .editText(body.id))

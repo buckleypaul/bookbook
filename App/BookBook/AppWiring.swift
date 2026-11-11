@@ -23,6 +23,7 @@ enum AppWiring {
                              listers: listers(keychain: keychain, http: http),
                              network: NetworkMonitor(), visionProviders: [.openai: chat])
         model.layoutProvider = chat
+        model.textStyleProvider = chat
         return model
     }
 

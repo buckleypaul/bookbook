@@ -27,6 +27,9 @@ public enum BookCommand: Hashable, Sendable {
     case setTypography(Typography)
     /// Put a version from the box's session on the page (zoom 1, centred, aspect-fill).
     case chooseVersion(page: PageID, box: BoxID, version: VersionID)
+    /// AI text styling (A §7.13): show a version from the text box's styling session on the
+    /// page, or nil to remove the style (the template's own look).
+    case chooseTextStyle(page: PageID, box: BoxID, version: VersionID?)
     /// Insert a new story page using `templateID` (single or spread) at `index` in
     /// `pageOrder` (clamped).
     case addPage(index: Int, templateID: TemplateID, fixSplits: Bool = false)
@@ -100,6 +103,7 @@ public enum BookCommand: Hashable, Sendable {
         case let .setRichText(_, _, _, coalescing): coalescing ? "Typing" : "Format Text"
         case .setTypography: "Change Typography"
         case .chooseVersion: "Choose Version"
+        case let .chooseTextStyle(_, _, version): version == nil ? "Remove Text Style" : "Choose Text Style"
         case .addPage: "Add Page"
         case .duplicatePage: "Duplicate Page"
         case .deletePage: "Delete Page"
@@ -139,7 +143,7 @@ extension BookCommand {
         case let .setPageTemplate(page, templateID, _): .setPageTemplate(page: page, templateID: templateID, fixSplits: fix)
         case let .importStoryText(texts, templateID, index, _):
             .importStoryText(texts, templateID: templateID, index: index, fixSplits: fix)
-        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
+        case .setRichText, .setTypography, .chooseVersion, .chooseTextStyle, .setPageDone, .setPageNumberStyle,
              .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
              .addAsset, .updateAsset, .setAssetChecklist, .importFromBook: self
         }
@@ -149,7 +153,7 @@ extension BookCommand {
     public var isStructural: Bool {
         switch self {
         case .addPage, .duplicatePage, .deletePage, .reorderPages, .setPageTemplate, .importStoryText: true
-        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
+        case .setRichText, .setTypography, .chooseVersion, .chooseTextStyle, .setPageDone, .setPageNumberStyle,
              .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
              .addAsset, .updateAsset, .setAssetChecklist, .importFromBook: false
         }

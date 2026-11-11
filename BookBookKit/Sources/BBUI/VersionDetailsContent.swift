@@ -16,9 +16,12 @@ public struct DetailRow: Hashable, Sendable {
 public enum VersionDetailsContent {
     public static func rows(for version: Version, in session: Session? = nil,
                             cost: CostRecord? = nil, assets: [AssetID: Asset] = [:],
-                            checkCost: CostRecord? = nil,
+                            checkCost: CostRecord? = nil, designCost: CostRecord? = nil,
                             dateFormatter: (Date) -> String = defaultDate) -> [DetailRow] {
         var rows = baseRows(for: version, in: session, cost: cost, assets: assets, dateFormatter: dateFormatter)
+        if let style = version.textStyle {
+            rows += textStyleRows(style, cost: designCost, isVersionCost: style.call.cost == version.provenance?.cost)
+        }
         if let report = version.consistency {
             rows += ConsistencyPresentation.detailRows(report, cost: checkCost, dateFormatter: dateFormatter)
         }
@@ -89,6 +92,29 @@ public enum VersionDetailsContent {
         return rows
     }
 
+    /// AI text styling (A §7.13): the design the text model chose and everything sent to it.
+    /// For a typography-only version the rows above describe this same request.
+    static func textStyleRows(_ style: TextStyleIntent, cost: CostRecord?, isVersionCost: Bool) -> [DetailRow] {
+        var rows: [DetailRow] = [DetailRow(label: "Design", value: style.summary)]
+        let s = style.styling
+        rows.append(DetailRow(label: "Font", value: s.font?.postScriptName ?? "Unchanged"))
+        rows.append(DetailRow(label: "Font size", value: s.fontSize.map { "\(featherText($0)) pt" } ?? "Unchanged"))
+        rows.append(DetailRow(label: "Text colour", value: s.color.map(hex) ?? "Unchanged"))
+        rows.append(DetailRow(label: "Alignment", value: s.alignment?.rawValue.capitalized ?? "Unchanged"))
+        rows.append(DetailRow(label: "Text inset", value: "\(Int((s.insetFraction * 100).rounded()))% of the box"))
+        rows.append(DetailRow(label: "Panel", value: s.background.map(hex) ?? "None"))
+        rows.append(DetailRow(label: "Decoration", value: style.decorationPrompt ?? "None (typography only)"))
+        rows.append(DetailRow(label: "Design model", value: "\(providerName(style.call.provider)) \(style.call.model)"))
+        rows.append(DetailRow(label: "Design system prompt", value: style.call.system))
+        rows.append(DetailRow(label: "Design prompt", value: style.call.user))
+        for key in style.call.parametersSent.keys.sorted() {
+            rows.append(DetailRow(label: "Design parameter \(key)", value: style.call.parametersSent[key] ?? ""))
+        }
+        rows.append(DetailRow(label: "Design usage", value: style.call.usage.map(usageText) ?? "Not reported"))
+        rows.append(DetailRow(label: "Design cost", value: isVersionCost ? "The Cost above" : cost.map(CostText.record) ?? "—"))
+        return rows
+    }
+
     public static func defaultDate(_ date: Date) -> String {
         date.formatted(date: .abbreviated, time: .shortened)
     }
@@ -107,6 +133,13 @@ public enum VersionDetailsContent {
         case .standard: "Standard"
         case .high: "High"
         }
+    }
+
+    /// `#RRGGBB` (with the alpha as a percentage when not opaque).
+    static func hex(_ color: RGBA) -> String {
+        func byte(_ v: Double) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
+        let text = String(format: "#%02X%02X%02X", byte(color.red), byte(color.green), byte(color.blue))
+        return color.alpha < 1 ? text + " (\(Int((color.alpha * 100).rounded()))%)" : text
     }
 
     static func featherText(_ pixels: Double) -> String {

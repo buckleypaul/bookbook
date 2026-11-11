@@ -47,7 +47,7 @@
 | Language | Swift 6 language mode, strict concurrency checking on. |
 | Toolchain | Xcode 27.x (Swift 6.4), locally and in CI. GitHub-hosted images are now named by Xcode version; CI uses the `xcode-27` label, which runs macOS 27 on Apple Silicon. |
 | Deployment target | macOS 27.0. macOS 26 is not supported (decided 2026-11-07). macOS 27 is the current release, which also satisfies Homebrew's "works on the latest macOS" rule. When macOS 28 ships, test on it before claiming support. |
-| UI | SwiftUI (`NavigationSplitView`, `WindowGroup(for:)`, `Settings` scene), Observation (`@Observable`), and AppKit via `NSViewRepresentable` for the canvas and text. |
+| UI | SwiftUI (`WindowGroup(for:)`, `Settings` scene), Observation (`@Observable`), and AppKit via `NSViewRepresentable` for the canvas and text. |
 | Text | TextKit 2 (`NSTextLayoutManager`, `NSTextContentStorage`) and `NSSpellChecker` for checking. |
 | Graphics | Core Graphics (PDF contexts), Core Image (upscaling, mask feathering, compositing), ImageIO (decoding, thumbnails, metadata). |
 | PDF and print | `CGContext` PDF output; PDFKit for preview and `PDFDocument.printOperation`. |
@@ -417,7 +417,7 @@ struct BookBookApp: App {
 
 | Area | Implementation |
 |---|---|
-| Sidebar (Pages, Assets, Style, Layouts, queue indicator, book switcher) | SwiftUI `NavigationSplitView` |
+| Sidebar (Pages, Assets, Style, Layouts, queue indicator, book switcher) | SwiftUI `EditorPanels` (2026-11-11): the sidebar, detail and inspector are rounded cards (`crayonPanel`) on a `Crayon.desk` background, not `NavigationSplitView` / `.inspector`. Panels can't be hidden; the inspector is shown on Pages (Session) and Layouts, never on Assets or Style. Drag handles in the gaps resize the sidebar (160–280 pt) and inspector (260–460 pt); widths are stored in `UserDefaults` (`BookWindow.sidebarWidth` / `inspectorWidth`), and `EditorPanelMetrics.fitted` shrinks the inspector, then the sidebar, so the detail keeps 320 pt. |
 | Spread overview, asset editor, style form, template list, settings, wizard, queue | SwiftUI |
 | **Page canvas and template editor** | `CanvasView` (AppKit `NSView`, layer-backed) inside `NSViewRepresentable`. It draws with `PageRenderer` and handles hit-testing, selection handles, snapping guides, pan/zoom of placed images, and the in-place text editor. |
 | In-place text editing | One `NSTextView` (TextKit 2) placed over the active text box, configured from `TextBoxLayout`. Continuous spelling and grammar checking are on. `allowsUndo = false` (§6.3). |

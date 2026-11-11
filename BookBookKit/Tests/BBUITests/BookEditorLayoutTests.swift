@@ -6,17 +6,13 @@ import SwiftUI
 import Testing
 @testable import BBUI
 
-/// Hosts the book editor (split view, format bar, inspector) in a real window, as `BookWindow`
-/// does, and lets AppKit run its layout and update-constraints passes. When the split view's
-/// columns can't fit (a rigid format bar wider than the detail column, or a window narrower than
-/// the editor's minimum), AppKit raises "more Update Constraints in Window passes than there are
-/// views in the window", which aborts this test process, so CI catches it (Phase 4 crash on
-/// opening a book).
+/// Hosts the book editor (panel cards, format bar, inspector) in a real window, as `BookWindow`
+/// does, and lets AppKit run its layout and update-constraints passes. When the content can't
+/// fit (a rigid format bar wider than the detail card, or a window narrower than the editor's
+/// minimum), AppKit raises "more Update Constraints in Window passes than there are views in the
+/// window", which aborts this test process, so CI catches it (Phase 4 crash on opening a book).
 ///
-/// Needs a GUI (window server) session: it opens real windows. The 830 pt editor minimum it
-/// checks against `BookWindow.minimumWidth` (840) is a measured SwiftUI value on macOS 27
-/// (sidebar ideal + 2 × inspector ideal), not a documented rule; this test is what flags a
-/// SwiftUI change to it.
+/// Needs a GUI (window server) session: it opens real windows.
 @MainActor
 struct BookEditorLayoutTests {
     @Test func bookEditorSettlesInAWindow() throws {
@@ -59,6 +55,8 @@ struct BookEditorLayoutTests {
             // The window minimum covers what the editor needs (the format bar adds nothing).
             #expect(controller.view.fittingSize.width <= BookWindow.minimumWidth)
             #expect(window.isVisible)
+            #expect(EditorPanelMetrics.sidebar.min + EditorPanelMetrics.inspector.min + EditorPanelMetrics.detailMin
+                + 4 * EditorPanelMetrics.gap <= BookWindow.minimumWidth)
             window.close()
         }
     }

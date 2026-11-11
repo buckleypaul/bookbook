@@ -62,47 +62,72 @@ struct CommittedTextField: View {
     /// Called with the draft as it's typed (before it's committed).
     var onDraftChange: ((String) -> Void)?
     @State private var draft = ""
-    /// The last value `draft` was brought in line with; only a draft that differs from it is committed.
-    @State private var synced = ""
     @FocusState private var focused: Bool
 
     var body: some View {
         Group {
             if multiline {
-                TextEditor(text: $draft)
-                    .font(.body)
-                    .frame(minHeight: 70)
-                    .scrollContentBackground(.hidden)
-                    .padding(6)
-                    .background(Crayon.paper,
-                                in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
-                        .strokeBorder(focused ? Crayon.tomato.opacity(0.7) : Crayon.ink.opacity(0.12),
-                                      lineWidth: focused ? 2 : 1.5))
+                TextEditor(text: $draft).crayonTextEditor(focused: focused, minHeight: 70)
             } else {
-                TextField(title, text: $draft).onSubmit(flush)
+                TextField(title, text: $draft).onSubmit {
+                    if let text = CommittedText.textToCommit(draft: draft, value: value) { commit(text) }
+                }
             }
         }
         .focused($focused)
-        .onAppear { draft = value; synced = value }
-        // An outside change (an undo while focused) wins over a stale draft.
-        .onChange(of: value) { _, new in synced = new; draft = new }
+        .committingDraft($draft, of: value, focused: focused, commit: commit)
         .onChange(of: draft) { _, new in onDraftChange?(new) }
-        .onChange(of: focused) { _, now in if !now { flush() } }
-        .onDisappear(perform: flush)
         .accessibilityLabel(title)
-    }
-
-    private func flush() {
-        if let text = CommittedText.textToCommit(draft: draft, synced: synced) { commit(text) }
     }
 }
 
-/// The pure rule behind `CommittedTextField`.
+/// The pure rule behind `CommittedTextField` and `CommitTextEditor`.
 enum CommittedText {
-    /// The draft to commit, or nil when it equals what the field last synced with (nothing was typed).
-    static func textToCommit(draft: String, synced: String) -> String? {
-        draft == synced ? nil : draft
+    /// The draft to commit, or nil when it equals the field's value (nothing was typed). The
+    /// draft is reset to the value whenever the value changes, so they differ only by typing.
+    static func textToCommit(draft: String, value: String) -> String? {
+        draft == value ? nil : draft
+    }
+}
+
+extension View {
+    /// Keeps `draft` in step with `value` (an outside change, such as an undo while focused, wins
+    /// over a stale draft) and commits a draft that differs from `value` when focus leaves or the
+    /// view disappears, so an edit is one undo step rather than one per keystroke.
+    func committingDraft(_ draft: Binding<String>, of value: String, focused: Bool,
+                         commit: @escaping (String) -> Void) -> some View {
+        modifier(DraftCommitting(draft: draft, value: value, focused: focused, commit: commit))
+    }
+
+    /// A multi-line `TextEditor` on paper with a rounded border that turns tomato while `focused`.
+    func crayonTextEditor(focused: Bool, minHeight: CGFloat) -> some View {
+        font(.body)
+            .frame(minHeight: minHeight)
+            .scrollContentBackground(.hidden)
+            .padding(6)
+            .background(Crayon.paper, in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
+                .strokeBorder(focused ? Crayon.tomato.opacity(0.7) : Crayon.ink.opacity(0.12),
+                              lineWidth: focused ? 2 : 1.5))
+    }
+}
+
+private struct DraftCommitting: ViewModifier {
+    @Binding var draft: String
+    let value: String
+    let focused: Bool
+    let commit: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { draft = value }
+            .onChange(of: value) { _, new in draft = new }
+            .onChange(of: focused) { _, now in if !now { flush() } }
+            .onDisappear(perform: flush)
+    }
+
+    private func flush() {
+        if let text = CommittedText.textToCommit(draft: draft, value: value) { commit(text) }
     }
 }
 

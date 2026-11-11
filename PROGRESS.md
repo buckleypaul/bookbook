@@ -4,7 +4,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 
 **Statuses:** `not started` · `in progress` · `done (hand checks deferred)` · `done` · `deferred` · `blocked` · `post-MVP`
 
-**Live API spend so far:** $0.56 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
+**Live API spend so far:** $0.58 of the $10.00 cap (`LiveSpendGuard` estimate; check it against the provider dashboards).
 
 | Phase | Name | Status | Branch | PR | Live spend | Notes |
 |---|---|---|---|---|---|---|
@@ -42,6 +42,7 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 - OpenAI masked edits are unreliable; the region-edit approach is chosen in Phase 11 ([Phase 0](progress/phase-0-spikes.md)).
 - One image per asset (decided 2026-11-11): every asset has exactly one image, made in one session; reference slots, the primary toggle and the character sheet are removed from the model and UI, and page generation sends each mentioned or checked asset's chosen image. Legacy books keep the primary slot on open and drop other slots and sheet items (PD §8.3, A §4.2, §7.4).
 - Assets generate from their description (decided 2026-11-11): the Assets tab has no session panel; the editor's description drives Generate / Regenerate (always a fresh picture, never a refinement), the newest generated or imported picture always becomes the asset's image, and earlier versions aren't shown. Import Image…, quality and the cost estimate stay; image details show what was sent. Tags are removed (they were never used) (PD §8.3, A §4.2, §7.3).
+- Asset reference photo (decided 2026-11-11): an asset can have an optional reference photo (`Asset.referencePhoto`). Generate sends it with the description so the illustration keeps the likeness. It goes only with the asset's own requests, never with page or cover requests. It's stored scaled down (1536 px) with its metadata removed. Setting and removing it is undoable, and it doesn't count as "asset changed". Live check `SP10_referencePhotoToIllustration` passed ($0.015; fixture in `Tests/BBOpenAITests/Fixtures/openai/reference-photo/`) (PD §8.3, A §4.2, §7.3, §7.4, §11).
 - Phase 16b product calls (decided 2026-11-09): an imported style guide keeps the target's page-number style; switching library folders with queued requests asks first; a lock from another Mac offers "Open Anyway", and Macs are identified by hardware UUID; undeliverable pictures are saved to disk, listed in `queue.json` and redelivered at launch; Draft All keeps counting the cover's box and says "cover + N pages"; after Reset Session → Keep Versions the next prompt makes a new picture until a version is clicked (PD §8.6); choosing a different version clears the old "style changed" acknowledgement (undo restores it; A §4.4); landscape booklets stay top-bound for v1.0 with "binds at the top" in the caption (left-bound layout is v1.x); imported RTF drops font family and size but keeps bold/italic/underline/alignment; cancelling story import keeps the new empty book; asset delete stays irreversible as PD §8.10 says.
 
 ## Deferred hand checks
@@ -55,6 +56,7 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Rename Pip → Pippa: a sent page 3 prompt shows "Pippa"; changing Pippa's description or choosing a different image shows "asset changed" on pages with her placed images.
 - Real-person photo: on first generation the notice appears with OpenAI's policy link and the children's-photos advice; also from an asset session and Draft All.
 - Delete an asset in use: afterwards its mentions are plain text, including in Version details and Regenerate with Same Settings.
+- Reference photo (2026-11-11): Add Photo… on an asset asks the real-person question and shows a thumbnail; Generate with an empty description draws the asset from the photo in the book's style, and the first time shows the real-person notice; Image details lists "Reference photo (photo)" as sent; a page that mentions the asset sends the illustration, not the photo; Replace… and Remove work, and Undo restores them (needs a generation).
 - Undo/redo with a real keyboard for asset create, rename, description edit and checklist toggle (inconclusive under synthetic input).
 
 ### Phase 11 — Region editing

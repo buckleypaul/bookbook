@@ -1,0 +1,1 @@
+Image {{n}}: a photo of {{name}}. Base {{name}} on it: keep the likeness (for a person, their face shape, hair, skin tone, build and distinguishing features; otherwise its shape, colours and details), but draw {{name}} as an illustration in the book's style. Don't copy the photo's background, lighting, pose or realism.

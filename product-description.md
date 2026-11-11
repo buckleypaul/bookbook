@@ -128,12 +128,13 @@ Asset types: **Character**, **Place/Scene**, **Object**.
 
 Every asset has:
 - Name (used for `@mentions`), type and a text description.
-- **Exactly one image.** The user writes the description and presses **Generate** (**Regenerate** once there's an image). Each press makes a fresh picture from the description and the style guide; the current image isn't sent, so editing the description and regenerating fully takes effect. The newest picture always becomes the asset's image, and earlier ones aren't shown. The user can instead import a file as the image (e.g. a photo of the user's child to base a character on; see the privacy notice in §3). There's no chat and no refinement for assets.
+- **Exactly one image.** The user writes the description and presses **Generate** (**Regenerate** once there's an image). Each press makes a fresh picture from the description and the style guide; the current image isn't sent, so editing the description and regenerating fully takes effect. The newest picture always becomes the asset's image, and earlier ones aren't shown. The user can instead import a file as the image (see the privacy notice in §3). There's no chat and no refinement for assets.
+- An optional **reference photo** (e.g. a photo of the user's child, a pet or a favourite toy). When there is one, Generate sends it along with the description and the style guide, and draws the asset from it in the book's style, keeping the likeness. The description can be left empty. The photo is kept so Regenerate uses it again, and it can be replaced or removed (undoable). It's sent only with the asset's own Generate requests. Pages and the cover get the illustration it produced, never the photo. Imported photos are scaled down and their metadata (camera, date, location) is removed before they're stored or sent. Importing one asks "Is this a photo of a real person?", and generating from a real person's photo shows the privacy notice (§3).
 - A **where used** list of the pages, cover and boxes that use it, each linked.
 
 **Layout**
 - Left: the asset list.
-- Right: the asset editor: large image; name and type; the description, with a short note on what it's used for, the quality picker, cost estimate, Import Image… and Generate / Regenerate, and the newest request's status; the image's details (what was sent); where used; delete.
+- Right: the asset editor: large image; name and type; the reference photo (Add Photo… / Replace… / Remove), the description, with a short note on what it's used for, the quality picker, cost estimate, Import Image… and Generate / Regenerate, and the newest request's status; the image's details (what was sent); where used; delete.
 
 When generating a page, the app sends each mentioned or checked asset's image and description.
 

@@ -162,6 +162,78 @@ import Testing
                        mask: nil)
     }
 
+    /// Asset reference photo (PD §8.3, 2026-11-11): a real photo (macOS's own parrot user picture,
+    /// no person in it) scaled to 1536 px JPEG as the app stores it, sent as a reference with the
+    /// asset prompt the assembler builds. Draft 1024x1024, about $0.02. Records the response (with
+    /// its image) under `Fixtures/openai/reference-photo/` in record mode, so it can be looked at.
+    @Test(.enabled(if: LiveProviderTests.enabled, "needs BOOKBOOK_LIVE_TESTS=1, OPENAI_API_KEY and budget left"))
+    func SP10_referencePhotoToIllustration() async throws {
+        let apiKey = try #require(ProcessInfo.processInfo.environment["OPENAI_API_KEY"].flatMap(APIKey.init))
+        let source = URL(fileURLWithPath: "/Library/User Pictures/Animals/Parrot.heic")
+        let photo = try #require(Self.referencePhotoJPEG(source, maxPixelSize: 1536), "macOS sample photo missing")
+        let captured = ResponseBox()
+        let provider = OpenAIImageProvider(http: CapturingClient(inner: URLSessionHTTPClient(), box: captured),
+                                           apiKey: { apiKey })
+        // The prompt `ContextAssembler` builds for an asset session with a reference photo
+        // (snapshot `assetSessionSendsItsReferencePhotoFirst`), for an asset named Polly.
+        let sections: [ComposedPrompt.Section] = [
+            .init(key: "role", text: "Illustration for a children's picture book."),
+            .init(key: "style", text: "Style: Soft watercolor, warm light."),
+            .init(key: "cast", text: "Cast and setting:\n- Polly (character). Image 1 shows Polly."),
+            .init(key: "subject", text: "Draw a reference image of Polly for the rest of the book to follow: the full figure "
+                + "from head to toe, seen from the front in a relaxed, neutral pose, alone on a plain, simple, light "
+                + "background. No other characters, props or scenery."),
+            .init(key: "request", text: "Draw Polly from the reference photo."),
+            .init(key: "legend", text: "Reference images:\nImage 1: a photo of Polly. Base Polly on it: keep the likeness "
+                + "(for a person, their face shape, hair, skin tone, build and distinguishing features; otherwise its "
+                + "shape, colours and details), but draw Polly as an illustration in the book's style. Don't copy the "
+                + "photo's background, lighting, pose or realism."),
+        ]
+        let request = ImageRequest(
+            model: TestSupport.model, quality: .draft,
+            output: OutputShape(boxAspect: 1, exactSize: PixelSize(width: 1024, height: 1024)),
+            instruction: ComposedPrompt(sections: sections),
+            references: [ReferenceImage(payload: ImagePayload(data: photo.data, contentType: "public.jpeg",
+                                                              pixelSize: photo.size),
+                                        sent: SentReference(image: ImageRef(sha256: "photo", contentType: "public.jpeg"),
+                                                            role: "photo", label: "Reference photo"))])
+        let result = try await provider.generate(request, progress: { _ in })
+        LiveSpendGuard.record(
+            test: "SP10_referencePhotoToIllustration", provider: "openai", model: TestSupport.model.id,
+            usage: result.usage.map {
+                LiveSpendGuard.Usage(inputTextTokens: $0.inputTextTokens, inputImageTokens: $0.inputImageTokens,
+                                     outputTextTokens: $0.outputTextTokens, outputImageTokens: $0.outputImageTokens)
+            },
+            estimateUSD: 0.02)
+        if let response = captured.value {
+            let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .appending(path: "Fixtures/openai/reference-photo", directoryHint: .isDirectory)
+            try FixtureRecorder(directory: directory, containsSecret: { apiKey.occurs(in: $0) })
+                .record(response, name: "edits-reference-photo-low-1024x1024", keepRealImage: true)
+        }
+        #expect(!result.imageData.isEmpty)
+        #expect(result.pixelSize == PixelSize(width: 1024, height: 1024))
+        if let usage = result.usage {
+            print("SPIKE-RESULT SP10 inputImageTokens: \(usage.inputImageTokens) outputImageTokens: \(usage.outputImageTokens)")
+        }
+    }
+
+    /// The file as `ImageImportNormalizer.normalizeReferencePhoto` stores it: upright JPEG, longest
+    /// edge at most `maxPixelSize`, no metadata.
+    private static func referencePhotoJPEG(_ url: URL, maxPixelSize: Int) -> (data: Data, size: PixelSize)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.92] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return (data as Data, PixelSize(width: image.width, height: image.height))
+    }
+
     /// The real 1024x1024 SP-2 illustration, decoded from its recorded response.
     private static func sp2BaseImage(file: String = #filePath) throws -> Data {
         let url = URL(fileURLWithPath: file).deletingLastPathComponent()

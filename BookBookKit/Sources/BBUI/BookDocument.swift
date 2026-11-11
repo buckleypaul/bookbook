@@ -1092,6 +1092,7 @@ public final class BookDocument {
         if to.name != from.name { out.name = to.name }
         if to.description != from.description { out.description = to.description }
         if to.chosen != from.chosen { out.chosen = to.chosen }
+        if to.referencePhoto != from.referencePhoto { out.referencePhoto = to.referencePhoto }
         let highWater = max(current.revisionHighWater, from.revisionHighWater, to.revisionHighWater)
         if out.description == to.description, out.chosen == to.chosen {
             out.revision = to.revision

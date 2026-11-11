@@ -5,9 +5,11 @@ import Foundation
 /// `.journal`, `.lock`, `thumbnail.png` and `costs.jsonl` are never candidates.
 enum ImageSweep {
     /// File names (`<sha256>.<ext>`) of every image `content` refers to: session versions, the
-    /// references sent or omitted in their provenance, and the style guide's references.
+    /// references sent or omitted in their provenance, the style guide's references and the
+    /// assets' reference photos.
     static func referencedFileNames(in content: BookContent) -> Set<String> {
         var refs: [ImageRef] = content.style.styleReferences
+        refs += content.assets.values.compactMap { $0.referencePhoto?.image }
         for session in content.sessions.values {
             for version in session.versions {
                 refs.append(version.image)

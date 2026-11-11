@@ -190,10 +190,11 @@ struct Asset {                      // assets/<id>.json
     var chosen: VersionID?           // the asset's image; nil = none yet (not sent)
     var revision: Int
     var revisionHighWater: Int
+    var referencePhoto: AssetReferencePhoto?  // { image, pixelSize?, depictsRealPerson }; sent only with the asset's own requests
 }
 ```
 
-**As built (Phase 10):** `revisionHighWater` works like `StyleGuide.visualRevisionHighWater`. Only a description change or a change of `chosen` bumps `revision` to `highWater + 1`; undo restores the old revision, and numbers are never reused. Renames don't bump. (Tags were removed on 2026-11-11; an old `tags` key is ignored on decode.) `Version.depictsRealPerson: Bool?` holds the import answer (§11). Asset edits are `BookCommand.addAsset` / `updateAsset` (wholesale replace) / `setAssetChecklist`; editing the description is an undoable `updateAsset`. **Generate from the description (2026-11-11):** the asset editor has no session panel. Generate / Regenerate enqueues a fresh request whose message text is the description (no `refines`, no attachments, no story text, no consistency check; `AssetGeneration.intent`). A delivered or imported version always becomes `chosen` (`BookMutations.chooseLatest`, irreversible like any delivery); earlier versions stay in the session but aren't shown. Deletion is irreversible (`BookDocument.deleteAsset`).
+**As built (Phase 10):** `revisionHighWater` works like `StyleGuide.visualRevisionHighWater`. Only a description change or a change of `chosen` bumps `revision` to `highWater + 1`; undo restores the old revision, and numbers are never reused. Renames don't bump. (Tags were removed on 2026-11-11; an old `tags` key is ignored on decode.) `Version.depictsRealPerson: Bool?` holds the import answer (§11). Asset edits are `BookCommand.addAsset` / `updateAsset` (wholesale replace) / `setAssetChecklist`; editing the description is an undoable `updateAsset`. **Generate from the description (2026-11-11):** the asset editor has no session panel. Generate / Regenerate enqueues a fresh request whose message text is the description (no `refines`, no attachments, no story text, no consistency check; `AssetGeneration.intent`). A delivered or imported version always becomes `chosen` (`BookMutations.chooseLatest`, irreversible like any delivery); earlier versions stay in the session but aren't shown. Deletion is irreversible (`BookDocument.deleteAsset`). **Reference photo (2026-11-11):** `Asset.referencePhoto` (optional, omitted from JSON when nil) is a photo Generate bases the image on. `BookDocument.setAssetReferencePhoto(from:for:depictsRealPerson:)` stores it through `ImageImportNormalizer.normalizeReferencePhoto` (upright, longest edge at most 1536 px, JPEG or PNG when it has alpha, all metadata dropped), then runs `updateAsset` ("Set Reference Photo"). `removeAssetReferencePhoto` runs "Remove Reference Photo". Both are undoable, and `mergeAsset` merges the field. Changing the photo doesn't bump `revision`, because pages only see the image it produces. `ImageSweep` keeps the photo's file, `BookImporter` copies it, and an invalid ref is dropped on load. With a photo and an empty description, the request text is "Draw <name> from the reference photo."
 
 **As changed (2026-11-11):** an asset has exactly one image, made in one session. Phase 10 built multiple reference slots (one primary) and, for characters, a character sheet (turnaround views and expressions, Generate whole sheet, lock); users found it confusing, so slots, the primary toggle and the sheet were removed from the model and the UI. Legacy decoding: an old `assets/<id>.json` keeps its primary slot (or the first) as `sessionID`/`chosen`; other slots and the `sheet` are ignored. A legacy `.assetReference(asset, slot)` owner or target decodes as `.asset(asset)`, and a session whose ID isn't the asset's `sessionID` is dropped on load. A legacy `.sheetItem` owner or target throws `LegacySheetItemError`, and the loader drops that session or queue entry. The next save writes the new format.
 
@@ -583,7 +584,7 @@ The provider adapters are the only code that knows wire formats. `BBNet.HTTPClie
    - **Story text:** the page's text, as plain text. Optional, on by default.
    - **Conversation so far:** the user instructions along this version's lineage, condensed (used in stateless mode only; see §7.6).
    - **Request:** the current message, with mention tokens turned back into names.
-   - **Reference legend:** "Image 1: … Image 2: …"
+   - **Reference legend:** "Image 1: … Image 2: …" An asset's reference photo has its own line (`legend-photo`): base the asset on the photo and keep its likeness, but draw it in the book's style, without copying the photo's background, lighting, pose or realism.
 4. **Report:** the omitted references (shown to the user, per §5 "Reference limits"), the estimated input size, and the exact text that will be sent.
 
 ### 7.4 Choosing reference images (§8.3)
@@ -592,7 +593,7 @@ This is deterministic, with no AI call, so it adds no cost or latency and its de
 
 - **Priority tiers.** Earlier tiers fill first, and the tier order sets the image order:
   1. The base image (when refining or doing a region edit).
-  2. References the user explicitly attached ("same kitchen as page 4").
+  2. References the user explicitly attached ("same kitchen as page 4"). In an asset's own request, its reference photo (role `photo`, label "Reference photo") comes first in this tier. Page requests never include reference photos.
   3. Images of **mentioned** assets.
   4. Images of **checklist-only** assets.
   5. Style reference images (at most 2; more only if there's spare capacity).
@@ -975,7 +976,7 @@ Each issue carries a navigation target (page, box). The export sheet lists them 
 - **Network surface:** the only hosts contacted are `api.openai.com` and `generativelanguage.googleapis.com`. There is no telemetry, crash reporting or update checking. Crash reports go only to Apple's system crash reporter, if the user has it turned on in macOS.
 - **What gets sent** is exactly what `ContextAssembler` builds (§7.3), and it's shown in Version details. Gemini requests carry `store: false` (§7.6).
 - **Real-person photos (§3):**
-  - The import dialog for a reference asks "Is this a photo of a real person?" (on by default for camera-originated images, detected from EXIF). The answer is stored on the version as `depictsRealPerson`.
+  - The import dialog for a reference asks "Is this a photo of a real person?" (on by default for camera-originated images, detected from EXIF). The answer is stored on the version as `depictsRealPerson`, or on `AssetReferencePhoto.depictsRealPerson` for an asset's reference photo. Reference photos are sent only with the asset's own requests, and their metadata (including GPS) is stripped when they're imported.
   - The first time such an image would be sent to a provider, the app shows the notice with that provider's data-policy link and records the acknowledgement for each provider.
   - The flag also drives refusal advice (§7.11).
 - **Hardened runtime:** no JIT, no unsigned executable memory, no `disable-library-validation`.

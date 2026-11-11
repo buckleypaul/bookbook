@@ -205,12 +205,19 @@ public enum ContextAssembler {
             base = .init(ref: version.image, role: "base", label: "Current illustration\(number)", tier: .base,
                          pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
         }
-        let attached = intent.attachedReferences.compactMap { attached -> ReferenceSelector.Candidate? in
+        var attached = intent.attachedReferences.compactMap { attached -> ReferenceSelector.Candidate? in
             guard let other = content.sessions[attached.sessionID],
                   let version = other.version(attached.versionID) else { return nil }
             let number = other.versionNumber(attached.versionID).map { " v\($0)" } ?? ""
             return .init(ref: version.image, role: "reference", label: "Reference\(number)", tier: .attached,
                          pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
+        }
+        // An asset's own request sends its reference photo (PD §8.3), ahead of attached
+        // references. Page requests never do: they get the image the photo produced.
+        if case let .asset(resolved) = context, let photo = resolved.asset.referencePhoto {
+            attached.insert(.init(ref: photo.image, role: "photo", label: "Reference photo", tier: .attached,
+                                  pixelSize: photo.pixelSize, asset: resolved.asset.id,
+                                  depictsRealPerson: photo.depictsRealPerson), at: 0)
         }
         let assets = assetsInPlay(intent: intent, context: context, content: content)
         let request = requestDisplayText(intent: intent, messageID: messageID, content: content)

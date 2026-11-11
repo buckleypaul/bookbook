@@ -53,6 +53,31 @@ extension BookDocument {
         return versionID
     }
 
+    /// "Reference Photo…" (PD §8.3): stores the file (scaled down, metadata stripped) as the
+    /// photo the asset's Generate is based on. Undoable ("Set Reference Photo", through
+    /// `updateAsset`); doesn't change the asset's image or revision. Returns false if nothing changed.
+    @discardableResult
+    public func setAssetReferencePhoto(from url: URL, for id: AssetID, depictsRealPerson: Bool) async throws -> Bool {
+        guard url.isFileURL else { throw ImageImportFailure.notAFileURL }
+        guard isEditable else { throw ImageImportFailure.readOnly }
+        guard content.assets[id] != nil else { throw ImageImportFailure.assetGone }
+        let (ref, normalized) = try await readAndStore(url, asReferencePhoto: true)
+        // Re-check after the awaits: the asset may have gone, or the book closed.
+        guard isEditable else { throw ImageImportFailure.readOnly }
+        guard var asset = content.assets[id] else { throw ImageImportFailure.assetGone }
+        asset.referencePhoto = AssetReferencePhoto(image: ref, pixelSize: normalized.pixelSize,
+                                                   depictsRealPerson: depictsRealPerson)
+        return perform(.updateAsset(asset, actionName: "Set Reference Photo"))
+    }
+
+    /// "Remove Reference Photo" (undoable). False if the asset has none.
+    @discardableResult
+    public func removeAssetReferencePhoto(for id: AssetID) -> Bool {
+        guard isEditable, var asset = content.assets[id], asset.referencePhoto != nil else { return false }
+        asset.referencePhoto = nil
+        return perform(.updateAsset(asset, actionName: "Remove Reference Photo"))
+    }
+
     /// True when the file looks camera-originated (EXIF camera make/model or capture date):
     /// the default answer of the real-person question (A §11). Reads metadata only.
     public nonisolated static func looksCameraOriginated(_ url: URL) async -> Bool {

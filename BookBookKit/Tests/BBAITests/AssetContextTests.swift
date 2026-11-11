@@ -232,6 +232,73 @@ import Testing
         #expect(!sends(walk.refine(0, "\(mention(pip)) waves")))
     }
 
+    // MARK: Reference photo (PD §8.3)
+
+    static func photo(_ name: String, real: Bool = true) -> AssetReferencePhoto {
+        AssetReferencePhoto(image: Cast.ref(name, "photo"), pixelSize: PixelSize(width: 1536, height: 1024),
+                            depictsRealPerson: real)
+    }
+
+    @Test func assetSessionSendsItsReferencePhotoFirst() throws {
+        var content = SliceBook.make().content
+        content.style.styleReferences = [Cast.ref("style", "1")]
+        var pip = Cast.add(.character, "Pip", description: "A curious girl of six.", to: &content)
+        pip.referencePhoto = Self.photo("Pip")
+        content.assets[pip.id] = pip
+        let (request, report) = try assemble(.asset(pip.id), assetIntent(pip.description), content: content)
+        assertPromptSnapshot(request.instruction.rendered)
+        #expect(report.referencesSent.map(\.role) == ["photo", "style"])
+        #expect(report.referencesSent.first?.image == Cast.ref("Pip", "photo"))
+        #expect(request.baseImage == nil, "a photo is a reference, never the image being edited")
+        #expect(request.references.first?.payload.ref == Cast.ref("Pip", "photo"))
+        let text = request.instruction.rendered
+        #expect(text.contains("Image 1: a photo of Pip."))
+        #expect(text.contains("- Pip (character). Image 1 shows Pip."))
+        // The asset's current image still isn't sent for itself.
+        #expect(!report.referencesSent.contains { $0.image == Cast.ref("Pip") })
+    }
+
+    @Test func pageRequestsNeverSendTheReferencePhoto() throws {
+        var book = SliceBook.make()
+        var pip = Cast.add(.character, "Pip", to: &book.content)
+        pip.referencePhoto = Self.photo("Pip")
+        book.content.assets[pip.id] = pip
+        book.content.pages[book.pageID]?.assetChecklist = [pip.id]
+        let (_, report) = try assemble(book.target, assetIntent("\(mention(pip)) waves"), content: book.content)
+        #expect(sentLabels(report) == ["Pip"])
+        #expect(!report.referencesSent.contains { $0.image == Cast.ref("Pip", "photo") })
+        #expect(!ContextAssembler.sendsRealPersonPhoto(intent: assetIntent("\(mention(pip)) waves"),
+                                                       target: book.target, content: book.content, model: try testModel()))
+    }
+
+    @Test func realPersonReferencePhotoNeedsTheNotice() throws {
+        var content = SliceBook.make().content
+        var pip = Cast.add(.character, "Pip", to: &content)
+        var toy = Cast.add(.object, "Bear", to: &content)
+        pip.referencePhoto = Self.photo("Pip")
+        toy.referencePhoto = Self.photo("Bear", real: false)
+        content.assets[pip.id] = pip
+        content.assets[toy.id] = toy
+        let model = try testModel()
+        #expect(ContextAssembler.sendsRealPersonPhoto(intent: assetIntent("Pip"), target: .asset(pip.id),
+                                                      content: content, model: model))
+        #expect(!ContextAssembler.sendsRealPersonPhoto(intent: assetIntent("Bear"), target: .asset(toy.id),
+                                                       content: content, model: model))
+    }
+
+    @Test func missingReferencePhotoBytesAreReportedNotFatal() throws {
+        var content = SliceBook.make().content
+        var pip = Cast.add(.character, "Pip", to: &content)
+        pip.referencePhoto = Self.photo("Pip")
+        content.assets[pip.id] = pip
+        var data = Cast.imageData(content)
+        data[Cast.ref("Pip", "photo")] = nil
+        let (_, report) = try assemble(.asset(pip.id), assetIntent("Pip"), content: content, imageData: data)
+        #expect(report.referencesSent.isEmpty)
+        #expect(report.referencesOmitted.map(\.label) == ["Reference photo (file missing)"])
+        #expect(ReferenceSelector.leftOutSummary(report.referencesOmitted) == "Left out: reference photo.")
+    }
+
     @Test func realPersonBaseImageCounts() throws {
         var walk = RefinementBook.make()
         let id = walk.book.sessionID

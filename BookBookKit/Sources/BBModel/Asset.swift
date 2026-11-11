@@ -4,9 +4,26 @@ import Foundation
 // Simplified 2026-11-11: an asset has exactly one image, made in one session (the multi-slot
 // references and the character sheet were removed). Old files still decode: see `init(from:)`.
 // Tags were removed the same day (they were never used); an old `tags` key is ignored.
+// Reference photo added 2026-11-11: an optional photo (e.g. of the real person) that Generate
+// sends with the description so the illustration is based on it. Never sent with page requests.
 
 public enum AssetType: String, Codable, Sendable, CaseIterable {
     case character, place, object
+}
+
+/// A photo the asset's Generate is based on (PD §8.3): sent only with the asset's own requests,
+/// never with page or cover requests (pages get the illustration it produced).
+public struct AssetReferencePhoto: Hashable, Codable, Sendable {
+    public var image: ImageRef
+    public var pixelSize: PixelSize?
+    /// The user's answer to "Is this a photo of a real person?" (A §11).
+    public var depictsRealPerson: Bool
+
+    public init(image: ImageRef, pixelSize: PixelSize? = nil, depictsRealPerson: Bool) {
+        self.image = image
+        self.pixelSize = pixelSize
+        self.depictsRealPerson = depictsRealPerson
+    }
 }
 
 public struct Asset: Hashable, Sendable, Identifiable {
@@ -22,10 +39,13 @@ public struct Asset: Hashable, Sendable, Identifiable {
     /// Undo restores it; a number is never reused (high water).
     public var revision: Int
     public var revisionHighWater: Int
+    /// The photo Generate bases the image on; nil = generate from the description alone.
+    /// Changing it doesn't bump `revision`: pages only see the image it produces.
+    public var referencePhoto: AssetReferencePhoto?
 
     public init(id: AssetID = AssetID(), type: AssetType, name: String, description: String = "",
                 sessionID: SessionID = SessionID(), chosen: VersionID? = nil,
-                revision: Int = 1, revisionHighWater: Int? = nil) {
+                revision: Int = 1, revisionHighWater: Int? = nil, referencePhoto: AssetReferencePhoto? = nil) {
         self.id = id
         self.type = type
         self.name = name
@@ -34,6 +54,7 @@ public struct Asset: Hashable, Sendable, Identifiable {
         self.chosen = chosen
         self.revision = revision
         self.revisionHighWater = max(revisionHighWater ?? revision, revision)
+        self.referencePhoto = referencePhoto
     }
 
     /// A new asset. Its session doesn't exist yet; `BookCommand.addAsset` creates it.
@@ -64,7 +85,7 @@ public struct Asset: Hashable, Sendable, Identifiable {
 
 extension Asset: Codable {
     private enum CodingKeys: String, CodingKey {
-        case id, type, name, description, sessionID, chosen, revision, revisionHighWater
+        case id, type, name, description, sessionID, chosen, revision, revisionHighWater, referencePhoto
         /// Legacy (before 2026-11-11): `[ReferenceSlot]`; `sheet` is ignored.
         case references
     }
@@ -93,6 +114,7 @@ extension Asset: Codable {
         }
         revision = try c.decodeIfPresent(Int.self, forKey: .revision) ?? 1
         revisionHighWater = max(try c.decodeIfPresent(Int.self, forKey: .revisionHighWater) ?? revision, revision)
+        referencePhoto = try c.decodeIfPresent(AssetReferencePhoto.self, forKey: .referencePhoto)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -105,6 +127,7 @@ extension Asset: Codable {
         try c.encodeIfPresent(chosen, forKey: .chosen)
         try c.encode(revision, forKey: .revision)
         try c.encode(revisionHighWater, forKey: .revisionHighWater)
+        try c.encodeIfPresent(referencePhoto, forKey: .referencePhoto)
     }
 }
 

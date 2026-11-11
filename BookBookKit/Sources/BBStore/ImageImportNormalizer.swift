@@ -74,4 +74,47 @@ public enum ImageImportNormalizer {
         return Result(data: output as Data, contentType: asJPEG ? "public.jpeg" : "public.png",
                       pixelSize: PixelSize(width: image.width, height: image.height))
     }
+
+    /// The longest edge of a stored asset reference photo (PD §8.3), in pixels.
+    public static let referencePhotoMaxPixelSize = 1536
+
+    /// An asset's reference photo (PD §8.3): always re-encoded upright, scaled so its longest edge
+    /// is at most `maxPixelSize` (never enlarged), with no metadata (camera, capture date and GPS
+    /// are dropped, since the photo is sent to the provider). JPEG, or PNG when it has transparency.
+    public static func normalizeReferencePhoto(_ data: Data,
+                                               maxPixelSize: Int = referencePhotoMaxPixelSize) throws(ImageImportError) -> Result {
+        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, options),
+              CGImageSourceGetCount(source) > 0,
+              let typeID = CGImageSourceGetType(source) as String?,
+              let type = UTType(typeID), type.conforms(to: .image),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+              width > 0, height > 0
+        else { throw .notAnImage }
+
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: min(max(width, height), max(1, maxPixelSize)),
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary)
+        else { throw .notAnImage }
+
+        let hasAlpha: Bool = switch image.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: false
+        default: true
+        }
+        let outType = hasAlpha ? UTType.png : UTType.jpeg
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, outType.identifier as CFString, 1, nil)
+        else { throw .encodingFailed }
+        let destinationOptions: [CFString: Any] = hasAlpha ? [:] : [kCGImageDestinationLossyCompressionQuality: jpegQuality]
+        CGImageDestinationAddImage(destination, image, destinationOptions as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw .encodingFailed }
+        return Result(data: output as Data, contentType: hasAlpha ? "public.png" : "public.jpeg",
+                      pixelSize: PixelSize(width: image.width, height: image.height))
+    }
 }

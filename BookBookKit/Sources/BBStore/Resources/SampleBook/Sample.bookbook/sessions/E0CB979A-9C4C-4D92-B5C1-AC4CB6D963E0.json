@@ -4,9 +4,8 @@
 
   ],
   "owner" : {
-    "assetReference" : {
-      "_0" : "FEDEE77C-7D18-4196-AA43-6C4A6D39B9D5",
-      "_1" : "2A844796-40DC-4E9D-8613-CE503D260592"
+    "asset" : {
+      "_0" : "FEDEE77C-7D18-4196-AA43-6C4A6D39B9D5"
     }
   },
   "resetEpoch" : 0,

@@ -106,7 +106,7 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 ### Phase 17
 - Layouts chat: replies are only a summary line plus a diagram, since the shared `TemplateDraft` schema has no message field; consider adding a short `reply` field (changes the wire schema for every adapter). Threads aren't saved (decided 2026-11-11) (from the Layouts chat change).
 - Performance: a spread exported as single pages prepares its images twice (from Phase 14).
-- Simplify leftovers (from the 2026-11-09 whole-codebase simplify pass): cache `FontFamilies.all` with an app-wide font-registration revision; add `PageStatus.title` shared by `StatusBadge`, `PagesOverview` and `BookWindow`; have `BookDocument.sequence(of:)` use `PageSequencer.layout(for:)`; `PDFExporter` is only used by tests (move them to `BookExporter.pdfData` and delete it).
+- Simplify leftovers (from the 2026-11-09 whole-codebase simplify pass): cache `FontFamilies.all` with an app-wide font-registration revision; add `PageStatus.title` shared by `StatusBadge`, `PagesOverview` and `BookWindow`; `PDFExporter` is only used by tests (move them to `BookExporter.pdfData` and delete it).
 - OpenAI-only wording cleanup: v1.0 is OpenAI only, so make sure no Gemini choice shows in the app (a Gemini mention in `ModelCatalog.json`, plus Gemini text in `RealPersonNotice.swift` and `VersionDetailsContent.swift`), and that the final live pass covers only OpenAI (Gemini moved to post-MVP 2026-11-08).
 - Chat `refusal` maps to stage `.output`, which is a guess; confirm it against a real refusal (live) (from Phase 12).
 - The SP12 live test hardcodes model IDs; read them from the catalog (from Phase 12).

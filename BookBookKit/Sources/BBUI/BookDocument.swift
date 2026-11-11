@@ -344,21 +344,7 @@ public final class BookDocument {
     /// Simulates the command on a copy of the content; nothing is mutated or saved. A book whose
     /// order is already split (and stays split) answers true for any structural command.
     public func wouldSplitSpread(_ command: BookCommand) -> Bool {
-        let unfixed: BookCommand
-        switch command {
-        case let .addPage(index, templateID, _): unfixed = .addPage(index: index, templateID: templateID)
-        case let .duplicatePage(id, _): unfixed = .duplicatePage(id)
-        case let .deletePage(id, _): unfixed = .deletePage(id)
-        case let .reorderPages(order, _): unfixed = .reorderPages(order)
-        case let .setPageTemplate(page, templateID, _): unfixed = .setPageTemplate(page: page, templateID: templateID)
-        case let .importStoryText(texts, templateID, index, _):
-            unfixed = .importStoryText(texts, templateID: templateID, index: index)
-        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
-             .addAsset, .updateAsset, .setAssetChecklist, .importFromBook:
-            return false
-        }
-        guard let prepared = prepare(unfixed) else { return false }
+        guard command.isStructural, let prepared = prepare(command.withFixSplits(false)) else { return false }
         var copy = content
         Self.merge(prepared, into: &copy)
         guard Self.applyEdit(prepared.edit, to: &copy) != nil else { return false }
@@ -838,7 +824,9 @@ public final class BookDocument {
         return TemplateReassignment.reassign(page, from: source, to: template).page.text.keys.first
     }
 
-    /// The story order as the sequencer sees it.
+    /// The story order as the sequencer sees it: one entry per `pageOrder` ID. Unlike
+    /// `PageSequencer.entries(for:)`, an ID whose page is missing still gets an entry (as a
+    /// single page), so `blankInsertions` indices stay indices into `pageOrder`.
     private static func sequence(of content: BookContent) -> [SequenceEntry] {
         content.book.pageOrder.map { id in
             let kind = content.pages[id].flatMap { content.template(for: $0) }?.kind

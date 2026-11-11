@@ -139,36 +139,6 @@ public enum PagesOverviewModel {
     }
 }
 
-// MARK: - fixSplits
-
-extension BookCommand {
-    /// The same command with `fixSplits` set (unchanged for non-structural commands).
-    public func withFixSplits(_ fix: Bool) -> BookCommand {
-        switch self {
-        case let .addPage(index, templateID, _): .addPage(index: index, templateID: templateID, fixSplits: fix)
-        case let .duplicatePage(id, _): .duplicatePage(id, fixSplits: fix)
-        case let .deletePage(id, _): .deletePage(id, fixSplits: fix)
-        case let .reorderPages(order, _): .reorderPages(order, fixSplits: fix)
-        case let .setPageTemplate(page, templateID, _): .setPageTemplate(page: page, templateID: templateID, fixSplits: fix)
-        case let .importStoryText(texts, templateID, index, _):
-            .importStoryText(texts, templateID: templateID, index: index, fixSplits: fix)
-        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
-             .addAsset, .updateAsset, .setAssetChecklist, .importFromBook: self
-        }
-    }
-
-    /// Commands that can change the page sequence (and so may split a spread).
-    public var isStructural: Bool {
-        switch self {
-        case .addPage, .duplicatePage, .deletePage, .reorderPages, .setPageTemplate, .importStoryText: true
-        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
-             .addAsset, .updateAsset, .setAssetChecklist, .importFromBook: false
-        }
-    }
-}
-
 // MARK: - Controller
 
 /// The Pages tab's state and page operations for one book window: selection, overview or

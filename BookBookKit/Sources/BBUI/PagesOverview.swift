@@ -40,8 +40,8 @@ struct PagesOverview: View {
             }
             .padding(24)
         }
-        // No rigid minimum: the window minimum leaves the detail column almost nothing when
-        // the session panel is shown (`BookWindow.minimumWidth`); narrower, the grid clips.
+        // No rigid minimum: at the window minimum the detail card gets only
+        // `EditorPanelMetrics.detailMin`; narrower content clips.
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .clipped()
         .background(Crayon.paper)

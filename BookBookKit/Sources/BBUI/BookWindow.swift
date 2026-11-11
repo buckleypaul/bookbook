@@ -21,11 +21,9 @@ public struct BookWindow: View {
         self.bookID = bookID
     }
 
-    /// The window's minimum width. It must not be less than the editor's own minimum: an explicit
-    /// `frame(minWidth:)` replaces the content's minimum, so a smaller value lets the window shrink
-    /// below what `NavigationSplitView` + `.inspector` accept, and AppKit aborts in the window's
-    /// update-constraints pass. Measured on macOS 27 (`BookEditorLayoutTests`): with the session
-    /// panel shown the editor needs sidebar ideal + 2 × inspector ideal = 190 + 2 × 320 = 830 pt.
+    /// The window's minimum width: both panel cards at their minimums, the detail card's minimum
+    /// and the desk gaps (`EditorPanelMetrics`: 160 + 260 + 320 + 4 × 10 = 780 pt), with room
+    /// to spare. `BookEditorLayoutTests` checks the editor settles at this width.
     static let minimumWidth: CGFloat = 840
 
     public var body: some View {
@@ -145,7 +143,6 @@ struct BookEditor: View {
     @State private var styleSection: StyleSection = .visual
     @State private var selectedImageBox: BoxID?
     @State private var canvasImportError: String?
-    @State private var showSession = true
     @State private var showTypography = false
     @State private var showExport = false
     @State private var showNumbers = true
@@ -169,37 +166,37 @@ struct BookEditor: View {
     var body: some View {
         @Bindable var pages = pages
         let content = document.content
-        NavigationSplitView {
+        EditorPanels(showsInspector: showsInspector) {
             sidebar(content)
-                // Lists in every tab sit on the sidebar's deeper paper.
+                // Lists in every tab sit on the sidebar card.
                 .scrollContentBackground(.hidden)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     SidebarTabPicker(selection: $sidebarTab)
                         .padding(8)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    VStack(spacing: 0) {
-                        Rectangle().fill(Crayon.ink.opacity(0.08)).frame(height: 1)
+                    VStack(spacing: 6) {
                         QueueBadge()
-                            .padding(.horizontal, 10)
-                            .padding(.top, 6)
                         BookSwitcher(document: document) { pages.sheet = .bookSettings }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
                     }
+                    .padding(8)
+                    .background(Crayon.paperDeep,
+                                in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+                            .strokeBorder(Crayon.ink.opacity(0.08), lineWidth: 1)
+                    }
+                    .padding(8)
                 }
-                .background(Crayon.paperDeep.ignoresSafeArea())
-                .navigationSplitViewColumnWidth(min: 160, ideal: 190, max: 260)
         } detail: {
             detail(content)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if case .restored = app.queueSnapshot.pause { QueueResumeBanner(pause: app.queueSnapshot.pause) }
                 }
-        }
-        .inspector(isPresented: inspectorShown) {
+        } inspector: {
             sessionPanel(content)
-                .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
         }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .toolbar { toolbar }
         .draftAllFlow(document: document, trigger: $draftAllRequested)
         .navigationTitle(content.book.title)
@@ -272,9 +269,9 @@ struct BookEditor: View {
         if case .reorderPages = command { true } else { false }
     }
 
-    /// The toolbar shows only on the Pages tab: the Overview / Editor switch and the session
-    /// panel toggle. Everything else lives in the menus, the Pages list (+ / −), the Style tab
-    /// (typography, page numbers) and the book switcher (book settings).
+    /// The toolbar shows only on the Pages tab: the Overview / Editor switch. Everything else
+    /// lives in the menus, the Pages list (+ / −), the Style tab (typography, page numbers) and
+    /// the book switcher (book settings).
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         @Bindable var pages = pages
@@ -296,26 +293,15 @@ struct BookEditor: View {
                     .help("Offline: queued requests will run when the network returns")
             }
         }
-        if sidebarTab == .pages {
-            ToolbarItem {
-                Button { showSession.toggle() } label: { Label("Session", systemImage: "sidebar.trailing") }
-                    .help("Show or hide the session panel")
-            }
-        }
     }
 
-    /// The inspector: the session panel on the Pages tab (toggled from the toolbar) and the chat /
-    /// box inspector on Layouts (always shown); none on Assets (the editor generates in place) or Style.
-    private var inspectorShown: Binding<Bool> {
-        Binding(
-            get: {
-                switch sidebarTab {
-                case .pages: showSession
-                case .layouts: true
-                case .assets, .style: false
-                }
-            },
-            set: { shown in if sidebarTab == .pages { showSession = shown } })
+    /// The inspector card: the session panel on Pages and the chat / box inspector on Layouts,
+    /// always shown there; none on Assets (the editor generates in place) or Style.
+    private var showsInspector: Bool {
+        switch sidebarTab {
+        case .pages, .layouts: true
+        case .assets, .style: false
+        }
     }
 
     @ViewBuilder
@@ -459,10 +445,12 @@ struct PageList: View {
         let cover = content.coverPage
         List(selection: $pages.selectedPage) {
             if let cover {
-                row("Cover", status: content.status(of: cover), flags: content.imageFlags(of: cover)).tag(cover.id)
+                row("Cover", status: content.status(of: cover), flags: content.imageFlags(of: cover),
+                    selected: pages.selectedPage == cover.id).tag(cover.id)
             }
             ForEach(PageListing.items(content)) { item in
-                row(item.title, status: item.status, flags: item.flags).tag(item.id)
+                row(item.title, status: item.status, flags: item.flags,
+                    selected: pages.selectedPage == item.id).tag(item.id)
             }
             Button { pages.sheet = .addPage(index: pages.insertionIndex) } label: {
                 Image(systemName: "plus")
@@ -492,14 +480,27 @@ struct PageList: View {
         }
     }
 
-    private func row(_ title: String, status: PageStatus, flags: ImageFlags) -> some View {
-        HStack {
+    /// A page row as a mini card on the sidebar card; the selected one is filled tomato and
+    /// lifts on a deeper shadow.
+    private func row(_ title: String, status: PageStatus, flags: ImageFlags, selected: Bool) -> some View {
+        let tile = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
+        return HStack {
             Text(title)
                 .font(Crayon.font(.body, weight: .semibold))
+                .foregroundStyle(selected ? Color.white : Crayon.ink)
             Spacer()
             ImageFlagIcons(flags: flags).font(.caption)
             StatusBadge(status: status, compact: true)
         }
+        .padding(.vertical, 2)
+        .listRowSeparator(.hidden)
+        .listRowBackground(
+            tile.fill(selected ? Crayon.tomato : Crayon.paper)
+                .overlay { tile.strokeBorder(Crayon.ink.opacity(selected ? 0 : 0.08), lineWidth: 1) }
+                .background { tile.fill(Crayon.shadow).offset(y: selected ? 3 : 2) }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+        )
     }
 }
 

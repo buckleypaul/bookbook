@@ -291,8 +291,23 @@ struct TemplateChatModelTests {
         let (chat, editor) = chat(s)
         let id = try blank(s, chat, editor)
         await send(s, chat, "Top picture", to: id)
-        #expect(chat.messages(for: id).last?.failure != nil)
+        let reply = try #require(chat.messages(for: id).last)
+        #expect(reply.failure != nil)
+        #expect(reply.sent == nil) // no usable network, so nothing left the machine
         #expect(await s.app.openBooks.costRecords(for: s.entry.id).isEmpty)
+    }
+
+    @Test func serverError_keepsWhatWasSent() async throws {
+        // A 5xx answer means the request reached the provider, so "What was sent" stays.
+        let raw = ProviderErrorRaw(status: 503, code: nil, body: "")
+        let s = try await setup(FakeLayoutProvider(.failure(.transient(raw))))
+        defer { s.h.tearDown() }
+        let (chat, editor) = chat(s)
+        let id = try blank(s, chat, editor)
+        await send(s, chat, "Top picture", to: id)
+        let reply = try #require(chat.messages(for: id).last)
+        #expect(reply.failure != nil)
+        #expect(reply.sent?.user == "design: Top picture")
     }
 
     @Test func timeout_recordsTheEstimateAsFailed() async throws {

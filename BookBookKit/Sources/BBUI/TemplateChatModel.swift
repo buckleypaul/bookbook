@@ -217,10 +217,11 @@ public final class TemplateChatModel {
                 usage: result.usage, provider: provider.id, model: model.id, pricing: app.prices.calculator))
             apply(result.draft, to: id, instruction: text, sent: sent)
         } catch {
-            // A missing key means nothing left the machine, so there is nothing to show as sent.
-            let sent = error == .missingKey ? nil : Self.record(request, parametersSent: [:])
             // The queue's rule (A §7.10), so a layout request is billed like an image request.
-            if let charge = QueueLedgerRule.forFailure(error).charge {
+            let rule = QueueLedgerRule.forFailure(error)
+            // No ledger line means nothing left the machine (no key, offline): nothing to show as sent.
+            let sent = rule == QueueLedgerRule.none ? nil : Self.record(request, parametersSent: [:])
+            if let charge = rule.charge {
                 await recordCost(app, model: model, provider: provider.id, estimate: estimate, charge)
             }
             if error == .cancelled {

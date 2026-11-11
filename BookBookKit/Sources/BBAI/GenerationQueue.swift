@@ -670,7 +670,7 @@ public actor GenerationQueue {
         await deliver(GenerationDelivery(item: item, outcome: .consistency(report), costRecordID: costID))
     }
 
-    /// A check whose version (or its page, box, slot or sheet item) is gone: removed without a
+    /// A check whose version (or its page, box or asset) is gone: removed without a
     /// request, a ledger line or a delivery.
     private func finishDropped(_ item: QueueItem) {
         entries.removeAll { $0.id == item.id }

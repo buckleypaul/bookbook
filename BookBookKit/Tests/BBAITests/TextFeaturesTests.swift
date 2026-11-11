@@ -67,11 +67,11 @@ private func diff(_ asset: String?, _ aspect: String, _ observed: String = "x", 
     @Test func mentionsAssetsStyleAndImages() {
         let (system, user) = ConsistencyPrompt.instructions(
             assets: [ConsistencyAssetContext(name: "Pip", description: "a fox with a red scarf")],
-            styleDescription: "soft watercolour", imageLabels: ["page", "Pip primary", "style 1"])
+            styleDescription: "soft watercolour", imageLabels: ["page", "Pip", "style 1"])
         #expect(!system.isEmpty)
         #expect(system.contains("major") && system.contains("minor"))
         #expect(user.contains("Image 1 (page)"))
-        #expect(user.contains("Image 2: Pip primary") && user.contains("Image 3: style 1"))
+        #expect(user.contains("Image 2: Pip") && user.contains("Image 3: style 1"))
         #expect(user.contains("- Pip: a fox with a red scarf"))
         #expect(user.contains("soft watercolour"))
         #expect(!user.contains("{{"))

@@ -208,8 +208,8 @@ public struct LabeledImage: Hashable, Sendable {
     }
 }
 
-/// `image` is the version being checked; `references` are the assets' primary and selected
-/// sheet images, then up to two style references (A §7.8).
+/// `image` is the version being checked; `references` are the assets' chosen images, then up
+/// to two style references (A §7.8).
 public struct ConsistencyRequest: Hashable, Sendable {
     public var model: CatalogTextModel
     public var system: String

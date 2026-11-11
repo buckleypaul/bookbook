@@ -643,6 +643,8 @@ public actor GenerationQueue {
         var provider: any VisionProvider
         var model: CatalogTextModel
         var assembled: AssembledConsistency
+        /// What a failure reports as sent, for the refusal advice (A §7.11).
+        var report: AssemblyReport
     }
 
     /// Resolves the vision provider, model and request. Nil when the check is to be dropped
@@ -663,13 +665,14 @@ public actor GenerationQueue {
         let assembled = try await Self.assembleOffActor { () throws(AssemblyError) in
             try ConsistencyAssembler.assemble(plan, model: model, imageData: imageData, instructions: instructions)
         }
-        return PreparedCheck(provider: provider, model: model, assembled: assembled)
+        return PreparedCheck(provider: provider, model: model, assembled: assembled,
+                             report: assembled.report(styleRevision: content.style.visualRevision))
     }
 
     private func runCheck(_ item: QueueItem, _ prepared: PreparedCheck) async {
         let (provider, model, assembled) = (prepared.provider, prepared.model, prepared.assembled)
         let request = assembled.request
-        let result = await perform(item, model: model.id, report: nil) { _ async throws(ProviderError) in
+        let result = await perform(item, model: model.id, report: prepared.report) { _ async throws(ProviderError) in
             try await provider.checkConsistency(request)
         }
         guard let result else { return }

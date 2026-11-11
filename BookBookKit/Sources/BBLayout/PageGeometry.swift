@@ -134,28 +134,12 @@ extension PageGeometry {
         isSpread = kind == .spread
     }
 
-    /// A geometry for a setup that is already the draw trim (double width for a spread, as
-    /// `drawContent(for:in:)` makes it): `PageRenderer` and the canvas use this so a spread's
-    /// fold and per-page safe areas are known.
-    public init(drawSetup: PageSetup, isSpread: Bool) {
-        self.init(setup: drawSetup)
-        self.isSpread = isSpread
-    }
-
-    /// The draw geometry of `page` in `drawContent` (the result of `drawContent(for:in:)`).
-    public static func drawGeometry(for page: Page, in drawContent: BookContent) -> PageGeometry {
-        PageGeometry(drawSetup: drawContent.style.pageSetup, isSpread: drawContent.template(for: page)?.kind == .spread)
+    /// The geometry `page` is drawn in (`PageRenderer` and the canvas): its template's kind on
+    /// `content`'s page setup.
+    public static func drawGeometry(for page: Page, in content: BookContent) -> PageGeometry {
+        PageGeometry(setup: content.style.pageSetup, kind: content.template(for: page)?.kind)
     }
 
     /// The fold of a spread geometry: the middle of the trim.
     public var foldX: CGFloat { trimSize.width / 2 }
-
-    /// `content` with its page setup replaced by `page`'s draw setup, for `PageRenderer`, which
-    /// draws in `content.style.pageSetup`'s trim.
-    public static func drawContent(for page: Page, in content: BookContent) -> BookContent {
-        guard content.template(for: page)?.kind == .spread else { return content }
-        var copy = content
-        copy.style.pageSetup = PageGeometry(setup: content.style.pageSetup, kind: .spread).setup
-        return copy
-    }
 }

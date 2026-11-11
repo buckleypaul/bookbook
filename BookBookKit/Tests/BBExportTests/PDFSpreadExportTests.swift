@@ -103,9 +103,8 @@ struct PDFSpreadExportTests {
         let reference = Bitmap(width: w * 2, height: h)
         reference.ctx.translateBy(x: 0, y: CGFloat(h))
         reference.ctx.scaleBy(x: scale, y: -scale)
-        let spreadContent = PageGeometry.drawContent(for: spreadPage, in: content)
         PageRenderer(images: ImageSource([:])).draw(
-            page: spreadPage, in: spreadContent, into: reference.ctx,
+            page: spreadPage, in: content, into: reference.ctx,
             options: RenderOptions(target: .pdfTrim, pageNumbers: PageNumberMarks(content: content).marks(for: spreadPage.id)))
 
         for half in 0..<2 {

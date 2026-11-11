@@ -59,9 +59,6 @@ struct PageSetupGeometryTests {
         #expect(geometry.pushedBleedEdges(for: left) == [.top, .leading, .bottom])
         #expect(geometry.pushedBleedEdges(for: right) == [.top, .bottom, .trailing])
 
-        // The same setup drawn through `drawContent` (already double width) agrees.
-        let draw = PageGeometry(drawSetup: geometry.setup, isSpread: true)
-        #expect(draw.renderRect(for: left) == geometry.renderRect(for: left))
         // A single page never treats its middle as a fold.
         let single = PageGeometry(setup: geometry.setup)
         #expect(single.renderRect(for: left).maxX == 609)

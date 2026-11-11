@@ -109,8 +109,7 @@ struct PageSetupSnapshotTests {
         content.pages[pageID]?.templateID = spread.id
         content.pages[pageID]?.images = [:]
         let page = content.pages[pageID]!
-        let draw = PageGeometry.drawContent(for: page, in: content)
-        let image = Self.render(draw, page: page, options: .screen, scale: 1)
+        let image = Self.render(content, page: page, options: .screen, scale: 1)
         assertSnapshot(of: image, as: .image(precision: 0.99, perceptualPrecision: 0.97))
     }
 }

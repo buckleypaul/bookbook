@@ -18,9 +18,8 @@ struct OutputSlot {
 enum OutputPageDrawing {
     /// The trim size of `slot`'s output page: double width for a whole spread.
     static func trimSize(of slot: OutputSlot, in content: BookContent) -> CGSize {
-        let single = PageGeometry(setup: content.style.pageSetup).trimSize
-        guard let page = slot.page, slot.half == nil, content.template(for: page)?.kind == .spread else { return single }
-        return CGSize(width: single.width * 2, height: single.height)
+        let kind = slot.half == nil ? slot.page.flatMap { content.template(for: $0)?.kind } : nil
+        return PageGeometry(setup: content.style.pageSetup, kind: kind).trimSize
     }
 
     /// Draws `slot` into `ctx`, whose user space is the output page's trim (origin top-left,
@@ -32,20 +31,18 @@ enum OutputPageDrawing {
         guard let page = slot.page else { return drawBlank(size: trimSize(of: slot, in: content), ctx: ctx) }
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        let isSpread = content.template(for: page)?.kind == .spread
-        guard isSpread else {
+        guard content.isSpread(page) else {
             let trim = PageGeometry(setup: content.style.pageSetup).trimRect
             ctx.clip(to: trim.insetBy(dx: -bleed, dy: -bleed))
             renderer.draw(page: page, in: content, into: ctx,
                           options: RenderOptions(target: target, pageNumbers: marks))
             return
         }
-        let spreadContent = PageGeometry.drawContent(for: page, in: content)
         let single = PageGeometry(setup: content.style.pageSetup).trimSize
         guard let half = slot.half else {
-            let trim = PageGeometry(setup: spreadContent.style.pageSetup).trimRect
+            let trim = PageGeometry(setup: content.style.pageSetup, kind: .spread).trimRect
             ctx.clip(to: trim.insetBy(dx: -bleed, dy: -bleed))
-            renderer.draw(page: page, in: spreadContent, into: ctx,
+            renderer.draw(page: page, in: content, into: ctx,
                           options: RenderOptions(target: target, pageNumbers: marks))
             return
         }
@@ -54,7 +51,7 @@ enum OutputPageDrawing {
         ctx.translateBy(x: -halfRect.minX, y: 0)
         ctx.clip(to: visible)
         let options = RenderOptions(target: target, pageNumbers: marks.filter { $0.half == half })
-        renderer.draw(page: page, in: spreadContent, into: ctx, options: options, visibleRect: visible)
+        renderer.draw(page: page, in: content, into: ctx, options: options, visibleRect: visible)
     }
 
     /// A booklet blank: plain white.

@@ -437,6 +437,15 @@ public enum BoxRole: String, Codable, Sendable {
 
 public enum PageKind: String, Codable, Sendable {
     case story, cover
+
+    /// The template kinds a page of this kind can use: `.cover` for the cover, `.single` or
+    /// `.spread` for a story page.
+    public func accepts(_ kind: TemplateKind) -> Bool {
+        switch self {
+        case .cover: kind == .cover
+        case .story: kind == .single || kind == .spread
+        }
+    }
 }
 
 /// `pages/<id>.json`. The cover is a `Page` with kind `.cover`.

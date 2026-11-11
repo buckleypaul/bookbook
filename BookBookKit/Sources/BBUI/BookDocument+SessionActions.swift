@@ -37,12 +37,6 @@ extension BookDocument {
 
     private func mutateSession(_ owner: SessionOwner, _ body: (SessionID, inout BookContent) -> DirtySet) -> Bool {
         guard let sessionID = BookMutations.sessionID(for: owner, in: content) else { return false }
-        var changed = false
-        performIrreversible { content in
-            let dirty = body(sessionID, &content)
-            changed = !dirty.isEmpty
-            return dirty
-        }
-        return changed
+        return performIrreversible { body(sessionID, &$0) }
     }
 }

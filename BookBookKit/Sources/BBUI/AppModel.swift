@@ -574,13 +574,9 @@ public final class AppModel {
     }
 
     func enqueue(_ message: Message, _ item: QueueItem, in document: BookDocument) -> Bool {
-        var appended = false
-        document.performIrreversible { content in
-            let dirty = BookMutations.appendPendingMessage(message, target: item.target, to: &content)
-            appended = !dirty.isEmpty
-            return dirty
-        }
-        guard appended else { return false }
+        guard document.performIrreversible({
+            BookMutations.appendPendingMessage(message, target: item.target, to: &$0)
+        }) else { return false }
         pendingThisLaunch.insert(item.id)
         // Chained (after the restore) so presses reach the queue in order.
         queueOperation { await $0.enqueue([item], position: .end) }

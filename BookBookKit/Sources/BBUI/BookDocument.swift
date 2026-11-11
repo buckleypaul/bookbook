@@ -327,11 +327,14 @@ public final class BookDocument {
 
     /// For non-undoable writes (A §6.3): AI results, session changes, renaming the book. Never
     /// registers undo. `body` returns what it changed. Does nothing if read-only or closed.
-    public func performIrreversible(_ body: (inout BookContent) -> DirtySet) {
-        guard isEditable else { return }
+    /// Returns true if `body` changed something (false when read-only or closed).
+    @discardableResult
+    public func performIrreversible(_ body: (inout BookContent) -> DirtySet) -> Bool {
+        guard isEditable else { return false }
         let dirty = body(&content)
-        guard !dirty.isEmpty else { return }
+        guard !dirty.isEmpty else { return false }
         didApply(dirty)
+        return true
     }
 
     /// True when performing `command` (with `fixSplits: false`) would leave a spread split
@@ -341,21 +344,7 @@ public final class BookDocument {
     /// Simulates the command on a copy of the content; nothing is mutated or saved. A book whose
     /// order is already split (and stays split) answers true for any structural command.
     public func wouldSplitSpread(_ command: BookCommand) -> Bool {
-        let unfixed: BookCommand
-        switch command {
-        case let .addPage(index, templateID, _): unfixed = .addPage(index: index, templateID: templateID)
-        case let .duplicatePage(id, _): unfixed = .duplicatePage(id)
-        case let .deletePage(id, _): unfixed = .deletePage(id)
-        case let .reorderPages(order, _): unfixed = .reorderPages(order)
-        case let .setPageTemplate(page, templateID, _): unfixed = .setPageTemplate(page: page, templateID: templateID)
-        case let .importStoryText(texts, templateID, index, _):
-            unfixed = .importStoryText(texts, templateID: templateID, index: index)
-        case .setRichText, .setTypography, .chooseVersion, .setPageDone, .setPageNumberStyle,
-             .addTemplate, .updateTemplate, .deleteTemplate, .setStyleVisual, .setPageSetup, .markFlagsOK, .setCrop,
-             .addAsset, .updateAsset, .setAssetChecklist, .importFromBook:
-            return false
-        }
-        guard let prepared = prepare(unfixed) else { return false }
+        guard command.isStructural, let prepared = prepare(command.withFixSplits(false)) else { return false }
         var copy = content
         Self.merge(prepared, into: &copy)
         guard Self.applyEdit(prepared.edit, to: &copy) != nil else { return false }
@@ -371,27 +360,15 @@ public final class BookDocument {
     /// redraws from `content.book`. Returns false for a read-only book.
     @discardableResult
     public func setAuthor(_ author: String) -> Bool {
-        let author = author.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isEditable else { return false }
-        performIrreversible { content in
-            guard content.book.author != author else { return DirtySet() }
-            content.book.author = author
-            return DirtySet(book: true)
-        }
-        return true
+        setBookField(\.author, to: author.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Phase 9: the optional per-book budget (PD §5, §8.12). Not undoable, like the author.
     /// Negative values are refused; nil clears it.
     @discardableResult
     public func setBudget(_ budget: Decimal?) -> Bool {
-        guard isEditable, (budget ?? 0) >= 0 else { return false }
-        performIrreversible { content in
-            guard content.book.budget != budget else { return DirtySet() }
-            content.book.budget = budget
-            return DirtySet(book: true)
-        }
-        return true
+        guard (budget ?? 0) >= 0 else { return false }
+        return setBookField(\.budget, to: budget)
     }
 
     /// Renames the book (`Book.title`; the package folder keeps its name). Not undoable
@@ -399,10 +376,17 @@ public final class BookDocument {
     @discardableResult
     public func rename(to title: String) -> Bool {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isEditable, !title.isEmpty else { return false }
+        guard !title.isEmpty else { return false }
+        return setBookField(\.title, to: title)
+    }
+
+    /// Sets one `Book` field irreversibly (saving only if it changed). False if the book can't
+    /// be edited; true otherwise, changed or not.
+    private func setBookField<Value: Equatable>(_ field: WritableKeyPath<Book, Value>, to value: Value) -> Bool {
+        guard isEditable else { return false }
         performIrreversible { content in
-            guard content.book.title != title else { return DirtySet() }
-            content.book.title = title
+            guard content.book[keyPath: field] != value else { return DirtySet() }
+            content.book[keyPath: field] = value
             return DirtySet(book: true)
         }
         return true
@@ -442,7 +426,6 @@ public final class BookDocument {
             await previous?.value
             await store.scheduleSave(snapshot, dirty: dirty, generation: gen)
         }
-        markThumbnailDirty()
     }
 
     /// Re-derives the usage entries for what `dirty` touched (deleted pages drop out).
@@ -455,6 +438,18 @@ public final class BookDocument {
     }
 
     // MARK: Thumbnail
+
+    /// Whether a change could alter the library thumbnail, so typing on other pages doesn't
+    /// redraw it. `dirty` is what the change itself touched (before `didApply` adds `book`).
+    /// Conservative: book-level data (title, author, page order, cover), the style, any page
+    /// deletion (the first story page may change), or the drawn page, its template or one of
+    /// its sessions.
+    private func affectsThumbnail(_ dirty: DirtySet) -> Bool {
+        if dirty.book || dirty.style || !dirty.deletedPages.isEmpty { return true }
+        guard let page = BookThumbnail.page(in: content) else { return false }
+        return dirty.pages.contains(page.id) || dirty.templates.contains(page.templateID)
+            || page.images.values.contains { dirty.sessions.contains($0.sessionID) }
+    }
 
     /// Notes that the thumbnail is out of date and, if no write is waiting, schedules one after
     /// `thumbnailInterval` (so at most one write per interval, whatever the edit rate).
@@ -644,7 +639,8 @@ public final class BookDocument {
             edit = .setPlacement(page: pageID, box: boxID, placement: placement, baseline: baseline)
 
         case let .addPage(index, templateID, fix):
-            guard let template = resolveTemplate(templateID, into: &created), template.kind.isStory else { return nil }
+            guard let template = resolveTemplate(templateID, into: &created), PageKind.story.accepts(template.kind)
+            else { return nil }
             let page = BookContent.makePage(kind: .story, template: template, sessions: &created.sessions)
             edit = .insertPage(page, index: clamped(index))
             fixSplits = fix
@@ -671,7 +667,7 @@ public final class BookDocument {
             guard let page = content.pages[pageID], page.templateID != templateID,
                   let old = content.template(for: page),
                   let new = resolveTemplate(templateID, into: &created),
-                  page.kind == .cover ? new.kind == .cover : new.kind.isStory else { return nil }
+                  page.kind.accepts(new.kind) else { return nil }
             let result = TemplateReassignment.reassign(page, from: old, to: new)
             var changed = result.page
             for boxID in result.unassignedImageBoxes {
@@ -684,7 +680,7 @@ public final class BookDocument {
 
         case let .importStoryText(texts, templateID, index, fix):
             guard !texts.isEmpty, let template = resolveTemplate(templateID, into: &created),
-                  template.kind.isStory, let textBox = Self.firstTextBox(of: template) else { return nil }
+                  PageKind.story.accepts(template.kind), let textBox = Self.firstTextBox(of: template) else { return nil }
             let start = clamped(index)
             var inserts: [Edit] = []
             for (offset, text) in texts.enumerated() {
@@ -840,11 +836,12 @@ public final class BookDocument {
         return TemplateReassignment.reassign(page, from: source, to: template).page.text.keys.first
     }
 
-    /// The story order as the sequencer sees it.
+    /// The story order as the sequencer sees it: one entry per `pageOrder` ID. Unlike
+    /// `PageSequencer.entries(for:)`, an ID whose page is missing still gets an entry (as a
+    /// single page), so `blankInsertions` indices stay indices into `pageOrder`.
     private static func sequence(of content: BookContent) -> [SequenceEntry] {
         content.book.pageOrder.map { id in
-            let kind = content.pages[id].flatMap { content.template(for: $0) }?.kind
-            return SequenceEntry(id: id, isSpread: kind == .spread)
+            SequenceEntry(id: id, isSpread: content.pages[id].map(content.isSpread) ?? false)
         }
     }
 
@@ -862,8 +859,10 @@ public final class BookDocument {
     private func commitIrreversibleParts(of prepared: Prepared) {
         guard !prepared.sessions.isEmpty || !prepared.templates.isEmpty || !prepared.slots.isEmpty else { return }
         Self.merge(prepared, into: &content)
-        scheduleSave(DirtySet(templates: Set(prepared.templates.keys), pages: Set(prepared.slots.keys),
-                              sessions: Set(prepared.sessions.keys)))
+        let dirty = DirtySet(templates: Set(prepared.templates.keys), pages: Set(prepared.slots.keys),
+                             sessions: Set(prepared.sessions.keys))
+        scheduleSave(dirty)
+        if affectsThumbnail(dirty) { markThumbnailDirty() }
     }
 
     @discardableResult
@@ -890,6 +889,7 @@ public final class BookDocument {
         var allDirty = dirty
         allDirty.book = true
         scheduleSave(allDirty)
+        if affectsThumbnail(dirty) { markThumbnailDirty() }
     }
 
     /// Registers `inverse` as one undo step; replaying it registers the redo.
@@ -1140,9 +1140,4 @@ public final class BookDocument {
         }
         return changed
     }
-}
-
-private extension TemplateKind {
-    /// Story pages use single or spread templates; the cover uses `.cover`.
-    var isStory: Bool { self == .single || self == .spread }
 }

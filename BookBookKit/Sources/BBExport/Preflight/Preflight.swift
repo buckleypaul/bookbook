@@ -57,7 +57,7 @@ public enum Preflight {
             guard let template = content.template(for: page) else { continue }
             let texts: [(Box, RichText)] = template.boxes.compactMap { box in
                 guard case .text = box.content,
-                      let text = CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id]
+                      let text = content.displayedText(page: page, box: box)
                 else { return nil }
                 return (box, text)
             }

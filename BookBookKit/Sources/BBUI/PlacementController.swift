@@ -21,8 +21,6 @@ final class PlacementController: CanvasController {
 
     private(set) var content: BookContent?
     private(set) var pageID: PageID?
-    /// `content` with a spread's double-width trim, for `PageRenderer` (A §8.2).
-    private var renderContent: BookContent?
     /// The page's numbers, drawn on screen as in the PDF (PD §8.2).
     private(set) var pageNumberMarks: [PageNumberMark] = []
     private var selectedImageBox: BoxID?
@@ -85,11 +83,10 @@ final class PlacementController: CanvasController {
         self.content = content
         self.pageID = pageID
         let page = pageID.flatMap { content.pages[$0] }
-        renderContent = page.map { PageGeometry.drawContent(for: $0, in: content) } ?? content
         pageNumberMarks = pageID.map { PageNumberMarks(content: content).marks(for: $0) } ?? []
         self.selectedImageBox = selectedImageBox
         self.imageSource = imageSource
-        geometry = page.flatMap { page in renderContent.map { PageGeometry.drawGeometry(for: page, in: $0) } }
+        geometry = page.map { PageGeometry.drawGeometry(for: $0, in: content) }
         if let page, let template = content.template(for: page), let geometry {
             boxRects = template.boxes.map { ($0, geometry.renderRect(for: $0)) }
         } else {
@@ -118,19 +115,17 @@ final class PlacementController: CanvasController {
     private var page: Page? { pageID.flatMap { content?.pages[$0] } }
 
     var scene: CanvasScene? {
-        guard let renderContent, let page, let imageSource else { return nil }
+        guard let content, let page, let imageSource else { return nil }
         var options = RenderOptions.screen
         if let editing = textEditing.editingBoxID { options.hiddenTextBoxes = [editing] }
         options.pageNumbers = pageNumberMarks
-        guard let geometry else { return nil }
-        return CanvasScene(content: renderContent, page: page, options: options, images: imageSource,
-                           showsFold: geometry.isSpread, showsBleed: geometry.bleed > 0)
+        return CanvasScene(content: content, page: page, options: options, images: imageSource)
     }
 
     /// The scene's sheet from the cached geometry (the scene shows the bleed whenever it's on).
     var sheetRect: CGRect? {
-        guard renderContent != nil, page != nil, imageSource != nil, let geometry else { return nil }
-        return geometry.bleed > 0 ? geometry.bleedRect : geometry.trimRect
+        guard page != nil, imageSource != nil, let geometry else { return nil }
+        return geometry.bleedRect
     }
 
     /// The draw geometry: double width with a fold for a spread template. Set in `update`.
@@ -152,10 +147,10 @@ final class PlacementController: CanvasController {
 
     /// Text boxes on the page whose text doesn't fit (same container as `PageRenderer`).
     func overflowingTextBoxes() -> [(box: Box, rect: CGRect)] {
-        guard let renderContent, let page, let imageSource, let layoutCache = canvas?.layoutCache else { return [] }
+        guard let content, let page, let imageSource, let layoutCache = canvas?.layoutCache else { return [] }
         var renderer = PageRenderer(images: imageSource)
         renderer.layouts = layoutCache
-        let overflowing = renderer.overflowingTextBoxes(page: page, in: renderContent)
+        let overflowing = renderer.overflowingTextBoxes(page: page, in: content)
         guard !overflowing.isEmpty else { return [] }
         return boxRects.filter { overflowing.contains($0.box.id) }
     }
@@ -169,7 +164,7 @@ final class PlacementController: CanvasController {
 
         if let dropTargetBox, let target = boxRects.first(where: { $0.box.id == dropTargetBox }) {
             ctx.saveGState()
-            CanvasView.applyRotation(target.box.rotationDegrees, about: target.rect, ctx: ctx)
+            ctx.rotate(byDegrees: target.box.rotationDegrees, about: target.rect)
             ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor)
             ctx.fill(target.rect)
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
@@ -180,7 +175,7 @@ final class PlacementController: CanvasController {
 
         if let selectedImageBox, let selected = boxRects.first(where: { $0.box.id == selectedImageBox }) {
             ctx.saveGState()
-            CanvasView.applyRotation(selected.box.rotationDegrees, about: selected.rect, ctx: ctx)
+            ctx.rotate(byDegrees: selected.box.rotationDegrees, about: selected.rect)
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
             ctx.setLineWidth(2 / transform.scale)
             ctx.stroke(selected.rect.insetBy(dx: -1 / transform.scale, dy: -1 / transform.scale))
@@ -193,7 +188,7 @@ final class PlacementController: CanvasController {
     private func drawOverflowBadge(box: Box, rect: CGRect, scale: CGFloat, ctx: CGContext) {
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        CanvasView.applyRotation(box.rotationDegrees, about: rect, ctx: ctx)
+        ctx.rotate(byDegrees: box.rotationDegrees, about: rect)
         let diameter = Self.overflowBadgeDiameter / scale
         let badge = CGRect(x: rect.maxX - diameter / 2, y: rect.maxY - diameter / 2, width: diameter, height: diameter)
         ctx.setFillColor(NSColor.systemRed.cgColor)

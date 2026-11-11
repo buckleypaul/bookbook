@@ -19,13 +19,7 @@ extension BookDocument {
     @discardableResult
     public func deleteAsset(_ id: AssetID) -> Bool {
         guard isEditable, content.assets[id] != nil else { return false }
-        var deleted = false
-        performIrreversible { content in
-            let dirty = BookMutations.deleteAsset(id, from: &content)
-            deleted = !dirty.isEmpty
-            return dirty
-        }
-        return deleted
+        return performIrreversible { BookMutations.deleteAsset(id, from: &$0) }
     }
 
     /// Import a file into an asset's session as an `.imported` version with
@@ -40,14 +34,11 @@ extension BookDocument {
         }
         let (ref, normalized) = try await readAndStore(url)
         let versionID = VersionID()
-        var appended = false
         let stamp = Date()
-        performIrreversible { content in
-            let dirty = BookMutations.appendImportedAssetVersion(image: ref, pixelSize: normalized.pixelSize,
-                                                                 owner: owner, depictsRealPerson: depictsRealPerson,
-                                                                 to: &content, versionID: versionID, now: stamp)
-            appended = !dirty.isEmpty
-            return dirty
+        let appended = performIrreversible { content in
+            BookMutations.appendImportedAssetVersion(image: ref, pixelSize: normalized.pixelSize,
+                                                     owner: owner, depictsRealPerson: depictsRealPerson,
+                                                     to: &content, versionID: versionID, now: stamp)
         }
         guard appended else { throw isEditable ? ImageImportFailure.assetGone : ImageImportFailure.readOnly }
         return versionID

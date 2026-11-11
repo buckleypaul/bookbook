@@ -136,7 +136,7 @@ public final class BookExporter {
     /// One slot per page, or two halves for a spread page when `splitSpreads`.
     private func storySlots(_ pages: [Page], splitSpreads: Bool) -> [OutputSlot] {
         pages.flatMap { page -> [OutputSlot] in
-            if splitSpreads, content.template(for: page)?.kind == .spread {
+            if splitSpreads, content.isSpread(page) {
                 return [OutputSlot(page: page, half: 0), OutputSlot(page: page, half: 1)]
             }
             return [OutputSlot(page: page, half: nil)]

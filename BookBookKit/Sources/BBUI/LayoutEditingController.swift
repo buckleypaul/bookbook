@@ -62,22 +62,19 @@ final class LayoutEditingController: CanvasController {
     // MARK: Scene
 
     var scene: CanvasScene? {
-        guard let template = model.template, let geometry = model.geometry else { return nil }
+        guard let template = model.template else { return nil }
         var content = model.document.content
         content.templates[template.id] = template
-        content.style.pageSetup = geometry.setup
         let page = Page(id: previewPageID, kind: .story, templateID: template.id)
         var options = RenderOptions.screen
         options.previewSampleContent = model.showSampleContent
-        return CanvasScene(content: content, page: page, options: options, images: imageSource,
-                           showsFold: geometry.isSpread, showsBleed: geometry.bleed > 0)
+        return CanvasScene(content: content, page: page, options: options, images: imageSource)
     }
 
-    /// The scene's sheet straight from the model's geometry (the scene draws in `geometry.setup`
-    /// with the same spread flag), without building the scene's content.
+    /// The scene's sheet straight from the model's geometry (the scene draws the template on the
+    /// same page setup), without building the scene's content.
     var sheetRect: CGRect? {
-        guard let geometry = model.geometry else { return nil }
-        return geometry.bleed > 0 ? geometry.bleedRect : geometry.trimRect
+        model.geometry?.bleedRect
     }
 
     /// Re-registers observation of everything the canvas shows; a change redraws.
@@ -129,7 +126,7 @@ final class LayoutEditingController: CanvasController {
         let accent = NSColor.controlAccentColor.cgColor
         for box in boxes where model.selection.contains(box.id) {
             ctx.saveGState()
-            CanvasView.applyRotation(box.rotationDegrees, about: box.rect, ctx: ctx)
+            ctx.rotate(byDegrees: box.rotationDegrees, about: box.rect)
             ctx.setStrokeColor(accent)
             ctx.setLineWidth(1.5 / s)
             ctx.stroke(box.rect)

@@ -286,6 +286,40 @@ import Testing
                                                        content: content, model: model))
     }
 
+    /// Review fix: the report records which images sent were real-person photos, and the
+    /// advice context derives rule 1's fact from it (A §7.11).
+    @Test func reportMarksRealPersonReferences_andAdviceUsesIt() throws {
+        var content = SliceBook.make().content
+        content.style.styleReferences = [Cast.ref("style", "1")]
+        var pip = Cast.add(.character, "Pip", to: &content)
+        var toy = Cast.add(.object, "Bear", to: &content)
+        pip.referencePhoto = Self.photo("Pip")
+        toy.referencePhoto = Self.photo("Bear", real: false)
+        content.assets[pip.id] = pip
+        content.assets[toy.id] = toy
+
+        let (_, real) = try assemble(.asset(pip.id), assetIntent("Pip"), content: content)
+        #expect(real.referencesSent.map(\.depictsRealPerson) == [true, false], "photo, then style")
+        #expect(real.sentRealPersonPhoto)
+        let (_, clean) = try assemble(.asset(toy.id), assetIntent("Bear"), content: content)
+        #expect(!clean.sentRealPersonPhoto)
+
+        // Omitted references keep the flag too (Version details), but only sent ones count.
+        var data = Cast.imageData(content)
+        data[Cast.ref("Pip", "photo")] = nil
+        let (_, missing) = try assemble(.asset(pip.id), assetIntent("Pip"), content: content, imageData: data)
+        #expect(missing.referencesOmitted.map(\.depictsRealPerson) == [true])
+        #expect(!missing.sentRealPersonPhoto)
+
+        let refused = ProviderError.refused(stage: .input, categories: [], nil)
+        let advice = RefusalAdvisor.advise(refused, context: AdviceContext(provider: .openai, report: real))
+        #expect(advice.fixes == ["Describe the child in words instead of uploading a photo."])
+        #expect(RefusalAdvisor.advise(refused, context: AdviceContext(provider: .openai, report: clean)).fixes
+            != advice.fixes)
+        #expect(!AdviceContext(provider: .openai, report: nil).includesRealPersonPhoto)
+        #expect(!AdviceContext(provider: .openai, report: real, includesRealPersonPhoto: false).includesRealPersonPhoto)
+    }
+
     @Test func missingReferencePhotoBytesAreReportedNotFatal() throws {
         var content = SliceBook.make().content
         var pip = Cast.add(.character, "Pip", to: &content)

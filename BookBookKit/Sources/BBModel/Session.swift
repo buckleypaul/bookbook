@@ -172,11 +172,36 @@ public struct SentReference: Hashable, Codable, Sendable {
     /// e.g. `base`, `style`, `asset`.
     public var role: String
     public var label: String
+    /// The image was imported as a photo of a real person (A §11), so refusal advice can say so
+    /// (A §7.11 rule 1). Additive: absent in older books and queue files (= false), and only
+    /// written when true, so existing files and snapshots are unchanged.
+    public var depictsRealPerson: Bool
 
-    public init(image: ImageRef, role: String, label: String) {
+    public init(image: ImageRef, role: String, label: String, depictsRealPerson: Bool = false) {
         self.image = image
         self.role = role
         self.label = label
+        self.depictsRealPerson = depictsRealPerson
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case image, role, label, depictsRealPerson
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        image = try c.decode(ImageRef.self, forKey: .image)
+        role = try c.decode(String.self, forKey: .role)
+        label = try c.decode(String.self, forKey: .label)
+        depictsRealPerson = try c.decodeIfPresent(Bool.self, forKey: .depictsRealPerson) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(image, forKey: .image)
+        try c.encode(role, forKey: .role)
+        try c.encode(label, forKey: .label)
+        if depictsRealPerson { try c.encode(true, forKey: .depictsRealPerson) }
     }
 }
 

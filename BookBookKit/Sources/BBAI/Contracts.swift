@@ -31,6 +31,9 @@ public struct AssemblyReport: Hashable, Codable, Sendable {
         self.styleRevision = styleRevision
         self.estimatedInputBytes = estimatedInputBytes
     }
+
+    /// At least one image sent was imported as a photo of a real person (A §11, §7.11 rule 1).
+    public var sentRealPersonPhoto: Bool { referencesSent.contains { $0.depictsRealPerson } }
 }
 
 

@@ -55,6 +55,7 @@ public enum CostText {
         case .image: "Pictures"
         case .consistency: "Consistency checks"
         case .template: "Layout suggestions"
+        case .textStyle: "Text style designs"
         }
     }
 

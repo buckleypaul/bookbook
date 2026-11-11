@@ -358,7 +358,7 @@ struct BookEditor: View {
             case .editor:
                 if let page = pages.selectedPage, content.pages[page] != nil {
                     PageCanvas(document: document, content: content, pageID: page, imageSource: images,
-                               selectedBox: $selectedBox,
+                               selectedImageBox: $selectedBox,
                                onOpenBookSettings: { [pages] in pages.sheet = .bookSettings },
                                onDropImageFiles: { page, box, urls in importDroppedImages(urls, page: page, box: box) })
                         // Read-only: no text editing or box selection (the canvas is AppKit).

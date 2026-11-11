@@ -182,6 +182,7 @@ struct BookSettingsSheet: View {
         case .image: "Images"
         case .consistency: "Consistency checks"
         case .template: "Templates"
+        case .textStyle: "Text styles"
         }
     }
 

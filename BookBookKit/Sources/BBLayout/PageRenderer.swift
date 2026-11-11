@@ -184,10 +184,8 @@ public struct PageRenderer {
         // The decoration is stretched to the render rect (it was generated at the closest
         // aspect the model allows, so a frame keeps all four edges) and is not clipped to the
         // box's corner radius: ornaments may be any shape.
-        let decoration: CGImage? = if let prepared, let image = prepared.preparedImage(for: BoxImageKey(page: page, box: box.id)) {
-            image
-        } else if let ref = appearance.decoration {
-            images.image(for: ref)
+        let decoration: CGImage? = if let ref = appearance.decoration {
+            prepared?.preparedImage(for: BoxImageKey(page: page, box: box.id)) ?? images.image(for: ref)
         } else {
             nil
         }

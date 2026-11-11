@@ -188,6 +188,39 @@ struct ImagePlannerTests {
                                                     imageURL: { _ in URL(fileURLWithPath: "/x") }, pixelSize: { _ in nil })
         #expect(none.isEmpty)
     }
+
+    /// AI text styling (A §7.13): a styled text box's decoration is prepared whole, stretched to the box.
+    @Test func textBoxDecoration_wholeImageAtBoxSize() throws {
+        let textID = BoxID()
+        let template = Template(name: "Text", kind: .single, boxes: [
+            Box(id: textID, frame: NormalizedRect(x: 0, y: 0.5, width: 1, height: 0.5), content: .text(TextBoxStyle())),
+        ])
+        var content = BookContent.makeNew(title: "T", author: "A", storyTemplate: template,
+                                          coverTemplate: Template(name: "Cover", kind: .cover, boxes: []),
+                                          storyPageCount: 1, now: Date(timeIntervalSince1970: 0))
+        content.style.pageSetup.trimSize = PointSize(width: 612, height: 792)
+        content.style.pageSetup.bleedEnabled = false
+        let pageID = content.book.pageOrder[0]
+        let call = TextStyleCall(provider: .openai, model: "m", system: "", user: "")
+        let intent = GenerationIntent(messageText: "frame", provider: .openai, model: "m", quality: .draft,
+                                      textStyle: TextStyleIntent(styling: TextStyling(), decorationPrompt: "a frame",
+                                                                 summary: "", call: call))
+        let provenance = Provenance(provider: .openai, model: "m", quality: .draft,
+                                    outputSize: PixelSize(width: 1536, height: 1024), promptSent: "", styleRevision: 0,
+                                    storyTextIncluded: false, intent: intent)
+        let version = Version(image: Self.ref, pixelSize: PixelSize(width: 1536, height: 1024), source: .generated,
+                              createdAt: Date(timeIntervalSince1970: 0), provenance: provenance)
+        let session = Session(owner: .textBox(pageID, textID), versions: [version])
+        content.sessions[session.id] = session
+        content.pages[pageID]?.textStyles[textID] = TextStyleSlot(sessionID: session.id, versionID: version.id)
+
+        let requests = Self.plan(content, content.pages[pageID]!, size: CGSize(width: 1536, height: 1024))
+        let r = try #require(requests.first)
+        #expect(requests.count == 1)
+        #expect(r.key == BoxImageKey(page: pageID, box: textID))
+        #expect(r.cropPixels == CGRect(x: 0, y: 0, width: 1536, height: 1024))
+        #expect(r.requiredPixels == CGSize(width: 2550, height: 1650))
+    }
 }
 
 @Suite("Export image preparer")

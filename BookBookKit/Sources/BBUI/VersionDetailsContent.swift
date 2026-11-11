@@ -1,3 +1,4 @@
+import BBAI
 import BBModel
 import Foundation
 
@@ -74,8 +75,10 @@ public enum VersionDetailsContent {
                                   value: "\(version.pixelSize.width)x\(version.pixelSize.height) mask (transparent = edit area)"))
         }
         if p.rawOutput != nil {
+            let step = p.parametersSent[GenerationQueue.localWhiteKeyParameter] == "true"
+                ? "before its white background was made transparent" : "before blending into the original"
             rows.append(DetailRow(label: "Raw provider output",
-                                  value: "\(p.outputSize.width)x\(p.outputSize.height) image, before blending into the original"))
+                                  value: "\(p.outputSize.width)x\(p.outputSize.height) image, \(step)"))
         }
         if let feather = p.featherPixels {
             rows.append(DetailRow(label: "Feather", value: "\(featherText(feather)) px"))

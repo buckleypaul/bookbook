@@ -83,7 +83,13 @@ struct TextStyleModelTests {
         let message = try #require(session.messages.last)
         #expect(message.text == "leafy frame")
         let itemID = try #require(message.queueItemID)
-        let item = try #require(await s.app.queue.snapshot().entry(for: itemID)?.item)
+        // The enqueue reaches the (paused) queue actor asynchronously.
+        var entry = await s.app.queue.snapshot().entry(for: itemID)
+        for _ in 0..<200 where entry == nil {
+            try await Task.sleep(for: .milliseconds(10))
+            entry = await s.app.queue.snapshot().entry(for: itemID)
+        }
+        let item = try #require(entry?.item)
         #expect(item.target == .textBox(s.key.page, s.key.box))
         #expect(item.intent.checkConsistency == false)
         #expect(item.intent.includeStoryText == false)

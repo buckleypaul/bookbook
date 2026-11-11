@@ -54,6 +54,11 @@ public final class BookDocument {
     /// Counts undo registrations, so `endUndoGroup` can tell whether the group's step is
     /// still the newest one before renaming it.
     @ObservationIgnored private var undoRegistrations = 0
+    /// Image files (`<sha256>.<ext>`) that an inverse edit carries (style references, asset
+    /// reference photos), so undo or redo could bring them back. Clean up keeps these files
+    /// even when nothing in `content` uses them (the open-time sweep removes them later).
+    /// Only grows: a superset of what the undo and redo stacks hold.
+    @ObservationIgnored private(set) var undoImageFileNames: Set<String> = []
     /// Observes `fontsRegisteredNotification`, so a font imported in another open book refreshes this one.
     @ObservationIgnored private nonisolated(unsafe) var fontsObserver: (any NSObjectProtocol)?
 
@@ -908,7 +913,24 @@ public final class BookDocument {
     }
 
     private func applyEdit(_ edit: Edit) -> (Edit, DirtySet)? {
-        Self.applyEdit(edit, to: &content)
+        guard let result = Self.applyEdit(edit, to: &content) else { return nil }
+        undoImageFileNames.formUnion(Self.imageFileNames(in: result.0))
+        return result
+    }
+
+    /// The image files an edit would put back into `content` (style references, asset
+    /// reference photos). Versions are not included: replay never restores a deleted version.
+    private static func imageFileNames(in edit: Edit) -> Set<String> {
+        var refs: [ImageRef] = []
+        switch edit {
+        case let .setStyleVisual(visual, _): refs = visual.styleReferences
+        case let .setStyleGuide(guide): refs = guide.styleReferences
+        case let .insertAsset(asset): refs = [asset.referencePhoto?.image].compactMap { $0 }
+        case let .updateAsset(from, to): refs = [from.referencePhoto?.image, to.referencePhoto?.image].compactMap { $0 }
+        case let .compound(edits): return edits.reduce(into: []) { $0.formUnion(imageFileNames(in: $1)) }
+        default: return []
+        }
+        return Set(refs.map(\.fileName))
     }
 
     /// Applies one edit to `content`, returning its inverse and what changed, or nil if the
@@ -970,7 +992,7 @@ public final class BookDocument {
         case let .insertPage(page, index):
             guard content.pages[page.id] == nil, content.templates[page.templateID] != nil else { return nil }
             let at = min(max(0, index), content.book.pageOrder.count)
-            content.pages[page.id] = page
+            content.pages[page.id] = clearingGonePlacements(of: page, in: content)
             content.book.pageOrder.insert(page.id, at: at)
             // A page restored by undoing its deletion may lack slots for image boxes its
             // template gained since (Phase 8).
@@ -1007,7 +1029,7 @@ public final class BookDocument {
             for (boxID, slot) in page.images {
                 if let current = live[slot.sessionID] { page.images[boxID] = current }
             }
-            content.pages[page.id] = page
+            content.pages[page.id] = clearingGonePlacements(of: page, in: content)
             var dirty = DirtySet(pages: [page.id])
             dirty.sessions = fillMissingSlots(of: page.id, in: &content)
             dirty.sessions.formUnion(reownSessions(of: page.id, in: &content))
@@ -1048,7 +1070,14 @@ public final class BookDocument {
 
         case let .insertAsset(asset):
             guard content.assets[asset.id] == nil else { return nil }
-            content.assets[asset.id] = asset
+            var restored = asset
+            // A chosen version deleted (non-undoable) since isn't brought back: nothing chosen,
+            // which is a new revision (the image pages acknowledged is gone).
+            if let chosen = asset.chosen, content.sessions[asset.sessionID]?.version(chosen) == nil {
+                restored.chosen = nil
+                restored = restored.revised(from: asset)
+            }
+            content.assets[asset.id] = restored
             return (.removeAsset(asset.id), DirtySet(assets: [asset.id]))
 
         case let .removeAsset(id):
@@ -1058,7 +1087,9 @@ public final class BookDocument {
 
         case let .updateAsset(from, to):
             guard let current = content.assets[to.id] else { return nil }
-            let merged = mergeAsset(current: current, from: from, to: to)
+            let merged = mergeAsset(current: current, from: from, to: to) { version in
+                content.sessions[current.sessionID]?.version(version) != nil
+            }
             guard merged != current else { return nil }
             content.assets[to.id] = merged
             return (.updateAsset(from: merged, to: current), DirtySet(assets: [to.id]))
@@ -1086,12 +1117,16 @@ public final class BookDocument {
     /// the edit changes (`from` → `to`); a `chosen` the edit didn't change keeps its live value
     /// (set by a delivery since). Revision: `to`'s when the result matches `to` in description
     /// and choice (undo restores it), else bumped past the high water; the high water never
-    /// goes down.
-    static func mergeAsset(current: Asset, from: Asset, to: Asset) -> Asset {
+    /// goes down. `versionExists` says whether a version is still in the asset's session: a
+    /// `chosen` deleted (non-undoable) since is never restored; the live choice stays, like
+    /// `setPlacement`, and a live choice that is gone is cleared.
+    static func mergeAsset(current: Asset, from: Asset, to: Asset,
+                           versionExists: (VersionID) -> Bool = { _ in true }) -> Asset {
         var out = current
         if to.name != from.name { out.name = to.name }
         if to.description != from.description { out.description = to.description }
-        if to.chosen != from.chosen { out.chosen = to.chosen }
+        if to.chosen != from.chosen, to.chosen.map(versionExists) ?? true { out.chosen = to.chosen }
+        if let chosen = out.chosen, !versionExists(chosen) { out.chosen = nil }
         if to.referencePhoto != from.referencePhoto { out.referencePhoto = to.referencePhoto }
         let highWater = max(current.revisionHighWater, from.revisionHighWater, to.revisionHighWater)
         if out.description == to.description, out.chosen == to.chosen {
@@ -1103,6 +1138,18 @@ public final class BookDocument {
             out = out.revised(from: current)
         }
         return out
+    }
+
+    /// `page` with every placement whose version is no longer in its slot's session removed
+    /// (deleted, non-undoably, since the page was taken off the book or changed layout).
+    private static func clearingGonePlacements(of page: Page, in content: BookContent) -> Page {
+        var page = page
+        for (boxID, slot) in page.images {
+            if let placement = slot.placement, content.sessions[slot.sessionID]?.version(placement.versionID) == nil {
+                page.images[boxID]?.placement = nil
+            }
+        }
+        return page
     }
 
     /// Gives every image box of the page's template that has no slot an empty slot and session

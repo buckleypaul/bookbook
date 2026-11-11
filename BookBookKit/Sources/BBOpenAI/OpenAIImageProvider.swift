@@ -11,18 +11,14 @@ public struct OpenAIImageProvider: ImageProvider {
 
     public var id: ProviderID { .openai }
 
-    private let http: any HTTPClient
-    private let apiKey: @Sendable () async -> APIKey?
-    private let baseURL: URL
+    private let connection: OpenAIConnection
     private let boundary: @Sendable () -> String
 
     /// `boundary` is injectable so tests can golden the multipart body.
     public init(http: any HTTPClient, apiKey: @escaping @Sendable () async -> APIKey?,
                 baseURL: URL = OpenAIImageProvider.defaultBaseURL,
                 boundary: @escaping @Sendable () -> String = { "bookbook-\(UUID().uuidString)" }) {
-        self.http = http
-        self.apiKey = apiKey
-        self.baseURL = baseURL
+        self.connection = OpenAIConnection(http: http, apiKey: apiKey, baseURL: baseURL)
         self.boundary = boundary
     }
 
@@ -43,10 +39,10 @@ public struct OpenAIImageProvider: ImageProvider {
             // never the raw base image size, which may be invalid for the model.
         }
 
-        guard let key = await apiKey() else { throw .missingKey }
+        let key = try await connection.key()
 
         let prompt = request.instruction.rendered
-        let url: URL
+        let path: String
         let contentType: String
         let bodyData: Data
         if isEdit {
@@ -61,7 +57,7 @@ public struct OpenAIImageProvider: ImageProvider {
             form.addField(name: "prompt", value: prompt)
             for (name, value) in parameters.sorted(by: { $0.key < $1.key }) where name != "mask" { form.addField(name: name, value: "\(value)") }
             let encoded = form.encoded()
-            url = baseURL.appending(path: "images/edits")
+            path = "images/edits"
             contentType = encoded.contentType
             bodyData = encoded.body
         } else {
@@ -70,17 +66,12 @@ public struct OpenAIImageProvider: ImageProvider {
             guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else {
                 throw .invalidRequest(param: nil, nil)
             }
-            url = baseURL.appending(path: "images/generations")
+            path = "images/generations"
             contentType = "application/json"
             bodyData = data
         }
-        let httpRequest = HTTPRequest(
-            method: "POST", url: url,
-            headers: ["Authorization": "Bearer \(key.revealForTransport())", "Content-Type": contentType],
-            body: bodyData)
-
         progress(.sent)
-        let response = try await OpenAIErrorMapper.send(httpRequest, via: http, key: key) {
+        let response = try await connection.send("POST", path, contentType: contentType, body: bodyData, key: key) {
             progress(.receiving)
         }
         return try Self.decode(response, parametersSent: parameters.mapValues { "\($0)" }, key: key)

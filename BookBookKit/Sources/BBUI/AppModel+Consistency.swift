@@ -7,7 +7,7 @@ import Foundation
 //
 // - Automatic follow-ups need nothing from the views: when the Settings switch is on, every
 //   generation queued through `AppModel` captures `checkConsistency` and its follow-up, and the
-//   estimates shown (single requests, Draft All, Generate Whole Sheet) include the follow-up.
+//   estimates shown (single requests, Draft All) include the follow-up.
 // - The version's latest result is `Version.consistency` (`showsWarning` for the badge).
 // - On-demand checks, the one-click fix and dismissing a warning go through the API below.
 

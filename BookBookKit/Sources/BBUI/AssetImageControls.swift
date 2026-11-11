@@ -176,7 +176,7 @@ struct AssetImageControls: View {
         return HStack(alignment: .center, spacing: 10) {
             if let photo {
                 Group {
-                    if let cg = images.image(for: photo.image) {
+                    if let cg = images.previews.image(for: photo.image) {
                         Image(decorative: cg, scale: 1).resizable().interpolation(.high).scaledToFill()
                     } else {
                         Image(systemName: "photo").foregroundStyle(Crayon.inkSoft)

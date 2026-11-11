@@ -1,0 +1,1 @@
+Image {{n}}: the current decoration to edit. Apply the request to it and keep everything else the same.

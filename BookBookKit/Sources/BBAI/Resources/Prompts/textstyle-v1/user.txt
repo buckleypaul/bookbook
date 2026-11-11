@@ -1,0 +1,20 @@
+Instruction:
+{{instruction}}
+
+Earlier instructions for this text box, oldest first:
+{{history}}
+
+The book's art style:
+{{style}}
+
+The text box:
+- Role: {{role}}
+- Size: {{size}}
+- Text:
+{{text}}
+
+Current look (JSON):
+{{current}}
+
+Font families you may use:
+{{fonts}}

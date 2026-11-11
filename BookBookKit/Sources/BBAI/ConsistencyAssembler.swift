@@ -59,7 +59,7 @@ public enum ConsistencyAssembler {
                             provider: ProviderID? = nil) -> ConsistencyPlan? {
         guard let session = content.sessions.values.first(where: { $0.version(versionID) != nil }),
               let version = session.version(versionID),
-              let target = target(for: session, in: content) else { return nil }
+              let target = target(for: session, in: content), checksApply(to: target) else { return nil }
         // The checked image is sent too: a real-person photo needs the acknowledged notice (A §11).
         guard !sendsRealPersonPhoto(version: version, content: content, provider: provider) else { return nil }
         let producing = session.messages.first { $0.producedVersion == versionID }?.id
@@ -90,11 +90,13 @@ public enum ConsistencyAssembler {
     }
 
     /// Images a check of the version this intent will produce would send (for the parent's
-    /// estimate, before it exists): 1 + the references. nil if the target can't be resolved.
+    /// estimate, before it exists): 1 + the references. nil if the target can't be resolved or
+    /// isn't checked (`checksApply`).
     public static func imageCount(intent: GenerationIntent, target: GenerationTarget, content: BookContent,
                                   provider: ProviderID? = nil) -> Int? {
-        references(intent: intent, target: target, messageID: nil, content: content, provider: provider,
-                   excluding: nil).map { 1 + $0.0.count }
+        guard checksApply(to: target) else { return nil }
+        return references(intent: intent, target: target, messageID: nil, content: content, provider: provider,
+                          excluding: nil).map { 1 + $0.0.count }
     }
 
     /// The session's target: the box that holds it now (box IDs can move), or its asset owner.
@@ -106,7 +108,20 @@ public enum ConsistencyAssembler {
             }
             return nil
         case let .asset(asset): return .asset(asset)
+        case .textBox:
+            for (pageID, page) in content.pages {
+                for (boxID, slot) in page.textStyles where slot.sessionID == session.id { return .textBox(pageID, boxID) }
+            }
+            return nil
         }
+    }
+
+    /// Whether a version made for `target` can be checked for consistency. Text-box decorations
+    /// (A §7.13) are ornament, not story art: they are never checked, so no follow-up is queued
+    /// or estimated for them.
+    public static func checksApply(to target: GenerationTarget) -> Bool {
+        if case .textBox = target { return false }
+        return true
     }
 
     static func references(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID?,

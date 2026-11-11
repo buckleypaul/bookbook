@@ -49,7 +49,13 @@
           "inputTokens": 230,
           "outputTokens": 260,
           "reasoningTokensIncluded": true
-        }
+        },
+        "typicalTextStyleRequest": {
+          "inputTokens": 900,
+          "outputTokens": 450,
+          "reasoningTokensIncluded": true
+        },
+        "notes": "typicalTextStyleRequest is an unmeasured estimate (about 3,300 prompt characters, a short JSON answer plus reasoning); replace it with a measured run."
       }
     },
     {

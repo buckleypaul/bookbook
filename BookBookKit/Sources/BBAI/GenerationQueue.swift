@@ -75,6 +75,10 @@ public actor GenerationQueue {
 
     public static let redeliveryInterval: Duration = .seconds(30)
 
+    /// Recorded in a text-box decoration's `Provenance.parametersSent` (value `"true"`) when its
+    /// white background was keyed out locally (A §7.13). Not a wire parameter.
+    public static let localWhiteKeyParameter = "localWhiteKey"
+
     public init(providers: [ProviderID: any ImageProvider], catalog: ModelCatalog, host: any GenerationHost,
                 pricing: any CostPricing, persistence: (any QueuePersistence)? = nil,
                 now: @escaping @Sendable () -> Date = { Date() },
@@ -608,6 +612,26 @@ public actor GenerationQueue {
                 provenance.featherPixels = edit.featherPixels
             }
         }
+        if case .textBox = item.target {
+            // Text-box decoration (A §7.13): when the provider returned an opaque picture (the
+            // prompt asked for plain white), key the white out locally; the raw output is kept.
+            let source = delivered.imageData
+            let keyed = await Task.detached(priority: .userInitiated) { () -> Data? in
+                guard ImageOps.hasTransparentPixels(source) == false else { return nil }
+                return ImageOps.keyOutWhite(pngData: source)
+            }.value
+            if isCancelled(item.id) { return await finishCancelled(item) }
+            if let keyed {
+                if provenance.rawOutput == nil {
+                    let rawRef = Self.imageRef(for: result.imageData, contentType: result.contentType)
+                    additionalImages[rawRef] = result.imageData
+                    provenance.rawOutput = rawRef
+                }
+                delivered.imageData = keyed
+                delivered.contentType = "public.png"
+                provenance.parametersSent[Self.localWhiteKeyParameter] = "true"
+            }
+        }
         removeEntry(item.id)
         await deliver(GenerationDelivery(item: item, outcome: .success(result: delivered, provenance: provenance),
                                          costRecordID: costID, additionalImages: additionalImages,
@@ -621,7 +645,8 @@ public actor GenerationQueue {
     /// provider is wired.
     private func queueFollowUp(after delivery: GenerationDelivery) {
         let parent = delivery.item
-        guard case .success = delivery.outcome, parent.kind == .image, parent.intent.checkConsistency == true else { return }
+        guard case .success = delivery.outcome, parent.kind == .image, parent.intent.checkConsistency == true,
+              ConsistencyAssembler.checksApply(to: parent.target) else { return }
         let spec = parent.consistencyFollowUp ?? catalog.textModels(kind: .vision).first { $0.status != .retired }.map {
             ConsistencyFollowUp(provider: $0.provider, model: $0.id, estimate: .unknown)
         }

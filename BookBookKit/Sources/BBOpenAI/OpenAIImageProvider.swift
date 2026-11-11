@@ -137,7 +137,7 @@ public struct OpenAIImageProvider: ImageProvider {
         guard let quality = request.model.image.quality[request.quality]?.param else {
             throw .invalidRequest(param: "quality", nil)
         }
-        return [
+        var parameters: [String: Any] = [
             "model": request.model.id,
             "size": "\(size.width)x\(size.height)",
             "quality": quality,
@@ -145,6 +145,12 @@ public struct OpenAIImageProvider: ImageProvider {
             "n": 1,
             "moderation": "auto",
         ]
+        // Text-box decorations (A §7.13): only for models the catalog marks as honouring it;
+        // otherwise the prompt asks for plain white and BBAI keys it out locally.
+        if request.transparentBackground && request.model.image.supportsTransparentBackground {
+            parameters["background"] = "transparent"
+        }
+        return parameters
     }
 
     // MARK: Response

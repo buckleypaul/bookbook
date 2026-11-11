@@ -3,6 +3,7 @@ import Foundation
 // A §4.2 `Asset`, A §4.3 mention tokens, A §4.4 asset changed and where-used.
 // Simplified 2026-11-11: an asset has exactly one image, made in one session (the multi-slot
 // references and the character sheet were removed). Old files still decode: see `init(from:)`.
+// Tags were removed the same day (they were never used); an old `tags` key is ignored.
 
 public enum AssetType: String, Codable, Sendable, CaseIterable {
     case character, place, object
@@ -13,7 +14,6 @@ public struct Asset: Hashable, Sendable, Identifiable {
     public var type: AssetType
     public var name: String
     public var description: String
-    public var tags: [String]
     /// The session that makes the asset's one image (owner `.asset(id)`).
     public var sessionID: SessionID
     /// The version of `sessionID` used as the asset's image; nil = nothing chosen yet (not sent).
@@ -24,13 +24,12 @@ public struct Asset: Hashable, Sendable, Identifiable {
     public var revisionHighWater: Int
 
     public init(id: AssetID = AssetID(), type: AssetType, name: String, description: String = "",
-                tags: [String] = [], sessionID: SessionID = SessionID(), chosen: VersionID? = nil,
+                sessionID: SessionID = SessionID(), chosen: VersionID? = nil,
                 revision: Int = 1, revisionHighWater: Int? = nil) {
         self.id = id
         self.type = type
         self.name = name
         self.description = description
-        self.tags = tags
         self.sessionID = sessionID
         self.chosen = chosen
         self.revision = revision
@@ -65,7 +64,7 @@ public struct Asset: Hashable, Sendable, Identifiable {
 
 extension Asset: Codable {
     private enum CodingKeys: String, CodingKey {
-        case id, type, name, description, tags, sessionID, chosen, revision, revisionHighWater
+        case id, type, name, description, sessionID, chosen, revision, revisionHighWater
         /// Legacy (before 2026-11-11): `[ReferenceSlot]`; `sheet` is ignored.
         case references
     }
@@ -82,7 +81,6 @@ extension Asset: Codable {
         type = try c.decode(AssetType.self, forKey: .type)
         name = try c.decode(String.self, forKey: .name)
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
-        tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
         if let sid = try c.decodeIfPresent(SessionID.self, forKey: .sessionID) {
             sessionID = sid
             chosen = try c.decodeIfPresent(VersionID.self, forKey: .chosen)
@@ -103,7 +101,6 @@ extension Asset: Codable {
         try c.encode(type, forKey: .type)
         try c.encode(name, forKey: .name)
         try c.encode(description, forKey: .description)
-        try c.encode(tags, forKey: .tags)
         try c.encode(sessionID, forKey: .sessionID)
         try c.encodeIfPresent(chosen, forKey: .chosen)
         try c.encode(revision, forKey: .revision)

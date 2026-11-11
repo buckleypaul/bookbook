@@ -79,7 +79,7 @@ public enum BookCommand: Hashable, Sendable {
     /// Phase 10: add an asset (`Asset.makeNew`). Its session is created irreversibly (an
     /// orphan if undone). Ignored if the ID exists.
     case addAsset(Asset)
-    /// Phase 10: replace an asset wholesale (every asset-field edit: name, description, tags,
+    /// Phase 10: replace an asset wholesale (every asset-field edit: name, description,
     /// the chosen image). The stored value is `asset.revised(from: old)`; a missing session
     /// (legacy asset) is created irreversibly. Type, ID and session can't change (ignored).
     /// `actionName` is the undo title ("Rename Asset", "Edit Description", "Choose Image", …).

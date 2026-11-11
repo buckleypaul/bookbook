@@ -734,8 +734,8 @@ public actor GenerationQueue {
     /// The line for a request that completed: `usage` priced under `pricingModel`, else the estimate.
     private func recordCompleted(_ item: QueueItem, model: String, pricingModel: String,
                                  usage: TokenUsage?) async -> CostRecordID {
-        let actual = usage.flatMap { pricing.actualCost(of: $0, provider: item.intent.provider, model: pricingModel) }
-        return await recordCost(for: item, model: model, .completed(actual: actual))
+        await recordCost(for: item, model: model, .completed(
+            usage: usage, provider: item.intent.provider, model: pricingModel, pricing: pricing))
     }
 
     // MARK: - Delivery

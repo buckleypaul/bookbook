@@ -40,6 +40,7 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 - Gemini (Phase 13, including spikes SG-1...SG-8) is post-MVP (decided 2026-11-08). v1.0 ships with OpenAI only ([Phase 0](progress/phase-0-spikes.md)).
 - Books always reopen at relaunch (decided 2026-11-07; PD §8.1, A §6.1, Phase 3) ([Phase 0](progress/phase-0-spikes.md)).
 - OpenAI masked edits are unreliable; the region-edit approach is chosen in Phase 11 ([Phase 0](progress/phase-0-spikes.md)).
+- One image per asset (decided 2026-11-11): every asset has exactly one image, made in one session; reference slots, the primary toggle and the character sheet are removed from the model and UI, and page generation sends each mentioned or checked asset's chosen image. Legacy books keep the primary slot on open and drop other slots and sheet items (PD §8.3, A §4.2, §7.4).
 - Phase 16b product calls (decided 2026-11-09): an imported style guide keeps the target's page-number style; switching library folders with queued requests asks first; a lock from another Mac offers "Open Anyway", and Macs are identified by hardware UUID; undeliverable pictures are saved to disk, listed in `queue.json` and redelivered at launch; Draft All keeps counting the cover's box and says "cover + N pages"; after Reset Session → Keep Versions the next prompt makes a new picture until a version is clicked (PD §8.6); choosing a different version clears the old "style changed" acknowledgement (undo restores it; A §4.4); landscape booklets stay top-bound for v1.0 with "binds at the top" in the caption (left-bound layout is v1.x); imported RTF drops font family and size but keeps bold/italic/underline/alignment; cancelling story import keeps the new empty book; asset delete stays irreversible as PD §8.10 says.
 
 ## Deferred hand checks
@@ -47,12 +48,13 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 Hand checks are deferred to the end of the build (decided 2026-11-08). Each phase adds the checks its automated pass couldn't confirm. Run them all after the last phase.
 
 ### Phase 10 — Assets and character sheets
-- Page 3 "@Pip yawning by the fire": Version details lists Pip's primary reference, then *sleepy*, then three-quarter view (needs a generation).
-- Rename Pip → Pippa: a sent page 3 prompt shows "Pippa"; changing Pippa's description shows "asset changed" on pages with her placed images.
-- Real-person photo: on first generation the notice appears with OpenAI's policy link and the children's-photos advice; also from Generate Whole Sheet and Draft All.
+- Page 3 "@Pip yawning by the fire": Version details lists Pip's image (needs a generation).
+- Assets tab (one image per asset, 2026-11-11): list on the left, editor in the middle, the selected asset's session always on the right; clicking a version makes it the asset's image, and Undo puts the old one back; importing a file adds a version in that session.
+- An old book with reference slots and a character sheet opens with the primary slot's image as the asset's image, and its sheet items and queued sheet requests are gone.
+- Rename Pip → Pippa: a sent page 3 prompt shows "Pippa"; changing Pippa's description or choosing a different image shows "asset changed" on pages with her placed images.
+- Real-person photo: on first generation the notice appears with OpenAI's policy link and the children's-photos advice; also from an asset session and Draft All.
 - Delete an asset in use: afterwards its mentions are plain text, including in Version details and Regenerate with Same Settings.
 - Undo/redo with a real keyboard for asset create, rename, description edit and checklist toggle (inconclusive under synthetic input).
-- Generate Whole Sheet: real generation of all 8 items at low quality (about $0.13).
 
 ### Phase 11 — Region editing
 - Brush Pip's scarf, "make the scarf yellow": only the scarf changes; flipping old/new versions shows identical pixels outside the mask (needs a generation).

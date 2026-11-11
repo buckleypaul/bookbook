@@ -144,8 +144,7 @@ enum VersionExport {
         let pageText = page == content.book.coverPageID
             ? "cover"
             : content.book.pageOrder.firstIndex(of: page).map { "p\($0 + 1)" } ?? "page"
-        let title = book.isEmpty ? "BookBook" : book
-        let safe = title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        let safe = SafeFileName.make(book, fallback: "BookBook")
         return "\(safe) \(pageText) v\(number).\(ref.fileExtension)"
     }
 

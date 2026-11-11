@@ -332,9 +332,7 @@ public final class ExportSheetModel {
 
     /// A title made safe for a file name.
     public static func fileStem(_ title: String) -> String {
-        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-        return name.isEmpty ? "Untitled" : name
+        SafeFileName.make(title.trimmingCharacters(in: .whitespacesAndNewlines), fallback: "Untitled")
     }
 
     public static func message(for error: any Error) -> String {

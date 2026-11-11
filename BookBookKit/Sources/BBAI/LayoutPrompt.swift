@@ -11,6 +11,36 @@ public enum LayoutPrompt {
     /// bleed, single or spread) and two presets of the same `kind` as few-shot examples.
     public static func request(description: String, kind: TemplateKind, pageSetup: PageSetup,
                                presets: [Template], model: CatalogTextModel) -> LayoutRequest {
+        let chosen = examples(kind: kind, from: presets)
+        let examplesText = chosen.enumerated().map { index, preset in
+            "Example \(index + 1) (\(preset.name)):\n" + json(draft(from: preset, pageSetup: pageSetup))
+        }.joined(separator: "\n\n")
+
+        var values = setupValues(kind: kind, pageSetup: pageSetup)
+        values["description"] = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        values["examples"] = examplesText.isEmpty ? "" : "Examples of the output format:\n\n" + examplesText
+        let user = PromptTemplates.render(PromptTemplates.text(for: "user", set: set) ?? "", values)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return LayoutRequest(model: model, system: PromptTemplates.text(for: "system", set: set) ?? "", user: user)
+    }
+
+    /// Renders a revision of `current` in the Layouts chat: the current layout as the schema's
+    /// JSON (so manual edits are included), the earlier requests of the thread (oldest first),
+    /// the new instruction and the page setup. Same system prompt and schema as `request`.
+    public static func revisionRequest(instruction: String, history: [String], current: Template,
+                                       pageSetup: PageSetup, model: CatalogTextModel) -> LayoutRequest {
+        let earlier = history.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        var values = setupValues(kind: current.kind, pageSetup: pageSetup)
+        values["current"] = json(draft(from: current, pageSetup: pageSetup))
+        values["history"] = earlier.isEmpty ? "(none)" : earlier.map { "- \($0)" }.joined(separator: "\n")
+        values["instruction"] = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        let user = PromptTemplates.render(PromptTemplates.text(for: "revise", set: set) ?? "", values)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return LayoutRequest(model: model, system: PromptTemplates.text(for: "system", set: set) ?? "", user: user)
+    }
+
+    /// The page-setup placeholders shared by both prompts: kind, size, orientation, margins, bleed.
+    static func setupValues(kind: TemplateKind, pageSetup: PageSetup) -> [String: String] {
         let area = TemplateNormalizer.layoutArea(kind: kind, pageSetup: pageSetup)
         let lines = TemplateNormalizer.snapLines(kind: kind, pageSetup: pageSetup)
         func num(_ v: Double) -> String {
@@ -29,22 +59,13 @@ public enum LayoutPrompt {
         let bleed = pageSetup.bleedEnabled
             ? "on (\(num(pageSetup.bleedAmount)) pt); images that touch a page edge run into the bleed"
             : "off"
-
-        let chosen = examples(kind: kind, from: presets)
-        let examplesText = chosen.enumerated().map { index, preset in
-            "Example \(index + 1) (\(preset.name)):\n" + json(draft(from: preset, pageSetup: pageSetup))
-        }.joined(separator: "\n\n")
-
-        let user = PromptTemplates.render(PromptTemplates.text(for: "user", set: set) ?? "", [
-            "description": description.trimmingCharacters(in: .whitespacesAndNewlines),
+        return [
             "kind": kind == .spread ? "spread (two facing pages)" : "single page",
             "size": size,
             "orientation": pageSetup.orientation.rawValue,
             "margins": margins,
             "bleed": bleed,
-            "examples": examplesText.isEmpty ? "" : "Examples of the output format:\n\n" + examplesText,
-        ]).trimmingCharacters(in: .whitespacesAndNewlines)
-        return LayoutRequest(model: model, system: PromptTemplates.text(for: "system", set: set) ?? "", user: user)
+        ]
     }
 
     /// Two presets of the same `kind`, preferring ordinary layouts (no front/back-matter role).

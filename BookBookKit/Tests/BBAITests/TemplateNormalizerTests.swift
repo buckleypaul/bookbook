@@ -227,3 +227,50 @@ struct SplitMix {
         return z ^ (z >> 31)
     }
 }
+
+// MARK: Revise (Layouts chat)
+
+extension TemplateNormalizerTests {
+    @Test func revise_matchesBoxesByKindInOrder_keepingIDsAndOverrides() throws {
+        let picture = Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 0.5), rotationDegrees: 5, content: .image)
+        let caption = Box(frame: NormalizedRect(x: 0.1, y: 0.6, width: 0.8, height: 0.3),
+                          content: .text(TextBoxStyle(fontSize: 30, alignment: .leading, color: RGBA(red: 1, green: 0, blue: 0, alpha: 1))),
+                          role: .title)
+        let current = Template(name: "Mine", kind: .single, boxes: [picture, caption], pageRole: .titlePage)
+        let draft = TemplateDraft(name: "Other", boxes: [
+            Self.text(0.1, 0.1, 0.8, 0.2, alignment: .center, background: "#FFFFFF"),
+            Self.image(0, 0.4, 1, 0.6),
+            Self.image(0.2, 0.2, 0.1, 0.1),
+        ])
+
+        let revised = try TemplateNormalizer.revise(current, with: draft, pageSetup: Self.setup)
+
+        #expect(revised.id == current.id && revised.name == "Mine" && revised.kind == .single)
+        #expect(revised.pageRole == .titlePage)
+        #expect(revised.boxes.count == 3)
+        // Draft order is layer order; IDs follow kind order.
+        #expect(revised.boxes[0].id == caption.id)
+        #expect(revised.boxes[1].id == picture.id)
+        #expect(revised.boxes[2].id != picture.id && revised.boxes[2].id != caption.id)
+        #expect(revised.boxes[1].rotationDegrees == 5)
+        #expect(revised.boxes[1].frame.y == 0.4)
+        #expect(revised.boxes[0].role == .title)
+        guard case let .text(style) = revised.boxes[0].content else { Issue.record("not text"); return }
+        #expect(style.fontSize == 30 && style.color == RGBA(red: 1, green: 0, blue: 0, alpha: 1))
+        #expect(style.alignment == .center)
+        #expect(style.background != nil && style.padding == 12)
+    }
+
+    @Test func revise_dropsUnmatchedBoxes_andRejectsEmptyDrafts() throws {
+        let current = Template(name: "Two", kind: .single, boxes: [
+            Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 0.5), content: .image),
+            Box(frame: NormalizedRect(x: 0, y: 0.5, width: 1, height: 0.5), content: .image),
+        ])
+        let revised = try TemplateNormalizer.revise(current, with: TemplateDraft(name: "", boxes: [Self.image(0, 0, 1, 1)]),
+                                                    pageSetup: Self.setup)
+        #expect(revised.boxes.map(\.id) == [current.boxes[0].id])
+        #expect(throws: TemplateDraftError.noBoxes) {
+            try TemplateNormalizer.revise(current, with: TemplateDraft(name: "", boxes: []), pageSetup: Self.setup)
+        }
+    }
+}

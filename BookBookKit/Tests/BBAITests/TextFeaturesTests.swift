@@ -138,6 +138,35 @@ private func diff(_ asset: String?, _ aspect: String, _ observed: String = "x", 
     }
 }
 
+@Suite struct LayoutRevisionPromptTests {
+    @Test func revisionIncludesCurrentLayoutHistoryInstructionAndSetup() {
+        var current = LayoutPromptTests.preset("Mine")
+        current.boxes[1].content = .text(TextBoxStyle(background: RGBA(red: 1, green: 0.97, blue: 0.9, alpha: 1), alignment: .center))
+        let request = LayoutPrompt.revisionRequest(instruction: "  make the picture full-bleed ",
+                                                   history: ["big picture on top", " "], current: current,
+                                                   pageSetup: LayoutPromptTests.setup, model: LayoutPromptTests.model)
+        #expect(request.model == LayoutPromptTests.model)
+        #expect(request.system == LayoutPrompt.request(description: "d", kind: .single, pageSetup: LayoutPromptTests.setup,
+                                                       presets: [], model: LayoutPromptTests.model).system)
+        #expect(request.user.contains("Request:\nmake the picture full-bleed"))
+        #expect(request.user.contains("- big picture on top"))
+        #expect(!request.user.contains("- \n"))
+        #expect(request.user.contains("\"name\" : \"Mine\""))
+        #expect(request.user.contains("\"textAlignment\" : \"center\""))
+        #expect(request.user.contains("576 x 720 pt (8 x 10 in)"))
+        #expect(request.user.contains("single page"))
+        #expect(!request.user.contains("{{"))
+    }
+
+    @Test func noHistoryAndSpread() {
+        let current = LayoutPromptTests.preset("Wide", kind: .spread)
+        let request = LayoutPrompt.revisionRequest(instruction: "x", history: [], current: current,
+                                                   pageSetup: LayoutPromptTests.setup, model: LayoutPromptTests.model)
+        #expect(request.user.contains("oldest first:\n(none)"))
+        #expect(request.user.contains("spread") && request.user.contains("1152 x 720"))
+    }
+}
+
 @Suite struct TextEstimateTests {
     static func list(luna: PriceEntry.Estimation? = nil) throws -> PriceList { try PriceList.bundled() }
     static let luna = CatalogTextModel(provider: .openai, id: "gpt-6-luna", displayName: "Luna", kind: .text)

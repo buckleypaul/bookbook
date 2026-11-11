@@ -351,7 +351,7 @@ func pngData(width: Int, height: Int, alpha: Bool = false) throws -> Data {
 // MARK: - Assembly
 
 @Suite struct ConsistencyAssemblerTests {
-    /// A page with Pip mentioned (primary + sheet), Oak on the checklist, three style references,
+    /// A page with Pip mentioned, Oak on the checklist, three style references,
     /// and a generated version to check.
     func makeBook() -> (content: BookContent, version: Version, pip: Asset, oak: Asset) {
         let book = SliceBook.make()
@@ -376,19 +376,16 @@ func pngData(width: Int, height: Int, alpha: Bool = false) throws -> Data {
         let (content, version, _, _) = makeBook()
         let plan = try #require(ConsistencyAssembler.plan(version: version.id, content: content))
         #expect(plan.checked.ref == version.image)
-        #expect(plan.references.map(\.label) == [
-            "Pip – primary reference", "Granny Oak – primary reference", "Pip – happy expression",
-            "Pip – three-quarter view", "Style reference 1", "Style reference 2",
-        ])
+        #expect(plan.references.map(\.label) == ["Pip", "Granny Oak", "Style reference 1", "Style reference 2"])
         #expect(plan.assets.map(\.name) == ["Pip", "Granny Oak"])
         #expect(plan.assets.first?.description == "A fox in a red scarf")
         #expect(plan.styleDescription == "Soft watercolor, warm light.")
-        #expect(plan.imageCount == 7)
+        #expect(plan.imageCount == 5)
         // The estimate before generating counts the same images.
         let intent = try #require(version.provenance?.intent)
         let session = try #require(content.sessions.values.first { $0.version(version.id) != nil })
         let pageTarget = try #require(ConsistencyAssembler.target(for: session, in: content))
-        #expect(ConsistencyAssembler.imageCount(intent: intent, target: pageTarget, content: content) == 7)
+        #expect(ConsistencyAssembler.imageCount(intent: intent, target: pageTarget, content: content) == 5)
     }
 
     @Test func importedVersionsUseTheChecklist() throws {
@@ -399,7 +396,26 @@ func pngData(width: Int, height: Int, alpha: Bool = false) throws -> Data {
         content.sessions[sessionID]?.versions.append(imported)
         let plan = try #require(ConsistencyAssembler.plan(version: imported.id, content: content))
         #expect(plan.assets.map(\.name) == [oak.name])
-        #expect(plan.references.first?.label == "Granny Oak – primary reference")
+        #expect(plan.references.first?.label == "Granny Oak")
+    }
+
+    /// Checking a version of an asset's own image compares it with the other assets in play,
+    /// never with the asset's current image.
+    @Test func assetSessionCheckLeavesOutTheAssetsOwnImage() throws {
+        var (content, _, pip, oak) = makeBook()
+        var generating = intent("\(mention(pip)) under \(mention(oak))", story: false)
+        generating.checkConsistency = true
+        let version = Version(image: ImageRef(sha256: "pip-new", contentType: "public.png"),
+                              pixelSize: PixelSize(width: 1024, height: 1024), source: .generated, createdAt: .distantPast,
+                              provenance: Provenance(provider: .openai, model: "gpt-image-2.5-sunburst", quality: .draft,
+                                                     outputSize: PixelSize(width: 1024, height: 1024), promptSent: "",
+                                                     styleRevision: 3, storyTextIncluded: false, intent: generating))
+        content.sessions[pip.sessionID]?.versions.append(version)
+        let plan = try #require(ConsistencyAssembler.plan(version: version.id, content: content))
+        #expect(plan.references.map(\.label) == ["Granny Oak", "Style reference 1", "Style reference 2"])
+        #expect(plan.assets.map(\.name) == ["Pip", "Granny Oak"])
+        let session = try #require(content.sessions[pip.sessionID])
+        #expect(ConsistencyAssembler.target(for: session, in: content) == .asset(pip.id))
     }
 
     @Test func goneVersionHasNoPlan() {
@@ -419,7 +435,7 @@ func pngData(width: Int, height: Int, alpha: Bool = false) throws -> Data {
         #expect(assembled.request.references.count == plan.references.count - 1)
         #expect(assembled.imagesSent.map(\.label) == [plan.checked.label] + plan.references.map(\.label)
             .filter { $0 != plan.references[1].label })
-        #expect(assembled.request.user.contains("Image to check | Pip – primary reference | Pip – happy expression"))
+        #expect(assembled.request.user.contains("Image to check | Pip | Style reference 1"))
         #expect(assembled.promptText == assembled.request.system + "\n\n" + assembled.request.user)
     }
 
@@ -442,14 +458,14 @@ func pngData(width: Int, height: Int, alpha: Bool = false) throws -> Data {
     @Test func realPersonPhotosNeedTheProvidersAcknowledgement() throws {
         var (content, version, _, _) = makeBook()
         var options = Cast.Options()
-        options.primaryIsRealPerson = true
+        options.isRealPerson = true
         let grandma = Cast.add(.character, "Grandma", options: options, to: &content)
         content.pages.keys.forEach { content.pages[$0]?.assetChecklist.append(grandma.id) }
         let without = try #require(ConsistencyAssembler.plan(version: version.id, content: content, provider: .openai))
-        #expect(!without.references.map(\.label).contains("Grandma – primary reference"))
+        #expect(!without.references.map(\.label).contains("Grandma"))
         content.book.acknowledgements.realPersonPhotoNotice = [.openai]
         let with = try #require(ConsistencyAssembler.plan(version: version.id, content: content, provider: .openai))
-        #expect(with.references.map(\.label).contains("Grandma – primary reference"))
+        #expect(with.references.map(\.label).contains("Grandma"))
     }
 
     @Test func checkingARealPersonPhotoIsBlockedUntilAcknowledged() throws {

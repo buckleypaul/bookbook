@@ -11,15 +11,6 @@ enum AssetEditing {
         switch type { case .character: "person"; case .place: "mountain.2"; case .object: "cube" }
     }
 
-    static func title(of kind: SheetItemKind) -> String {
-        switch kind {
-        case let .view(view):
-            SheetItemText.viewName(view) + " view"
-        case let .expression(name):
-            name.prefix(1).uppercased() + name.dropFirst()
-        }
-    }
-
     /// Assets of `type` (all when nil), by name.
     static func list(_ content: BookContent, type: AssetType?) -> [Asset] {
         content.assets.values.filter { type == nil || $0.type == type }
@@ -30,14 +21,21 @@ enum AssetEditing {
             }
     }
 
-    static func chosenImage(sessionID: SessionID, chosen: VersionID?, in content: BookContent) -> ImageRef? {
-        guard let chosen else { return nil }
-        return content.sessions[sessionID]?.version(chosen)?.image
+    /// The asset's image: its chosen version's picture (nil when nothing is chosen, or the
+    /// session or version is gone).
+    static func image(of asset: Asset, in content: BookContent) -> ImageRef? {
+        guard let chosen = asset.chosen else { return nil }
+        return content.sessions[asset.sessionID]?.version(chosen)?.image
     }
 
+    /// The thumbnail shown everywhere for an asset: its image.
     static func thumbnail(of asset: Asset, in content: BookContent) -> ImageRef? {
-        guard let slot = asset.primary else { return nil }
-        return chosenImage(sessionID: slot.sessionID, chosen: slot.chosen, in: content)
+        image(of: asset, in: content)
+    }
+
+    /// The large image's empty placeholder text.
+    static func emptyImageMessage(for asset: Asset) -> String {
+        "Describe \(asset.name) in the panel on the right and press Generate, or import an image file."
     }
 
     // MARK: Tags
@@ -48,56 +46,6 @@ enum AssetEditing {
         var seen = Set<String>()
         return text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
-    }
-
-    // MARK: Slots
-
-    static func addSlot(to asset: inout Asset) {
-        asset.references.append(ReferenceSlot(label: "Reference \(asset.references.count + 1)", isPrimary: false))
-    }
-
-    /// Not the primary, and never the last slot.
-    static func canRemoveSlot(_ id: UUID, from asset: Asset) -> Bool {
-        asset.references.count > 1 && asset.references.contains { $0.id == id && !$0.isPrimary }
-    }
-
-    static func removeSlot(_ id: UUID, from asset: inout Asset) {
-        guard canRemoveSlot(id, from: asset) else { return }
-        asset.references.removeAll { $0.id == id }
-    }
-
-    static func renameSlot(_ id: UUID, to label: String, in asset: inout Asset) {
-        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let i = asset.references.firstIndex(where: { $0.id == id }) else { return }
-        asset.references[i].label = trimmed
-    }
-
-    static func makePrimary(_ id: UUID, in asset: inout Asset) {
-        guard asset.references.contains(where: { $0.id == id }) else { return }
-        for i in asset.references.indices { asset.references[i].isPrimary = asset.references[i].id == id }
-    }
-
-    // MARK: Sheet
-
-    /// Ignores empty names and names already on the sheet (case-insensitive).
-    static func addExpression(_ name: String, to asset: inout Asset) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty, var sheet = asset.sheet else { return }
-        let exists = sheet.items.contains {
-            if case let .expression(n) = $0.kind { n.lowercased() == trimmed } else { false }
-        }
-        guard !exists else { return }
-        sheet.items.append(SheetItem(kind: .expression(trimmed)))
-        asset.sheet = sheet
-    }
-
-    static func removeSheetItem(_ id: UUID, from asset: inout Asset) {
-        asset.sheet?.items.removeAll { $0.id == id }
-    }
-
-    static func setLocked(_ locked: Bool, item id: UUID, in asset: inout Asset) {
-        guard let i = asset.sheet?.items.firstIndex(where: { $0.id == id }) else { return }
-        asset.sheet?.items[i].locked = locked
     }
 
     // MARK: Delete
@@ -159,7 +107,8 @@ enum CommittedText {
     }
 }
 
-/// The asset editor (PD §8.3): name, description, tags, reference slots, sheet, where used, delete.
+/// The asset editor (PD §8.3): the asset's large image (made in the session panel on the
+/// right), name, type, description, tags, where used and delete.
 struct AssetEditor: View {
     let document: BookDocument
     let content: BookContent
@@ -167,7 +116,6 @@ struct AssetEditor: View {
     let images: ImageCache
     let model: AssetsModel
     let onOpenPage: (PageID, BoxID?) -> Void
-    let onGenerateSheet: () -> Void
     @State private var confirmDelete = false
 
     private var editable: Bool { document.isEditable }
@@ -176,6 +124,8 @@ struct AssetEditor: View {
         let sites = document.usageSites(of: asset.id)
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                AssetImageCard(asset: asset, image: AssetEditing.image(of: asset, in: content), images: images,
+                               color: color, editable: editable, onImport: model.requestImport)
                 header
                 VStack(alignment: .leading, spacing: 14) {
                     field("Description", color: Crayon.sky) {
@@ -190,13 +140,6 @@ struct AssetEditor: View {
                     }
                 }
                 .crayonCard(padding: 14)
-                slots
-                    .crayonCard(padding: 14)
-                if asset.type == .character {
-                    CharacterSheetView(document: document, content: content, asset: asset, images: images,
-                                       model: model, onGenerate: onGenerateSheet)
-                        .crayonCard(padding: 14)
-                }
                 VStack(alignment: .leading, spacing: 8) {
                     CrayonHeader("Where Used", color: Crayon.grass)
                     WhereUsedList(sites: sites, content: content, onOpen: onOpenPage)
@@ -208,7 +151,8 @@ struct AssetEditor: View {
                     .disabled(!editable)
             }
             .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
         .crayonPaper()
         .disabled(!editable)
@@ -222,22 +166,18 @@ struct AssetEditor: View {
         }
     }
 
-    /// The asset's own colour: its avatar ring, sticker and selection wash.
+    /// The asset's own colour: its image frame, sticker and selection wash.
     private var color: Color { Crayon.color(forKey: asset.id.rawValue.uuidString) }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            AssetThumbnail(ref: AssetEditing.thumbnail(of: asset, in: content), images: images, size: 52, ring: color,
-                           expandTitle: asset.name)
-            VStack(alignment: .leading, spacing: 4) {
-                CommittedTextField(title: "Name", value: asset.name) { text in
-                    let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !name.isEmpty else { return }
-                    model.update(asset, in: document, actionName: "Rename Asset") { $0.name = name }
-                }
-                .font(Crayon.font(.title2, weight: .bold))
-                AssetTypeChip(type: asset.type, color: color)
+        VStack(alignment: .leading, spacing: 6) {
+            CommittedTextField(title: "Name", value: asset.name) { text in
+                let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { return }
+                model.update(asset, in: document, actionName: "Rename Asset") { $0.name = name }
             }
+            .font(Crayon.font(.title2, weight: .bold))
+            AssetTypeChip(type: asset.type, color: color)
         }
     }
 
@@ -247,66 +187,81 @@ struct AssetEditor: View {
             body()
         }
     }
+}
 
-    private var slots: some View {
-        VStack(alignment: .leading, spacing: 8) {
+/// The asset's one image, large, in a card framed in the asset's colour; or a friendly
+/// placeholder pointing at the session panel. "Import Image…" sits under it and opens the
+/// session panel's file picker (the import becomes a version there, with the real-person
+/// question).
+private struct AssetImageCard: View {
+    let asset: Asset
+    let image: ImageRef?
+    let images: ImageCache
+    let color: Color
+    let editable: Bool
+    let onImport: () -> Void
+    @State private var preview: CGImage?
+
+    var body: some View {
+        let cg = image.flatMap { images.image(for: $0) }
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Crayon.cornerRadius, style: .continuous)
+                    .fill(Crayon.paperDeep)
+                if let cg {
+                    Image(decorative: cg, scale: 1)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
+                        .padding(8)
+                        .accessibilityLabel("\(asset.name)'s image")
+                        .onTapGesture(count: 2) { preview = cg }
+                        .contextMenu {
+                            Button("View Larger", systemImage: "arrow.up.left.and.arrow.down.right") { preview = cg }
+                        }
+                } else {
+                    VStack(spacing: 12) {
+                        CrayonBlobIcon(systemImage: AssetEditing.typeSymbol(asset.type), color: color, size: 64)
+                        Text("No Picture Yet")
+                            .font(Crayon.font(.title3, weight: .bold))
+                            .foregroundStyle(Crayon.ink)
+                        Text(AssetEditing.emptyImageMessage(for: asset))
+                            .font(Crayon.font(.callout, weight: .medium))
+                            .foregroundStyle(Crayon.inkSoft)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: 340)
+                    }
+                    .padding(24)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 240, maxHeight: 420)
+            .overlay(RoundedRectangle(cornerRadius: Crayon.cornerRadius, style: .continuous)
+                .strokeBorder(color.opacity(cg == nil ? 0.35 : 0.8),
+                              style: StrokeStyle(lineWidth: 3, dash: cg == nil ? [8, 6] : [])))
             HStack {
-                CrayonHeader("Reference Images", color: color)
-                Spacer()
-                Button("Add Reference") {
-                    model.update(asset, in: document, actionName: "Add Reference") { AssetEditing.addSlot(to: &$0) }
+                Button(action: onImport) {
+                    Label("Import Image…", systemImage: "photo.badge.plus")
                 }
                 .buttonStyle(.crayon(Crayon.grass))
-                .controlSize(.small)
-            }
-            ForEach(asset.references) { slot in
-                let owner = SessionOwner.assetReference(asset.id, slot.id)
-                HStack {
-                    Button {
-                        model.update(asset, in: document, actionName: "Change Primary Reference") {
-                            AssetEditing.makePrimary(slot.id, in: &$0)
-                        }
-                    } label: {
-                        Image(systemName: slot.isPrimary ? "largecircle.fill.circle" : "circle")
-                            .fontWeight(.semibold)
-                            .foregroundStyle(slot.isPrimary ? color : Crayon.inkSoft)
-                    }
-                        .buttonStyle(.borderless)
-                        .help("Primary reference")
-                        .accessibilityLabel(slot.isPrimary ? "Primary reference" : "Make primary")
-                    AssetThumbnail(ref: AssetEditing.chosenImage(sessionID: slot.sessionID, chosen: slot.chosen,
-                                                                 in: content), images: images,
-                                   ring: slot.isPrimary ? color : nil,
-                                   expandTitle: "\(asset.name): \(slot.label)")
-                    CommittedTextField(title: "Reference name", value: slot.label) { text in
-                        model.update(asset, in: document, actionName: "Rename Reference") {
-                            AssetEditing.renameSlot(slot.id, to: text, in: &$0)
-                        }
-                    }
-                    Button { model.update(asset, in: document, actionName: "Remove Reference") {
-                        AssetEditing.removeSlot(slot.id, from: &$0) } } label: { Image(systemName: "minus.circle") }
-                        .buttonStyle(.borderless)
-                        .help("Remove reference")
-                        .disabled(!AssetEditing.canRemoveSlot(slot.id, from: asset))
-                    Button {
-                        model.selectedOwner = owner
-                        model.importRequest = owner
-                    } label: { Image(systemName: "photo.badge.plus") }
-                        .buttonStyle(.borderless)
-                        .help("Import an image file as this reference")
-                        .accessibilityLabel("Import image for \(slot.label)")
-                    Button("Open") { model.selectedOwner = owner }
+                .help("Use an image file from your Mac as a version in \(asset.name)'s session")
+                .disabled(!editable)
+                Spacer()
+                if let cg {
+                    Button("View Larger", systemImage: "arrow.up.left.and.arrow.down.right") { preview = cg }
                         .buttonBorderShape(.capsule)
                 }
-                .padding(8)
-                .background(model.selectedOwner == owner ? color.opacity(0.16) : Crayon.paperDeep.opacity(0.5),
-                            in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
-                    .strokeBorder(model.selectedOwner == owner ? color : .clear, lineWidth: 2))
-                .contentShape(Rectangle())
-                .onTapGesture { model.selectedOwner = owner }
             }
         }
+        .sheet(item: Binding(get: { preview.map(PreviewItem.init) }, set: { preview = $0?.image })) { item in
+            ImagePreviewSheet(title: asset.name, image: item.image)
+        }
+    }
+
+    private struct PreviewItem: Identifiable {
+        let image: CGImage
+        var id: ObjectIdentifier { ObjectIdentifier(image) }
     }
 }
 

@@ -141,7 +141,6 @@ struct BookEditor: View {
     @State private var layoutChat: TemplateChatModel
     @State private var styleModel: StyleTabModel
     @State private var assetsModel = AssetsModel()
-    @State private var sheetBatchRequest: AssetID?
     @State private var sidebarTab: SidebarTab = .pages
     @State private var selectedImageBox: BoxID?
     @State private var canvasImportError: String?
@@ -202,7 +201,6 @@ struct BookEditor: View {
         }
         .toolbar { toolbar }
         .draftAllFlow(document: document, trigger: $draftAllRequested)
-        .sheetBatchFlow(document: document, trigger: $sheetBatchRequest)
         .navigationTitle(content.book.title)
         .focusedSceneValue(\.focusedBook, document)
         .focusedSceneValue(\.showTypography, $showTypography)
@@ -377,7 +375,7 @@ struct BookEditor: View {
             }
             if sidebarTab == .assets {
                 AssetsDetail(document: document, content: content, model: assetsModel, images: images,
-                             onOpenPage: openFromWhereUsed, onGenerateSheet: { sheetBatchRequest = $0 })
+                             onOpenPage: openFromWhereUsed)
             } else if sidebarTab == .layouts {
                 LayoutsDetail(document: document, model: layouts, images: images)
             } else if sidebarTab == .style {

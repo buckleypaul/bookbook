@@ -4,47 +4,62 @@ import Testing
 @testable import BBUI
 
 struct AssetEditingTests {
-    @Test func slotRules() {
-        var a = Asset.makeNew(type: .object, name: "Lamp")
-        let primary = a.references[0].id
-        #expect(!AssetEditing.canRemoveSlot(primary, from: a))
-        AssetEditing.addSlot(to: &a)
-        #expect(a.references.count == 2)
-        let second = a.references[1].id
-        #expect(!AssetEditing.canRemoveSlot(primary, from: a))
-        AssetEditing.makePrimary(second, in: &a)
-        #expect(a.primary?.id == second)
-        #expect(a.references.filter(\.isPrimary).count == 1)
-        AssetEditing.removeSlot(primary, from: &a)
-        #expect(a.references.count == 1)
-        AssetEditing.removeSlot(second, from: &a)
-        #expect(a.references.count == 1)
-        AssetEditing.renameSlot(second, to: "  Side  ", in: &a)
-        #expect(a.references[0].label == "Side")
-        AssetEditing.renameSlot(second, to: " ", in: &a)
-        #expect(a.references[0].label == "Side")
+    @Test func imageIsTheChosenVersion() {
+        var content = Fixtures.book(pages: 1)
+        var pip = Asset.makeNew(type: .character, name: "Pip")
+        content.assets[pip.id] = pip
+        #expect(AssetEditing.image(of: pip, in: content) == nil, "no session yet")
+        let version = Version(image: Fixtures.ref, pixelSize: PixelSize(width: 8, height: 8), source: .generated,
+                              createdAt: Fixtures.date)
+        content.sessions[pip.sessionID] = Session(id: pip.sessionID, owner: pip.owner, versions: [version])
+        #expect(AssetEditing.thumbnail(of: pip, in: content) == nil, "nothing chosen")
+        pip.chosen = version.id
+        #expect(AssetEditing.image(of: pip, in: content) == Fixtures.ref)
+        #expect(AssetEditing.thumbnail(of: pip, in: content) == Fixtures.ref)
+        pip.chosen = VersionID()
+        #expect(AssetEditing.image(of: pip, in: content) == nil, "a gone version shows the placeholder")
+        #expect(AssetEditing.emptyImageMessage(for: pip).contains("Pip"))
     }
 
-    @Test func sheetEdits() {
-        var a = Asset.makeNew(type: .character, name: "Pip")
-        #expect(a.sheet?.items.count == 8)
-        AssetEditing.addExpression("  Grumpy ", to: &a)
-        AssetEditing.addExpression("HAPPY", to: &a)
-        AssetEditing.addExpression("", to: &a)
-        #expect(a.sheet?.items.count == 9)
-        let item = a.sheet!.items.last!
-        #expect(AssetEditing.title(of: item.kind) == "Grumpy")
-        AssetEditing.setLocked(true, item: item.id, in: &a)
-        #expect(a.sheet?.items.last?.locked == true)
-        AssetEditing.removeSheetItem(item.id, from: &a)
-        #expect(a.sheet?.items.count == 8)
-        var obj = Asset.makeNew(type: .object, name: "Hat")
-        AssetEditing.addExpression("sad", to: &obj)
-        #expect(obj.sheet == nil)
+    @MainActor @Test func selectingAnAssetShowsItsSession() {
+        var content = Fixtures.book(pages: 1)
+        let pip = Asset.makeNew(type: .character, name: "Pip")
+        let wood = Asset.makeNew(type: .place, name: "Wood")
+        content.assets[pip.id] = pip
+        content.assets[wood.id] = wood
+        let model = AssetsModel()
+        #expect(model.sessionOwner(in: content) == nil, "no asset selected: the empty state")
+        model.requestImport()
+        #expect(model.importRequest == nil)
+
+        model.select(pip)
+        #expect(model.sessionOwner(in: content) == .asset(pip.id))
+        model.requestImport()
+        #expect(model.importRequest == .asset(pip.id))
+        model.select(wood)
+        #expect(model.sessionOwner(in: content) == .asset(wood.id))
+        #expect(model.importRequest == nil, "a pending import doesn't follow the selection")
+
+        content.assets[wood.id] = nil
+        #expect(model.sessionOwner(in: content) == nil)
+        model.validate(content)
+        #expect(model.selectedAsset == nil)
     }
 
-    @Test func titlesAndTags() {
-        #expect(AssetEditing.title(of: .view(.threeQuarter)) == "Three-quarter view")
+    @Test func panelCopesWithAMissingAssetSession() {
+        var content = Fixtures.book(pages: 1)
+        let pip = Asset.makeNew(type: .character, name: "Pip")
+        content.assets[pip.id] = pip
+        // A legacy asset: its sessionID has no session behind it.
+        let stand = SessionPanelState.session(for: pip.owner, in: content)
+        #expect(stand?.id == pip.sessionID && stand?.owner == pip.owner && stand?.versions.isEmpty == true)
+        #expect(SessionPanelState.placedVersion(for: pip.owner, in: content) == nil)
+        // A gone asset or box has no session.
+        #expect(SessionPanelState.session(for: .asset(AssetID()), in: content) == nil)
+        #expect(SessionPanelState.session(for: .pageBox(PageID(), BoxID()), in: content) == nil)
+    }
+
+    @Test func tags() {
         #expect(AssetEditing.parseTags(" fox, red ,, Fox,small") == ["fox", "red", "small"])
         #expect(AssetEditing.tagsText(["a", "b"]) == "a, b")
     }

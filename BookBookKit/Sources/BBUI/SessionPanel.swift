@@ -5,14 +5,14 @@ import BBModel
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The session panel (PD §8.6) for any session owner: an image box, an asset reference slot or
-/// a character-sheet item. The thread, the version strip, Version details, and the composer.
+/// The session panel (PD §8.6) for any session owner: an image box or an asset's image. The thread, the version strip, Version details, and the composer.
 ///
 /// - Page boxes: clicking a version puts it on the page (undoable) and selects it. The composer
 ///   has `@mention` autocomplete, the page's asset checklist, "Reference another image…" and the
 ///   story-text toggle.
-/// - Asset owners (through `AssetSessionHost`): clicking a version makes it the slot's or
-///   item's reference ("Choose Reference", undoable). Imports ask the real-person question.
+/// - Assets (the Assets tab's right panel): clicking a version makes it the asset's image
+///   ("Choose Image", undoable). Imports ask the real-person question. A legacy asset whose
+///   session file is missing shows an empty session; the first message or import creates it.
 ///
 /// The panel keeps a selected version (default: the placed or chosen one); Details and
 /// refinement use it. Every generation checks the real-person notice, then the cost.
@@ -62,13 +62,7 @@ struct SessionPanel: View {
     @State private var question: PendingQuestion?
     @State private var laterQuestions: [PendingQuestion] = []
 
-    private var target: GenerationTarget {
-        switch owner {
-        case let .pageBox(page, box): .pageBox(page, box)
-        case let .assetReference(asset, slot): .assetReference(asset, slot)
-        case let .sheetItem(asset, item): .sheetItem(asset, item)
-        }
-    }
+    private var target: GenerationTarget { GenerationTarget(owner: owner) }
 
     private var pageBox: (page: PageID, box: BoxID)? {
         if case let .pageBox(page, box) = owner { return (page, box) }
@@ -77,18 +71,10 @@ struct SessionPanel: View {
 
     private var isAsset: Bool { owner.assetID != nil }
 
-    private var session: Session? {
-        BookMutations.sessionID(for: owner, in: content).flatMap { content.sessions[$0] }
-    }
+    private var session: Session? { SessionPanelState.session(for: owner, in: content) }
 
-    /// The placed version (page boxes) or the chosen reference (asset owners).
-    private var placedID: VersionID? {
-        switch owner {
-        case let .pageBox(page, box): content.pages[page]?.images[box]?.placement?.versionID
-        case let .assetReference(asset, slot): content.assets[asset]?.references.first { $0.id == slot }?.chosen
-        case let .sheetItem(asset, item): content.assets[asset]?.sheet?.items.first { $0.id == item }?.chosen
-        }
-    }
+    /// The placed version (page boxes) or the asset's chosen image.
+    private var placedID: VersionID? { SessionPanelState.placedVersion(for: owner, in: content) }
 
     /// The version Details and refinement use: the selection if it still exists, else the placed one.
     private func baseID(_ session: Session) -> VersionID? {
@@ -133,8 +119,7 @@ struct SessionPanel: View {
                     .padding(12)
             } else {
                 CrayonEmptyState("No Session", systemImage: "photo", color: Crayon.sky,
-                                 message: isAsset ? "This reference has no session."
-                                     : "This image box has no session.")
+                                 message: isAsset ? "This asset is gone." : "This image box has no session.")
             }
         }
         .overlay {
@@ -484,7 +469,7 @@ struct SessionPanel: View {
                     checkThenPerform(.checkConsistency(session: session.id, version: version.id))
                 }
                 .disabled(reason != nil)
-                .help(reason ?? "Compare this picture with the references of the assets in it.")
+                .help(reason ?? "Compare this picture with the images of the assets in it.")
             }
             .controlSize(.small)
             .buttonBorderShape(.capsule)
@@ -530,7 +515,7 @@ struct SessionPanel: View {
         guard version.id != placedID else { return }
         switch owner {
         case let .pageBox(page, box): document.perform(.chooseVersion(page: page, box: box, version: version.id))
-        case .assetReference, .sheetItem: document.chooseReference(version.id, for: owner)
+        case let .asset(asset): document.chooseAssetImage(version.id, for: asset)
         }
     }
 
@@ -691,7 +676,7 @@ struct SessionPanel: View {
                     Label("Choose Image…", systemImage: "photo.badge.plus")
                 }
                 .buttonBorderShape(.capsule)
-                .help(isAsset ? "Use an image file from your Mac as a version of this reference"
+                .help(isAsset ? "Use an image file from your Mac as a version of this asset's image"
                       : "Use an image file from your Mac as a version for this box")
                 .disabled(!document.isEditable)
                 Spacer()
@@ -1033,6 +1018,26 @@ enum CostConfirmKind: Equatable {
         case .regionEdit: "Edit"
         case .fixConsistency: "Fix"
         case .checkConsistency: "Check"
+        }
+    }
+}
+
+/// The panel's pure lookups (testable without a view).
+enum SessionPanelState {
+    /// The owner's session. An asset whose session file is missing (a legacy book) gets an
+    /// empty stand-in, so the panel shows its composer; the first message or import creates
+    /// the real one. Nil when the box or asset is gone.
+    static func session(for owner: SessionOwner, in content: BookContent) -> Session? {
+        guard let id = BookMutations.sessionID(for: owner, in: content) else { return nil }
+        if let session = content.sessions[id] { return session }
+        return owner.assetID == nil ? nil : Session(id: id, owner: owner)
+    }
+
+    /// The placed version (page boxes) or the asset's chosen image.
+    static func placedVersion(for owner: SessionOwner, in content: BookContent) -> VersionID? {
+        switch owner {
+        case let .pageBox(page, box): content.pages[page]?.images[box]?.placement?.versionID
+        case let .asset(asset): content.assets[asset]?.chosen
         }
     }
 }

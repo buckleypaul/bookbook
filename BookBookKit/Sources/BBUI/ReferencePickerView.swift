@@ -14,7 +14,7 @@ public enum ReferenceSources {
     }
 
     /// Every session with versions except `excluded`: the cover, story pages in reading order
-    /// (boxes in template layer order), then assets by name (slots, then sheet items).
+    /// (boxes in template layer order), then assets by name.
     public static func list(in content: BookContent, excluding excluded: SessionID?) -> [Source] {
         var out: [Source] = []
         func add(_ owner: SessionOwner) {
@@ -29,9 +29,7 @@ public enum ReferenceSources {
             for box in template.imageBoxes { add(.pageBox(pageID, box.id)) }
         }
         let assets = content.assets.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        for asset in assets {
-            for (_, owner) in asset.ownedSessions { add(owner) }
-        }
+        for asset in assets { add(asset.owner) }
         return out
     }
 

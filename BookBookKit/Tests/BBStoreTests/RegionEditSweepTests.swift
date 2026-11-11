@@ -18,7 +18,6 @@ import Testing
         let raw = try await store.storeImage(Data([4]), contentType: "public.png")
         let orphan = try await store.storeImage(Data([5]), contentType: "public.png")
 
-        let slot = fox.references[0]
         let size = PixelSize(width: 1, height: 1)
         let baseVersion = Version(image: base, pixelSize: size, source: .imported, createdAt: testNow)
         let intent = GenerationIntent(messageText: "make it yellow", refines: baseVersion.id, provider: .openai,
@@ -28,10 +27,10 @@ import Testing
                                     maskSent: mask, rawOutput: raw, featherPixels: 8)
         let edit = Version(image: composite, pixelSize: size, source: .regionEdit, parent: baseVersion.id,
                            createdAt: testNow, provenance: provenance)
-        content.sessions[slot.sessionID]?.versions = [baseVersion, edit]
-        fox.references[0].chosen = edit.id
+        content.sessions[fox.sessionID]?.versions = [baseVersion, edit]
+        fox.chosen = edit.id
         content.assets[fox.id] = fox
-        try await store.save(content, dirty: DirtySet(sessions: [slot.sessionID], assets: [fox.id]))
+        try await store.save(content, dirty: DirtySet(sessions: [fox.sessionID], assets: [fox.id]))
 
         let removed = try await store.sweepOrphanImages(referencedBy: content, minimumAge: 0,
                                                         now: Date().addingTimeInterval(10))

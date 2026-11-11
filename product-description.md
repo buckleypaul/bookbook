@@ -38,7 +38,7 @@ BookBook is a native macOS app for making illustrated children's books with AI i
 - **Technology:** native Swift app.
 - **AI access:** bring your own API keys (OpenAI in v1.0; Google Gemini is post-MVP). There is no BookBook server or account.
 - **Data:** everything is stored locally on the user's Mac. API keys are stored in the macOS Keychain and never in book files. Everything except AI features works offline.
-- **Privacy:** the only data that leaves the Mac is what a request sends to the user's chosen AI provider: the prompt, the style guide, the references of the assets used, and the page's story text (when included). There is no analytics or telemetry. The first time the user imports a photo of a real person as a reference, the app explains that it will be sent to the provider and links to that provider's data policy. The notice also points out that providers restrict photos of children. For example, OpenAI's guidance says personal data of children under 13 shouldn't be sent without a zero-data-retention arrangement, which individual users don't normally have. So the notice recommends describing the child in words, or using a drawing, instead of a photo.
+- **Privacy:** the only data that leaves the Mac is what a request sends to the user's chosen AI provider: the prompt, the style guide, the images of the assets used, and the page's story text (when included). There is no analytics or telemetry. The first time the user imports a photo of a real person for an asset, the app explains that it will be sent to the provider and links to that provider's data policy. The notice also points out that providers restrict photos of children. For example, OpenAI's guidance says personal data of children under 13 shouldn't be sent without a zero-data-retention arrangement, which individual users don't normally have. So the notice recommends describing the child in words, or using a drawing, instead of a photo.
 - **Distribution:** signed with an Apple Developer ID, notarized, and published on GitHub Releases. Installed with `brew install --cask bookbook` (a personal tap first; submitted to homebrew-cask once it qualifies). Updates come only through `brew upgrade`. There is no in-app updater. A DMG download may be added later (§9).
 
 ## 4. Target user
@@ -58,10 +58,10 @@ Parents and hobbyists making personal books to read at home, give as gifts, or p
 - **Quality levels:** Draft, Standard and High, where the model supports them. Draft is cheap and fast for blocking out the whole book; final images are made at a higher level. The level is shown in the cost estimate and recorded on each version. Providers implement levels differently: OpenAI has native quality settings, while for Gemini (post-MVP) a level means a combination of output resolution and model effort. Settings explains what each level means for the chosen provider.
 - **Cost visibility:** an estimated cost is shown next to Generate before every generation (including the consistency check, when it's on). The app asks for confirmation only when a single request or a batch costs more than a threshold set in Settings. Each book keeps a running total that uses the actual cost when the provider reports usage, and the estimate (marked as such) otherwise. Prices come from a built-in price list that the user can edit.
 - **Budget (optional, per book):** once a book's total passes its budget, the app warns before each further generation. It never blocks.
-- **Generation queue:** AI requests run one at a time across the app, and more can be queued behind them. The queue shows each request's book, page and box, its estimated cost and its progress. Waiting items can be reordered or removed, and the running one can be cancelled. Batch actions (for example "Generate whole character sheet" or "Draft all empty boxes") add many items at once, with the total estimate shown first. While requests run, the rest of the app stays fully usable. The queue survives quitting the app: waiting and failed items come back **paused** at the next launch, with an offer to resume them. A request that was running when the app quit counts as cancelled (see below).
+- **Generation queue:** AI requests run one at a time across the app, and more can be queued behind them. The queue shows each request's book, page and box, its estimated cost and its progress. Waiting items can be reordered or removed, and the running one can be cancelled. Batch actions (for example "Draft all empty boxes") add many items at once, with the total estimate shown first. While requests run, the rest of the app stays fully usable. The queue survives quitting the app: waiting and failed items come back **paused** at the next launch, with an offer to resume them. A request that was running when the app quit counts as cancelled (see below).
 - **Cancelling:** the provider may still charge for a request cancelled partway through. The app says so when you cancel and adds the estimated cost to the total.
 - **Refusals and errors:** when a provider refuses a request or it fails, the app explains why in plain language and suggests fixes. For example: "describe the child in words instead of uploading a photo", or "remove the word X". Providers don't say exactly what triggered a refusal, so suggestions like "remove the word X" are best guesses and are worded that way ("Try removing…"). If another provider is set up, it offers to retry there. The raw provider message is available under "Details". A failed queue item stays in the queue, marked as failed, and the rest carry on.
-- **Reference limits:** if the selected model can't accept every reference a request would include, the app sends the most important ones (primary references first) and says which were left out.
+- **Reference limits:** if the selected model can't accept every reference a request would include, the app sends the most important ones (assets the prompt names first) and says which were left out.
 
 ## 6. Core concepts
 
@@ -70,7 +70,7 @@ Parents and hobbyists making personal books to read at home, give as gifts, or p
 | **Library** | All of the user's books, stored locally. |
 | **Book** | One project: book settings, style guide, assets, templates, pages, cover. |
 | **Style guide** | Book-wide visual direction and print settings. |
-| **Asset** | A reusable named element (character, place, object) with reference images. |
+| **Asset** | A reusable named element (character, place, object) with one image. |
 | **Template** | A page (or two-page spread) layout made of image boxes and text boxes. |
 | **Page** | One instance of a template, with story text and a chosen image per image box. |
 | **Session** | The AI conversation and image version history for one image box (on a page, the cover, or an asset). |
@@ -85,7 +85,7 @@ Parents and hobbyists making personal books to read at home, give as gifts, or p
 │ Sidebar      │ Main area                                    │
 │              │                                              │
 │ ▸ Pages      │  Pages: spread overview / page editor        │
-│ ▸ Assets     │  Assets: asset editor + character sheet      │
+│ ▸ Assets     │  Assets: list, asset editor + image session  │
 │ ▸ Style      │  Style: style guide form + preview           │
 │ ▸ Layouts    │  Layouts: template list + visual editor      │
 │              │                                              │
@@ -128,22 +128,20 @@ Asset types: **Character**, **Place/Scene**, **Object**.
 
 Every asset has:
 - Name (used for `@mentions`), type, text description, tags.
-- One or more **reference images**, generated with AI using the style guide or imported from files (e.g. a photo of the user's child to base a character on; see the privacy notice in §3).
-- A **primary reference** that is always sent; other references are optional.
+- **Exactly one image**, made and refined in the asset's own session (chat + versions, the same way as pages, §8.6). It's generated with AI using the style guide, or imported from a file as a version in that session (e.g. a photo of the user's child to base a character on; see the privacy notice in §3).
+- Clicking a version makes it the asset's image. This can be undone.
 - A **where used** list of the pages, cover and boxes that use it, each linked.
 
-**Characters** also get a **character sheet**:
-- **Turnaround:** front, three-quarter, side and back views, generated from the description and primary reference.
-- **Expression set:** e.g. happy, sad, surprised, angry, sleepy, plus custom ones the user adds.
-- **Generate whole sheet** queues every unlocked item in one step, with the total estimate shown first.
-- Each sheet item can be regenerated on its own, replaced with an import, or locked.
-- When generating a page, the app sends only the most relevant sheet images (for example, the expression named in the prompt) rather than the whole sheet.
+**Layout**
+- Left: the asset list.
+- Middle: the asset editor (large image, name, description, tags, where used, delete).
+- Right: the selected asset's image session, always shown.
+
+When generating a page, the app sends each mentioned or checked asset's image.
 
 **Changes and deletion**
-- Changing an asset's description or primary reference doesn't regenerate anything. Pages that use the asset are marked "asset changed" so the user can redo them if they want.
+- Changing an asset's description or image doesn't regenerate anything. Pages that use the asset are marked "asset changed" so the user can redo them if they want.
 - Deleting an asset that's in use shows where it's used and asks for confirmation. Existing images are kept, the asset is removed from asset checklists, and its `@mentions` become plain text.
-
-Asset images are made in sessions (chat + versions), the same way as pages (§8.6).
 
 ### 8.4 Layouts tab (templates)
 - A template is either a **single page** or a **two-page spread**, sized to the book's page setup.
@@ -177,7 +175,7 @@ The page editor shows the page canvas, with the session panel alongside it.
 **Session panel**
 - **Each image box has its own session.** A page with two picture boxes has two independent chats and version strips. Boxes don't share conversation context.
 - A **chat thread** for the selected image box: "Pip the fox and Granny Oak at the castle gate at dusk" → "make Pip smaller and looking up at Granny".
-- **Assets:** `@mention` them in the prompt (with autocomplete) and/or tick them in the page's asset checklist. Selected assets' descriptions and reference/sheet images are included automatically.
+- **Assets:** `@mention` them in the prompt (with autocomplete) and/or tick them in the page's asset checklist. Selected assets' descriptions and images are included automatically.
 - **Reference another image (optional):** attach a version from another box or page (e.g. "same kitchen as page 4"). Only that image is sent; no conversation or other context comes with it.
 - **Context included with each request:** style guide (text + reference images), selected assets, any attached image references, image box shape and placement (e.g. "leave the bottom third calm for text"), the centre fold position on spreads (with a request to keep faces and key details away from it), the page's story text (optional, on by default), and the session's conversation so far.
 - **Version strip:** every generated or imported image is kept. Click a version to put it on the page. Versions can be starred, deleted, or exported as image files.
@@ -204,7 +202,7 @@ The page editor shows the page canvas, with the session panel alongside it.
 - Also: export single pages or images as PNG/JPEG.
 
 ### 8.9 Consistency check
-- After every image generation (pages, cover, and asset sheet items), a vision model compares the new image with the reference and sheet images of each asset used, plus the style guide.
+- After every image generation (pages, cover and assets), a vision model compares the new image with the image of each asset used, plus the style guide.
 - If it finds drift, the version gets a **warning badge** and a short list of differences. Example: "Pip's scarf is blue; reference is red", or "castle has two towers; reference has three".
 - **One-click fix:** turns the differences into a correction prompt and sends it in that box's session as a new generation (cost estimate shown first).
 - Warnings are advisory. The version can still be chosen, and a warning can be dismissed.
@@ -212,7 +210,7 @@ The page editor shows the page canvas, with the session panel alongside it.
 - On by default, with one **global switch** in Settings. Its cost appears in estimates and totals.
 
 ### 8.10 Undo / redo
-- **Covered:** canvas edits (text, formatting, crop/pan/zoom), template editor edits, style and asset field edits, which version is chosen for a box, page add/delete/duplicate/reorder/template change, and story text import (as one step).
+- **Covered:** canvas edits (text, formatting, crop/pan/zoom), template editor edits, style and asset field edits, which version is chosen for a box or an asset, page add/delete/duplicate/reorder/template change, and story text import (as one step).
 - **Not covered** (these ask for confirmation instead, or can be fixed another way): AI generations (every result stays in the version strip and can be deleted there), session resets, asset deletion, version clean-up (§8.12), and book deletion (the book goes to the Trash).
 - Undo history is kept separately for each open book window and lasts until the book is closed.
 

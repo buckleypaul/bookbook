@@ -62,6 +62,15 @@ enum PackageCoding {
         do { return try decoder().decode(type, from: data) } catch { throw StoreError.corrupt("\(what): \(error)") }
     }
 
+    /// Like `decode`, but nil when decoding throws `LegacySheetItemError` (a legacy
+    /// character-sheet session; the sheet was removed 2026-11-11).
+    static func decodeUnlessLegacySheetItem<T: Decodable>(_ type: T.Type, from data: Data,
+                                                          what: String) throws(StoreError) -> T? {
+        do { return try decoder().decode(type, from: data) } catch is LegacySheetItemError { return nil } catch {
+            throw StoreError.corrupt("\(what): \(error)")
+        }
+    }
+
     /// Runs `body`, mapping any non-`StoreError` to `.io`.
     @discardableResult
     static func io<T>(_ what: String, _ body: () throws -> T) throws(StoreError) -> T {

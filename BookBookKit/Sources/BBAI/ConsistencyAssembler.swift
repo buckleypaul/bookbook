@@ -11,8 +11,7 @@ public struct ConsistencyPlan: Hashable, Sendable {
     public var sessionID: SessionID
     /// The version being checked (sent first).
     public var checked: PlannedImage
-    /// The assets' primary references and selected sheet images, then up to two style
-    /// references, in send order.
+    /// The assets' chosen images, then up to two style references, in send order.
     public var references: [PlannedImage]
     /// The assets in play, in play order.
     public var assets: [ConsistencyAssetContext]
@@ -37,8 +36,8 @@ public struct AssembledConsistency: Sendable {
 ///
 /// The assets in play are found as for an image request (A §7.3 step 1) from the version's
 /// stored intent (imported versions: the page checklist, or the asset that owns the session).
-/// For each, the primary reference and the sheet images the §7.4 selector would pick (with its
-/// per-asset caps); then at most two style references. The base image and attached references
+/// For each, its one chosen image (an asset session's own asset excluded, as in §7.4); then at
+/// most two style references. The base image and attached references
 /// are not sent, nor the checked image again. Photos of real people are left out unless the
 /// book acknowledged the vision provider's notice (A §11).
 public enum ConsistencyAssembler {
@@ -49,7 +48,7 @@ public enum ConsistencyAssembler {
     public static let conservativeImageCount = 7
     public static let checkedLabel = "Image to check"
 
-    /// The check of `version`: nil if the version (or the page, box, slot or sheet item its
+    /// The check of `version`: nil if the version (or the page, box or asset its
     /// session belongs to) is gone. `provider` is the vision provider, for the real-person rule.
     public static func plan(version versionID: VersionID, content: BookContent,
                             provider: ProviderID? = nil) -> ConsistencyPlan? {
@@ -102,8 +101,7 @@ public enum ConsistencyAssembler {
                 for (boxID, slot) in page.images where slot.sessionID == session.id { return .pageBox(pageID, boxID) }
             }
             return nil
-        case let .assetReference(asset, slot): return .assetReference(asset, slot)
-        case let .sheetItem(asset, item): return .sheetItem(asset, item)
+        case let .asset(asset): return .asset(asset)
         }
     }
 
@@ -114,7 +112,7 @@ public enum ConsistencyAssembler {
                                                       content: content) else { return nil }
         let photosAllowed = provider.map { content.book.acknowledgements.realPersonPhotoNotice.contains($0) } ?? false
         let usable = prepared.candidates.filter { $0.ref != checked && (photosAllowed || !$0.depictsRealPerson) }
-        let assetTiers: Set<ReferenceSelector.Tier> = [.mentionedPrimary, .checklistPrimary, .sheetItem, .otherSlot]
+        let assetTiers: Set<ReferenceSelector.Tier> = [.mentionedAsset, .checklistAsset]
         let assetImages = usable.filter { assetTiers.contains($0.tier) }
         let style = usable.filter { $0.tier == .style }.prefix(maxStyleReferences)
         let planned = (assetImages + style).map {

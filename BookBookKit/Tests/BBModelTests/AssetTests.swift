@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import BBModel
 
-/// Phase 10: asset normalization and revision rules, mention tokens, usage index, asset-changed flag.
+/// Phase 10: asset revision rules and legacy decoding, mention tokens, usage index, asset-changed flag.
 struct AssetTests {
     static let now = Date(timeIntervalSince1970: 1)
     static let imageBoxA = Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 0.5), content: .image)
@@ -38,28 +38,12 @@ struct AssetTests {
         c.pages[page]?.images[box]?.placement = ImagePlacement(versionID: v.id, boxAspectWhenPlaced: aspect)
     }
 
-    // MARK: normalized / revised
-
-    @Test func normalizedKeepsExactlyOnePrimaryAndDropsSheetForNonCharacters() {
-        var a = Asset.makeNew(type: .place, name: "Pond")
-        a.references = [ReferenceSlot(label: "a", isPrimary: false), ReferenceSlot(label: "b", isPrimary: true),
-                        ReferenceSlot(label: "c", isPrimary: true)]
-        a.sheet = .makeDefault()
-        let n = a.normalized()
-        #expect(n.references.map(\.isPrimary) == [false, true, false])
-        #expect(n.sheet == nil)
-        a.references = a.references.map { var r = $0; r.isPrimary = false; return r }
-        #expect(a.normalized().references.map(\.isPrimary) == [true, false, false])
-        var ch = Asset.makeNew(type: .character, name: "Fox")
-        #expect(ch.normalized().sheet != nil)
-        ch.references = []
-        #expect(ch.normalized().references.count == 1)
-    }
+    // MARK: revised
 
     @Test func revisedRules() {
         let old = Asset.makeNew(type: .character, name: "Fox")
         var e = old
-        e.name = "Foxy"; e.tags = ["x"]; e.sheet?.items[0].locked = true
+        e.name = "Foxy"; e.tags = ["x"]
         #expect(e.revised(from: old).revision == 1)
 
         e = old
@@ -68,21 +52,8 @@ struct AssetTests {
         #expect(r1.revision == 2 && r1.revisionHighWater == 2)
 
         var chosen = old
-        chosen.references[0].chosen = VersionID()
+        chosen.chosen = VersionID()
         #expect(chosen.revised(from: old).revision == 2)
-
-        // Non-primary slot change: no bump.
-        var withOther = old
-        withOther.references.append(ReferenceSlot(label: "o", isPrimary: false))
-        var other = withOther
-        other.references[1].chosen = VersionID()
-        #expect(other.revised(from: withOther).revision == 1)
-
-        // Different primary: bump.
-        var swapped = withOther
-        swapped.references[0].isPrimary = false
-        swapped.references[1].isPrimary = true
-        #expect(swapped.revised(from: withOther).revision == 2)
 
         // After an undo (revision 1, high water 2) the next edit never reuses a number.
         var undone = old
@@ -175,10 +146,9 @@ struct AssetTests {
         #expect(idx.sites(for: fox.id, in: c)[2].reasons == [.mention])
 
         // Asset sessions never count.
-        let slot = fox.references[0]
-        c.sessions[slot.sessionID] = Session(id: slot.sessionID, owner: .assetReference(fox.id, slot.id),
-                                             messages: [Self.message(MentionText.token(for: fox.id))])
-        idx.refresh(c, pages: [], sessions: [slot.sessionID])
+        c.sessions[fox.sessionID] = Session(id: fox.sessionID, owner: fox.owner,
+                                            messages: [Self.message(MentionText.token(for: fox.id))])
+        idx.refresh(c, pages: [], sessions: [fox.sessionID])
         #expect(idx == UsageIndex(content: c))
 
         // Page deletion drops its sites.

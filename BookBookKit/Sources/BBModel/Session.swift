@@ -25,20 +25,66 @@ public struct Session: Hashable, Codable, Sendable, Identifiable {
     public func version(_ id: VersionID) -> Version? { versions.first { $0.id == id } }
 }
 
-public enum SessionOwner: Hashable, Codable, Sendable {
+public enum SessionOwner: Hashable, Sendable {
     case pageBox(PageID, BoxID)
-    /// Phase 10: an asset's reference slot (`ReferenceSlot.id`).
-    case assetReference(AssetID, UUID)
-    /// Phase 10: a character-sheet item (`SheetItem.id`).
-    case sheetItem(AssetID, UUID)
+    /// The asset's one image session (`Asset.sessionID`).
+    case asset(AssetID)
 
     /// The asset that owns this session, if any.
     public var assetID: AssetID? {
         switch self {
         case .pageBox: nil
-        case let .assetReference(asset, _), let .sheetItem(asset, _): asset
+        case let .asset(asset): asset
         }
     }
+}
+
+/// Coding keys shared by `SessionOwner` and `GenerationTarget`, matching the synthesized enum
+/// format (`{"pageBox":{"_0":…,"_1":…}}`). `assetReference` and `sheetItem` are legacy cases
+/// (before 2026-11-11) that are only decoded.
+private enum OwnerCaseKey: String, CodingKey { case pageBox, asset, assetReference, sheetItem }
+private enum OwnerValueKey: String, CodingKey { case _0, _1 }
+
+/// Thrown when decoding a legacy character-sheet owner or target: the sheet no longer exists,
+/// so loaders drop the session or queue entry.
+public struct LegacySheetItemError: Error, Hashable, Sendable {
+    public let asset: AssetID
+}
+
+private enum OwnerCoding {
+    static func decode(_ decoder: any Decoder) throws -> SessionOwner {
+        let c = try decoder.container(keyedBy: OwnerCaseKey.self)
+        guard let key = c.allKeys.first, c.allKeys.count == 1 else {
+            throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath, debugDescription: "Expected one owner case"))
+        }
+        let v = try c.nestedContainer(keyedBy: OwnerValueKey.self, forKey: key)
+        switch key {
+        case .pageBox: return .pageBox(try v.decode(PageID.self, forKey: ._0), try v.decode(BoxID.self, forKey: ._1))
+        case .asset, .assetReference: return .asset(try v.decode(AssetID.self, forKey: ._0))
+        case .sheetItem: throw LegacySheetItemError(asset: try v.decode(AssetID.self, forKey: ._0))
+        }
+    }
+
+    static func encode(_ owner: SessionOwner, _ encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: OwnerCaseKey.self)
+        switch owner {
+        case let .pageBox(p, b):
+            var v = c.nestedContainer(keyedBy: OwnerValueKey.self, forKey: .pageBox)
+            try v.encode(p, forKey: ._0)
+            try v.encode(b, forKey: ._1)
+        case let .asset(a):
+            var v = c.nestedContainer(keyedBy: OwnerValueKey.self, forKey: .asset)
+            try v.encode(a, forKey: ._0)
+        }
+    }
+}
+
+extension SessionOwner: Codable {
+    /// Legacy `assetReference(asset, slot)` decodes as `.asset(asset)` (a non-primary slot's
+    /// session then doesn't match `Asset.sessionID`, and the loader drops it); legacy
+    /// `sheetItem` throws `LegacySheetItemError`.
+    public init(from decoder: any Decoder) throws { self = try OwnerCoding.decode(decoder) }
+    public func encode(to encoder: any Encoder) throws { try OwnerCoding.encode(self, encoder) }
 }
 
 public enum MessageRole: String, Codable, Sendable {
@@ -228,18 +274,30 @@ public struct Provenance: Hashable, Codable, Sendable {
     }
 }
 
-/// What a queued generation writes into (A §7.9). Phase 2: page boxes only.
-public enum GenerationTarget: Hashable, Codable, Sendable {
+/// What a queued generation writes into (A §7.9).
+public enum GenerationTarget: Hashable, Sendable {
     case pageBox(PageID, BoxID)
-    /// Phase 10: an asset reference slot / a character-sheet item.
-    case assetReference(AssetID, UUID)
-    case sheetItem(AssetID, UUID)
+    /// The asset's one image session.
+    case asset(AssetID)
 
     public var owner: SessionOwner {
         switch self {
         case let .pageBox(p, b): .pageBox(p, b)
-        case let .assetReference(a, s): .assetReference(a, s)
-        case let .sheetItem(a, i): .sheetItem(a, i)
+        case let .asset(a): .asset(a)
         }
     }
+
+    public init(owner: SessionOwner) {
+        switch owner {
+        case let .pageBox(p, b): self = .pageBox(p, b)
+        case let .asset(a): self = .asset(a)
+        }
+    }
+}
+
+extension GenerationTarget: Codable {
+    /// Same format and legacy handling as `SessionOwner` (a legacy sheet-item target throws
+    /// `LegacySheetItemError`, so the queue loader drops that entry).
+    public init(from decoder: any Decoder) throws { self.init(owner: try OwnerCoding.decode(decoder)) }
+    public func encode(to encoder: any Encoder) throws { try OwnerCoding.encode(owner, encoder) }
 }

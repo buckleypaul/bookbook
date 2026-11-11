@@ -15,8 +15,8 @@ extension NewBookSpec {
     ///   Templates are stored in page-relative units, so a fresh book needs nothing else adapted.
     /// - Style preset: description, negative guidance and `presetID`, as `StyleTabModel.choosePreset`
     ///   does (via `StyleGuide.applying`, which also bumps the visual revision).
-    /// - Main character: a `.character` asset with name and description, and the sessions that
-    ///   `.addAsset` would create for its reference slot and sheet items.
+    /// - Main character: a `.character` asset with name and description, and the image session
+    ///   that `.addAsset` would create for it.
     ///
     /// An unknown `stylePresetID` is ignored. An all-default spec returns `content` unchanged
     /// apart from title and author.
@@ -50,10 +50,7 @@ extension NewBookSpec {
             if !name.isEmpty || !text.isEmpty {
                 var asset = Asset.makeNew(type: .character, name: name.isEmpty ? "Main character" : name)
                 asset.description = text
-                asset = asset.normalized()
-                for (sessionID, owner) in asset.ownedSessions {
-                    result.sessions[sessionID] = Session(id: sessionID, owner: owner)
-                }
+                result.sessions[asset.sessionID] = Session(id: asset.sessionID, owner: asset.owner)
                 result.assets[asset.id] = asset
             }
         }

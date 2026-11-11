@@ -81,7 +81,7 @@ struct NewBookWizardTests {
         #expect(content.style.presetID == presetID)
         let asset = try #require(content.assets.values.first)
         #expect(asset.type == .character && asset.name == "Pip" && asset.description == "A frog.")
-        #expect(asset.ownedSessions.allSatisfy { content.sessions[$0.0] != nil })
+        #expect(content.sessions[asset.sessionID]?.owner == asset.owner)
         let undo = UndoManager()
         document.undoManager = undo
         #expect(!undo.canUndo, "creation is not an undoable edit")

@@ -24,7 +24,7 @@ struct BatchProposal {
     }
 }
 
-/// Draft All Empty Boxes (PD §8.5) and Generate Whole Sheet (PD §8.3): plan, always confirm
+/// Draft All Empty Boxes (PD §8.5): plan, always confirm
 /// with count and cost, show the real-person notice if needed, then enqueue.
 struct BatchConfirmFlow<Trigger: Equatable>: ViewModifier {
     @Environment(AppModel.self) private var app
@@ -98,16 +98,6 @@ struct BatchConfirmFlow<Trigger: Equatable>: ViewModifier {
     }
 }
 
-/// Generating a sheet without a chosen primary image gives the model nothing to keep consistent.
-enum SheetBatchWarning {
-    static let text = " Warning: this character's Primary reference has no picture yet, so the sheet won't match a chosen look."
-
-    static func primaryHasNoImage(_ asset: Asset?) -> Bool {
-        guard let asset else { return false }
-        return asset.primary?.chosen == nil
-    }
-}
-
 extension View {
     /// Draft All Empty Boxes… (PD §8.5).
     func draftAllFlow(document: BookDocument, trigger: Binding<Bool>) -> some View {
@@ -121,25 +111,6 @@ extension View {
                 coverIncluded: plan.targets.contains { $0.page == document.content.book.coverPageID },
                 app: app, document: document, suffix: { " Draft quality, queued one after another." },
                 enqueue: { _ = app.enqueueDraftAll(plan, in: document) })
-        })
-    }
-
-    /// Generate Whole Sheet (PD §8.3): the estimate is always shown first, like Draft all.
-    func sheetBatchFlow(document: BookDocument, trigger: Binding<AssetID?>) -> some View {
-        modifier(BatchConfirmFlow(document: document, trigger: trigger, idle: nil,
-                                  title: "Generate Whole Sheet?", confirmLabel: "Generate",
-                                  nothingTitle: "Nothing to Generate",
-                                  nothingMessage: "Every item on this sheet is locked or already being generated.") {
-            app, requested in
-            guard let asset = requested else { return nil }
-            let plan = app.sheetBatchPlan(asset: asset, in: document)
-            return await BatchProposal.make(
-                items: plan.items, estimate: plan.estimate, app: app, document: document,
-                suffix: {
-                    " Locked items are skipped. Queued one after another."
-                        + (SheetBatchWarning.primaryHasNoImage(document.content.assets[asset]) ? SheetBatchWarning.text : "")
-                },
-                enqueue: { _ = app.enqueueSheetBatch(plan, in: document) })
         })
     }
 }

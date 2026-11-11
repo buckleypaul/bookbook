@@ -76,14 +76,13 @@ public enum BookCommand: Hashable, Sendable {
     /// `acknowledged`. Ignored with no placement, or when the clamped crop is unchanged.
     /// One canvas drag or pinch is one undo step (an undo group).
     case setCrop(page: PageID, box: BoxID, zoom: Double, center: NormalizedPoint)
-    /// Phase 10: add an asset (`Asset.makeNew`). Sessions for its slots and sheet items are
-    /// created irreversibly (orphans if undone). Ignored if the ID exists.
+    /// Phase 10: add an asset (`Asset.makeNew`). Its session is created irreversibly (an
+    /// orphan if undone). Ignored if the ID exists.
     case addAsset(Asset)
     /// Phase 10: replace an asset wholesale (every asset-field edit: name, description, tags,
-    /// slots, primary, chosen images, sheet items, locks). The stored value is
-    /// `asset.normalized().revised(from: old)`; new slots/items get empty sessions
-    /// irreversibly. Type and ID can't change (ignored). `actionName` is the undo title
-    /// ("Rename Asset", "Edit Description", "Choose Reference", "Lock Sheet Item", …).
+    /// the chosen image). The stored value is `asset.revised(from: old)`; a missing session
+    /// (legacy asset) is created irreversibly. Type, ID and session can't change (ignored).
+    /// `actionName` is the undo title ("Rename Asset", "Edit Description", "Choose Image", …).
     /// Renames rewrite nothing: prompts store tokens.
     case updateAsset(Asset, actionName: String)
     /// Phase 10: replace a page's asset checklist (order kept; unknown IDs dropped).

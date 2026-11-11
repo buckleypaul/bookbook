@@ -84,7 +84,7 @@ import Testing
         let granny = Cast.add(.character, "Granny Oak", description: "A kind old oak tree with a mossy shawl",
                               to: &book.content)
         let cottage = Cast.add(.place, "The Cottage", description: "A crooked stone cottage with a red door.",
-                               options: .init(extraSlots: ["Inside"]), to: &book.content)
+                               to: &book.content)
         book.content.pages[book.pageID]?.assetChecklist = [cottage.id, granny.id]
         book.content.style.styleReferences = [ImageRef(sha256: "style1", contentType: "public.png")]
         let (request, report) = try assemble(book.target, intent("\(mention(pip)) yawning by the fire inside the cottage"),
@@ -94,102 +94,65 @@ import Testing
             == ["role", "style", "avoid", "cast", "composition", "story", "request", "legend"])
         let text = request.instruction.rendered
         #expect(text.contains("Pip yawning by the fire inside the cottage"))
-        #expect(text.contains("Image 1 shows Pip (primary reference)."))
-        #expect(text.contains("Image 1: Pip (primary reference). Keep Pip consistent with this image."))
-        #expect(report.referencesSent.count == 9)
+        #expect(text.contains("Image 1 shows Pip."))
+        #expect(text.contains("Image 1: Pip. Keep Pip consistent with this image."))
+        // One image per asset, then the style reference.
+        #expect(sentLabels(report) == ["Pip", "The Cottage", "Granny Oak", "Style reference 1"])
     }
 
     // MARK: Asset sessions
 
-    @Test func sheetItemSendsThePrimaryAndAsksForTheItem() throws {
+    @Test func assetSessionSendsNoOwnImage() throws {
         var content = SliceBook.make().content
-        content.style.styleReferences = [ImageRef(sha256: "style1", contentType: "public.png")]
-        let pip = Cast.add(.character, "Pip", description: "A small red fox.", options: .init(chosenSheet: []), to: &content)
-        let item = try #require(Cast.sheetItem(pip, .expression("sleepy")))
-        let target = GenerationTarget.sheetItem(pip.id, item.id)
-        let (request, report) = try assemble(target, assetIntent(SheetRequests.messageText(for: item.kind)), content: content)
+        let pip = Cast.add(.character, "Pip", description: "A small red fox.", to: &content)
+        let (request, report) = try assemble(.asset(pip.id), assetIntent("Reference image of Pip"), content: content)
         assertPromptSnapshot(request.instruction.rendered)
-        #expect(sentLabels(report) == ["Pip – primary reference", "Style reference 1"])
+        #expect(report.referencesSent.isEmpty)
         #expect(request.baseImage == nil)
-        #expect(request.references.first?.payload.ref == Cast.ref("Pip", "primary"))
         #expect(request.output.boxAspect == 1 && request.output.exactSize == nil)
-        #expect(request.instruction.sections.map(\.key) == ["role", "style", "avoid", "cast", "subject", "request", "legend"])
+        #expect(request.instruction.sections.map(\.key) == ["role", "style", "avoid", "cast", "subject", "request"])
         let text = request.instruction.rendered
-        #expect(text.contains("sleepy expression"))
-        #expect(text.contains("Image 1 is the primary reference of Pip"))
+        #expect(text.contains("full figure"))
+        #expect(text.contains("- Pip (character): A small red fox."))
         #expect(!text.contains("Composition") && !text.contains("Story text") && !text.contains("fold"))
         #expect(!report.storyTextIncluded)
         #expect(report.assetRevisions == [pip.id: 1])
     }
 
-    @Test func sheetItemIgnoresOtherSheetItemsEvenWhenWordsMatch() throws {
+    @Test(arguments: [(AssetType.character, "full figure"), (.place, "the whole place"), (.object, "the whole object")])
+    func assetSessionSubjectFollowsType(type: AssetType, wording: String) throws {
+        var content = SliceBook.make().content
+        let asset = Cast.add(type, "Thing", to: &content)
+        let (request, _) = try assemble(.asset(asset.id), assetIntent("Make it"), content: content)
+        #expect(request.instruction.rendered.contains("Draw a reference image of Thing"))
+        #expect(request.instruction.rendered.contains(wording))
+    }
+
+    @Test func assetSessionRefinementPutsBaseFirst() throws {
         var content = SliceBook.make().content
         let pip = Cast.add(.character, "Pip", to: &content)
-        let item = try #require(Cast.sheetItem(pip, .view(.back)))
-        let (_, report) = try assemble(.sheetItem(pip.id, item.id), assetIntent("Back view, yawning"), content: content)
-        #expect(sentLabels(report) == ["Pip – primary reference"])
-        let view = try #require(Cast.sheetItem(pip, .view(.side)))
-        let (request, _) = try assemble(.sheetItem(pip.id, view.id), assetIntent("Side view"), content: content)
-        #expect(request.instruction.rendered.contains("side view (profile)"))
-    }
-
-    @Test func sheetItemRefinementPutsBaseFirst() throws {
-        var content = SliceBook.make().content
-        var pip = Cast.add(.character, "Pip", to: &content)
-        let item = try #require(Cast.sheetItem(pip, .expression("happy")))
-        let session = try #require(content.sessions[item.sessionID])
+        let session = try #require(content.sessions[pip.sessionID])
         let message = Message(role: .user, text: "make the smile bigger", queueItemID: QueueItemID(), createdAt: Date(timeIntervalSince1970: 1))
-        content.sessions[item.sessionID]?.messages.append(message)
+        content.sessions[pip.sessionID]?.messages.append(message)
         var value = assetIntent("make the smile bigger")
         value.refines = try #require(session.versions.first?.id)
-        // The message resolves the session even if the target's item ID is stale.
-        pip = try #require(content.assets[pip.id])
-        let (request, report) = try assemble(.sheetItem(pip.id, UUID()), value, content: content, messageID: message.id)
-        #expect(report.referencesSent.map(\.role) == ["base", "asset"])
-        #expect(request.baseImage?.ref == Cast.ref("Pip", "expr-happy"))
+        // The message resolves the session even if the target's asset ID is stale.
+        let (request, report) = try assemble(.asset(AssetID()), value, content: content, messageID: message.id)
+        #expect(report.referencesSent.map(\.role) == ["base"])
+        #expect(request.baseImage?.ref == Cast.ref("Pip"))
         #expect(request.output.exactSize != nil)
-    }
-
-    @Test func primaryReferenceSessionSendsNoOwnReference() throws {
-        var content = SliceBook.make().content
-        let pip = Cast.add(.character, "Pip", description: "A small red fox.", to: &content)
-        let primary = try #require(pip.primary)
-        let (request, report) = try assemble(.assetReference(pip.id, primary.id),
-                                             assetIntent(SheetRequests.referenceMessageText(for: pip)), content: content)
-        assertPromptSnapshot(request.instruction.rendered)
-        #expect(report.referencesSent.isEmpty)
-        #expect(request.output.boxAspect == 1)
-        let text = request.instruction.rendered
-        #expect(text.contains("full figure"))
-        #expect(text.contains("- Pip (character): A small red fox."))
-        #expect(!text.contains("Composition"))
-    }
-
-    @Test func otherSlotSessionSendsThePrimary() throws {
-        var content = SliceBook.make().content
-        let mill = Cast.add(.place, "Old Mill", options: .init(extraSlots: ["Night", "Day"]), to: &content)
-        let night = try #require(mill.references.first { $0.label == "Night" })
-        let (request, report) = try assemble(.assetReference(mill.id, night.id), assetIntent("At night, lanterns lit"),
-                                             content: content)
-        // Only the primary: the owner's other slots aren't sent.
-        #expect(sentLabels(report) == ["Old Mill – primary reference"])
-        #expect(request.instruction.rendered.contains("Draw another reference image of Old Mill: Night."))
-        #expect(request.instruction.rendered.contains("Image 1 is the primary reference of Old Mill"))
     }
 
     @Test func assetSessionMentionsAddAssets() throws {
         var content = SliceBook.make().content
         let pip = Cast.add(.character, "Pip", to: &content)
         let granny = Cast.add(.character, "Granny Oak", to: &content)
-        let slot = ReferenceSlot(label: "With Granny", isPrimary: false)
-        content.assets[pip.id]?.references.append(slot)
-        content.sessions[slot.sessionID] = Session(id: slot.sessionID, owner: .assetReference(pip.id, slot.id))
-        let target = GenerationTarget.assetReference(pip.id, slot.id)
+        let target = GenerationTarget.asset(pip.id)
         let value = assetIntent("\(mention(granny)) and \(mention(pip)) yawning")
         #expect(ContextAssembler.assetsInPlay(intent: value, target: target, content: content) == [pip.id, granny.id])
         let (_, report) = try assemble(target, value, content: content)
-        #expect(sentLabels(report) == ["Pip – primary reference", "Granny Oak – primary reference",
-                                       "Granny Oak – sleepy expression", "Granny Oak – three-quarter view"])
+        // Mentioning the owner in its own session still doesn't send its own image.
+        #expect(sentLabels(report) == ["Granny Oak"])
     }
 
     @Test func goneAssetTargetsThrow() throws {
@@ -199,65 +162,59 @@ import Testing
         func ok(_ target: GenerationTarget) -> Bool {
             (try? ContextAssembler.assemble(intent: assetIntent("x"), target: target, content: content, model: model)) != nil
         }
-        #expect(ok(.assetReference(pip.id, try #require(pip.primary).id)))
-        #expect(!ok(.assetReference(AssetID(), try #require(pip.primary).id)))
-        #expect(!ok(.assetReference(pip.id, UUID())))
-        #expect(!ok(.sheetItem(pip.id, UUID())))
-        #expect(ContextAssembler.plan(intent: assetIntent("x"), target: .sheetItem(AssetID(), UUID()), content: content) == nil)
+        #expect(ok(.asset(pip.id)))
+        #expect(!ok(.asset(AssetID())))
+        // The asset's session is gone.
+        content.sessions[pip.sessionID] = nil
+        #expect(!ok(.asset(pip.id)))
+        #expect(ContextAssembler.plan(intent: assetIntent("x"), target: .asset(AssetID()), content: content) == nil)
     }
 
-    @Test func sheetMessageText() {
-        #expect(SheetRequests.messageText(for: .view(.threeQuarter)) == "Three-quarter view")
-        #expect(SheetRequests.messageText(for: .expression("Sleepy")) == "Sleepy expression")
-        #expect(SheetRequests.messageText(for: .expression("very cross")) == "Very cross expression")
-    }
-
-    @Test func costEstimateWorksForSheetItems() throws {
+    @Test func costEstimateWorksForAssetSessions() throws {
         var content = SliceBook.make().content
         let pip = Cast.add(.character, "Pip", to: &content)
-        let item = try #require(Cast.sheetItem(pip, .view(.back)))
-        let input = try #require(CostEstimator.estimateInput(intent: assetIntent("Back view"), target: .sheetItem(pip.id, item.id),
+        let input = try #require(CostEstimator.estimateInput(intent: assetIntent("Reference image of Pip"), target: .asset(pip.id),
                                                              content: content, catalog: try ModelCatalog.bundled()))
-        #expect(input.inputImageSizes == [PixelSize(width: 1024, height: 1024)])
+        #expect(input.inputImageSizes.isEmpty)
         #expect(input.outputSize.width == input.outputSize.height)
     }
 
     // MARK: Queue
 
-    @Test func queueFillsAssetRevisionsAndRunsSheetItems() async throws {
+    @Test func queueFillsAssetRevisionsAndRunsAssetSessions() async throws {
         var book = SliceBook.make()
         let pip = Cast.add(.character, "Pip", revision: 7, to: &book.content)
-        let item = try #require(Cast.sheetItem(pip, .expression("sleepy")))
         let provider = FakeProvider(outcomes: [.success(okResult()), .success(okResult())], gated: false)
         let host = FakeHost(content: book.content, images: Cast.imageData(book.content))
         let queue = GenerationQueue(providers: [.openai: provider], catalog: try ModelCatalog.bundled(), host: host,
                                     pricing: FakePricing(), now: { Date(timeIntervalSince1970: 100) })
         let pageItem = QueueItem(bookID: book.content.book.id, target: book.target, messageID: MessageID(),
                                  intent: assetIntent("\(mention(pip)) yawning"))
-        let sheetItem = QueueItem(bookID: book.content.book.id, target: .sheetItem(pip.id, item.id), messageID: MessageID(),
-                                  intent: assetIntent("Sleepy expression"))
-        await queue.enqueue([pageItem, sheetItem])
+        let assetItem = QueueItem(bookID: book.content.book.id, target: .asset(pip.id), messageID: MessageID(),
+                                  intent: assetIntent("Reference image of Pip"))
+        await queue.enqueue([pageItem, assetItem])
         await eventually("deliveries") { await host.delivered().count == 2 }
         let deliveries = await host.delivered()
+        #expect(deliveries.map(\.item.target) == [book.target, .asset(pip.id)])
         for delivery in deliveries {
             guard case let .success(_, provenance) = delivery.outcome else {
                 Issue.record("expected success")
                 continue
             }
             #expect(provenance.assetRevisions == [pip.id: 7])
-            #expect(provenance.referencesSent.first?.label == "Pip – primary reference")
+            // The page sends Pip's image; Pip's own session doesn't.
+            #expect(provenance.referencesSent.map(\.label) == (delivery.item.target == book.target ? ["Pip"] : []))
         }
-        #expect(deliveries.map(\.item.target) == [book.target, .sheetItem(pip.id, item.id)])
-        // The persisted form round-trips the new target case.
-        let data = try JSONEncoder().encode(sheetItem)
-        #expect(try JSONDecoder().decode(QueueItem.self, from: data) == sheetItem)
+        // The persisted form round-trips the asset target case.
+        let data = try JSONEncoder().encode(assetItem)
+        #expect(try JSONDecoder().decode(QueueItem.self, from: data) == assetItem)
     }
 
     // MARK: Real-person photos (A §11)
 
     @Test func realPersonPhotoIsDetectedAfterSelection() throws {
         var walk = RefinementBook.make()
-        let pip = Cast.add(.character, "Pip", options: .init(primaryIsRealPerson: true), to: &walk.book.content)
+        let pip = Cast.add(.character, "Pip", options: .init(isRealPerson: true), to: &walk.book.content)
         let content = walk.book.content
         var model = try testModel()
         func sends(_ intent: GenerationIntent, _ target: GenerationTarget? = nil) -> Bool {
@@ -265,9 +222,8 @@ import Testing
         }
         #expect(sends(assetIntent("\(mention(pip)) waves")))
         #expect(!sends(assetIntent("a fox waves")))
-        // A sheet item of Pip sends Pip's primary.
-        let item = try #require(Cast.sheetItem(pip, .view(.side)))
-        #expect(sends(assetIntent("Side view"), .sheetItem(pip.id, item.id)))
+        // Pip's own session doesn't send Pip's image.
+        #expect(!sends(assetIntent("Reference image of Pip"), .asset(pip.id)))
         // The base fills the only image slot, so Pip's photo is cut and not sent.
         model.image.maxReferenceImages = 1
         #expect(!sends(walk.refine(0, "\(mention(pip)) waves")))

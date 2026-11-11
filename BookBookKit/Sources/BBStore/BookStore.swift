@@ -54,8 +54,9 @@ public actor BookStore {
     }
 
     /// Rolls a committed journal forward (or discards an uncommitted one), migrates an older
-    /// schema, repairs the cost ledger, reads the book, then sweeps orphan images. Read-only:
-    /// only reads (a committed journal is left for the writer to replay).
+    /// schema, repairs the cost ledger, reads the book, deletes the session files of retired
+    /// asset sessions (see `readContent`), then sweeps orphan images. Read-only: only reads (a
+    /// committed journal is left for the writer to replay; retired sessions are dropped in memory).
     public func load() throws(StoreError) -> BookContent {
         let fm = FileManager.default
         if !readOnly {
@@ -68,13 +69,24 @@ public actor BookStore {
             try Migrator.standard.migrateIfNeeded(packageURL: packageURL)
             try CostLedger(packageURL: packageURL).repair()
         }
-        let content = try readContent()
-        // Housekeeping only: a failed sweep (e.g. a symlinked `images/`) never blocks the open.
-        if !readOnly { _ = try? sweepOrphanImages(referencedBy: content) }
+        let (content, retired) = try readContent()
+        // Housekeeping only: a failed delete or sweep (e.g. a symlinked `images/`) never blocks
+        // the open. The sweep then frees the images only the retired sessions used.
+        if !readOnly {
+            if !retired.isEmpty {
+                let deletions = retired.map { PackageCoding.sessionPath($0) }
+                _ = try? PackageCoding.io("drop retired sessions") {
+                    try Journal(packageURL: packageURL).run(files: [:], deletions: deletions)
+                }
+            }
+            _ = try? sweepOrphanImages(referencedBy: content)
+        }
         return content
     }
 
-    private func readContent() throws(StoreError) -> BookContent {
+    /// The book's content, plus the sessions dropped because the 2026-11-11 one-image-per-asset
+    /// change retired them (`RetiredAssetSessions`). Any other undecodable file fails the open.
+    private func readContent() throws(StoreError) -> (BookContent, Set<SessionID>) {
         // Also guards a migrator that leaves a newer book untouched, and read-only opens (no migration).
         struct SchemaProbe: Decodable { var schemaVersion: Int }
         let bookData = try readFile(PackageCoding.bookPath)
@@ -88,11 +100,20 @@ public actor BookStore {
         var pages: [PageID: Page] = [:]
         for p in try readAll("pages", Page.self) { pages[p.id] = p }
         var sessions: [SessionID: Session] = [:]
-        for s in try readAll("sessions", Session.self) { sessions[s.id] = s.droppingInvalidImageRefs() }
+        var retired: Set<SessionID> = []
+        for file in try readAll("sessions", Session.self, skippingLegacySheetItems: true) {
+            switch file {
+            case let .decoded(s): sessions[s.id] = s.droppingInvalidImageRefs()
+            case let .legacySheetItem(id): retired.insert(id)
+            }
+        }
         // Older packages have no `assets/` folder (readAll tolerates that); no schema bump.
         var assets: [AssetID: Asset] = [:]
         for a in try readAll("assets", Asset.self) { assets[a.id] = a }
-        return BookContent(book: book, style: style, templates: templates, pages: pages, sessions: sessions, assets: assets)
+        retired.formUnion(RetiredAssetSessions.drop(from: &sessions, assets: assets))
+        let content = BookContent(book: book, style: style, templates: templates, pages: pages,
+                                  sessions: sessions, assets: assets)
+        return (content, retired)
     }
 
     /// Saves the dirty entities of `content` as one journaled transaction (A §5.2).
@@ -229,15 +250,40 @@ public actor BookStore {
     }
 
     private func readAll<T: Decodable>(_ folder: String, _ type: T.Type) throws(StoreError) -> [T] {
+        try readAll(folder, type, skippingLegacySheetItems: false).compactMap {
+            if case let .decoded(value) = $0 { value } else { nil }
+        }
+    }
+
+    private enum ReadFile<T> {
+        case decoded(T)
+        /// A session file whose owner is a legacy character-sheet item (`LegacySheetItemError`).
+        case legacySheetItem(SessionID)
+    }
+
+    /// Every `<folder>/*.json`, decoded. With `skippingLegacySheetItems`, a file that throws
+    /// `LegacySheetItemError` is reported by the ID in its name instead of failing the read.
+    private func readAll<T: Decodable>(_ folder: String, _ type: T.Type,
+                                       skippingLegacySheetItems: Bool) throws(StoreError) -> [ReadFile<T>] {
         let dir = packageURL.appending(path: folder, directoryHint: .isDirectory)
         guard FileManager.default.fileExists(atPath: dir.path(percentEncoded: false)) else { return [] }
         let urls = try PackageCoding.io("list \(folder)") {
             try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
         }
-        var out: [T] = []
+        var out: [ReadFile<T>] = []
         for url in urls where url.pathExtension == "json" && !url.lastPathComponent.hasPrefix(".") {
             let data = try PackageCoding.io("read \(url.lastPathComponent)") { try Data(contentsOf: url) }
-            out.append(try PackageCoding.decode(T.self, from: data, what: "\(folder)/\(url.lastPathComponent)"))
+            let what = "\(folder)/\(url.lastPathComponent)"
+            guard skippingLegacySheetItems else {
+                out.append(.decoded(try PackageCoding.decode(T.self, from: data, what: what)))
+                continue
+            }
+            if let value = try PackageCoding.decodeUnlessLegacySheetItem(T.self, from: data, what: what) {
+                out.append(.decoded(value))
+            } else if let uuid = UUID(uuidString: url.deletingPathExtension().lastPathComponent) {
+                out.append(.legacySheetItem(SessionID(rawValue: uuid)))
+            }
+            // A legacy sheet file with a non-UUID name: ignored (and left in place).
         }
         return out
     }
@@ -352,5 +398,25 @@ public actor BookStore {
         return try PackageCoding.io("sweep images") {
             try ImageSweep.sweep(packageURL: packageURL, referenced: referenced, minimumAge: minimumAge, now: now)
         }
+    }
+}
+
+/// Load-time migration for the 2026-11-11 one-image-per-asset change. A legacy asset decodes
+/// keeping only its primary slot (`Asset.init(from:)`); this drops the sessions of its other
+/// slots, whose legacy `assetReference` owner decodes as `.asset` but whose ID isn't the asset's
+/// `sessionID`. (Character-sheet sessions never decode: `readAll` skips them.) Sessions of
+/// deleted assets stay, as `deleteAsset` leaves them. `load()` deletes the dropped files and the
+/// orphan sweep frees their images.
+enum RetiredAssetSessions {
+    /// Removes the retired sessions from `sessions` and returns their IDs.
+    static func drop(from sessions: inout [SessionID: Session], assets: [AssetID: Asset]) -> Set<SessionID> {
+        var dropped: Set<SessionID> = []
+        for (id, session) in sessions {
+            guard case let .asset(assetID) = session.owner, let asset = assets[assetID],
+                  asset.sessionID != id else { continue }
+            dropped.insert(id)
+        }
+        for id in dropped { sessions[id] = nil }
+        return dropped
     }
 }

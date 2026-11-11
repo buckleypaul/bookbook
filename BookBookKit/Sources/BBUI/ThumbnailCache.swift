@@ -21,7 +21,8 @@ public actor ThumbnailCache {
     }
 
     /// A PNG of `source` with its longest side at most `maxPixelSize`, cached under `<root>/<bookID>/`.
-    /// Returns nil if `source` can't be read as an image.
+    /// Writing a new rendition deletes the older ones of the same source and size. Returns nil if
+    /// `source` can't be read as an image.
     public func rendition(of source: URL, bookID: BookID, maxPixelSize: Int) -> URL? {
         // URL caches resource values per instance; a reused URL would hide a changed mtime.
         var source = source
@@ -30,20 +31,18 @@ public actor ThumbnailCache {
               let values = try? source.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
               let size = values.fileSize, let modified = values.contentModificationDate
         else { return nil }
-        // A changed source (size or mtime) hashes to a new name, so stale renditions are never served.
-        let key = "\(source.lastPathComponent)|\(size)|\(modified.timeIntervalSince1970)|\(maxPixelSize)"
-        let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined().prefix(32)
-        let directory = root.appending(path: bookID.rawValue.uuidString,directoryHint: .isDirectory)
-        let output = directory.appending(path: "\(digest).png", directoryHint: .notDirectory)
+        // Named `<group>-<version>.png`. The group hashes the source's name and the size; the
+        // version also hashes the source's byte size and mtime, so a changed source gets a new
+        // name (stale renditions are never served) and its older versions share the group prefix.
+        let group = Self.digest("\(source.lastPathComponent)|\(maxPixelSize)", length: 16)
+        let version = Self.digest(
+            "\(source.lastPathComponent)|\(size)|\(modified.timeIntervalSince1970)|\(maxPixelSize)", length: 32)
+        let name = "\(group)-\(version).png"
+        let directory = root.appending(path: bookID.rawValue.uuidString, directoryHint: .isDirectory)
+        let output = directory.appending(path: name, directoryHint: .notDirectory)
         if FileManager.default.fileExists(atPath: output.path) { return output }
 
-        guard let imageSource = CGImageSourceCreateWithURL(source as CFURL, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-        ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary),
+        guard let image = ImageCache.load(source, maxPixelSize: maxPixelSize),
               let data = ThumbnailRendering.pngData(image) else { return nil }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -51,12 +50,26 @@ public actor ThumbnailCache {
         } catch {
             return nil
         }
+        removeRenditions(in: directory, group: group, keeping: name)
         return output
     }
 
     /// Deletes `<root>/<bookID>/`.
     public func removeAll(for bookID: BookID) {
         try? FileManager.default.removeItem(at: root.appending(path: bookID.rawValue.uuidString, directoryHint: .isDirectory))
+    }
+
+    /// Deletes the renditions in `directory` named `<group>-…`, except `kept`.
+    private func removeRenditions(in directory: URL, group: String, keeping kept: String) {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        for name in names where name != kept && name.hasPrefix("\(group)-") {
+            try? FileManager.default.removeItem(at: directory.appending(path: name, directoryHint: .notDirectory))
+        }
+    }
+
+    /// The first `length` hex digits of the SHA-256 of `key`.
+    private static func digest(_ key: String, length: Int) -> String {
+        String(SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined().prefix(length))
     }
 }
 
@@ -73,9 +86,12 @@ public enum BookThumbnail {
         let width = max(1, Int((trim.width * scale).rounded()))
         let height = max(1, Int((trim.height * scale).rounded()))
         let image = withoutActuallyEscaping(imageURL) { escapable in
+            // Placed images are decoded downsampled, to twice the thumbnail's longest side, so an
+            // aspect-filled or zoomed-in image still has about a pixel per output pixel. The cache
+            // lives for this one render.
             ThumbnailRendering.render(page: page, in: content, trim: CGSize(width: trim.width, height: trim.height),
                                       pixelWidth: width, pixelHeight: height,
-                                      images: URLImageSource(imageURL: escapable),
+                                      images: ImageCache(maxPixelSize: maxPixelSize * 2, urlForRef: escapable),
                                       options: RenderOptions(target: .thumbnail))
         }
         return image.flatMap(ThumbnailRendering.pngData)
@@ -86,9 +102,11 @@ public enum BookThumbnail {
 enum ThumbnailRendering {
     /// Draws `page` of `content` (whose page setup is the draw trim, `trim` points) into a new
     /// `pixelWidth`×`pixelHeight` sRGB bitmap. `fillWhite` paints the bitmap white first.
+    /// `layouts` reuses text layouts across renders.
     @MainActor
     static func render(page: Page, in content: BookContent, trim: CGSize, pixelWidth: Int, pixelHeight: Int,
-                       images: any PageImageSource, options: RenderOptions, fillWhite: Bool = false) -> CGImage? {
+                       images: any PageImageSource, layouts: TextBoxLayoutCache? = nil, options: RenderOptions,
+                       fillWhite: Bool = false) -> CGImage? {
         guard let ctx = CGContext(data: nil, width: pixelWidth, height: pixelHeight, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
@@ -100,7 +118,9 @@ enum ThumbnailRendering {
         // PageRenderer wants trim points, origin top-left, y down.
         ctx.translateBy(x: 0, y: Double(pixelHeight))
         ctx.scaleBy(x: Double(pixelWidth) / trim.width, y: -Double(pixelHeight) / trim.height)
-        PageRenderer(images: images).draw(page: page, in: content, into: ctx, options: options)
+        var renderer = PageRenderer(images: images)
+        renderer.layouts = layouts
+        renderer.draw(page: page, in: content, into: ctx, options: options)
         return ctx.makeImage()
     }
 
@@ -111,17 +131,5 @@ enum ThumbnailRendering {
         else { return nil }
         CGImageDestinationAddImage(destination, image, nil)
         return CGImageDestinationFinalize(destination) ? data as Data : nil
-    }
-}
-
-/// Decodes `ImageRef`s from file URLs for a single render.
-@MainActor
-private final class URLImageSource: PageImageSource {
-    let imageURL: (ImageRef) -> URL
-    init(imageURL: @escaping (ImageRef) -> URL) { self.imageURL = imageURL }
-
-    func image(for ref: ImageRef) -> CGImage? {
-        guard let source = CGImageSourceCreateWithURL(imageURL(ref) as CFURL, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 }

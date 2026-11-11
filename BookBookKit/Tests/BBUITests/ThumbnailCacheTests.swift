@@ -63,6 +63,24 @@ struct ThumbnailCacheTests {
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 100)], ofItemAtPath: src.path)
         let second = try #require(await cache.rendition(of: src, bookID: id, maxPixelSize: 32))
         #expect(first != second)
+        // The stale rendition is deleted when the new one is written.
+        #expect(!FileManager.default.fileExists(atPath: first.path))
+        #expect(FileManager.default.fileExists(atPath: second.path))
+    }
+
+    @Test func newRenditionKeepsOtherSizesAndSources() async throws {
+        let a = dir.appending(path: "a.png")
+        let b = dir.appending(path: "b.png")
+        try Self.writePNG(width: 64, height: 64, to: a)
+        try Self.writePNG(width: 64, height: 64, to: b)
+        let cache = ThumbnailCache(root: dir.appending(path: "cache"))
+        let id = BookID()
+        let small = try #require(await cache.rendition(of: a, bookID: id, maxPixelSize: 16))
+        let other = try #require(await cache.rendition(of: b, bookID: id, maxPixelSize: 32))
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 100)], ofItemAtPath: a.path)
+        let renewed = try #require(await cache.rendition(of: a, bookID: id, maxPixelSize: 32))
+        #expect(renewed != small)
+        for url in [small, other, renewed] { #expect(FileManager.default.fileExists(atPath: url.path)) }
     }
 
     @Test func unreadableSourceIsNil() async throws {

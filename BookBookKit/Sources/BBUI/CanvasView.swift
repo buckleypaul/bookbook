@@ -18,11 +18,9 @@ struct CanvasScene {
 
     /// Draw the centre fold (screen only): on a spread.
     var showsFold: Bool { geometry.isSpread }
-    /// Both editors show the bleed area around the trim whenever bleed is on (the sheet grows
-    /// by the bleed), so full-bleed boxes visibly extend past the trim line.
-    var showsBleed: Bool { geometry.bleed > 0 }
 
-    /// The area fitted to the view: the trim, grown by the bleed when it's on.
+    /// The area fitted to the view: the trim, grown by the bleed when it's on. Both editors show
+    /// the bleed area, so full-bleed boxes visibly extend past the trim line.
     var sheetRect: CGRect { geometry.bleedRect }
 }
 

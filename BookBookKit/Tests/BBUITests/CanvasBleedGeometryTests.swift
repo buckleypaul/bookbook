@@ -83,7 +83,8 @@ struct CanvasBleedGeometryTests {
         view.update(content: content, pageID: page, selectedImageBox: nil, imageSource: Self.imageSource())
 
         let scene = try #require(view.controller?.scene)
-        #expect(scene.showsBleed)
+        // The sheet the canvas fills, clips to and fits is the trim grown by the bleed.
+        #expect(scene.sheetRect == scene.geometry.bleedRect)
         #expect(scene.sheetRect == CGRect(x: -9, y: -9, width: 618, height: 818))
         // 618×818 fits 618×818 (margin 24) at scale 1; the trim's top-left is 9 pt in.
         let transform = try #require(view.transform)
@@ -100,7 +101,7 @@ struct CanvasBleedGeometryTests {
         content.style.pageSetup = Self.setup(bleed: false)
         view.update(content: content, pageID: page, selectedImageBox: nil, imageSource: Self.imageSource())
         let plain = try #require(view.controller?.scene)
-        #expect(!plain.showsBleed)
+        #expect(plain.sheetRect == plain.geometry.trimRect)
         #expect(plain.sheetRect == CGRect(x: 0, y: 0, width: 600, height: 800))
         #expect(view.boxRects.first?.rect == CGRect(x: 0, y: 0, width: 600, height: 400))
     }

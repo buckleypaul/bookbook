@@ -457,7 +457,7 @@ The image file is always written before the session JSON (§5.2).
 | `Sendable` value types and stateless clients | Model snapshots, `ImageRequest`, provider clients, `PageRenderer` inputs |
 | Detached tasks with progress | Export, preflight, story-text spelling scans, upscaling |
 
-**As built (Phase 2):** `TextBoxLayout`, `RichTextBridge`, `PageRenderer` and `PDFExporter` are `@MainActor` (TextKit 2 objects and `NSAttributedString` aren't `Sendable`); a slice-sized export on the main actor is acceptable. Phase 14 moves export and preflight off the main actor. `BookDocument` chains its autosave hand-offs to `BookStore` in one task chain so snapshots arrive in order, and `BookStore.scheduleSave` also keeps the highest generation number.
+**As built (Phase 2):** `TextBoxLayout`, `RichTextBridge`, `PageRenderer` and the first `PDFExporter` are `@MainActor` (TextKit 2 objects and `NSAttributedString` aren't `Sendable`); a slice-sized export on the main actor is acceptable. Phase 14 moves export and preflight off the main actor, and `BookExporter` now does all export (`PDFExporter` was removed in the 2026-11-11 simplify pass). `BookDocument` chains its autosave hand-offs to `BookStore` in one task chain so snapshots arrive in order, and `BookStore.scheduleSave` also keeps the highest generation number.
 
 ---
 

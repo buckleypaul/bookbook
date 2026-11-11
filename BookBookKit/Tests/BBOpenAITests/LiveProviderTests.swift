@@ -52,7 +52,7 @@ import Testing
             estimateUSD: 0.01)
 
         let usage = try #require(result.usage)
-        #expect(OpenAIImageProvider.pixelSize(of: result.imageData) == PixelSize(width: 1024, height: 1024))
+        #expect(ImageHeader.pixelSize(of: result.imageData) == PixelSize(width: 1024, height: 1024))
         #expect(result.pixelSize == PixelSize(width: 1024, height: 1024))
         #expect(usage.outputImageTokens > 0)
         #expect(result.parametersSent["quality"] == "low")

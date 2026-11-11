@@ -2,7 +2,6 @@ import BBAICore
 import BBModel
 import BBNet
 import Foundation
-import ImageIO
 import UniformTypeIdentifiers
 
 /// OpenAI GPT Image adapter: `/images/generations`, or `/images/edits` (multipart) when a base
@@ -169,22 +168,13 @@ public struct OpenAIImageProvider: ImageProvider {
               let b64 = first["b64_json"] as? String, !b64.isEmpty else {
             throw .noImage(raw)
         }
-        guard let png = Data(base64Encoded: b64), let size = pixelSize(of: png) else {
+        guard let png = Data(base64Encoded: b64), let size = ImageHeader.pixelSize(of: png) else {
             throw .unknown(ProviderErrorRaw(status: response.status, code: nil, body: "image could not be decoded"))
         }
         let revised = (first["revised_prompt"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         return ImageResult(imageData: png, contentType: "public.png", pixelSize: size,
                            usage: OpenAIUsage.parse(root["usage"]), revisedPrompt: revised,
                            parametersSent: parametersSent)
-    }
-
-    static func pixelSize(of data: Data) -> PixelSize? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
-              let height = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
-              width > 0, height > 0 else { return nil }
-        return PixelSize(width: width, height: height)
     }
 }
 

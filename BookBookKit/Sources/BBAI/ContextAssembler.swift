@@ -1,7 +1,6 @@
 import BBAICore
 import BBModel
 import Foundation
-import ImageIO
 import Synchronization
 
 /// An image the assembler needs bytes for, in send order (A §7.3, §7.9).
@@ -521,17 +520,6 @@ extension Page {
 
 extension String {
     fileprivate var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
-}
-
-/// Reads pixel dimensions from an image header (ImageIO), without decoding.
-enum ImageHeader {
-    static func pixelSize(of data: Data) -> PixelSize? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int,
-              w > 0, h > 0 else { return nil }
-        return PixelSize(width: w, height: h)
-    }
 }
 
 /// Versioned prompt text files in `Resources/Prompts/<version>/<key>.txt` with `{{name}}` substitution.

@@ -4,7 +4,8 @@ import CoreGraphics
 import Foundation
 
 public enum ImagePreparationPlanner {
-    /// One request per placed image box on `page` (A §9.2 steps 1–2). Boxes with no placed
+    /// One request per placed image box on `page` (A §9.2 steps 1–2), then one per AI-styled
+    /// text box's decoration. Boxes with no placed
     /// version, or whose image size is unknown, are skipped. Box rotation is ignored: the crop
     /// is the unrotated render rect's footprint on the image, as `PageRenderer` fills it.
     public static func requests(page: Page, in content: BookContent,
@@ -37,6 +38,19 @@ public enum ImagePreparationPlanner {
             result.append(ImagePreparationRequest(
                 key: BoxImageKey(page: page.id, box: box.id), image: version.image,
                 sourceURL: imageURL(version.image), cropPixels: crop, requiredPixels: required))
+        }
+        // AI text-box decorations (A §7.13): the whole image, stretched to the render rect.
+        for box in template.boxes {
+            guard case .text = box.content,
+                  let decoration = content.appliedTextStyle(page: page.id, box: box.id)?.decoration,
+                  let imageSize = pixelSize(decoration), imageSize.width > 0, imageSize.height > 0 else { continue }
+            let boxRect = geometry.renderRect(for: box)
+            guard boxRect.width > 0, boxRect.height > 0 else { continue }
+            let required = CGSize(width: (boxRect.width / 72 * PrintResolution.dpi).rounded(.up),
+                                  height: (boxRect.height / 72 * PrintResolution.dpi).rounded(.up))
+            result.append(ImagePreparationRequest(
+                key: BoxImageKey(page: page.id, box: box.id), image: decoration, sourceURL: imageURL(decoration),
+                cropPixels: CGRect(origin: .zero, size: imageSize), requiredPixels: required))
         }
         return result
     }

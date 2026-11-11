@@ -60,16 +60,17 @@ public struct PageRenderer {
             drawImageBox(box, page: page, content: content, geometry: geometry, ctx: ctx, options: options)
         }
 
-        // 3. Text boxes: panel, then text.
-        let typography = content.style.typography
+        // 3. Text boxes: AI decoration, panel, then text. A box hidden for inline editing still
+        //    draws its decoration and panel (the editor draws only the text).
         for box in template.boxes {
-            guard case .text(let style) = box.content, !options.hiddenTextBoxes.contains(box.id), isVisible(box)
-            else { continue }
+            guard case .text(let style) = box.content, isVisible(box) else { continue }
+            let appearance = appearance(of: box, style: style, page: page, content: content, geometry: geometry)
             var text = content.displayedText(page: page, box: box)
             if options.previewSampleContent, text?.paragraphs.isEmpty ?? true {
                 text = Self.sampleText
             }
-            drawTextBox(box, style: style, text: text, typography: typography, geometry: geometry, ctx: ctx)
+            drawTextBox(box, appearance: appearance, text: options.hiddenTextBoxes.contains(box.id) ? nil : text,
+                        geometry: geometry, ctx: ctx, page: page.id)
         }
 
         // 4. Page numbers.
@@ -94,9 +95,10 @@ public struct PageRenderer {
                   let text = content.displayedText(page: page, box: box),
                   !text.paragraphs.isEmpty
             else { continue }
-            let rect = Self.textRect(box, style: style, geometry: geometry)
+            let appearance = appearance(of: box, style: style, page: page, content: content, geometry: geometry)
+            let rect = Self.textRect(box, appearance: appearance, geometry: geometry)
             let size = CGSize(width: max(0, rect.width), height: max(0, rect.height))
-            let layout = textLayout(text, box: box, style: style, typography: content.style.typography, size: size)
+            let layout = textLayout(text, typography: appearance.typography, size: size)
             if layout.isOverflowing { result.insert(box.id) }
         }
         return result
@@ -152,39 +154,61 @@ public struct PageRenderer {
         }
     }
 
+    /// The box's look on this page (template style plus the page's AI text style, A §7.13).
+    private func appearance(of box: Box, style: TextBoxStyle, page: Page, content: BookContent,
+                            geometry: PageGeometry) -> TextBoxAppearance {
+        TextBoxAppearance.resolve(box: box, style: style, pageID: page.id, content: content,
+                                  renderSize: geometry.renderRect(for: box).size)
+    }
+
     /// The rect a text box's text is laid out in: its render rect inset by the padding.
-    private static func textRect(_ box: Box, style: TextBoxStyle, geometry: PageGeometry) -> CGRect {
-        geometry.renderRect(for: box).insetBy(dx: CGFloat(style.padding), dy: CGFloat(style.padding))
+    private static func textRect(_ box: Box, appearance: TextBoxAppearance, geometry: PageGeometry) -> CGRect {
+        geometry.renderRect(for: box).insetBy(dx: CGFloat(appearance.padding), dy: CGFloat(appearance.padding))
     }
 
-    /// The text box's layout at `size`, with the book typography resolved for the box's role and
-    /// style, from `layouts` when set. Shared by drawing and overflow checks so they agree.
-    private func textLayout(_ text: RichText, box: Box, style: TextBoxStyle, typography: Typography,
-                            size: CGSize) -> TextBoxLayout {
-        let resolved = typography.resolved(for: box.role).applying(style)
-        return layouts?.layout(text: text, typography: resolved, containerSize: size)
-            ?? TextBoxLayout(text: text, typography: resolved, containerSize: size)
+    /// The text box's layout at `size` with fully resolved typography, from `layouts` when set.
+    /// Shared by drawing and overflow checks so they agree.
+    private func textLayout(_ text: RichText, typography: Typography, size: CGSize) -> TextBoxLayout {
+        layouts?.layout(text: text, typography: typography, containerSize: size)
+            ?? TextBoxLayout(text: text, typography: typography, containerSize: size)
     }
 
-    /// `typography` is the book's, unresolved.
-    private func drawTextBox(_ box: Box, style: TextBoxStyle, text: RichText?, typography: Typography,
-                             geometry: PageGeometry, ctx: CGContext) {
+    private func drawTextBox(_ box: Box, appearance: TextBoxAppearance, text: RichText?, geometry: PageGeometry,
+                             ctx: CGContext, page: PageID) {
         let rect = geometry.renderRect(for: box)
         guard rect.width > 0, rect.height > 0 else { return }
         ctx.saveGState()
         defer { ctx.restoreGState() }
         ctx.rotate(byDegrees: box.rotationDegrees, about: rect)
 
-        if let background = style.background {
+        // The decoration is stretched to the render rect (it was generated at the closest
+        // aspect the model allows, so a frame keeps all four edges) and is not clipped to the
+        // box's corner radius: ornaments may be any shape.
+        let decoration: CGImage? = if let prepared, let image = prepared.preparedImage(for: BoxImageKey(page: page, box: box.id)) {
+            image
+        } else if let ref = appearance.decoration {
+            images.image(for: ref)
+        } else {
+            nil
+        }
+        if let decoration {
+            ctx.saveGState()
+            ctx.translateBy(x: rect.minX, y: rect.maxY)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.interpolationQuality = .high
+            ctx.draw(decoration, in: CGRect(origin: .zero, size: rect.size))
+            ctx.restoreGState()
+        }
+        if let background = appearance.background {
             ctx.addPath(boxPath(rect, cornerRadius: box.cornerRadius))
             ctx.setFillColor(CGColor(srgbRed: background.red, green: background.green,
                                      blue: background.blue, alpha: background.alpha))
             ctx.fillPath()
         }
         guard let text, !text.paragraphs.isEmpty else { return }
-        let inner = Self.textRect(box, style: style, geometry: geometry)
+        let inner = Self.textRect(box, appearance: appearance, geometry: geometry)
         guard inner.width > 0, inner.height > 0 else { return }
-        textLayout(text, box: box, style: style, typography: typography, size: inner.size)
+        textLayout(text, typography: appearance.typography, size: inner.size)
             .draw(in: ctx, origin: inner.origin)
     }
 

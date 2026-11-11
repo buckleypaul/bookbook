@@ -19,8 +19,8 @@ public struct GenerationDefaults: Hashable, Sendable {
         self.includeStoryText = includeStoryText
     }
 
-    /// Used when the catalog can't name a default (it should: `gpt-image-2.5-sunburst`).
-    public static let fallbackModel = "gpt-image-2.5-sunburst"
+    /// Used when the catalog can't name a default (it should: the same model).
+    public static let fallbackModel = ModelCatalog.defaultOpenAIImageModelID
 }
 
 /// Pure, non-undoable session mutations used through `BookDocument.performIrreversible` (open

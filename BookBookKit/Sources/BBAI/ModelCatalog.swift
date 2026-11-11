@@ -82,9 +82,12 @@ public struct ModelCatalog: Sendable {
         imageModels.first { $0.provider == provider && $0.id == id }
     }
 
-    /// The default image model per provider (OpenAI: `gpt-image-2.5-sunburst`).
+    /// OpenAI's default image model.
+    public static let defaultOpenAIImageModelID = "gpt-image-2.5-sunburst"
+
+    /// The default image model per provider (OpenAI: `defaultOpenAIImageModelID`).
     public func defaultImageModel(for provider: ProviderID) -> CatalogModel? {
-        let preferred: [ProviderID: String] = [.openai: "gpt-image-2.5-sunburst"]
+        let preferred: [ProviderID: String] = [.openai: Self.defaultOpenAIImageModelID]
         if let id = preferred[provider], let model = imageModel(provider: provider, id: id) { return model }
         return imageModels.first { $0.provider == provider && $0.status == .current }
     }

@@ -288,6 +288,13 @@ struct AssetEditor: View {
                         .buttonStyle(.borderless)
                         .help("Remove reference")
                         .disabled(!AssetEditing.canRemoveSlot(slot.id, from: asset))
+                    Button {
+                        model.selectedOwner = owner
+                        model.importRequest = owner
+                    } label: { Image(systemName: "photo.badge.plus") }
+                        .buttonStyle(.borderless)
+                        .help("Import an image file as this reference")
+                        .accessibilityLabel("Import image for \(slot.label)")
                     Button("Open") { model.selectedOwner = owner }
                         .buttonBorderShape(.capsule)
                 }

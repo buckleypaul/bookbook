@@ -12,10 +12,13 @@ struct AssetSessionHost: View {
     /// `.assetReference` or `.sheetItem`.
     let owner: SessionOwner
     let images: ImageCache
+    /// A pending "import into this owner" request from the asset editor.
+    var importRequest: Binding<SessionOwner?>? = nil
 
     var body: some View {
         if owner.assetID != nil {
-            SessionPanel(document: document, content: content, owner: owner, images: images)
+            SessionPanel(document: document, content: content, owner: owner, images: images,
+                         importRequest: importRequest)
                 .id(owner)
         } else {
             ContentUnavailableView("Not an Asset Session", systemImage: "photo")

@@ -9,6 +9,9 @@ final class AssetsModel {
     }
     /// The slot or sheet item whose session the session panel shows.
     var selectedOwner: SessionOwner?
+    /// Set by a reference row's Import button: the session panel for this owner opens its
+    /// file picker once and clears it.
+    var importRequest: SessionOwner?
     var typeFilter: AssetType?
 
     /// Applies `edit` to `asset` and performs one `updateAsset` command (skipped when nothing changed).
@@ -153,7 +156,8 @@ struct AssetsSessionPanel: View {
 
     var body: some View {
         if let owner = model.selectedOwner, let id = owner.assetID, content.assets[id] != nil {
-            AssetSessionHost(document: document, content: content, owner: owner, images: images)
+            AssetSessionHost(document: document, content: content, owner: owner, images: images,
+                             importRequest: Binding(get: { model.importRequest }, set: { model.importRequest = $0 }))
                 .id(owner)
                 .disabled(!document.isEditable)
         } else {

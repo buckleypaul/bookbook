@@ -81,9 +81,8 @@ struct AssetImageControls: View {
 
     @State private var quality: QualityLevel?
     @State private var estimate = CostEstimate.unknown
-    @State private var costAlert: String?
-    @State private var pendingIntent: GenerationIntent?
-    @State private var notice: PendingNotice?
+    /// The generation waiting on the real-person notice or the cost confirmation.
+    @State private var confirmation: PendingConfirmation<GenerationIntent>?
     @State private var showImporter = false
     @State private var showPhotoImporter = false
     @State private var question: PendingQuestion?
@@ -103,13 +102,7 @@ struct AssetImageControls: View {
         VStack(alignment: .leading, spacing: 8) {
             referencePhotoRow
             HStack(spacing: 8) {
-                Picker("Quality", selection: Binding(get: { chosenQuality }, set: { quality = $0 })) {
-                    ForEach(QualityLevel.allCases, id: \.self) {
-                        Text(VersionDetailsContent.qualityName($0)).tag($0)
-                    }
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
+                QualityPicker(selection: Binding(get: { chosenQuality }, set: { quality = $0 }))
                 Text(app.defaultModelName)
                     .font(Crayon.font(.caption, weight: .medium))
                     .foregroundStyle(Crayon.inkSoft)
@@ -123,15 +116,7 @@ struct AssetImageControls: View {
                 .buttonBorderShape(.capsule)
                 .help("Use an image file from your Mac as \(asset.name)'s image")
                 .disabled(!document.isEditable)
-                if app.isOnline {
-                    Text(CostText.estimate(estimate))
-                        .font(Crayon.font(.caption, weight: .bold))
-                        .foregroundStyle(Crayon.ink)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Crayon.grass.opacity(0.18), in: Capsule())
-                        .accessibilityLabel("Estimated cost: \(CostText.estimate(estimate))")
-                }
+                if app.isOnline { CostEstimatePill(estimate: estimate) }
                 Button(app.isOnline ? AssetGeneration.buttonTitle(hasImage: asset.chosen != nil) : "Offline") {
                     generate()
                 }
@@ -143,23 +128,7 @@ struct AssetImageControls: View {
             if let latest, let session {
                 MessageStatusLine(message: latest, session: session, showsProduced: false)
             }
-            if app.missingDefaultModel != nil {
-                HStack(spacing: 4) {
-                    Text("The default model isn't available to your account.").foregroundStyle(Crayon.ink)
-                    SettingsLink { Text("Pick another in Settings…") }.buttonStyle(.link)
-                }
-                .font(.caption)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Crayon.sunflower.opacity(0.2), in: Capsule())
-            }
-            if !app.hasOpenAIKey {
-                HStack(spacing: 4) {
-                    Text("Add your OpenAI key in Settings ▸ API Keys to generate.")
-                    SettingsLink { Text("Open Settings…") }.buttonStyle(.link)
-                }
-                .font(.caption).foregroundStyle(Crayon.inkSoft)
-            }
+            GenerationSetupNotes()
         }
         .onChange(of: EstimateKey(prompt: prompt, quality: chosenQuality, model: app.defaults.model,
                                   photo: asset.referencePhoto),
@@ -194,30 +163,8 @@ struct AssetImageControls: View {
                                     },
                                     onCancel: { question = nil })
         }
-        .sheet(item: $notice) { pending in
-            RealPersonNoticeSheet(provider: pending.provider,
-                                  onContinue: {
-                                      notice = nil
-                                      app.acknowledgeRealPersonNotice(pending.provider, in: document)
-                                      confirmCostThenEnqueue(pending.intent)
-                                  },
-                                  onCancel: { notice = nil })
-        }
-        .alert("Confirm Cost", isPresented: $costAlert.isPresent()) {
-            Button(CostConfirmKind.generate.buttonTitle) {
-                if let intent = pendingIntent { enqueue(intent) }
-                pendingIntent = nil
-            }
-            .keyboardShortcut(.defaultAction)
-            Button("Cancel", role: .cancel) { pendingIntent = nil }
-        } message: {
-            Text(costAlert ?? "")
-        }
-        .alert("Couldn't Complete That", isPresented: $problem.isPresent()) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(problem ?? "")
-        }
+        .generationConfirmation(confirmFlow) { _ in CostConfirmKind.generate.buttonTitle }
+        .problemAlert($problem)
     }
 
     // MARK: Reference photo
@@ -292,27 +239,14 @@ struct AssetImageControls: View {
         guard document.isEditable, app.hasOpenAIKey, app.isOnline, !prompt.isEmpty else { return }
         commitDescription()
         let intent = makeIntent(prompt: prompt, quality: chosenQuality)
-        if let provider = app.realPersonNoticeNeeded(intent: intent, target: target, in: document) {
-            notice = PendingNotice(provider: provider, intent: intent)
-        } else {
-            confirmCostThenEnqueue(intent)
-        }
+        confirmFlow.start(intent, notice: app.realPersonNoticeNeeded(intent: intent, target: target, in: document))
     }
 
-    /// Asks `costDecision` first; a confirmation or budget warning is shown but never blocks (A §7.10).
-    private func confirmCostThenEnqueue(_ intent: GenerationIntent) {
-        let current = app.estimate(for: intent, target: target, in: document)
-        Task {
-            let (decision, spent) = await app.costDecisionAndSpent(for: current, in: document)
-            if decision.needsConfirmation || decision.overBudget,
-               let text = CostText.requestAlert(estimate: current, decision: decision, spent: spent,
-                                                budget: document.content.book.budget) {
-                pendingIntent = intent
-                costAlert = text
-            } else {
-                enqueue(intent)
-            }
-        }
+    /// The real-person notice first (once per provider and book, A §11), then the cost decision.
+    private var confirmFlow: GenerationConfirmFlow<GenerationIntent> {
+        GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
+                              estimate: { app.estimate(for: $0, target: target, in: document) },
+                              perform: { enqueue($0) })
     }
 
     private func enqueue(_ intent: GenerationIntent) {
@@ -353,12 +287,6 @@ struct AssetImageControls: View {
         var quality: QualityLevel
         var model: String
         var photo: AssetReferencePhoto?
-    }
-
-    private struct PendingNotice: Identifiable {
-        let id = UUID()
-        var provider: ProviderID
-        var intent: GenerationIntent
     }
 
     private struct PendingQuestion: Identifiable, Equatable {

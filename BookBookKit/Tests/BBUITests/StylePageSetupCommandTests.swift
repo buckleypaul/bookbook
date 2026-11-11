@@ -165,10 +165,8 @@ struct StylePageSetupCommandTests {
         let page = Fixtures.firstPage(content)
         let box = Fixtures.imageBox.id
         content.pages[page]?.images[box]?.acknowledged.boxAspect = 2
-        let (message, item) = BookMutations.makeGeneration(
-            prompt: "a fox", refines: nil, defaults: GenerationDefaults(), bookID: content.book.id,
-            page: page, box: box, now: Fixtures.date)
-        _ = BookMutations.appendPendingMessage(message, page: page, box: box, to: &content)
+        let (message, item) = Fixtures.generation("a fox", bookID: content.book.id, page: page, box: box)
+        _ = BookMutations.appendPendingMessage(message, target: .pageBox(page, box), to: &content)
         let delivery = GenerationDelivery(item: item, outcome: .success(result: Fixtures.result(),
                                                                          provenance: Fixtures.provenance()))
         _ = BookMutations.applyDelivery(delivery, storedImage: Fixtures.ref, to: &content, now: Fixtures.date)

@@ -11,8 +11,6 @@ import UniformTypeIdentifiers
 struct VersionStrip: View {
     let session: Session
     let placedID: VersionID?
-    /// Tooltip for the placed/chosen badge ("On the page", or "Chosen" in asset sessions).
-    var placedHelp: String = "On the page"
     let selectedID: VersionID?
     let store: BookStore
     let onChoose: (Version) -> Void
@@ -57,7 +55,7 @@ struct VersionStrip: View {
                                 .foregroundStyle(.white, Crayon.grass)
                                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
                                 .padding(3)
-                                .help(placedHelp)
+                                .help("On the page")
                         }
                     }
                 Text("v\(number)")
@@ -112,7 +110,7 @@ struct VersionStrip: View {
     }
 }
 
-/// A small thumbnail decoded off the main thread.
+/// A small thumbnail decoded off the main thread, once per image (`VersionThumbnailCache`).
 struct VersionThumbnail: View {
     let ref: ImageRef
     let url: URL
@@ -120,21 +118,48 @@ struct VersionThumbnail: View {
 
     var body: some View {
         Group {
-            if let image {
+            if let image = VersionThumbnailCache.image(for: ref) ?? image {
                 Image(decorative: image, scale: 1).resizable().scaledToFill()
             } else {
                 Rectangle().fill(Crayon.paperDeep).overlay(Image(systemName: "photo").foregroundStyle(Crayon.inkSoft))
             }
         }
         .task(id: ref) {
+            if let cached = VersionThumbnailCache.image(for: ref) {
+                image = cached
+                return
+            }
             let url = url
-            image = await Task.detached(priority: .utility) { Self.decode(url) }.value
+            let decoded = await Task.detached(priority: .utility) { Self.decode(url) }.value
+            if let decoded { VersionThumbnailCache.insert(decoded, for: ref) }
+            image = decoded
         }
     }
 
     nonisolated private static func decode(_ url: URL) -> CGImage? {
         ImageCache.load(url, maxPixelSize: 192)
     }
+}
+
+/// Decoded version thumbnails, shared by every strip and picker. Image files are
+/// content-addressed and never change, so a thumbnail stays right for its `ImageRef`; the
+/// cache only saves decoding again (the panel is rebuilt on every box selection). A failed
+/// decode isn't cached: the file may be written a moment later.
+@MainActor
+enum VersionThumbnailCache {
+    private static let cache: NSCache<NSString, CGImage> = {
+        let cache = NSCache<NSString, CGImage>()
+        cache.totalCostLimit = 32 << 20  // bytes: about 200 thumbnails of 192 px
+        return cache
+    }()
+
+    static func image(for ref: ImageRef) -> CGImage? { cache.object(forKey: key(ref)) }
+
+    static func insert(_ image: CGImage, for ref: ImageRef) {
+        cache.setObject(image, forKey: key(ref), cost: image.bytesPerRow * image.height)
+    }
+
+    private static func key(_ ref: ImageRef) -> NSString { "\(ref.sha256).\(ref.contentType)" as NSString }
 }
 
 /// "Export Image…": copies the stored file to a place the user picks.
@@ -146,8 +171,7 @@ enum VersionExport {
         let pageText = page == content.book.coverPageID
             ? "cover"
             : content.book.pageOrder.firstIndex(of: page).map { "p\($0 + 1)" } ?? "page"
-        let title = book.isEmpty ? "BookBook" : book
-        let safe = title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        let safe = SafeFileName.make(book, fallback: "BookBook")
         return "\(safe) \(pageText) v\(number).\(ref.fileExtension)"
     }
 

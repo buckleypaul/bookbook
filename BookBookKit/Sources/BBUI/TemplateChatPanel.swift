@@ -251,14 +251,8 @@ private struct TemplateChatThread: View {
                 .lineLimit(1)
             Spacer()
             if app.isOnline, let estimate {
-                Text(CostText.estimate(estimate))
-                    .font(Crayon.font(.caption, weight: .bold))
-                    .foregroundStyle(Crayon.ink)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Crayon.grass.opacity(0.18), in: Capsule())
+                CostEstimatePill(estimate: estimate)
                     .help("An estimate; the actual cost is recorded in the book's cost ledger.")
-                    .accessibilityLabel("Estimated cost: \(CostText.estimate(estimate))")
             }
             Button(!app.isOnline ? "Offline" : "Send", action: send)
                 .buttonStyle(.crayon)

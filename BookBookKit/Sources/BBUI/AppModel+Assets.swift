@@ -27,7 +27,8 @@ extension AppModel {
                                 checkConsistency: preferences.consistencyCheckEnabled)
     }
 
-    /// The estimate shown next to Generate, for any target.
+    /// The estimate shown next to Generate, for any target. Sync: built from the document's
+    /// current content.
     public func estimate(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID?,
                          attachedReferences: [VersionRef], target: GenerationTarget,
                          in document: BookDocument) -> CostEstimate {
@@ -36,14 +37,17 @@ extension AppModel {
         return estimate(intent, target: target, content: document.content)
     }
 
-    /// "Regenerate with same settings" estimate for any target; nil without provenance.
+    /// The estimate for "Regenerate with same settings" (the version's stored intent, replayed),
+    /// for any target; nil for a version with no provenance.
     public func regenerateEstimate(_ version: Version, target: GenerationTarget, in document: BookDocument) -> CostEstimate? {
         guard let intent = (version.provenance?.intent).map(replayed) else { return nil }
         return estimate(intent, target: target, content: document.content)
     }
 
-    /// Like `generate(prompt:…page:box:in:)` for any target (assets included). `prompt` is stored text (mention tokens). Shows nothing itself; callers run
-    /// the cost and real-person checks first.
+    /// Appends the pending user message (non-undoable) and enqueues the request, for any target
+    /// (assets included). `prompt` is stored text (mention tokens); `refines` is the selected
+    /// version (nil = a new image). False if the prompt is empty, the target is gone or the book
+    /// is read-only. Shows nothing itself; callers run the cost and real-person checks first.
     @discardableResult
     public func generate(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID?,
                          attachedReferences: [VersionRef], target: GenerationTarget,

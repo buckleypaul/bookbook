@@ -11,10 +11,8 @@ struct BookMutationsTests {
     private func pendingBook() -> (BookContent, Message, QueueItem, PageID, SessionID) {
         var content = Fixtures.book()
         let page = Fixtures.firstPage(content)
-        let (message, item) = BookMutations.makeGeneration(
-            prompt: "a fox", refines: nil, defaults: GenerationDefaults(), bookID: content.book.id,
-            page: page, box: Fixtures.imageBox.id, now: Fixtures.date)
-        let dirty = BookMutations.appendPendingMessage(message, page: page, box: Fixtures.imageBox.id, to: &content)
+        let (message, item) = Fixtures.generation("a fox", bookID: content.book.id, page: page, box: Fixtures.imageBox.id)
+        let dirty = BookMutations.appendPendingMessage(message, target: .pageBox(page, Fixtures.imageBox.id), to: &content)
         let sessionID = content.pages[page]!.images[Fixtures.imageBox.id]!.sessionID
         #expect(dirty.sessions == [sessionID])
         return (content, message, item, page, sessionID)
@@ -22,9 +20,7 @@ struct BookMutationsTests {
 
     @Test func makeGeneration_usesSliceDefaultsAndLinksMessageToItem() {
         let page = PageID(), box = BoxID(), book = BookID(), refines = VersionID()
-        let (message, item) = BookMutations.makeGeneration(prompt: "a fox", refines: refines,
-                                                           defaults: GenerationDefaults(), bookID: book,
-                                                           page: page, box: box, now: Fixtures.date)
+        let (message, item) = Fixtures.generation("a fox", refines: refines, bookID: book, page: page, box: box)
         #expect(message.role == .user)
         #expect(message.queueItemID == item.id)
         #expect(message.refines == refines)
@@ -42,7 +38,7 @@ struct BookMutationsTests {
         var content = Fixtures.book()
         let before = content
         let message = Message(role: .user, text: "x", createdAt: Fixtures.date)
-        let dirty = BookMutations.appendPendingMessage(message, page: Fixtures.firstPage(content), box: BoxID(),
+        let dirty = BookMutations.appendPendingMessage(message, target: .pageBox(Fixtures.firstPage(content), BoxID()),
                                                        to: &content)
         #expect(dirty.isEmpty)
         #expect(content == before)
@@ -83,10 +79,9 @@ struct BookMutationsTests {
             GenerationDelivery(item: item, outcome: .success(result: Fixtures.result(), provenance: Fixtures.provenance())),
             storedImage: Fixtures.ref, to: &content, versionID: first, now: Fixtures.date)
 
-        let (message2, item2) = BookMutations.makeGeneration(prompt: "again", refines: first, defaults: GenerationDefaults(),
-                                                             bookID: content.book.id, page: page,
-                                                             box: Fixtures.imageBox.id, now: Fixtures.date)
-        _ = BookMutations.appendPendingMessage(message2, page: page, box: Fixtures.imageBox.id, to: &content)
+        let (message2, item2) = Fixtures.generation("again", refines: first, bookID: content.book.id, page: page,
+                                                    box: Fixtures.imageBox.id)
+        _ = BookMutations.appendPendingMessage(message2, target: .pageBox(page, Fixtures.imageBox.id), to: &content)
         let second = VersionID()
         let dirty = BookMutations.applyDelivery(
             GenerationDelivery(item: item2, outcome: .success(result: Fixtures.result(),

@@ -28,10 +28,8 @@ struct OpenBooksDeliveryTests {
         var content = try await store.load()
         let page = try #require(content.book.pageOrder.first)
         let box = try #require(content.pages[page]?.images.keys.first)
-        let (message, item) = BookMutations.makeGeneration(prompt: "a fox", refines: nil, defaults: GenerationDefaults(),
-                                                           bookID: content.book.id, page: page, box: box,
-                                                           now: Fixtures.date)
-        let dirty = BookMutations.appendPendingMessage(message, page: page, box: box, to: &content)
+        let (message, item) = Fixtures.generation("a fox", bookID: content.book.id, page: page, box: box)
+        let dirty = BookMutations.appendPendingMessage(message, target: .pageBox(page, box), to: &content)
         try await store.save(content, dirty: dirty)
         let sessionID = try #require(content.pages[page]?.images[box]?.sessionID)
         let delivery = GenerationDelivery(item: item, outcome: .success(result: Fixtures.result(),

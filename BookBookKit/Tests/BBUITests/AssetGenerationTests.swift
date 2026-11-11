@@ -52,7 +52,7 @@ struct AssetGenerationTests {
         defer { s.h.tearDown() }
         let page = Fixtures.firstPage(s.document.content)
         #expect(s.app.generate(prompt: "a fox", quality: .draft, includeStoryText: true, refines: nil,
-                               page: page, box: Fixtures.imageBox.id, in: s.document))
+                               attachedReferences: [], target: .pageBox(page, Fixtures.imageBox.id), in: s.document))
         let sessionID = try #require(s.document.content.pages[page]?.images[Fixtures.imageBox.id]?.sessionID)
         #expect(s.document.content.sessions[sessionID]?.messages.map(\.text) == ["a fox"])
     }

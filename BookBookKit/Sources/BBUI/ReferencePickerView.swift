@@ -23,8 +23,7 @@ public enum ReferenceSources {
             out.append(Source(owner: owner, sessionID: id, label: BookDocument.ownerLabel(owner, in: content),
                               versions: session.versions))
         }
-        let pages = [content.book.coverPageID] + content.book.pageOrder.filter { $0 != content.book.coverPageID }
-        for pageID in pages {
+        for pageID in content.pageIDsCoverFirst {
             guard let page = content.pages[pageID], let template = content.template(for: page) else { continue }
             for box in template.imageBoxes { add(.pageBox(pageID, box.id)) }
         }

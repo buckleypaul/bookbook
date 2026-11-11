@@ -28,15 +28,17 @@ public struct BookContent: Hashable, Sendable {
 
     public var coverPage: Page? { pages[book.coverPageID] }
 
+    /// The cover's ID, then the story pages' in reading order (the cover is never repeated).
+    public var pageIDsCoverFirst: [PageID] {
+        [book.coverPageID] + book.pageOrder.filter { $0 != book.coverPageID }
+    }
+
     public func template(for page: Page) -> Template? { templates[page.templateID] }
 
     /// Where a template is used (Phase 6): the cover first if it uses it, then story pages in
     /// reading order.
     public func pages(using templateID: TemplateID) -> [PageID] {
-        var out: [PageID] = []
-        if let cover = pages[book.coverPageID], cover.templateID == templateID { out.append(cover.id) }
-        for id in book.pageOrder where pages[id]?.templateID == templateID && id != book.coverPageID { out.append(id) }
-        return out
+        pageIDsCoverFirst.filter { pages[$0]?.templateID == templateID }
     }
 
     /// The version placed in a box, if any.

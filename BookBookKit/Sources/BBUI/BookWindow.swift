@@ -433,7 +433,7 @@ struct BookEditor: View {
                 ImageFlagsRow(flags: content.imageFlags(page: page, box: box), editable: document.isEditable) {
                     styleModel.markOK(page: page, box: box)
                 }
-                SessionPanel(document: document, content: content, pageID: page, boxID: box, images: images)
+                SessionPanel(document: document, content: content, pageID: page, boxID: box)
                     .id(box)
             }
             .disabled(!document.isEditable)

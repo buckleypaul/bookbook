@@ -19,37 +19,13 @@ public struct GenerationDefaults: Hashable, Sendable {
         self.includeStoryText = includeStoryText
     }
 
-    /// Used when the catalog can't name a default (it should: `gpt-image-2.5-sunburst`).
-    public static let fallbackModel = "gpt-image-2.5-sunburst"
+    /// Used when the catalog can't name a default (it should: the same model).
+    public static let fallbackModel = ModelCatalog.defaultOpenAIImageModelID
 }
 
 /// Pure, non-undoable session mutations used through `BookDocument.performIrreversible` (open
 /// books) or directly on a loaded `BookContent` (closed books). A §6.3, §6.4, §7.9.
 public enum BookMutations {
-    /// Builds the pending user message and its queue item for a Generate press.
-    public static func makeGeneration(prompt: String, refines: VersionID?, defaults: GenerationDefaults,
-                                      bookID: BookID, page: PageID, box: BoxID,
-                                      now: Date) -> (message: Message, item: QueueItem) {
-        let intent = GenerationIntent(messageText: prompt, refines: refines, provider: defaults.provider,
-                                      model: defaults.model, quality: defaults.quality,
-                                      includeStoryText: defaults.includeStoryText)
-        return makeGeneration(intent: intent, bookID: bookID, page: page, box: box, now: now)
-    }
-
-    /// Builds the pending user message and queue item for a stored intent unchanged
-    /// ("Regenerate with same settings": same text, same `refines`, same references).
-    public static func makeGeneration(intent: GenerationIntent, bookID: BookID, page: PageID, box: BoxID,
-                                      now: Date) -> (message: Message, item: QueueItem) {
-        makeGeneration(intent: intent, bookID: bookID, target: .pageBox(page, box), now: now)
-    }
-
-    /// Appends a pending user message to the box's session (in the session's current epoch).
-    /// Returns an empty set if the page, box or session is gone.
-    public static func appendPendingMessage(_ message: Message, page: PageID, box: BoxID,
-                                            to content: inout BookContent) -> DirtySet {
-        appendPendingMessage(message, target: .pageBox(page, box), to: &content)
-    }
-
     /// Writes a finished generation into the book (A §6.4).
     ///
     /// - Success (with `storedImage`, the ref `BookStore.storeImage` returned): adds a

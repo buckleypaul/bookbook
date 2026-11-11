@@ -85,7 +85,7 @@ struct ConsistencyFlowTests {
         defer { s.h.tearDown() }
         let (document, page, box, session) = try await openBook(s)
         #expect(s.app.generate(prompt: "Pip in a blue scarf", quality: .draft, includeStoryText: true, refines: nil,
-                               page: page, box: box, in: document))
+                               attachedReferences: [], target: .pageBox(page, box), in: document))
         await until("report") { document.content.sessions[session]?.versions.first?.consistency != nil }
         let version = try #require(document.content.sessions[session]?.versions.first)
         #expect(document.content.sessions[session]?.versions.count == 1)
@@ -108,14 +108,14 @@ struct ConsistencyFlowTests {
         defer { s.h.tearDown() }
         let (document, page, box, session) = try await openBook(s)
         let on = try #require(s.app.estimate(prompt: "a fox", quality: .draft, includeStoryText: true, refines: nil,
-                                             page: page, box: box, in: document).amount)
+                                             attachedReferences: [], target: .pageBox(page, box), in: document).amount)
         s.app.preferences.consistencyCheckEnabled = false
         let off = try #require(s.app.estimate(prompt: "a fox", quality: .draft, includeStoryText: true, refines: nil,
-                                              page: page, box: box, in: document).amount)
+                                              attachedReferences: [], target: .pageBox(page, box), in: document).amount)
         #expect(on == off + Decimal(1) / 1000)
 
         #expect(s.app.generate(prompt: "a fox", quality: .draft, includeStoryText: true, refines: nil,
-                               page: page, box: box, in: document))
+                               attachedReferences: [], target: .pageBox(page, box), in: document))
         await until("version") { document.content.sessions[session]?.versions.count == 1 }
         await until("queue empty") { s.app.queueSnapshot.entries.isEmpty }
         try await Task.sleep(for: .milliseconds(50))
@@ -131,7 +131,7 @@ struct ConsistencyFlowTests {
         let (document, page, box, _) = try await openBook(s)
         #expect(!s.app.canCheckConsistency)
         let estimate = s.app.estimate(prompt: "a fox", quality: .draft, includeStoryText: true, refines: nil,
-                                      page: page, box: box, in: document)
+                                      attachedReferences: [], target: .pageBox(page, box), in: document)
         let own = s.app.ownEstimate(s.app.generationIntent(prompt: "a fox", quality: .draft, includeStoryText: true,
                                                            refines: nil),
                                     target: .pageBox(page, box), content: document.content)
@@ -227,7 +227,7 @@ struct ConsistencyFlowTests {
         defer { s.h.tearDown() }
         let (document, page, box, session) = try await openBook(s)
         #expect(s.app.generate(prompt: "Pip", quality: .draft, includeStoryText: false, refines: nil,
-                               page: page, box: box, in: document))
+                               attachedReferences: [], target: .pageBox(page, box), in: document))
         await until("report") { document.content.sessions[session]?.versions.first?.consistency != nil }
         let checked = try #require(document.content.sessions[session]?.versions.first)
         let intent = try #require(s.app.consistencyFixIntent(bookID: document.id, sessionID: session,

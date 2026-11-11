@@ -504,16 +504,6 @@ public final class AppModel {
 
     // MARK: Generation
 
-    /// Appends the pending user message (non-undoable) and enqueues the request. `refines` is
-    /// the panel's selected version (nil = a new image). Returns false if the prompt is empty,
-    /// the box is gone or the book is read-only.
-    @discardableResult
-    public func generate(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID?,
-                         page: PageID, box: BoxID, in document: BookDocument) -> Bool {
-        generate(prompt: prompt, quality: quality, includeStoryText: includeStoryText, refines: refines,
-                 attachedReferences: [], target: .pageBox(page, box), in: document)
-    }
-
     /// "Regenerate with same settings": a new pending message and queue item built from the
     /// version's stored intent, unchanged (same text, same `refines`), for any target. False for
     /// versions with no provenance (imported) or a target that's gone.

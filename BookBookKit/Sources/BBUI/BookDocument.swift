@@ -426,7 +426,6 @@ public final class BookDocument {
             await previous?.value
             await store.scheduleSave(snapshot, dirty: dirty, generation: gen)
         }
-        markThumbnailDirty()
     }
 
     /// Re-derives the usage entries for what `dirty` touched (deleted pages drop out).
@@ -439,6 +438,18 @@ public final class BookDocument {
     }
 
     // MARK: Thumbnail
+
+    /// Whether a change could alter the library thumbnail, so typing on other pages doesn't
+    /// redraw it. `dirty` is what the change itself touched (before `didApply` adds `book`).
+    /// Conservative: book-level data (title, author, page order, cover), the style, any page
+    /// deletion (the first story page may change), or the drawn page, its template or one of
+    /// its sessions.
+    private func affectsThumbnail(_ dirty: DirtySet) -> Bool {
+        if dirty.book || dirty.style || !dirty.deletedPages.isEmpty { return true }
+        guard let page = BookThumbnail.page(in: content) else { return false }
+        return dirty.pages.contains(page.id) || dirty.templates.contains(page.templateID)
+            || page.images.values.contains { dirty.sessions.contains($0.sessionID) }
+    }
 
     /// Notes that the thumbnail is out of date and, if no write is waiting, schedules one after
     /// `thumbnailInterval` (so at most one write per interval, whatever the edit rate).
@@ -848,8 +859,10 @@ public final class BookDocument {
     private func commitIrreversibleParts(of prepared: Prepared) {
         guard !prepared.sessions.isEmpty || !prepared.templates.isEmpty || !prepared.slots.isEmpty else { return }
         Self.merge(prepared, into: &content)
-        scheduleSave(DirtySet(templates: Set(prepared.templates.keys), pages: Set(prepared.slots.keys),
-                              sessions: Set(prepared.sessions.keys)))
+        let dirty = DirtySet(templates: Set(prepared.templates.keys), pages: Set(prepared.slots.keys),
+                             sessions: Set(prepared.sessions.keys))
+        scheduleSave(dirty)
+        if affectsThumbnail(dirty) { markThumbnailDirty() }
     }
 
     @discardableResult
@@ -876,6 +889,7 @@ public final class BookDocument {
         var allDirty = dirty
         allDirty.book = true
         scheduleSave(allDirty)
+        if affectsThumbnail(dirty) { markThumbnailDirty() }
     }
 
     /// Registers `inverse` as one undo step; replaying it registers the redo.

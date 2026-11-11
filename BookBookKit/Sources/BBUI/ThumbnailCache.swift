@@ -79,7 +79,7 @@ public enum BookThumbnail {
     /// PNG of the cover page, or the first story page if there is none,
     /// longest side `maxPixelSize`. Nil if the book has no pages.
     public static func png(for content: BookContent, imageURL: (ImageRef) -> URL, maxPixelSize: Int = 512) -> Data? {
-        guard maxPixelSize > 0, let page = content.coverPage ?? content.storyPages.first else { return nil }
+        guard maxPixelSize > 0, let page = page(in: content) else { return nil }
         let trim = content.style.pageSetup.trimSize
         guard trim.width > 0, trim.height > 0 else { return nil }
         let scale = Double(maxPixelSize) / max(trim.width, trim.height)
@@ -95,6 +95,11 @@ public enum BookThumbnail {
                                       options: RenderOptions(target: .thumbnail))
         }
         return image.flatMap(ThumbnailRendering.pngData)
+    }
+
+    /// The page the thumbnail draws: the cover, or the first story page if there is none.
+    static func page(in content: BookContent) -> Page? {
+        content.coverPage ?? content.storyPages.first
     }
 }
 

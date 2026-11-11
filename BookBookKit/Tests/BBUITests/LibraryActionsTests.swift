@@ -191,19 +191,31 @@ struct BookDocumentLockAndThumbnailTests {
             renders += 1
             return Data([0x89])
         }
-        let page = Fixtures.firstPage(document.content)
-        for n in 0..<5 {
-            document.perform(.setRichText(page: page, box: Fixtures.textBox.id, text: RichText(plain: "\(n)")))
-        }
+        // The title is drawn on the cover, which the thumbnail shows.
+        for n in 0..<5 { document.rename(to: "Title \(n)") }
         #expect(renders == 0)
         for _ in 0..<50 where renders == 0 { try await Task.sleep(for: .milliseconds(20)) }
         #expect(renders == 1)
         await document.flush()
         #expect(renders == 1) // Nothing changed since.
-        document.perform(.setRichText(page: page, box: Fixtures.textBox.id, text: RichText(plain: "again")))
+        document.rename(to: "Again")
         await document.flush()
         #expect(renders == 2)
         #expect(!document.thumbnailDirty)
+    }
+
+    @Test func thumbnail_isMarkedDirtyOnlyByChangesItCouldShow() async throws {
+        let (document, url) = try makeDocument()
+        defer { try? FileManager.default.removeItem(at: url) }
+        document.renderThumbnail = { _, _ in nil }
+        // The thumbnail draws the cover; typing on a story page can't change it.
+        let story = Fixtures.firstPage(document.content)
+        #expect(document.perform(.setRichText(page: story, box: Fixtures.textBox.id, text: RichText(plain: "Hi"))))
+        #expect(!document.thumbnailDirty)
+        let cover = document.content.book.coverPageID
+        #expect(document.perform(.setPageDone(cover, true)))
+        #expect(document.thumbnailDirty)
+        await document.close()
     }
 
     @Test func readOnly_neverRendersAThumbnail() async throws {

@@ -112,7 +112,8 @@ struct PagesOverview: View {
         let page = content.pages[pageID]
         let marks = PageNumbering.marks(for: pageID, layout: ctx.layout, numbers: ctx.numbers)
         let image = thumbnails.image(for: pageID, in: content, marks: marks,
-                                     pixelHeight: Int(Self.pageHeight * max(1, displayScale)))
+                                     pixelHeight: Int(Self.pageHeight * max(1, displayScale)),
+                                     fontsRevision: document.fontsRevision)
         let isStory = content.book.pageOrder.contains(pageID)
         let canDrag = isStory && document.isEditable
         return PageThumbnailView(image: image, part: part, sideSize: ctx.side, sides: sides,

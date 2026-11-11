@@ -56,14 +56,26 @@ final class PageThumbnailRenderer {
     private var cache: [Key: CGImage] = [:]
     private var order: [Key] = []
     private let capacity: Int
+    /// `BookDocument.fontsRevision` the cached layouts and thumbnails were made under.
+    private var fontsRevision: Int?
 
     init(images: any PageImageSource, capacity: Int = 200) {
         self.images = images
         self.capacity = capacity
     }
 
-    /// The whole page (both halves for a spread), `pixelHeight` tall.
-    func image(for pageID: PageID, in content: BookContent, marks: [PageNumberMark], pixelHeight: Int) -> CGImage? {
+    /// The whole page (both halves for a spread), `pixelHeight` tall. `fontsRevision` is
+    /// `BookDocument.fontsRevision`, as the canvas takes it.
+    func image(for pageID: PageID, in content: BookContent, marks: [PageNumberMark], pixelHeight: Int,
+               fontsRevision: Int = 0) -> CGImage? {
+        // Fonts were registered since the layouts and thumbnails were made: they may have used a
+        // fallback font.
+        if fontsRevision != self.fontsRevision {
+            self.fontsRevision = fontsRevision
+            layouts.removeAll()
+            cache.removeAll()
+            order.removeAll()
+        }
         guard let page = content.pages[pageID], pixelHeight > 0 else { return nil }
         let key = Key(page: page, in: content, marks: marks, pixelHeight: pixelHeight)
         if let image = cache[key] { return image }

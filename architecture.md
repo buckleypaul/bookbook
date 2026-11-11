@@ -823,6 +823,37 @@ The OpenAI mapper switches on `error.code` (and `param`), not `error.type`: many
 - Logging uses `os.Logger`. Request and response bodies are never logged. Hosts, status codes, durations and token counts are logged with `privacy: .public`; everything else is private.
 - Tests use `FixtureHTTPClient`, which replays recorded, redacted JSON. A separate `LiveProviderTests` suite runs only when `BOOKBOOK_LIVE_TESTS=1` and keys are present.
 
+### 7.13 AI text styling
+
+A page text box can be styled with AI (PD §8.6): a text model picks the typography and describes a decoration, and an image model paints that decoration, which is drawn behind the real, editable text. Each text box has its own session (`SessionOwner.textBox`, `Page.textStyles`); the text model's answer travels in `GenerationIntent.textStyle`.
+
+**BBAI and adapters:**
+
+- **Prompt.** `TextStylePrompt.request(instruction:boxText:boxRole:boxSizePoints:current:history:styleDescription:fonts:model:)` renders prompt set `textstyle-v1` (`system.txt`, `user.txt`). The user prompt holds the instruction, the thread's earlier instructions, the book's visual description, the box's role, its size in points and aspect, its text (cut at 600 characters), its current look as JSON (`TextStyleSnapshot`, described by BBUI) and the allowed font families. The system prompt asks for: a font only from the list; a size that still fits; `#RRGGBB` colours with good contrast; an inset (a fraction of the shorter side) that clears any frame; and a decoration description of ornament only (no text, a plain empty centre), or null for typography only. Refinements change only what's asked.
+- **Schema and adapter.** The schema is `StructuredSchemas.textStyle` (`TextStyleDraft`, strict, every property required, nullable fields). `OpenAIChatProvider.styleText` sends it like a layout request (`store: false`, strict `json_schema`, same refusal and error mapping, usage and `parametersSent`).
+- **Normaliser.** `TextStyleNormalizer.styling(from:fonts:current:)` turns the draft into a `TextStyling`, a decoration prompt and a summary:
+  - The font family must be one of BBUI's family → PostScript map (exact match first, then ignoring case and spaces). Anything else is nil (keep).
+  - Size is clamped to 6…288 pt and the inset to 0…`TextStyling.maxInsetFraction`. Colours that don't parse as hex are dropped.
+  - An empty decoration means typography only. An empty summary becomes "Styled the text."
+- **Estimate.** `CostEstimator.estimate(textStyle:priceList:)` uses the price list's `typicalTextStyleRequest` (an unmeasured placeholder on `gpt-6-luna`), falling back to `typicalTemplateRequest`. The decoration is estimated as an ordinary image request.
+- **Decoration context.** `ContextAssembler` resolves `.textBox(page, box)` to the page, template, **text** box and session: by the queue item's message first, then by `page.textStyles[box]`. The prompt comes from `image-v1/decoration-*.txt`, in this order:
+  - role (ornament for a text box);
+  - the book's style and its "avoid" text;
+  - the lineage history, for refinements;
+  - the request: `intent.textStyle.decorationPrompt`, else the message text;
+  - composition: the box's aspect; the centre stays plain and empty; no letters or words;
+  - background: "transparent" when the model supports it, otherwise "plain pure white (#FFFFFF)".
+
+  Refinements send the refined version as the base image ("the current decoration to edit"), and style references go as usual. No assets, story text, fold or safe-area guidance are sent. The aspect is `boxAspect(textBox)`, and `ImageRequest.transparentBackground` is true.
+- **Transparency.** `OpenAIImageProvider` sends `background: "transparent"` only when the request asks for it **and** the catalog marks the model `supportsTransparentBackground`. No model is marked yet (unverified), so the plain-white fallback is the default path.
+- **White keying.** After a successful `.textBox` result (and after a region-edit composite), if the image has no transparent pixels, the queue keys the white out off the actor with `ImageOps.keyOutWhite(pngData:)`:
+  - Colour-to-alpha against white: pixels with every channel ≥ 245 become fully transparent, pixels deviating by ≥ 30% stay opaque, and the alpha ramps between the two.
+  - The colour is un-blended from white, so edges don't keep a white halo.
+
+  The keyed PNG becomes the version image. The raw output is kept as `Provenance.rawOutput` (via `additionalImages`), and `parametersSent["localWhiteKey"] = "true"` (`GenerationQueue.localWhiteKeyParameter`) records the keying for Version details.
+- **No consistency checks.** `ConsistencyAssembler.checksApply(to:)` is false for `.textBox`. The queue never queues a follow-up for one, and `plan(version:)` and `imageCount(intent:target:…)` return nil for one.
+- **Typography-only versions** (no decoration prompt) never reach the queue: BBUI makes them directly.
+
 ---
 
 ## 8. Layout, text and rendering (BBLayout)

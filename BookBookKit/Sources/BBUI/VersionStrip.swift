@@ -114,25 +114,36 @@ struct VersionStrip: View {
 struct VersionThumbnail: View {
     let ref: ImageRef
     let url: URL
-    @State private var image: CGImage?
+    @State private var decoded: Decoded?
+
+    /// The last decode and the ref it was for, so a view reused for another ref never shows the
+    /// previous ref's picture (while the new one decodes, or if its decode fails).
+    struct Decoded {
+        let ref: ImageRef
+        let image: CGImage?
+
+        /// The decoded image if it's for `ref`.
+        func image(for ref: ImageRef) -> CGImage? { ref == self.ref ? image : nil }
+    }
 
     var body: some View {
         Group {
-            if let image = VersionThumbnailCache.image(for: ref) ?? image {
+            if let image = VersionThumbnailCache.image(for: ref) ?? decoded?.image(for: ref) {
                 Image(decorative: image, scale: 1).resizable().scaledToFill()
             } else {
                 Rectangle().fill(Crayon.paperDeep).overlay(Image(systemName: "photo").foregroundStyle(Crayon.inkSoft))
             }
         }
         .task(id: ref) {
+            let ref = ref
             if let cached = VersionThumbnailCache.image(for: ref) {
-                image = cached
+                decoded = Decoded(ref: ref, image: cached)
                 return
             }
             let url = url
-            let decoded = await Task.detached(priority: .utility) { Self.decode(url) }.value
-            if let decoded { VersionThumbnailCache.insert(decoded, for: ref) }
-            image = decoded
+            let image = await Task.detached(priority: .utility) { Self.decode(url) }.value
+            if let image { VersionThumbnailCache.insert(image, for: ref) }
+            decoded = Decoded(ref: ref, image: image)
         }
     }
 

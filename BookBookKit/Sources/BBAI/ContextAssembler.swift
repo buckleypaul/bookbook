@@ -57,15 +57,9 @@ public enum ContextAssembler {
         var session: Session
     }
 
-    /// An asset session's target, resolved (Phase 10).
+    /// An asset session's target, resolved: the asset and the session making its one image.
     struct AssetResolved {
-        enum Kind {
-            case slot(ReferenceSlot)
-            case sheetItem(SheetItem)
-        }
-
         var asset: Asset
-        var kind: Kind
         var session: Session
     }
 
@@ -110,7 +104,7 @@ public enum ContextAssembler {
     }
 
     /// Asset-session targets: the session holding the message (if it's an asset session) decides
-    /// the owner, else the target does; the session is the slot's / item's `sessionID`.
+    /// the owner, else the target does; the session is the asset's `sessionID`.
     static func resolveAsset(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> AssetResolved? {
         let messageSession = messageID.flatMap { content.session(containing: $0) }.flatMap { session in
             session.owner.assetID == nil ? nil : session
@@ -119,21 +113,17 @@ public enum ContextAssembler {
         switch owner {
         case .pageBox:
             return nil
-        case let .assetReference(assetID, slotID):
-            guard let asset = content.assets[assetID], let slot = asset.references.first(where: { $0.id == slotID }),
-                  let session = messageSession ?? content.sessions[slot.sessionID] else { return nil }
-            return AssetResolved(asset: asset, kind: .slot(slot), session: session)
-        case let .sheetItem(assetID, itemID):
-            guard let asset = content.assets[assetID], let item = asset.sheet?.items.first(where: { $0.id == itemID }),
-                  let session = messageSession ?? content.sessions[item.sessionID] else { return nil }
-            return AssetResolved(asset: asset, kind: .sheetItem(item), session: session)
+        case let .asset(assetID):
+            guard let asset = content.assets[assetID],
+                  let session = messageSession ?? content.sessions[asset.sessionID] else { return nil }
+            return AssetResolved(asset: asset, session: session)
         }
     }
 
     static func context(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> Context? {
         switch target {
         case .pageBox: resolve(target: target, messageID: messageID, content: content).map(Context.page)
-        case .assetReference, .sheetItem: resolveAsset(target: target, messageID: messageID, content: content).map(Context.asset)
+        case .asset: resolveAsset(target: target, messageID: messageID, content: content).map(Context.asset)
         }
     }
 
@@ -153,16 +143,13 @@ public enum ContextAssembler {
                              content: BookContent) -> [ReferenceSelector.AssetInPlay] {
         var out: [ReferenceSelector.AssetInPlay] = []
         var seen = Set<AssetID>()
-        func add(_ id: AssetID, mentioned: Bool, primaryOnly: Bool = false, excludedSlot: UUID? = nil) {
+        func add(_ id: AssetID, mentioned: Bool, excludesImage: Bool = false) {
             guard let asset = content.assets[id], seen.insert(id).inserted else { return }
-            out.append(.init(asset: asset, mentioned: mentioned, primaryOnly: primaryOnly, excludedSlot: excludedSlot))
+            out.append(.init(asset: asset, mentioned: mentioned, excludesImage: excludesImage))
         }
-        if case let .asset(resolved) = context {
-            switch resolved.kind {
-            case let .slot(slot): add(resolved.asset.id, mentioned: true, primaryOnly: true, excludedSlot: slot.id)
-            case .sheetItem: add(resolved.asset.id, mentioned: true, primaryOnly: true)
-            }
-        }
+        // The owner of an asset session is in play (its description goes in the cast), but its own
+        // image is never sent as a reference for itself.
+        if case let .asset(resolved) = context { add(resolved.asset.id, mentioned: true, excludesImage: true) }
         for id in MentionText.mentionedAssets(in: intent.messageText) { add(id, mentioned: true) }
         if let refines = intent.refines {
             for message in context.session.lineageInstructions(of: refines) {
@@ -223,10 +210,9 @@ public enum ContextAssembler {
         }
         let assets = assetsInPlay(intent: intent, context: context, content: content)
         let request = requestDisplayText(intent: intent, messageID: messageID, content: content)
-        let matchText = includeStory ? request + "\n" + storyText : request
         let candidates = ReferenceSelector.candidates(.init(
             base: base, attached: attached, assets: assets, styleReferences: content.style.styleReferences,
-            matchText: matchText, sessions: content.sessions))
+            sessions: content.sessions))
         return Prepared(context: context, assets: assets, candidates: candidates, storyText: storyText,
                         includeStory: includeStory, requestText: request)
     }
@@ -302,7 +288,7 @@ public enum ContextAssembler {
         let legend = sent.enumerated().map { index, entry in
             let name = entry.plan.asset.flatMap { content.assets[$0]?.name } ?? ""
             return PromptTemplates.render(PromptTemplates.text(for: "legend-\(entry.plan.role)") ?? "Image {{n}}.",
-                                          ["n": "\(index + 1)", "name": name, "detail": entry.plan.detail ?? ""])
+                                          ["n": "\(index + 1)", "name": name])
         }.joined(separator: "\n")
         let cast = castLines(prepared.assets, sent: sent.map(\.plan), numbers: numbers)
 
@@ -319,7 +305,7 @@ public enum ContextAssembler {
         case let .asset(resolved):
             // Asset images have no page geometry: square by default (the fitter snaps it per model).
             aspect = 1
-            subject = assetSubject(resolved, numbers: numbers, sent: sent.map(\.plan))
+            subject = assetSubject(resolved.asset)
         }
         let isPage = !composition.isEmpty
 
@@ -381,11 +367,11 @@ public enum ContextAssembler {
 
     // MARK: Cast and subject wording
 
-    /// One "- Pip (character): … Image 2 shows Pip (primary reference)." line per asset in play.
+    /// One "- Pip (character): … Image 2 shows Pip." line per asset in play.
     static func castLines(_ assets: [ReferenceSelector.AssetInPlay], sent: [ReferenceSelector.Candidate],
                           numbers: [ImageRef: Int]) -> String {
         let entryTemplate = PromptTemplates.text(for: "cast-entry") ?? "- {{name}} ({{type}}){{description}}{{images}}"
-        let imageTemplate = PromptTemplates.text(for: "cast-image") ?? "Image {{n}} shows {{name}} ({{detail}})."
+        let imageTemplate = PromptTemplates.text(for: "cast-image") ?? "Image {{n}} shows {{name}}."
         return assets.map { entry in
             let asset = entry.asset
             let description = asset.description.trimmed
@@ -393,44 +379,18 @@ public enum ContextAssembler {
             if let last = describing.last, !".!?".contains(last) { describing += "." }
             let images = sent.filter { $0.asset == asset.id }.compactMap { candidate -> String? in
                 guard let n = numbers[candidate.ref] else { return nil }
-                return " " + PromptTemplates.render(imageTemplate, ["n": "\(n)", "name": asset.name,
-                                                                    "detail": candidate.detail ?? ""])
+                return " " + PromptTemplates.render(imageTemplate, ["n": "\(n)", "name": asset.name])
             }.joined()
             return PromptTemplates.render(entryTemplate, ["name": asset.name, "type": asset.type.rawValue,
                                                           "description": describing, "images": images])
         }.joined(separator: "\n")
     }
 
-    /// What to draw in an asset session: a reference image of the asset, or a sheet item drawn
-    /// from the asset's primary reference.
-    static func assetSubject(_ resolved: AssetResolved, numbers: [ImageRef: Int],
-                             sent: [ReferenceSelector.Candidate]) -> String {
-        let asset = resolved.asset
-        var values = ["name": asset.name, "type": asset.type.rawValue]
-        let template: String
-        switch resolved.kind {
-        case let .slot(slot) where slot.isPrimary:
-            template = PromptTemplates.text(for: "asset-reference-\(asset.type.rawValue)") ?? "A reference image of {{name}}."
-        case let .slot(slot):
-            template = PromptTemplates.text(for: "asset-reference-slot") ?? "{{label}}"
-            values["label"] = slot.label.trimmed
-        case let .sheetItem(item):
-            switch item.kind {
-            case let .view(view):
-                template = PromptTemplates.text(for: "sheet-view-\(view.rawValue)") ?? "{{name}}, \(view.rawValue) view."
-            case let .expression(name):
-                template = PromptTemplates.text(for: "sheet-expression") ?? "{{name}}, {{expression}}."
-                values["expression"] = ReferenceSelector.displayName(expression: name)
-            }
-        }
-        // One pass over the template, so a label or name containing `{{...}}` is never expanded.
-        var text = PromptTemplates.render(template, values)
-        // The primary reference, when it's sent, anchors the look.
-        if let primary = sent.first(where: { $0.asset == asset.id && $0.tier == .mentionedPrimary }),
-           let n = numbers[primary.ref], let same = PromptTemplates.text(for: "asset-same") {
-            text += " " + PromptTemplates.render(same, values.merging(["n": "\(n)"]) { $1 })
-        }
-        return text
+    /// What to draw in an asset session: the asset's one reference image, worded per asset type.
+    static func assetSubject(_ asset: Asset) -> String {
+        let template = PromptTemplates.text(for: "asset-reference-\(asset.type.rawValue)") ?? "A reference image of {{name}}."
+        // One pass over the template, so a name containing `{{...}}` is never expanded.
+        return PromptTemplates.render(template, ["name": asset.name, "type": asset.type.rawValue])
     }
 
     // MARK: Composition wording
@@ -583,7 +543,7 @@ enum PromptTemplates {
         return text
     }
 
-    /// One left-to-right scan, so substituted text (a slot label with `{{name}}`) is never re-expanded.
+    /// One left-to-right scan, so substituted text (a name containing `{{name}}`) is never re-expanded.
     static func render(_ template: String, _ values: [String: String]) -> String {
         var out = ""
         var rest = Substring(template)

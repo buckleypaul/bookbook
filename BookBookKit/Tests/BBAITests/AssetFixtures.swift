@@ -3,31 +3,19 @@ import BBModel
 import Foundation
 @testable import BBAI
 
-/// Builds assets with real sessions and chosen versions inside a `BookContent` (Phase 10).
-/// Image refs are named `<name>-primary`, `<name>-view-<view>`, `<name>-expr-<expression>`, `<name>-slot-<label>`.
+/// Builds assets with a real session and chosen version inside a `BookContent`.
+/// Each asset's one image ref is named `<name>-image`.
 enum Cast {
     struct Options {
-        var primaryChosen = true
-        /// Sheet items with a chosen version; nil = all of them.
-        var chosenSheet: Set<SheetItemKind>?
-        var lockedSheet: Set<SheetItemKind> = []
-        var customExpressions: [String] = []
-        /// Extra (non-primary) reference slots, all chosen.
-        var extraSlots: [String] = []
-        var primaryIsRealPerson = false
+        /// The asset's image is chosen (and so sent).
+        var chosen = true
+        var isRealPerson = false
     }
 
     static func slug(_ name: String) -> String { name.lowercased().replacingOccurrences(of: " ", with: "-") }
 
-    static func ref(_ name: String, _ suffix: String) -> ImageRef {
+    static func ref(_ name: String, _ suffix: String = "image") -> ImageRef {
         ImageRef(sha256: "\(slug(name))-\(suffix)", contentType: "public.png")
-    }
-
-    static func suffix(_ kind: SheetItemKind) -> String {
-        switch kind {
-        case let .view(view): "view-\(view.rawValue)"
-        case let .expression(name): "expr-\(name)"
-        }
     }
 
     @discardableResult
@@ -37,37 +25,16 @@ enum Cast {
         asset.description = description
         asset.revision = revision
         asset.revisionHighWater = revision
-        asset.references += options.extraSlots.map { ReferenceSlot(label: $0, isPrimary: false) }
-        if type == .character {
-            asset.sheet?.items += options.customExpressions.map { SheetItem(kind: .expression($0)) }
+        var session = Session(id: asset.sessionID, owner: asset.owner)
+        if options.chosen {
+            let version = Version(image: ref(name), pixelSize: PixelSize(width: 1024, height: 1024),
+                                  source: options.isRealPerson ? .imported : .generated,
+                                  createdAt: Date(timeIntervalSince1970: 0),
+                                  depictsRealPerson: options.isRealPerson ? true : nil)
+            session.versions = [version]
+            asset.chosen = version.id
         }
-        func makeVersion(_ ref: ImageRef, realPerson: Bool = false) -> Version {
-            Version(image: ref, pixelSize: PixelSize(width: 1024, height: 1024), source: realPerson ? .imported : .generated,
-                    createdAt: Date(timeIntervalSince1970: 0), depictsRealPerson: realPerson ? true : nil)
-        }
-        for index in asset.references.indices {
-            let slot = asset.references[index]
-            var session = Session(id: slot.sessionID, owner: .assetReference(asset.id, slot.id))
-            let chosen = slot.isPrimary ? options.primaryChosen : true
-            if chosen {
-                let version = makeVersion(ref(name, slot.isPrimary ? "primary" : "slot-\(slug(slot.label))"),
-                                          realPerson: slot.isPrimary && options.primaryIsRealPerson)
-                session.versions = [version]
-                asset.references[index].chosen = version.id
-            }
-            content.sessions[session.id] = session
-        }
-        for index in (asset.sheet?.items ?? []).indices {
-            let item = asset.sheet!.items[index]
-            var session = Session(id: item.sessionID, owner: .sheetItem(asset.id, item.id))
-            if options.chosenSheet?.contains(item.kind) ?? true {
-                let version = makeVersion(ref(name, suffix(item.kind)))
-                session.versions = [version]
-                asset.sheet!.items[index].chosen = version.id
-            }
-            asset.sheet!.items[index].locked = options.lockedSheet.contains(item.kind)
-            content.sessions[session.id] = session
-        }
+        content.sessions[session.id] = session
         content.assets[asset.id] = asset
         return asset
     }
@@ -78,10 +45,6 @@ enum Cast {
         for session in content.sessions.values { for version in session.versions { data[version.image] = Data(count: size) } }
         for ref in content.style.styleReferences { data[ref] = Data(count: size) }
         return data
-    }
-
-    static func sheetItem(_ asset: Asset, _ kind: SheetItemKind) -> SheetItem? {
-        asset.sheet?.items.first { $0.kind == kind }
     }
 }
 

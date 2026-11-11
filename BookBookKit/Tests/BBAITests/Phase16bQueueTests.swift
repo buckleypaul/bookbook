@@ -250,6 +250,53 @@ actor Gate {
         #expect(decoded.undelivered.isEmpty)
     }
 
+    /// `queue.json` from before 2026-11-11 can hold character-sheet items: those entries and
+    /// deliveries are dropped, and the rest of the file still loads.
+    @Test func legacySheetItemEntriesAreDropped() throws {
+        let a = imageItem("A"), b = imageItem("B")
+        var legacy = imageItem("sheet")
+        legacy.target = .asset(AssetID())
+        let kept = PersistedDelivery(token: UUID(), delivery: GenerationDelivery(item: b, outcome: .failure(.cancelled)))
+        let dropped = PersistedDelivery(token: UUID(), delivery: GenerationDelivery(item: legacy, outcome: .failure(.cancelled)))
+        let saved = PersistedQueue(entries: [.init(item: a), .init(item: legacy), .init(item: b, wasRunning: true)],
+                                   undelivered: [dropped, kept])
+        var json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+        let sheetTarget: [String: Any] = ["sheetItem": ["_0": UUID().uuidString, "_1": UUID().uuidString]]
+        func makeLegacy(_ object: Any?) throws -> [String: Any] {
+            var entry = try #require(object as? [String: Any])
+            var item = try #require(entry["item"] as? [String: Any])
+            item["target"] = sheetTarget
+            entry["item"] = item
+            return entry
+        }
+        var entries = try #require(json["entries"] as? [Any])
+        entries[1] = try makeLegacy(entries[1])
+        json["entries"] = entries
+        var undelivered = try #require(json["undelivered"] as? [Any])
+        undelivered[0] = try makeLegacy(undelivered[0])
+        json["undelivered"] = undelivered
+        let decoded = try JSONDecoder().decode(PersistedQueue.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(decoded.entries.map(\.item) == [a, b])
+        #expect(decoded.entries.map(\.wasRunning) == [false, true])
+        #expect(decoded.undelivered.map(\.token) == [kept.token])
+        #expect(decoded.schemaVersion == PersistedQueue.currentSchemaVersion)
+    }
+
+    /// Only legacy sheet items are skipped: any other undecodable entry still fails the file.
+    @Test func otherUndecodableEntriesStillFailTheFile() throws {
+        let saved = PersistedQueue(entries: [.init(item: imageItem("A")), .init(item: imageItem("B"))])
+        var json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+        var entries = try #require(json["entries"] as? [Any])
+        var entry = try #require(entries[1] as? [String: Any])
+        var item = try #require(entry["item"] as? [String: Any])
+        item["target"] = ["somethingElse": [:] as [String: Any]]
+        entry["item"] = item
+        entries[1] = entry
+        json["entries"] = entries
+        let data = try JSONSerialization.data(withJSONObject: json)
+        #expect(throws: (any Error).self) { try JSONDecoder().decode(PersistedQueue.self, from: data) }
+    }
+
     @Test func spooledBytesAreNotEncoded() throws {
         let delivery = GenerationDelivery(
             item: imageItem("A"),

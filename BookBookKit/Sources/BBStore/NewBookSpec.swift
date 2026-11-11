@@ -1,6 +1,43 @@
 import BBModel
 import Foundation
 
+/// The new-book wizard's output (PD §8.13). Every field is optional/skippable; nil means
+/// "keep the default".
+public struct NewBookSpec: Hashable, Sendable {
+    public var title: String
+    public var author: String
+    /// Page size and orientation; nil = default (Letter portrait).
+    public var pageSize: PageSizePreset?
+    public var orientation: Orientation?
+    /// `StylePreset.id`; nil = no preset.
+    public var stylePresetID: String?
+    /// Optional main character: becomes a `.character` asset with this name and description.
+    public var mainCharacter: MainCharacter?
+    /// Ask to import story text once the book opens.
+    public var importStoryAfter: Bool
+
+    public struct MainCharacter: Hashable, Sendable {
+        public var name: String
+        public var description: String
+        public init(name: String, description: String) {
+            self.name = name
+            self.description = description
+        }
+    }
+
+    public init(title: String, author: String = "", pageSize: PageSizePreset? = nil,
+                orientation: Orientation? = nil, stylePresetID: String? = nil,
+                mainCharacter: MainCharacter? = nil, importStoryAfter: Bool = false) {
+        self.title = title
+        self.author = author
+        self.pageSize = pageSize
+        self.orientation = orientation
+        self.stylePresetID = stylePresetID
+        self.mainCharacter = mainCharacter
+        self.importStoryAfter = importStoryAfter
+    }
+}
+
 extension NewBookSpec {
     /// The title as stored: trimmed, "Untitled" when blank.
     public var resolvedTitle: String {

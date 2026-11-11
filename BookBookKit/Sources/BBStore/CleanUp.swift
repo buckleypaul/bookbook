@@ -1,6 +1,24 @@
 import BBModel
 import Foundation
 
+/// What Clean up would delete. Deletable = unstarred versions not referenced by any page
+/// placement (cover included), reference slot `chosen` or sheet item `chosen`.
+/// `fileNames`/`bytesFreed` cover only image files that no remaining version, provenance,
+/// style reference or other reference still uses (`ImageSweep.referencedFileNames`).
+public struct CleanUpPlan: Hashable, Sendable {
+    public var versionIDs: Set<VersionID>
+    public var fileNames: Set<String>
+    public var bytesFreed: Int64
+
+    public init(versionIDs: Set<VersionID>, fileNames: Set<String>, bytesFreed: Int64) {
+        self.versionIDs = versionIDs
+        self.fileNames = fileNames
+        self.bytesFreed = bytesFreed
+    }
+
+    public var isEmpty: Bool { versionIDs.isEmpty }
+}
+
 /// Clean up (A §10, PD §8.12): drops versions nothing uses and frees the image files only they used.
 public enum CleanUp {
     /// Unstarred versions not referenced by any page placement (cover included) or an asset's

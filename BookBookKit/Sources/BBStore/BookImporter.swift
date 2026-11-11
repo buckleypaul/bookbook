@@ -1,6 +1,85 @@
 import BBModel
 import Foundation
 
+/// What the user picked in the source book.
+public struct BookImportSelection: Hashable, Sendable {
+    public var assets: Set<AssetID>
+    public var templates: Set<TemplateID>
+    public var styleGuide: Bool
+
+    public init(assets: Set<AssetID> = [], templates: Set<TemplateID> = [], styleGuide: Bool = false) {
+        self.assets = assets
+        self.templates = templates
+        self.styleGuide = styleGuide
+    }
+
+    public var isEmpty: Bool { assets.isEmpty && templates.isEmpty && !styleGuide }
+}
+
+/// An imported item, keyed by its ID in the *source* book.
+public enum BookImportItem: Hashable, Sendable {
+    case asset(AssetID)
+    case template(TemplateID)
+}
+
+/// A selected item whose name matches (case- and whitespace-insensitive) an existing item of the
+/// same kind in the target book, or another selected item. Resolved by a rename before writing.
+public struct BookImportClash: Hashable, Sendable, Identifiable {
+    public var item: BookImportItem
+    public var name: String
+    public var id: BookImportItem { item }
+
+    public init(item: BookImportItem, name: String) {
+        self.item = item
+        self.name = name
+    }
+}
+
+/// The finished, ID-remapped content to merge into the target book. Built by
+/// `BookImporter.build`; applied by the `.importFromBook` BookCommand (undoable; undo removes the
+/// added assets, sessions and templates and restores the previous style guide). Image files are
+/// copied into the target package by `BookImporter.copyImages` *before* the command runs.
+public struct BookImport: Hashable, Sendable {
+    /// New assets (new `AssetID`s, new slot/sheet-item UUIDs).
+    public var assets: [Asset]
+    /// One new session per chosen reference slot / sheet item, owned by the new asset, holding a
+    /// single `.imported` version that the slot's/item's `chosen` points at.
+    public var sessions: [Session]
+    /// Deep copies with new `TemplateID`s (and new box IDs).
+    public var templates: [Template]
+    /// The source style guide when selected (replaces the target's), else nil.
+    public var styleGuide: StyleGuide?
+    /// Every image file the above refers to (version images, style references).
+    public var images: Set<ImageRef>
+
+    public init(assets: [Asset] = [], sessions: [Session] = [], templates: [Template] = [],
+                styleGuide: StyleGuide? = nil, images: Set<ImageRef> = []) {
+        self.assets = assets
+        self.sessions = sessions
+        self.templates = templates
+        self.styleGuide = styleGuide
+        self.images = images
+    }
+}
+
+public enum BookImportError: Error, Hashable, Sendable {
+    /// `build` was called while a clash is still unresolved (or a rename itself clashes).
+    case unresolvedClashes([BookImportClash])
+    /// A selected item no longer exists in the source.
+    case missingSourceItem(BookImportItem)
+}
+
+/// Copy-count report from `BookImporter.copyImages`.
+public struct BookImportCopyReport: Hashable, Sendable {
+    public var copied: Int
+    /// Already present in the target (same SHA-256), so skipped.
+    public var skippedDuplicates: Int
+    public init(copied: Int, skippedDuplicates: Int) {
+        self.copied = copied
+        self.skippedDuplicates = skippedDuplicates
+    }
+}
+
 /// Import from another book (A §5.4, PD §8.1). Pure logic over two `BookContent` values plus the
 /// image-file copy. Nothing here touches the target's JSON; the `.importFromBook` command applies
 /// the returned `BookImport`.

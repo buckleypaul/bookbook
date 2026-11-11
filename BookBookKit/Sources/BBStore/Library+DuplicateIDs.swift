@@ -1,8 +1,6 @@
 import BBModel
 import Foundation
 
-// Duplicate Book.id (Phase 16, follow-up from Phase 3).
-
 extension Library {
     /// A Finder copy of a package keeps its `Book.id`. For each group of packages sharing an id,
     /// one is kept and every other gets a fresh `Book.id`, written to its `book.json` through a

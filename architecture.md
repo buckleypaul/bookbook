@@ -699,6 +699,7 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
 - Queue items carry a kind (image or consistency check) and a `parent`; `queue.json` is schema 2 (schema 1 files still load; older builds ignore schema 2 files). The queue assigns the new version's ID before delivery, and the follow-up is inserted ahead of every waiting item once that delivery lands, including a later redelivery to a locked book. A second check of a version already queued is skipped.
 - Follow-ups and on-demand checks need a wired `VisionProvider` and a catalog vision model; without them nothing is queued or estimated. The switch and the vision model are captured at enqueue time.
 - `ConsistencyAssembler` leaves out the checked image itself from the references and leaves out real-person photos unless the book has acknowledged that provider's notice (§11).
+- A refused or failed check carries an `AssemblyReport` of what it sent (prompt and images, no story text; `AssembledConsistency.report`), and `PlannedImage.depictsRealPerson` reaches its `SentReference`s, so refusal advice works for checks as for pictures (2026-11-11).
 - A failed check fails like any item and leaves the version untouched; a check whose version (or page box) is gone is dropped quietly. Checks write a `consistency` ledger line; the parent's line prices only its own request.
 
 ### 7.9 Generation queue (§5)

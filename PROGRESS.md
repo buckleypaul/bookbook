@@ -88,6 +88,8 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Guided Setup's OpenAI links (api-keys, billing overview, organization general) open the right pages; `curl` got 403s from Cloudflare.
 
 ### Phase 16b — Bug fixes and edge cases
+- Real-person notice after the cost alert (2026-11-11): open Generate's cost alert, give the asset a reference photo marked as a real person from another pane, then confirm: the notice sheet opens as the alert closes (no flash or stacking), and Continue sends the request without a second cost alert.
+- A book with a HEIC style reference made before 2026-11-11 opens with it converted, and page generation works.
 - Batch notice opening while the cost alert is closing: it shouldn't flash or stack (#30j; a hand check only, no automated test).
 - Open Anyway on a lock from another Mac: the warning shows first, then the book opens editable.
 - A burst of text-colour changes in the format bar undoes in one step (#76a).
@@ -107,13 +109,11 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - Layouts chat: replies are only a summary line plus a diagram, since the shared `TemplateDraft` schema has no message field; consider adding a short `reply` field (changes the wire schema for every adapter). Threads aren't saved (decided 2026-11-11) (from the Layouts chat change).
 - Simplify leftovers (from the 2026-11-09 whole-codebase simplify pass): cache `FontFamilies.all` with an app-wide font-registration revision; add `PageStatus.title` shared by `StatusBadge`, `PagesOverview` and `BookWindow`.
 - Simplify pass 2026-11-11 leftovers. **Wording (needs a product call):** `ProviderErrorText` duplicates `RefusalAdvisor` with drifted wording; asset type names/symbols differ between `AssetEditing` ("Place / Scene", `person`) and `AssetTypeText` ("Place", `person.crop.circle`); cost kinds read "Images"/"Templates" in `BookSettingsSheet` but "Pictures"/"Layout suggestions" in `CostText`; onboarding `TypicalCosts.format` formats money unlike `CostText.amount`; `FontFamilies.regularFace` and `PageNumberFontNames` pick a family's regular face differently. **Larger refactors:** narrow what `BookEditor` observes and skip unchanged canvas redraws; per-edit font/usage bookkeeping in `scheduleSave`; give `QueueItem.Kind` its per-kind behaviour (consistency checks); one BBModel "home of a session" query; merge `GenerationTarget` into `SessionOwner`; share the region-mask replay between `RegionMaskPreview` and `ImageOps.rasterize`, and redraw the region editor incrementally; lift `fixSplits` out of the BookCommand payloads; a content-addressed `ImageRef` helper shared by the queue and `BookStore` (needs CryptoKit in BBModel); ~250 stale phase/lane comments in production code.
-- Leftovers from the 2026-11-11 likely-bug fixes (branch `fix-16b-likely-bugs`, all ten review findings fixed):
-  - Style references saved as HEIC before the fix aren't converted; those books keep failing page generation until the reference is re-added. Needs a migration or a convert-at-send fallback.
-  - When the enqueue-time real-person check refuses (the notice became needed while the cost confirmation was open), the confirm button does nothing and says nothing; `GenerationConfirmFlow` should show the notice again.
-  - Consistency-check failures have no `AssemblyReport`, so the real-person refusal advice can't fire for them.
-  - Clean Up re-checks referenced files on the main actor, then deletes on the store actor; a `storeImage` dedup hit landing in between can still lose its file. Closing it needs coordination inside `BookStore`.
-  - Clean Up's "frees N" counts files it then keeps for undo; the sweep when a book opens removes them later.
-  - `.setPageLayout` undo clearing a deleted version's placement has no regression test.
+- Second-order leftovers from the 2026-11-11 likely-bug fixes (the first six leftovers were fixed on `fix-likely-bug-leftovers`):
+  - Import From Book copies style references as-is; a bad (HEIC/mislabelled) one imported into an open book is only repaired the next time that book opens.
+  - Clean Up's hand-out generation doesn't cover a caller that got an image ref before Clean Up started and holds it across further awaits (e.g. `OpenBooks.storeImage` storing a region edit's extra images, then the main result). Closing it needs callers to register held refs.
+  - `BookStore.imageHandOuts` gains one entry per distinct file stored and is never pruned.
+  - If recording the real-person acknowledgement fails (e.g. read-only book), Continue shows the notice again instead of enqueuing.
 - OpenAI-only wording cleanup: v1.0 is OpenAI only, so make sure no Gemini choice shows in the app (a Gemini mention in `ModelCatalog.json`, plus Gemini text in `RealPersonNotice.swift` and `VersionDetailsContent.swift`), and that the final live pass covers only OpenAI (Gemini moved to post-MVP 2026-11-08).
 - Chat `refusal` maps to stage `.output`, which is a guess; confirm it against a real refusal (live) (from Phase 12).
 - The SP12 live test hardcodes model IDs; read them from the catalog (from Phase 12).

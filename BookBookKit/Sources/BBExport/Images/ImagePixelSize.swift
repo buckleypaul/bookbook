@@ -2,6 +2,7 @@ import CoreGraphics
 import CoreImage
 import Foundation
 import ImageIO
+import Synchronization
 
 public enum ImagePixelSize {
     /// Pixel size from the file's properties, without decoding. EXIF orientations 5–8 (which
@@ -24,6 +25,29 @@ func renderingColorSpace(for image: CGImage) -> CGColorSpace {
     return CGColorSpace(name: CGColorSpace.sRGB)!
 }
 
+/// Shared Core Image contexts. A `CIContext` is costly to create and safe to use from several
+/// threads at once, so export keeps one per working colour space instead of one per image.
+enum CoreImageContexts {
+    /// Default options: for orientation fixes, which don't filter.
+    static let standard = CIContext()
+
+    /// Distinct rendering spaces are few (sRGB, Display P3, the odd embedded profile); the
+    /// cache is cleared if it ever grows past this.
+    private static let limit = 16
+    private static let byColorSpace = Mutex<[CGColorSpace: CIContext]>([:])
+
+    /// A context that both works and outputs in `space`.
+    static func context(workingIn space: CGColorSpace) -> CIContext {
+        byColorSpace.withLock { cache in
+            if let context = cache[space] { return context }
+            if cache.count >= limit { cache.removeAll() }
+            let context = CIContext(options: [.workingColorSpace: space, .outputColorSpace: space])
+            cache[space] = context
+            return context
+        }
+    }
+}
+
 enum ImageFiles {
     /// Decode now, not lazily on first draw (which would land on the main actor).
     static var immediate: CFDictionary { [kCGImageSourceShouldCacheImmediately: true] as CFDictionary }
@@ -42,6 +66,6 @@ enum ImageFiles {
         guard orientation != 1 else { return image }
         let oriented = CIImage(cgImage: image).oriented(forExifOrientation: orientation)
         let space = renderingColorSpace(for: image)
-        return CIContext().createCGImage(oriented, from: oriented.extent, format: .RGBA8, colorSpace: space)
+        return CoreImageContexts.standard.createCGImage(oriented, from: oriented.extent, format: .RGBA8, colorSpace: space)
     }
 }

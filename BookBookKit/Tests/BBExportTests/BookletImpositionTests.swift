@@ -58,7 +58,7 @@ struct BookletImpositionTests {
         let layout = BookletImposition.layout(pageSize: page, sheet: .letter)
         #expect(layout.scaledToFit)
         #expect(abs(layout.scale - 396.0 / 612.0) < 1e-9)
-        let rect = BookletLayoutEngine.pageRect(in: layout.firstSlot, pageSize: page, scale: layout.scale)
+        let rect = BookletImposition.pageRect(in: layout.firstSlot, pageSize: page, scale: layout.scale)
         #expect(abs(rect.midX - layout.firstSlot.midX) < 1e-9 && abs(rect.midY - layout.firstSlot.midY) < 1e-9)
         #expect(rect.width <= layout.firstSlot.width + 1e-9 && rect.height <= layout.firstSlot.height + 1e-9)
     }

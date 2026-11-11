@@ -71,6 +71,25 @@ final class TestFlag: Sendable {
         #expect(await blank.loadCache().isEmpty)
     }
 
+    /// An unchanged rescan leaves the cache file alone; a changed one replaces it (atomically,
+    /// so as a new file).
+    @Test func cacheRewrittenOnlyWhenEntriesChange() async throws {
+        let (index, lib, dir) = try makeIndex()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func fileNumber() throws -> Int? {
+            try FileManager.default.attributesOfItem(atPath: index.cacheURL.path(percentEncoded: false))[.systemFileNumber] as? Int
+        }
+        _ = try lib.createBook(title: "A")
+        await index.refresh()
+        let first = try #require(try fileNumber())
+        await index.refresh()
+        await index.refreshResolvingDuplicates()
+        #expect(try fileNumber() == first)
+        _ = try lib.createBook(title: "B")
+        #expect(await index.refreshResolvingDuplicates().count == 2)
+        #expect(try fileNumber() != first)
+    }
+
     @Test func changesYieldsAfterPackageCopiedIn() async throws {
         let (index, lib, dir) = try makeIndex()
         defer { try? FileManager.default.removeItem(at: dir) }

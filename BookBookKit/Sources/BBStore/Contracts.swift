@@ -131,11 +131,3 @@ public struct LibraryEntry: Codable, Hashable, Sendable, Identifiable {
         self.thumbnailURL = thumbnailURL
     }
 }
-
-extension DirtySet {
-    func with(_ body: (inout DirtySet) -> Void) -> DirtySet {
-        var copy = self
-        body(&copy)
-        return copy
-    }
-}

@@ -35,13 +35,13 @@ struct FontEmbeddingTests {
         return content
     }
 
-    @Test func registeredFontIsEmbeddedAsSubset() throws {
+    @Test func registeredFontIsEmbeddedAsSubset() async throws {
         let urls = TestFonts.Face.allCases.compactMap { TestFonts.url(for: $0) }
         #expect(FontRegistry.register(urls).isEmpty)
         let info = try FontInspector.inspect(try #require(TestFonts.url(for: .regular)))
         #expect(info.embeddingAllowed)
 
-        let data = try PDFExporter.standardPDFData(Self.book(), images: EmptyImages())
+        let data = try await ExportFixtures.standardPDF(Self.book(), images: EmptyImages())
         let document = try #require(PDFDocument(data: data))
         #expect(document.string?.contains("Atkinson text") == true) // still real text
 

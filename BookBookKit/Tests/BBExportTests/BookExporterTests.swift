@@ -100,6 +100,24 @@ struct BookExporterTests {
         #expect(p.g > 200 && p.r < 40)
     }
 
+    /// The two halves of a split spread draw the same page: its images are prepared once.
+    @Test(arguments: [ExportOptions(), ExportOptions(kind: .booklet(.letter))])
+    func splitSpread_preparesItsImagesOnce(options: ExportOptions) async throws {
+        var content = F.book(pages: 3)
+        let spread = Template(name: "Image spread", kind: .spread, boxes: [
+            Box(id: F.imageBox, frame: NormalizedRect(x: 0.1, y: 0.1, width: 0.8, height: 0.5), content: .image),
+        ])
+        content.templates[spread.id] = spread
+        let spreadPage = content.book.pageOrder[1]
+        content.pages[spreadPage]?.templateID = spread.id
+        let preparer = FakePreparer()
+        _ = try await pdf(content, options, preparer: preparer)
+        let prepared = await preparer.prepared
+        #expect(prepared.filter { $0.page == spreadPage }.count == 1)
+        #expect(prepared.count == Set(prepared).count)
+        #expect(Set(prepared.map(\.page)) == Set(content.book.pageOrder))
+    }
+
     @Test func preparerFailure_throwsImageUnreadable() async {
         struct Boom: Error {}
         await #expect(throws: ExportError.imageUnreadable(F.imageRef)) {

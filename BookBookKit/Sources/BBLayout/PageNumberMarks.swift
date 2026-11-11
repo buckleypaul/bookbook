@@ -18,10 +18,4 @@ public struct PageNumberMarks: Sendable {
     public func marks(for page: PageID) -> [PageNumberMark] {
         PageNumbering.marks(for: page, layout: layout, numbers: numbers)
     }
-
-    /// A closure for `PDFExporter`'s `pageNumbers:` argument.
-    public static func make(for content: BookContent) -> @Sendable (PageID) -> [PageNumberMark] {
-        let marks = PageNumberMarks(content: content)
-        return { marks.marks(for: $0) }
-    }
 }

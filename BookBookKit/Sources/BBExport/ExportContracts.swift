@@ -89,16 +89,15 @@ public struct ExportResult: Hashable, Sendable {
     public var pageCount: Int
     /// Booklet only: blank pages added to reach a multiple of 4.
     public var blanksAdded: Int
-    /// Booklet only: pages were scaled down to fit two-up; `scale` < 1 then.
-    public var scaledToFit: Bool
+    /// Booklet only: ≤ 1, the factor pages were scaled by to fit two-up.
     public var scale: CGFloat
     /// Booklet only: e.g. "Print double-sided, flip on short edge."
     public var printingInstructions: String?
-    public init(pageCount: Int, blanksAdded: Int = 0, scaledToFit: Bool = false, scale: CGFloat = 1,
-                printingInstructions: String? = nil) {
+    /// Booklet only: pages were scaled down to fit two-up (`scale` < 1), as `BookletSheetLayout`.
+    public var scaledToFit: Bool { scale < 0.9999 }
+    public init(pageCount: Int, blanksAdded: Int = 0, scale: CGFloat = 1, printingInstructions: String? = nil) {
         self.pageCount = pageCount
         self.blanksAdded = blanksAdded
-        self.scaledToFit = scaledToFit
         self.scale = scale
         self.printingInstructions = printingInstructions
     }
@@ -151,20 +150,6 @@ public struct BookletSheetLayout: Hashable, Sendable {
     }
 }
 
-/// The page-range rule shared by `BookExporter` and the export sheet: a range that cuts a
-/// spread is widened to include the whole spread.
-public enum PageRangeWidening {
-    /// The story pages (first position and span each) that `range` selects: every page whose
-    /// positions overlap it.
-    public static func selected<S: Sequence>(_ pages: S, in range: ClosedRange<Int>?) -> [(position: Int, span: Int)]
-    where S.Element == (position: Int, span: Int) {
-        pages.filter { page in
-            guard let range else { return true }
-            return (page.position...(page.position + page.span - 1)).overlaps(range)
-        }
-    }
-}
-
 public enum BookletImposition {
     /// `n` rounded up to a multiple of 4 (minimum 4).
     public static func paddedCount(_ n: Int) -> Int {
@@ -196,12 +181,6 @@ public enum BookletImposition {
              SheetSide(sheet: s, isFront: false, leftPage: 2 + 2 * s, rightPage: n - 1 - 2 * s)]
         }
     }
-
-    /// Slot geometry for one trim-size page (single page, not spread) on a sheet.
-    /// Implemented by the pipeline lane in `BookletLayout.swift`.
-    public static func layout(pageSize: CGSize, sheet: SheetSize) -> BookletSheetLayout {
-        BookletLayoutEngine.layout(pageSize: pageSize, sheet: sheet)
-    }
 }
 
 // MARK: - Print-shop marks (A §9.1)
@@ -212,14 +191,6 @@ public enum CropMarks {
     /// Gap between the bleed edge and the start of each mark.
     public static let offsetFromBleed: CGFloat = 3
     public static let lineWidth: CGFloat = 0.25
-
-    /// Line segments in media space (origin top-left, y down) for a media box laid out as
-    /// mark area + bleed + trim. Eight segments: two per trim corner, on the trim lines'
-    /// extensions, from `offsetFromBleed` past the bleed to the media edge.
-    /// Implemented by the pipeline lane in `CropMarkGeometry.swift`.
-    public static func segments(trim: CGRect, bleed: CGFloat) -> [CropMarkSegment] {
-        CropMarkGeometry.segments(trim: trim, bleed: bleed)
-    }
 }
 
 public struct CropMarkSegment: Hashable, Sendable {

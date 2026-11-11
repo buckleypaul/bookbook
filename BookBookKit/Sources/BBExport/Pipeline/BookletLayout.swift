@@ -10,11 +10,12 @@ import CoreGraphics
 /// would put page n behind page 2 and the back upside down. Each page is scaled by
 /// `min(1, fit)` and centred in its half. A scale within `tolerance` of 1 counts as 1, so 5.5×8.5 in on Letter and A5 on A4
 /// (sizes rounded to 0.01 pt) print at 100 %.
-enum BookletLayoutEngine {
+extension BookletImposition {
     static let tolerance: CGFloat = 0.002
     static let shortEdgeInstructions = "Print double-sided, flip on short edge."
 
-    static func layout(pageSize: CGSize, sheet: SheetSize) -> BookletSheetLayout {
+    /// Slot geometry for one trim-size page (single page, not spread) on a sheet.
+    public static func layout(pageSize: CGSize, sheet: SheetSize) -> BookletSheetLayout {
         let portrait = sheet.portraitSize
         let sideBySide = pageSize.width <= pageSize.height
         let sheetSize: CGSize

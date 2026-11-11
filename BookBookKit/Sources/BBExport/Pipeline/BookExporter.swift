@@ -75,7 +75,8 @@ public final class BookExporter {
     public func bitmapData(page pageID: PageID, format: BitmapFormat) async throws -> Data {
         guard let page = content.pages[pageID] else { throw ExportError.noPages }
         let slot = OutputSlot(page: page, half: nil)
-        let prepared = try await prepareImages(for: [page])
+        var cache: PreparedPages = [:]
+        let prepared = try await prepareImages(for: [page], cache: &cache)
         try Task.checkCancellation()
 
         let size = OutputPageDrawing.trimSize(of: slot, in: content)
@@ -92,7 +93,7 @@ public final class BookExporter {
         var renderer = PageRenderer(images: images)
         renderer.prepared = prepared
         OutputPageDrawing.draw(slot, content: content, renderer: renderer,
-                               marks: PageNumberMarks.make(for: content)(page.id), target: .pdfTrim, bleed: 0, ctx: ctx)
+                               marks: PageNumberMarks(content: content).marks(for: page.id), target: .pdfTrim, bleed: 0, ctx: ctx)
         guard let image = ctx.makeImage() else { throw ExportError.encodingFailed }
         return try Self.encode(image, format: format)
     }
@@ -116,10 +117,12 @@ public final class BookExporter {
                                                   range: ClosedRange<Int>?) -> [(page: Page, position: PagePosition)] {
         let story = content.storyPages
         let layout = PageSequencer.layout(for: content)
-        let pairs = Array(zip(story, layout.pages))
-        let selected = PageRangeWidening.selected(pairs.map { (position: $0.1.position, span: $0.1.span) }, in: range)
-        let keep = Set(selected.map(\.position))
-        return pairs.filter { keep.contains($0.1.position) }.map { (page: $0.0, position: $0.1) }
+        return zip(story, layout.pages)
+            .filter { _, position in
+                guard let range else { return true }
+                return (position.position...(position.position + position.span - 1)).overlaps(range)
+            }
+            .map { (page: $0, position: $1) }
     }
 
     /// Output pages for standard and print-shop exports.
@@ -184,11 +187,12 @@ public final class BookExporter {
         guard let ctx = CGContext(consumer: consumer, mediaBox: &defaultMedia, OutputPageDrawing.documentInfo(content))
         else { throw ExportError.contextCreationFailed }
 
-        let marks = PageNumberMarks.make(for: content)
+        let marks = PageNumberMarks(content: content)
         let total = slots.count
+        var cache: PreparedPages = [:]
         for (index, slot) in slots.enumerated() {
             try Task.checkCancellation()
-            let prepared = try await prepareImages(for: slot.page.map { [$0] } ?? [])
+            let prepared = try await prepareImages(for: slot.page.map { [$0] } ?? [], cache: &cache)
             try Task.checkCancellation()
 
             let trim = OutputPageDrawing.trimSize(of: slot, in: content)
@@ -210,7 +214,7 @@ public final class BookExporter {
             var renderer = PageRenderer(images: images)
             renderer.prepared = prepared
             OutputPageDrawing.draw(slot, content: content, renderer: renderer,
-                                   marks: slot.page.map { marks($0.id) } ?? [],
+                                   marks: slot.page.map { marks.marks(for: $0.id) } ?? [],
                                    target: isPrintShop ? .pdfBleed : .pdfTrim, bleed: bleed, ctx: ctx)
             ctx.restoreGState()
             ctx.endPDFPage()
@@ -237,11 +241,12 @@ public final class BookExporter {
         guard let ctx = CGContext(consumer: consumer, mediaBox: &media, OutputPageDrawing.documentInfo(content))
         else { throw ExportError.contextCreationFailed }
 
-        let marks = PageNumberMarks.make(for: content)
+        let marks = PageNumberMarks(content: content)
+        var cache: PreparedPages = [:]
         for (index, side) in sides.enumerated() {
             try Task.checkCancellation()
             let placed = [(all[side.leftPage - 1], layout.firstSlot), (all[side.rightPage - 1], layout.secondSlot)]
-            let prepared = try await prepareImages(for: placed.compactMap(\.0.page))
+            let prepared = try await prepareImages(for: placed.compactMap(\.0.page), cache: &cache)
             try Task.checkCancellation()
 
             ctx.beginPDFPage([kCGPDFContextMediaBox: OutputPageDrawing.boxValue(media)] as CFDictionary)
@@ -251,12 +256,12 @@ public final class BookExporter {
             var renderer = PageRenderer(images: images)
             renderer.prepared = prepared
             for (slot, slotRect) in placed {
-                let rect = BookletLayoutEngine.pageRect(in: slotRect, pageSize: pageSize, scale: layout.scale)
+                let rect = BookletImposition.pageRect(in: slotRect, pageSize: pageSize, scale: layout.scale)
                 ctx.saveGState()
                 ctx.translateBy(x: rect.minX, y: rect.minY)
                 ctx.scaleBy(x: layout.scale, y: layout.scale)
                 OutputPageDrawing.draw(slot, content: content, renderer: renderer,
-                                       marks: slot.page.map { marks($0.id) } ?? [],
+                                       marks: slot.page.map { marks.marks(for: $0.id) } ?? [],
                                        target: .pdfTrim, bleed: 0, ctx: ctx)
                 ctx.restoreGState()
             }
@@ -267,8 +272,7 @@ public final class BookExporter {
             await Task.yield()
         }
         ctx.closePDF()
-        return ExportResult(pageCount: sides.count, blanksAdded: blanks, scaledToFit: layout.scaledToFit,
-                            scale: layout.scale, printingInstructions: layout.printingInstructions)
+        return ExportResult(pageCount: sides.count, blanksAdded: blanks, scale: layout.scale, printingInstructions: layout.printingInstructions)
     }
 
     /// Crop marks in media space (y down), black hairlines.
@@ -290,24 +294,31 @@ public final class BookExporter {
 
     // MARK: Images
 
-    /// Prepares every placed image on `pages` (deduplicated by page). The result is dropped by
-    /// the caller after the unit is drawn, so at most one unit's bitmaps are held at a time.
-    private func prepareImages(for pages: [Page]) async throws -> PreparedImages {
-        var result: [BoxImageKey: CGImage] = [:]
-        var seen: Set<PageID> = []
-        for page in pages where seen.insert(page.id).inserted {
+    /// Prepared bitmaps by page, then box: the previous unit's, carried into the next.
+    private typealias PreparedPages = [PageID: [BoxImageKey: CGImage]]
+
+    /// Prepares every placed image on `pages` (deduplicated by page). `cache` holds the previous
+    /// unit's pages: those this unit doesn't draw are dropped first, so at most one unit's
+    /// bitmaps are held at a time, and those it draws again are reused rather than prepared
+    /// twice (the two halves of a split spread, or a spread on consecutive booklet sides).
+    private func prepareImages(for pages: [Page], cache: inout PreparedPages) async throws -> PreparedImages {
+        let wanted = Set(pages.map(\.id))
+        cache = cache.filter { wanted.contains($0.key) }
+        for page in pages where cache[page.id] == nil {
+            var boxes: [BoxImageKey: CGImage] = [:]
             for request in requestBuilder(page, content) {
                 try Task.checkCancellation()
                 do {
-                    result[request.key] = try await preparer.prepare(request)
+                    boxes[request.key] = try await preparer.prepare(request)
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
                     throw ExportError.imageUnreadable(request.image)
                 }
             }
+            cache[page.id] = boxes
         }
-        return PreparedImages(result)
+        return PreparedImages(cache.values.reduce(into: [:]) { $0.merge($1) { first, _ in first } })
     }
 
     // MARK: Encoding

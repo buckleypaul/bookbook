@@ -7,9 +7,11 @@ import PDFKit
 import Testing
 @testable import BBExport
 
+/// The Standard export drawn straight from source images (`BookExporter` with no image
+/// preparation): pages at trim, real text, embedded fonts, cover first.
 @MainActor
-@Suite("PDFExporter")
-struct PDFExporterTests {
+@Suite("Standard PDF export")
+struct StandardPDFExportTests {
     init() { #expect(TestFonts.registerAll()) }
 
     static let imageBoxID = BoxID("00000000-0000-0000-0000-0000000000C1")
@@ -60,8 +62,8 @@ struct PDFExporterTests {
         return ImageSource([imageRef: ctx.makeImage()!])
     }
 
-    @Test func twoPageBook_pagesTrimTextAndEmbeddedFonts() throws {
-        let data = try PDFExporter.standardPDFData(Self.book(), images: Self.images())
+    @Test func twoPageBook_pagesTrimTextAndEmbeddedFonts() async throws {
+        let data = try await ExportFixtures.standardPDF(Self.book(), images: Self.images())
         let document = try #require(PDFDocument(data: data))
 
         #expect(document.pageCount == 3) // cover + 2 story pages
@@ -93,23 +95,28 @@ struct PDFExporterTests {
         #expect(fonts.contains { $0.baseFont.hasSuffix("+AtkinsonHyperlegible-Bold") })
     }
 
-    @Test func exportStandard_writesFile() throws {
+    @Test func exportStandard_writesFile() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("bookbook-pdf-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: url) }
-        try PDFExporter.exportStandard(Self.book(), images: Self.images(), to: url)
+        _ = try await ExportFixtures.sourceExporter(Self.book(), images: Self.images())
+            .export(ExportOptions(), to: url) { _ in }
         #expect(PDFDocument(url: url)?.pageCount == 3) // cover + 2 story pages
     }
 
-    @Test func coverOnlyBook_throwsNoPages() {
+    /// With no story pages the cover is still a page; leaving it out too leaves nothing to export.
+    @Test func coverOnlyBook_exportsCoverAlone_orThrowsNoPages() async throws {
         var content = Self.book()
         content.book.pageOrder = []
-        #expect(throws: PDFExportError.noPages) {
-            try PDFExporter.standardPDFData(content, images: Self.images())
+        let data = try await ExportFixtures.standardPDF(content, images: Self.images())
+        #expect(PDFDocument(data: data)?.pageCount == 1)
+        await #expect(throws: ExportError.noPages) {
+            _ = try await ExportFixtures.sourceExporter(content, images: Self.images())
+                .pdfData(ExportOptions(includeCover: false)) { _ in }
         }
     }
 
-    @Test func coverIsFirstPage_withBoundTitleAndAuthor() throws {
+    @Test func coverIsFirstPage_withBoundTitleAndAuthor() async throws {
         var content = Self.book()
         let titleBox = Box(frame: NormalizedRect(x: 0.1, y: 0.1, width: 0.8, height: 0.2),
                            content: .text(TextBoxStyle()), role: .title)
@@ -121,24 +128,19 @@ struct PDFExporterTests {
         coverPage.templateID = cover.id
         content.pages[coverPage.id] = coverPage
 
-        let document = try #require(PDFDocument(data: try PDFExporter.standardPDFData(content, images: Self.images())))
+        let data = try await ExportFixtures.standardPDF(content, images: Self.images())
+        let document = try #require(PDFDocument(data: data))
         #expect(document.pageCount == 3)
         let first = normalise(try #require(document.page(at: 0)).string ?? "")
         #expect(first.contains("The Fox Book") && first.contains("A. Tester"))
         #expect(!normalise(try #require(document.page(at: 1)).string ?? "").contains("The Fox Book"))
     }
 
-    @Test func pageNumberMarks_arePassedPerPageAndDrawn() throws {
-        let content = Self.book()
-        var asked: [PageID] = []
-        let numbers: [PageID: String] = Dictionary(uniqueKeysWithValues:
-            zip(content.book.pageOrder, ["41", "42"]))
-        let data = try PDFExporter.standardPDFData(content, images: Self.images()) { id in
-            asked.append(id)
-            return numbers[id].map { [PageNumberMark(text: $0, half: 0, isLeftHand: id == content.book.pageOrder[1])] } ?? []
-        }
-        #expect(asked.contains(content.book.coverPageID))
-        #expect(Set(asked) == Set(content.book.pageOrder + [content.book.coverPageID]))
+    @Test func pageNumberMarks_areDrawnPerPage_notOnTheCover() async throws {
+        var content = Self.book()
+        content.style.pageNumbers = PageNumberStyle(enabled: true, fontFamily: TestFonts.Face.regular.rawValue,
+                                                    startNumber: 41)
+        let data = try await ExportFixtures.standardPDF(content, images: Self.images())
         let document = try #require(PDFDocument(data: data))
         let texts = (0..<3).map { document.page(at: $0)?.string ?? "" }
         #expect(!texts[0].contains("4"))

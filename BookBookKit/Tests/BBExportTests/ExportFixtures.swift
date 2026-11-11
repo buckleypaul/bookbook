@@ -102,6 +102,17 @@ enum ExportFixtures {
                      requestBuilder: { page, content in requests(page: page, content: content) })
     }
 
+    /// An exporter that prepares nothing, so every image is drawn from `images` with its
+    /// placement transform (the source bitmap, not a 300 DPI preparation).
+    static func sourceExporter(_ content: BookContent, images: any PageImageSource) -> BookExporter {
+        BookExporter(content: content, images: images, preparer: FakePreparer(), requestBuilder: { _, _ in [] })
+    }
+
+    /// The default Standard export (cover, then every story page at trim) drawn from `images`.
+    static func standardPDF(_ content: BookContent, images: any PageImageSource) async throws -> Data {
+        try await sourceExporter(content, images: images).pdfData(ExportOptions()) { _ in }.0
+    }
+
     static func document(_ data: Data) -> PDFDocument? { PDFDocument(data: data) }
 
     /// Each PDF page's text, whitespace-separated words.

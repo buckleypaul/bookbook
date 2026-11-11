@@ -92,7 +92,7 @@ public final class BookExporter {
         var renderer = PageRenderer(images: images)
         renderer.prepared = prepared
         OutputPageDrawing.draw(slot, content: content, renderer: renderer,
-                               marks: PageNumberMarks.make(for: content)(page.id), target: .pdfTrim, bleed: 0, ctx: ctx)
+                               marks: PageNumberMarks(content: content).marks(for: page.id), target: .pdfTrim, bleed: 0, ctx: ctx)
         guard let image = ctx.makeImage() else { throw ExportError.encodingFailed }
         return try Self.encode(image, format: format)
     }
@@ -184,7 +184,7 @@ public final class BookExporter {
         guard let ctx = CGContext(consumer: consumer, mediaBox: &defaultMedia, OutputPageDrawing.documentInfo(content))
         else { throw ExportError.contextCreationFailed }
 
-        let marks = PageNumberMarks.make(for: content)
+        let marks = PageNumberMarks(content: content)
         let total = slots.count
         for (index, slot) in slots.enumerated() {
             try Task.checkCancellation()
@@ -210,7 +210,7 @@ public final class BookExporter {
             var renderer = PageRenderer(images: images)
             renderer.prepared = prepared
             OutputPageDrawing.draw(slot, content: content, renderer: renderer,
-                                   marks: slot.page.map { marks($0.id) } ?? [],
+                                   marks: slot.page.map { marks.marks(for: $0.id) } ?? [],
                                    target: isPrintShop ? .pdfBleed : .pdfTrim, bleed: bleed, ctx: ctx)
             ctx.restoreGState()
             ctx.endPDFPage()
@@ -237,7 +237,7 @@ public final class BookExporter {
         guard let ctx = CGContext(consumer: consumer, mediaBox: &media, OutputPageDrawing.documentInfo(content))
         else { throw ExportError.contextCreationFailed }
 
-        let marks = PageNumberMarks.make(for: content)
+        let marks = PageNumberMarks(content: content)
         for (index, side) in sides.enumerated() {
             try Task.checkCancellation()
             let placed = [(all[side.leftPage - 1], layout.firstSlot), (all[side.rightPage - 1], layout.secondSlot)]
@@ -256,7 +256,7 @@ public final class BookExporter {
                 ctx.translateBy(x: rect.minX, y: rect.minY)
                 ctx.scaleBy(x: layout.scale, y: layout.scale)
                 OutputPageDrawing.draw(slot, content: content, renderer: renderer,
-                                       marks: slot.page.map { marks($0.id) } ?? [],
+                                       marks: slot.page.map { marks.marks(for: $0.id) } ?? [],
                                        target: .pdfTrim, bleed: 0, ctx: ctx)
                 ctx.restoreGState()
             }

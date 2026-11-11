@@ -33,23 +33,22 @@ struct PDFPageNumberTests {
         return content
     }
 
-    private func pageTexts(_ content: BookContent) throws -> [String] {
-        let data = try PDFExporter.standardPDFData(content, images: ImageSource([:]),
-                                                   pageNumbers: PageNumberMarks.make(for: content))
+    private func pageTexts(_ content: BookContent) async throws -> [String] {
+        let data = try await ExportFixtures.standardPDF(content, images: ImageSource([:]))
         let document = try #require(PDFDocument(data: data))
         return (0..<document.pageCount).map {
             (document.page(at: $0)?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
-    @Test func numbersOnlyOnStoryPages() throws {
-        let texts = try pageTexts(Self.book())
+    @Test func numbersOnlyOnStoryPages() async throws {
+        let texts = try await pageTexts(Self.book())
         // Cover, dedication (position 1, skipped but counted), story pages at positions 2–4.
         #expect(texts == ["", "", "2", "3", "4"])
     }
 
-    @Test func numberingOffDrawsNothing() throws {
-        #expect(try pageTexts(Self.book(numbering: false)) == ["", "", "", "", ""])
+    @Test func numberingOffDrawsNothing() async throws {
+        #expect(try await pageTexts(Self.book(numbering: false)) == ["", "", "", "", ""])
     }
 
     @Test func marksHelperSkipsCoverAndFrontMatter() {

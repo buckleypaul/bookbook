@@ -46,15 +46,14 @@ struct PDFSpreadExportTests {
         return content
     }
 
-    static func pdf(_ content: BookContent) throws -> PDFDocument {
-        let data = try PDFExporter.standardPDFData(content, images: ImageSource([:]),
-                                                   pageNumbers: PageNumberMarks.make(for: content))
+    static func pdf(_ content: BookContent) async throws -> PDFDocument {
+        let data = try await ExportFixtures.standardPDF(content, images: ImageSource([:]))
         return try #require(PDFDocument(data: data))
     }
 
-    @Test func spreadBecomesTwoTrimSizePages() throws {
+    @Test func spreadBecomesTwoTrimSizePages() async throws {
         let content = Self.book()
-        let document = try Self.pdf(content)
+        let document = try await Self.pdf(content)
         let trim = PageGeometry(setup: content.style.pageSetup).trimRect
         // Cover + single + 2 spread halves + single.
         #expect(document.pageCount == content.storyPages.count + 2)
@@ -74,9 +73,9 @@ struct PDFSpreadExportTests {
         #expect(texts[4] == ["4"])
     }
 
-    @Test func pageNumbersSitOnTheOuterEdgeOfEachHalf() throws {
+    @Test func pageNumbersSitOnTheOuterEdgeOfEachHalf() async throws {
         let content = Self.book(position: .bottomOuter)
-        let document = try Self.pdf(content)
+        let document = try await Self.pdf(content)
         let width = PageGeometry(setup: content.style.pageSetup).trimSize.width
         func numberBounds(_ text: String, page index: Int) throws -> CGRect {
             let page = try #require(document.page(at: index))
@@ -92,9 +91,9 @@ struct PDFSpreadExportTests {
         #expect(left.maxY < 72 && right.maxY < 72)
     }
 
-    @Test func eachHalfMatchesTheSpreadDrawnAtDoubleWidth() throws {
+    @Test func eachHalfMatchesTheSpreadDrawnAtDoubleWidth() async throws {
         let content = Self.book()
-        let document = try Self.pdf(content)
+        let document = try await Self.pdf(content)
         let spreadPage = try #require(content.pages[content.book.pageOrder[1]])
         let trim = PageGeometry(setup: content.style.pageSetup).trimSize
         let scale: CGFloat = 0.5

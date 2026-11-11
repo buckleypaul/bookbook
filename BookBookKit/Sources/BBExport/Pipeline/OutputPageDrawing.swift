@@ -13,7 +13,7 @@ struct OutputSlot {
     static let blank = OutputSlot(page: nil, half: nil)
 }
 
-/// Shared page drawing for every export path (A §9.1): `PDFExporter`, `BookExporter` and bitmaps.
+/// Shared page drawing for every export path (A §9.1): `BookExporter`'s PDFs and bitmaps.
 @MainActor
 enum OutputPageDrawing {
     /// The trim size of `slot`'s output page: double width for a whole spread.

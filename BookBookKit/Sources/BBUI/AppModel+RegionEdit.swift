@@ -16,6 +16,9 @@ public enum RegionEditRefusal: Error, Hashable, Sendable {
     /// The version to edit (or its box or asset) is gone.
     case baseVersionGone
     case readOnly
+    /// The request would send a real-person photo to a provider whose notice the book hasn't
+    /// acknowledged yet (A §11). Holds the provider.
+    case realPersonNoticeNeeded(ProviderID)
     /// The mask couldn't be encoded or saved into the book.
     case store(String)
 
@@ -29,6 +32,8 @@ public enum RegionEditRefusal: Error, Hashable, Sendable {
             "\(model) can't edit part of a picture. Choose a model that supports region editing in Settings."
         case .baseVersionGone: "The picture you were editing is no longer there."
         case .readOnly: "This book is open in another BookBook window, so it can't be changed here."
+        case .realPersonNoticeNeeded:
+            "This request now includes a photo of a real person. Try again to review the notice before it's sent."
         case let .store(text): "The selected area couldn't be saved: \(text)"
         }
     }
@@ -61,6 +66,9 @@ extension AppModel {
         try checkRegionEdit(intent: intent, drawing: drawing, target: target, content: document.content)
         let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, target: target,
                                                            now: now())
+        if let provider = realPersonNoticeNeeded(intent: intent, target: target, in: document) {
+            throw .realPersonNoticeNeeded(provider)
+        }
         guard enqueue(message, prepared(item, content: document.content), in: document) else {
             throw document.isEditable ? .baseVersionGone : .readOnly
         }

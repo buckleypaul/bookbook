@@ -36,13 +36,14 @@ public struct AdviceContext: Hashable, Sendable {
     public var provider: ProviderID
     /// What was sent (prompt, story text, references); nil if the failure came before assembly.
     public var report: AssemblyReport?
-    /// A reference flagged as a real-person photo when imported (Phase 10 sets this; false until then).
+    /// An image sent was flagged as a real-person photo when imported (A §11).
     public var includesRealPersonPhoto: Bool
 
-    public init(provider: ProviderID, report: AssemblyReport?, includesRealPersonPhoto: Bool = false) {
+    /// `includesRealPersonPhoto` defaults to what `report` recorded as sent (false without a report).
+    public init(provider: ProviderID, report: AssemblyReport?, includesRealPersonPhoto: Bool? = nil) {
         self.provider = provider
         self.report = report
-        self.includesRealPersonPhoto = includesRealPersonPhoto
+        self.includesRealPersonPhoto = includesRealPersonPhoto ?? report?.sentRealPersonPhoto ?? false
     }
 }
 

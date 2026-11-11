@@ -46,8 +46,9 @@ extension AppModel {
 
     /// Appends the pending user message (non-undoable) and enqueues the request, for any target
     /// (assets included). `prompt` is stored text (mention tokens); `refines` is the selected
-    /// version (nil = a new image). False if the prompt is empty, the target is gone or the book
-    /// is read-only. Shows nothing itself; callers run the cost and real-person checks first.
+    /// version (nil = a new image). False if the prompt is empty, the target is gone, the book
+    /// is read-only, or the real-person notice is still needed (A §11). Shows nothing itself;
+    /// callers run the cost and real-person checks first.
     @discardableResult
     public func generate(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID?,
                          attachedReferences: [VersionRef], target: GenerationTarget,

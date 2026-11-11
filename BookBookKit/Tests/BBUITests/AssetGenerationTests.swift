@@ -105,6 +105,69 @@ struct AssetGenerationTests {
         #expect(s.app.realPersonNoticeNeeded(for: [], in: s.document) == nil)
     }
 
+    /// Review fix: the enqueue paths enforce the notice themselves (A §11), so a book that
+    /// changed while the cost alert was up, or a caller that skipped the check, sends nothing.
+    @Test func enqueue_refusesAnUnacknowledgedRealPersonPhoto() async throws {
+        let s = try setup()
+        defer { s.h.tearDown() }
+        s.document.performIrreversible { content in
+            BookMutations.appendImportedAssetVersion(image: Fixtures.ref, pixelSize: PixelSize(width: 1024, height: 1024),
+                                                     owner: s.pip.owner,
+                                                     depictsRealPerson: true, to: &content, now: Fixtures.date)
+        }
+        let page = Fixtures.firstPage(s.document.content)
+        s.document.perform(.setAssetChecklist(page: page, [s.pip.id]))
+        let target = GenerationTarget.pageBox(page, Fixtures.imageBox.id)
+        let intent = s.app.generationIntent(prompt: "Pip in the garden", quality: .draft, includeStoryText: true,
+                                            refines: nil)
+        #expect(s.app.realPersonNoticeNeeded(intent: intent, target: target, in: s.document) == .openai)
+        let size = PixelSize(width: 1024, height: 1024)
+        let provenance = Provenance(provider: .openai, model: intent.model, quality: .draft, outputSize: size,
+                                    promptSent: "Pip", styleRevision: 0, storyTextIncluded: true, intent: intent)
+        let generated = Version(image: Fixtures.ref, pixelSize: size, source: .generated, createdAt: Fixtures.date,
+                                provenance: provenance)
+        let draft = s.app.draftAllPlan(in: s.document)
+        func messages() -> Int { s.document.content.sessions.values.reduce(0) { $0 + $1.messages.count } }
+        let before = messages()
+
+        #expect(!s.app.generate(prompt: "Pip in the garden", quality: .draft, includeStoryText: true, refines: nil,
+                                attachedReferences: [], target: target, in: s.document))
+        #expect(!s.app.enqueueGeneration(intent, target: target, in: s.document))
+        #expect(!s.app.regenerate(generated, target: target, in: s.document))
+        #expect(!s.app.enqueueDraftAll(draft, in: s.document))
+        #expect(messages() == before, "nothing appended")
+        await s.app.queueOperationsSettled()
+        #expect(await s.app.queue.snapshot().entries.isEmpty, "nothing enqueued")
+
+        s.app.acknowledgeRealPersonNotice(.openai, in: s.document)
+        #expect(s.app.enqueueGeneration(intent, target: target, in: s.document))
+        #expect(s.app.regenerate(generated, target: target, in: s.document))
+        #expect(messages() == before + 2)
+    }
+
+    /// Review fix: a refused request whose report sent a real-person photo gets rule 1's advice.
+    @Test func advice_forARefusalThatSentARealPersonPhoto() throws {
+        let s = try setup()
+        defer { s.h.tearDown() }
+        let app = s.app
+        let intent = GenerationIntent(messageText: "Pip", provider: .openai, model: "gpt-image-2.5-sunburst",
+                                      quality: .draft)
+        let item = QueueItem(bookID: BookID(), target: .asset(AssetID()), messageID: MessageID(), intent: intent)
+        func entry(realPerson: Bool) -> QueueEntry {
+            let report = AssemblyReport(
+                promptText: "A calm scene.",
+                referencesSent: [SentReference(image: Fixtures.ref, role: "photo", label: "Reference photo",
+                                               depictsRealPerson: realPerson)],
+                storyTextIncluded: false, styleRevision: 0)
+            let failure = QueueFailure(error: .refused(stage: .input, categories: [], nil), report: report,
+                                       attempts: 1, failedAt: Fixtures.date)
+            return QueueEntry(item: item, state: .failed(failure))
+        }
+        let photo = "Describe the child in words instead of uploading a photo."
+        #expect(app.advice(for: entry(realPerson: true))?.fixes == [photo])
+        #expect(app.advice(for: entry(realPerson: false))?.fixes.contains(photo) == false)
+    }
+
     @Test func batchNotice_oneNeedingItemAmongCleanOnes_andMixedProviders() throws {
         let s = try setup()
         defer { s.h.tearDown() }

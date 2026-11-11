@@ -18,7 +18,7 @@ struct LayoutsDetail: View {
                     .allowsHitTesting(document.isEditable)
             } else {
                 CrayonEmptyState("No Layout Selected", systemImage: "rectangle.3.group", color: Crayon.sky,
-                                 message: "Choose a layout, or add one with New Layout.")
+                                 message: "Choose a layout, or add one from the New menu.")
             }
         }
     }

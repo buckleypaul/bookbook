@@ -39,8 +39,8 @@ enum LayoutsListing {
     }
 }
 
-/// The Layouts tab's sidebar: templates grouped by kind, with New Layout, New Spread, Duplicate,
-/// Delete (blocked while in use) and Rename.
+/// The Layouts tab's sidebar: templates grouped by kind, with a New menu (Layout, Spread, AI) and
+/// an actions menu for the selection (Rename, Duplicate, Delete — blocked while in use).
 struct TemplateList: View {
     let document: BookDocument
     let content: BookContent
@@ -67,7 +67,7 @@ struct TemplateList: View {
             if let id = ids.first { menu(id) }
         }
         .onDeleteCommand { if let id = model.templateID { requestDelete(id) } }
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        .safeAreaInset(edge: .top, spacing: 0) { header }
         .sheet(isPresented: $showAISheet) {
             TemplateGenerationSheet(app: app, document: document, editor: model)
         }
@@ -141,49 +141,49 @@ struct TemplateList: View {
         model.update(actionName: "Rename Layout") { $0.name = name }
     }
 
-    private var footer: some View {
+    /// New (with its kinds spelled out) and the selected layout's actions, above the list so
+    /// they're easy to find. Every action is a labelled menu item rather than a bare icon.
+    private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Rectangle().fill(Crayon.ink.opacity(0.08)).frame(height: 1)
+            HStack(spacing: 8) {
+                Menu {
+                    Button("New Layout", systemImage: "rectangle.portrait") { model.newTemplate(kind: .single) }
+                    Button("New Spread", systemImage: "rectangle.split.2x1") { model.newTemplate(kind: .spread) }
+                    Divider()
+                    Button("New with AI…", systemImage: "sparkles") { showAISheet = true }
+                } label: {
+                    Label("New", systemImage: "plus")
+                        .labelStyle(.titleAndIcon)
+                        .font(Crayon.font(.body, weight: .bold))
+                        .foregroundStyle(Crayon.tomato)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("Add a blank page or spread layout, or describe one for AI to draw")
+                Spacer(minLength: 0)
+                Menu {
+                    if let id = model.templateID { menu(id) }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .fontWeight(.bold)
+                        .foregroundStyle(Crayon.tomato)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Rename, duplicate or delete the selected layout")
+                .disabled(model.templateID == nil)
+            }
+            .disabled(!document.isEditable)
             if let id = model.templateID, content.templates[id] != nil {
                 let used = LayoutsListing.usage(of: id, in: content)
                 if !used.isEmpty {
                     Text("Used on: \(used.joined(separator: ", ")). Change those pages' layout before deleting.")
                         .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
-                        .padding(.horizontal, 8)
                 }
             }
-            HStack(spacing: 4) {
-                Button { model.newTemplate(kind: .single) } label: { Label("New Layout", systemImage: "plus") }
-                    .help("Add a blank single-page layout")
-                Button { model.newTemplate(kind: .spread) } label: { Label("New Spread", systemImage: "plus.rectangle") }
-                    .help("Add a blank two-page spread layout")
-                Button { showAISheet = true } label: { Label("New with AI…", systemImage: "sparkles") }
-                    .help("Describe a layout and let AI draw it")
-                Button { if let id = model.templateID { model.duplicate(id) } } label: {
-                    Label("Duplicate", systemImage: "plus.square.on.square")
-                }
-                .help("Duplicate the selected layout")
-                .disabled(model.templateID == nil)
-                Button { if let id = model.templateID { requestDelete(id) } } label: {
-                    Label("Delete", systemImage: "minus")
-                }
-                .help(deleteHelp)
-                .disabled(model.templateID.map { !canDelete($0) } ?? true)
-                Spacer(minLength: 0)
-            }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .font(.system(.body, design: .rounded, weight: .bold))
-            .disabled(!document.isEditable)
-            .padding(.horizontal, 8)
-            .padding(.bottom, 8)
         }
-        .background(Crayon.paperDeep)
-    }
-
-    private var deleteHelp: String {
-        guard let id = model.templateID, content.templates[id] != nil else { return "Delete the selected layout" }
-        return content.pages(using: id).isEmpty ? "Delete the selected layout"
-            : "In use: change those pages to another layout first"
+        .padding(.horizontal, 8)
+        .padding(.bottom, 6)
     }
 }

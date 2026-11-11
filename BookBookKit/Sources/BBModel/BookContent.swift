@@ -35,6 +35,9 @@ public struct BookContent: Hashable, Sendable {
 
     public func template(for page: Page) -> Template? { templates[page.templateID] }
 
+    /// True when `page`'s template is a spread (two facing pages, A §4.1).
+    public func isSpread(_ page: Page) -> Bool { template(for: page)?.kind == .spread }
+
     /// Where a template is used (Phase 6): the cover first if it uses it, then story pages in
     /// reading order.
     public func pages(using templateID: TemplateID) -> [PageID] {

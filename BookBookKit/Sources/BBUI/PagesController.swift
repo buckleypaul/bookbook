@@ -120,7 +120,8 @@ public enum PagesOverviewModel {
     /// order, then the book's other templates by name.
     public static func templateChoices(forCover: Bool, in content: BookContent,
                                        presets: [Template]) -> [Template] {
-        func fits(_ t: Template) -> Bool { forCover ? t.kind == .cover : t.kind != .cover }
+        let pageKind: PageKind = forCover ? .cover : .story
+        func fits(_ t: Template) -> Bool { pageKind.accepts(t.kind) }
         var seen = Set<TemplateID>()
         var result: [Template] = []
         for preset in presets where fits(preset) && seen.insert(preset.id).inserted {

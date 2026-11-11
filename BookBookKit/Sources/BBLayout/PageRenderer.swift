@@ -65,7 +65,7 @@ public struct PageRenderer {
         for box in template.boxes {
             guard case .text(let style) = box.content, !options.hiddenTextBoxes.contains(box.id), isVisible(box)
             else { continue }
-            var text = CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id]
+            var text = content.displayedText(page: page, box: box)
             if options.previewSampleContent, text?.paragraphs.isEmpty ?? true {
                 text = Self.sampleText
             }
@@ -91,7 +91,7 @@ public struct PageRenderer {
         var result: Set<BoxID> = []
         for box in template.boxes {
             guard case .text(let style) = box.content,
-                  let text = CoverText.boundText(for: box.role, book: content.book) ?? page.text[box.id],
+                  let text = content.displayedText(page: page, box: box),
                   !text.paragraphs.isEmpty
             else { continue }
             let rect = Self.textRect(box, style: style, geometry: geometry)

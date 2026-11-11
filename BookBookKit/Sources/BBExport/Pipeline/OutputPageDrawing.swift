@@ -31,8 +31,7 @@ enum OutputPageDrawing {
         guard let page = slot.page else { return drawBlank(size: trimSize(of: slot, in: content), ctx: ctx) }
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        let isSpread = content.template(for: page)?.kind == .spread
-        guard isSpread else {
+        guard content.isSpread(page) else {
             let trim = PageGeometry(setup: content.style.pageSetup).trimRect
             ctx.clip(to: trim.insetBy(dx: -bleed, dy: -bleed))
             renderer.draw(page: page, in: content, into: ctx,

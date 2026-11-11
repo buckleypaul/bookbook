@@ -639,7 +639,8 @@ public final class BookDocument {
             edit = .setPlacement(page: pageID, box: boxID, placement: placement, baseline: baseline)
 
         case let .addPage(index, templateID, fix):
-            guard let template = resolveTemplate(templateID, into: &created), template.kind.isStory else { return nil }
+            guard let template = resolveTemplate(templateID, into: &created), PageKind.story.accepts(template.kind)
+            else { return nil }
             let page = BookContent.makePage(kind: .story, template: template, sessions: &created.sessions)
             edit = .insertPage(page, index: clamped(index))
             fixSplits = fix
@@ -666,7 +667,7 @@ public final class BookDocument {
             guard let page = content.pages[pageID], page.templateID != templateID,
                   let old = content.template(for: page),
                   let new = resolveTemplate(templateID, into: &created),
-                  page.kind == .cover ? new.kind == .cover : new.kind.isStory else { return nil }
+                  page.kind.accepts(new.kind) else { return nil }
             let result = TemplateReassignment.reassign(page, from: old, to: new)
             var changed = result.page
             for boxID in result.unassignedImageBoxes {
@@ -679,7 +680,7 @@ public final class BookDocument {
 
         case let .importStoryText(texts, templateID, index, fix):
             guard !texts.isEmpty, let template = resolveTemplate(templateID, into: &created),
-                  template.kind.isStory, let textBox = Self.firstTextBox(of: template) else { return nil }
+                  PageKind.story.accepts(template.kind), let textBox = Self.firstTextBox(of: template) else { return nil }
             let start = clamped(index)
             var inserts: [Edit] = []
             for (offset, text) in texts.enumerated() {
@@ -840,8 +841,7 @@ public final class BookDocument {
     /// single page), so `blankInsertions` indices stay indices into `pageOrder`.
     private static func sequence(of content: BookContent) -> [SequenceEntry] {
         content.book.pageOrder.map { id in
-            let kind = content.pages[id].flatMap { content.template(for: $0) }?.kind
-            return SequenceEntry(id: id, isSpread: kind == .spread)
+            SequenceEntry(id: id, isSpread: content.pages[id].map(content.isSpread) ?? false)
         }
     }
 
@@ -1140,9 +1140,4 @@ public final class BookDocument {
         }
         return changed
     }
-}
-
-private extension TemplateKind {
-    /// Story pages use single or spread templates; the cover uses `.cover`.
-    var isStory: Bool { self == .single || self == .spread }
 }

@@ -59,7 +59,7 @@ public enum PageSequencer {
     /// template is `.spread`).
     public static func entries(for content: BookContent) -> [SequenceEntry] {
         content.storyPages.map {
-            SequenceEntry(id: $0.id, isSpread: content.template(for: $0)?.kind == .spread)
+            SequenceEntry(id: $0.id, isSpread: content.isSpread($0))
         }
     }
 

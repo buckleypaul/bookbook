@@ -4,9 +4,10 @@ import BBNet
 import Foundation
 import UniformTypeIdentifiers
 
-/// OpenAI Chat Completions adapter for the layout (structured output) and consistency (vision)
-/// requests (architecture.md §7.7, §7.8; plan P-5): `store: false`, strict `json_schema`.
-public struct OpenAIChatProvider: LayoutProvider, VisionProvider {
+/// OpenAI Chat Completions adapter for the layout and text-style (structured output) and
+/// consistency (vision) requests (architecture.md §7.7, §7.8, §7.13; plan P-5): `store: false`,
+/// strict `json_schema`.
+public struct OpenAIChatProvider: LayoutProvider, VisionProvider, TextStyleProvider {
     public static let defaultBaseURL = OpenAIImageProvider.defaultBaseURL
 
     public var id: ProviderID { .openai }
@@ -27,6 +28,17 @@ public struct OpenAIChatProvider: LayoutProvider, VisionProvider {
                                    name: StructuredSchemas.templateDraftName, schema: StructuredSchemas.templateDraft)
         let draft: TemplateDraft = try reply.decode()
         return LayoutResult(draft: draft, usage: reply.usage, parametersSent: reply.parameters)
+    }
+
+    public func styleText(_ request: TextStyleRequest) async throws(ProviderError) -> TextStyleResult {
+        let messages: [[String: Any]] = [
+            ["role": "system", "content": request.system],
+            ["role": "user", "content": request.user],
+        ]
+        let reply = try await send(model: request.model.id, messages: messages,
+                                   name: StructuredSchemas.textStyleName, schema: StructuredSchemas.textStyle)
+        let draft: TextStyleDraft = try reply.decode()
+        return TextStyleResult(draft: draft, usage: reply.usage, parametersSent: reply.parameters)
     }
 
     public func checkConsistency(_ request: ConsistencyRequest) async throws(ProviderError) -> ConsistencyResult {

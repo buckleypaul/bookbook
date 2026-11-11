@@ -49,4 +49,19 @@ struct PageThumbnailRendererTests {
         content.style.typography.color = RGBA(red: 1, green: 0, blue: 0)
         #expect(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40) !== withText)
     }
+
+    @Test func aFontImportRedrawsEveryThumbnail() throws {
+        var content = content()
+        let page = try #require(content.book.pageOrder.first)
+        content.pages[page]?.text[textBox] = RichText(plain: "Once upon a time")
+        let thumbnails = renderer()
+        let first = try #require(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40,
+                                                  fontsRevision: 3))
+        #expect(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40, fontsRevision: 3) === first)
+        // Same page, but fonts were registered: the layout (and picture) may have used a fallback.
+        let redrawn = try #require(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40,
+                                                    fontsRevision: 4))
+        #expect(redrawn !== first)
+        #expect(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40, fontsRevision: 4) === redrawn)
+    }
 }

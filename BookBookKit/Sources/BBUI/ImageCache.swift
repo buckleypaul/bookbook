@@ -16,9 +16,9 @@ public final class ImageCache: PageImageSource {
     /// Longest side for the screen; nil = full resolution (export).
     public let maxPixelSize: Int?
     private let urlForRef: (ImageRef) -> URL
-    private var cache: [ImageRef: CGImage] = [:]
-    /// Cached refs, least recently used first.
-    private var order: [ImageRef] = []
+    /// Each cached image with the tick of its last use; the smallest tick is evicted first.
+    private var cache: [ImageRef: (image: CGImage, lastUse: UInt64)] = [:]
+    private var clock: UInt64 = 0
     private let capacity: Int
 
     /// A companion cache of small images (`previewPixelSize` on the longest side) for list rows
@@ -38,17 +38,18 @@ public final class ImageCache: PageImageSource {
     }
 
     public func image(for ref: ImageRef) -> CGImage? {
-        if let image = cache[ref] {
-            if let index = order.firstIndex(of: ref), index != order.count - 1 {
-                order.append(order.remove(at: index))
-            }
+        clock &+= 1
+        // A hit only bumps its tick (O(1)); the canvas asks for every image box on every draw.
+        if let image = cache[ref]?.image {
+            cache[ref]?.lastUse = clock
             return image
         }
         // A miss isn't cached: the file may be written a moment later.
         guard let image = Self.load(urlForRef(ref), maxPixelSize: maxPixelSize) else { return nil }
-        cache[ref] = image
-        order.append(ref)
-        if order.count > capacity { cache[order.removeFirst()] = nil }
+        cache[ref] = (image, clock)
+        if cache.count > capacity, let oldest = cache.min(by: { $0.value.lastUse < $1.value.lastUse })?.key {
+            cache[oldest] = nil
+        }
         return image
     }
 
@@ -66,9 +67,22 @@ public final class ImageCache: PageImageSource {
         return load(source, maxPixelSize: maxPixelSize)
     }
 
+    /// The pixel size of the first image of `source` with its orientation applied (as a
+    /// downsampled `load` returns it), read from the header without decoding.
+    nonisolated static func orientedPixelSize(_ source: CGImageSource) -> CGSize? {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+              width > 0, height > 0
+        else { return nil }
+        // EXIF orientations 5–8 turn the image a quarter.
+        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        return (5...8).contains(orientation) ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
+    }
+
     /// The first image of `source`: whole, or a thumbnail (orientation applied) at most
     /// `maxPixelSize` on its longest side.
-    nonisolated private static func load(_ source: CGImageSource, maxPixelSize: Int?) -> CGImage? {
+    nonisolated static func load(_ source: CGImageSource, maxPixelSize: Int?) -> CGImage? {
         guard let maxPixelSize else {
             return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
         }

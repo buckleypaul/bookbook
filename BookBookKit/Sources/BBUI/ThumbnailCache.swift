@@ -21,8 +21,8 @@ public actor ThumbnailCache {
     }
 
     /// A PNG of `source` with its longest side at most `maxPixelSize`, cached under `<root>/<bookID>/`.
-    /// Writing a new rendition deletes the older ones of the same source and size. Returns nil if
-    /// `source` can't be read as an image.
+    /// Writing a new rendition deletes the older ones of the same source file and size (and any
+    /// left in the old `<hash>.png` naming). Returns nil if `source` can't be read as an image.
     public func rendition(of source: URL, bookID: BookID, maxPixelSize: Int) -> URL? {
         // URL caches resource values per instance; a reused URL would hide a changed mtime.
         var source = source
@@ -31,12 +31,14 @@ public actor ThumbnailCache {
               let values = try? source.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
               let size = values.fileSize, let modified = values.contentModificationDate
         else { return nil }
-        // Named `<group>-<version>.png`. The group hashes the source's name and the size; the
-        // version also hashes the source's byte size and mtime, so a changed source gets a new
-        // name (stale renditions are never served) and its older versions share the group prefix.
-        let group = Self.digest("\(source.lastPathComponent)|\(maxPixelSize)", length: 16)
-        let version = Self.digest(
-            "\(source.lastPathComponent)|\(size)|\(modified.timeIntervalSince1970)|\(maxPixelSize)", length: 32)
+        // Named `<group>-<version>.png`. The group hashes the source's full path and the size, so
+        // two sources never share one (every library thumbnail is a `thumbnail.png`, and a Finder
+        // copy of a book keeps its ID); the version also hashes the source's byte size and mtime,
+        // so a changed source gets a new name (stale renditions are never served) and its older
+        // versions share the group prefix.
+        let path = source.standardizedFileURL.path(percentEncoded: false)
+        let group = Self.digest("\(path)|\(maxPixelSize)", length: 16)
+        let version = Self.digest("\(path)|\(size)|\(modified.timeIntervalSince1970)|\(maxPixelSize)", length: 32)
         let name = "\(group)-\(version).png"
         let directory = root.appending(path: bookID.rawValue.uuidString, directoryHint: .isDirectory)
         let output = directory.appending(path: name, directoryHint: .notDirectory)
@@ -59,12 +61,20 @@ public actor ThumbnailCache {
         try? FileManager.default.removeItem(at: root.appending(path: bookID.rawValue.uuidString, directoryHint: .isDirectory))
     }
 
-    /// Deletes the renditions in `directory` named `<group>-…`, except `kept`.
+    /// Deletes the renditions in `directory` named `<group>-…`, except `kept`, and every
+    /// rendition in the old `<hash>.png` naming (nothing returns those any more).
     private func removeRenditions(in directory: URL, group: String, keeping kept: String) {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
-        for name in names where name != kept && name.hasPrefix("\(group)-") {
+        for name in names where name != kept && (name.hasPrefix("\(group)-") || Self.isLegacyRendition(name)) {
             try? FileManager.default.removeItem(at: directory.appending(path: name, directoryHint: .notDirectory))
         }
+    }
+
+    /// A rendition named before groups: 32 lowercase hex digits, then `.png`.
+    static func isLegacyRendition(_ name: String) -> Bool {
+        guard name.hasSuffix(".png") else { return false }
+        let stem = name.dropLast(4)
+        return stem.count == 32 && stem.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
     }
 
     /// The first `length` hex digits of the SHA-256 of `key`.
@@ -81,18 +91,26 @@ public enum BookThumbnail {
     public static func png(for content: BookContent, imageURL: (ImageRef) -> URL, maxPixelSize: Int = 512) -> Data? {
         guard maxPixelSize > 0, let page = page(in: content) else { return nil }
         // A spread (a book without a cover) is drawn whole, at double width.
-        let trim = PageGeometry.drawGeometry(for: page, in: content).trimSize
+        let geometry = PageGeometry.drawGeometry(for: page, in: content)
+        let trim = geometry.trimSize
         guard trim.width > 0, trim.height > 0 else { return nil }
         let scale = Double(maxPixelSize) / max(trim.width, trim.height)
         let width = max(1, Int((trim.width * scale).rounded()))
         let height = max(1, Int((trim.height * scale).rounded()))
+        // Each placed image's box in output pixels, with its crop: the decode size is picked from these.
+        let xScale = Double(width) / trim.width, yScale = Double(height) / trim.height
+        var uses: [ImageRef: [PlacedImageSource.Use]] = [:]
+        for box in content.template(for: page)?.imageBoxes ?? [] {
+            guard let placement = page.images[box.id]?.placement,
+                  let ref = content.placedVersion(page: page.id, box: box.id)?.image else { continue }
+            let rect = geometry.renderRect(for: box)
+            uses[ref, default: []].append(PlacedImageSource.Use(
+                boxPixelSize: CGSize(width: rect.width * xScale, height: rect.height * yScale), placement: placement))
+        }
         let image = withoutActuallyEscaping(imageURL) { escapable in
-            // Placed images are decoded downsampled, to twice the thumbnail's longest side, so an
-            // aspect-filled or zoomed-in image still has about a pixel per output pixel. The cache
-            // lives for this one render.
             ThumbnailRendering.render(page: page, in: content, trim: trim,
                                       pixelWidth: width, pixelHeight: height,
-                                      images: ImageCache(maxPixelSize: maxPixelSize * 2, urlForRef: escapable),
+                                      images: PlacedImageSource(uses: uses, urlForRef: escapable),
                                       options: RenderOptions(target: .thumbnail))
         }
         return image.flatMap(ThumbnailRendering.pngData)
@@ -101,6 +119,57 @@ public enum BookThumbnail {
     /// The page the thumbnail draws: the cover, or the first story page if there is none.
     static func page(in content: BookContent) -> Page? {
         content.coverPage ?? content.storyPages.first
+    }
+}
+
+/// The library thumbnail's placed images, each decoded once for one render, downsampled only as
+/// far as every box it fills keeps about one source pixel per output pixel (a zoomed-in crop
+/// needs more of the image than the thumbnail's size; an aspect-fill crop at zoom 1 about the
+/// box's size).
+@MainActor
+final class PlacedImageSource: PageImageSource {
+    /// One box drawing the image: its size in output pixels and how the image sits in it.
+    struct Use {
+        var boxPixelSize: CGSize
+        var placement: ImagePlacement
+    }
+
+    private let uses: [ImageRef: [Use]]
+    private let urlForRef: (ImageRef) -> URL
+    private var decoded: [ImageRef: CGImage] = [:]
+
+    init(uses: [ImageRef: [Use]], urlForRef: @escaping (ImageRef) -> URL) {
+        self.uses = uses
+        self.urlForRef = urlForRef
+    }
+
+    func image(for ref: ImageRef) -> CGImage? {
+        if let image = decoded[ref] { return image }
+        guard let source = CGImageSourceCreateWithURL(urlForRef(ref) as CFURL,
+                                                      [kCGImageSourceShouldCache: false] as CFDictionary)
+        else { return nil }
+        // An unreadable header decodes whole, as before downsampling.
+        let maxPixelSize = ImageCache.orientedPixelSize(source).flatMap {
+            Self.decodePixelSize(imageSize: $0, uses: uses[ref] ?? [])
+        }
+        guard let image = ImageCache.load(source, maxPixelSize: maxPixelSize) else { return nil }
+        decoded[ref] = image
+        return image
+    }
+
+    /// The longest side to decode an `imageSize` image at so that, drawn into each of `uses`
+    /// (aspect-filled, zoomed and panned as `PageRenderer` draws it), it has at least one pixel
+    /// per output pixel. Nil means full resolution: the image is no bigger than that.
+    nonisolated static func decodePixelSize(imageSize: CGSize, uses: [Use]) -> Int? {
+        guard imageSize.width > 0, imageSize.height > 0, !uses.isEmpty else { return nil }
+        // The drawn rect's size depends only on the image's aspect, not its resolution.
+        let needed = uses.map { use in
+            let box = CGRect(origin: .zero, size: use.boxPixelSize)
+            let drawn = PageGeometry.imageRect(imageSize: imageSize, boxRect: box, placement: use.placement)
+            return max(drawn.width, drawn.height)
+        }.max() ?? 0
+        guard needed.isFinite, needed < max(imageSize.width, imageSize.height) else { return nil }
+        return max(1, Int(needed.rounded(.up)))
     }
 }
 

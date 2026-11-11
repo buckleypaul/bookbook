@@ -1,4 +1,5 @@
 import AppKit
+import BBLayout
 import BBModel
 import SwiftUI
 
@@ -128,9 +129,8 @@ struct FormatBar: View {
 extension RGBA {
     var swiftUIColor: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: alpha) }
 
+    /// `color`'s sRGB components, or black if it has none.
     init(color: Color) {
-        let ns = NSColor(color).usingColorSpace(.sRGB) ?? .black
-        self.init(red: Double(ns.redComponent), green: Double(ns.greenComponent),
-                  blue: Double(ns.blueComponent), alpha: Double(ns.alphaComponent))
+        self = RichTextBridge.rgba(NSColor(color)) ?? .black
     }
 }

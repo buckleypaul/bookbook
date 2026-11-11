@@ -1,1 +1,0 @@
-Image {{n}} is the primary reference of {{name}}: keep exactly the same {{type}} (shape, proportions, colours, markings and clothing) and the same art style.

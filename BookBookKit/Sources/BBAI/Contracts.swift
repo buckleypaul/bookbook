@@ -341,12 +341,38 @@ public struct PersistedQueue: Hashable, Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey { case schemaVersion, entries, undelivered }
 
-    /// Files before schema 3 have no `undelivered`.
+    /// Files before schema 3 have no `undelivered`. Entries and deliveries for a legacy
+    /// character-sheet item (removed 2026-11-11; their target throws `LegacySheetItemError`) are
+    /// dropped; any other undecodable entry still fails the whole file.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
-        entries = try c.decode([Entry].self, forKey: .entries)
-        undelivered = try c.decodeIfPresent([PersistedDelivery].self, forKey: .undelivered) ?? []
+        entries = try Self.decodeDroppingLegacySheetItems(Entry.self, c.nestedUnkeyedContainer(forKey: .entries))
+        if c.contains(.undelivered), try !c.decodeNil(forKey: .undelivered) {
+            undelivered = try Self.decodeDroppingLegacySheetItems(PersistedDelivery.self,
+                                                                  c.nestedUnkeyedContainer(forKey: .undelivered))
+        } else {
+            undelivered = []
+        }
+    }
+
+    /// Decodes nothing; used to step past an element that failed to decode.
+    private struct Skipped: Decodable {
+        init(from decoder: any Decoder) throws {}
+    }
+
+    private static func decodeDroppingLegacySheetItems<T: Decodable>(
+        _ type: T.Type, _ container: any UnkeyedDecodingContainer) throws -> [T] {
+        var container = container
+        var out: [T] = []
+        while !container.isAtEnd {
+            do {
+                out.append(try container.decode(T.self))
+            } catch is LegacySheetItemError {
+                _ = try container.decode(Skipped.self)
+            }
+        }
+        return out
     }
 
     /// Per book, the image file names in its `images/` that queued work still needs and the

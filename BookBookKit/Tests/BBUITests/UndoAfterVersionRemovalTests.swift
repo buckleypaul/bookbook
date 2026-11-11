@@ -134,6 +134,32 @@ struct UndoAfterVersionRemovalTests {
         #expect(s.document.content.book.pageOrder.contains(pageID))
     }
 
+    @Test func undoTemplateChange_afterCleanUp_restoresTheSlotWithoutTheGonePlacement() async throws {
+        let s = try makeDocument()
+        defer { try? FileManager.default.removeItem(at: s.url) }
+        let pageID = Fixtures.firstPage(s.document.content)
+        let (boxID, slot) = try #require(s.document.content.pages[pageID]?.images.first)
+        let v1 = version()
+        append(v1, to: slot.sessionID, in: s.document)
+        #expect(grouped(s) { s.document.perform(.chooseVersion(page: pageID, box: boxID, version: v1.id)) })
+        // A text-only template drops the slot, so nothing places v1 and Clean up removes it.
+        #expect(grouped(s) { s.document.perform(.setPageTemplate(page: pageID, templateID: Presets.textOnlyTemplateID)) })
+        #expect(s.document.content.pages[pageID]?.images.isEmpty == true)
+        await cleanUp(s)
+        #expect(s.document.content.sessions[slot.sessionID]?.version(v1.id) == nil)
+
+        // Undoing the template change (`.setPageLayout`) brings the slot back, empty.
+        s.undo.undo()
+        let page = try #require(s.document.content.pages[pageID])
+        #expect(page.templateID == Fixtures.storyTemplate.id)
+        #expect(page.images[boxID]?.sessionID == slot.sessionID)
+        #expect(page.images[boxID]?.placement == nil)
+        // Redo and undo again never land on v1.
+        s.undo.redo()
+        s.undo.undo()
+        #expect(s.document.content.pages[pageID]?.images[boxID]?.placement == nil)
+    }
+
     @Test func undoStillWorksAfterCleanUp() async throws {
         let s = try makeDocument()
         defer { try? FileManager.default.removeItem(at: s.url) }

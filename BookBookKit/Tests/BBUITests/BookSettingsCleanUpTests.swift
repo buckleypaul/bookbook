@@ -44,7 +44,8 @@ struct BookSettingsCleanUpTests {
 
         let message = await model.cleanUp(document)
         #expect(message == nil)
-        #expect(!undo.canUndo && !undo.canRedo)
+        // Clean up keeps the undo history (replay skips the removed versions).
+        #expect(undo.canUndo)
         let versions = document.content.sessions[slot.sessionID]?.versions.map(\.id) ?? []
         #expect(Set(versions) == [placed.id, starred.id])
         #expect(!FileManager.default.fileExists(atPath: store.imageURL(for: loose1.image).path(percentEncoded: false)))
@@ -57,6 +58,33 @@ struct BookSettingsCleanUpTests {
 
         let reloaded = try await BookStore(packageURL: url).load()
         #expect(Set(reloaded.sessions[slot.sessionID]?.versions.map(\.id) ?? []) == [placed.id, starred.id])
+    }
+
+    @Test func refreshAfterCleanUpKeepsProtectedVersions() async throws {
+        var content = Fixtures.book()
+        let url = FileManager.default.temporaryDirectory.appending(path: "Clean-\(UUID().uuidString).bookbook", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: url) }
+        try BookStore.create(content, at: url)
+        let store = BookStore(packageURL: url, debounce: .milliseconds(20))
+        let pageID = Fixtures.firstPage(content)
+        let slot = try #require(content.pages[pageID]?.images.first?.value)
+        var versions: [Version] = []
+        for name in ["queued", "loose"] {
+            let ref = try await store.storeImage(Data((name + String(repeating: "x", count: 5000)).utf8), contentType: "public.png")
+            let v = Version(image: ref, pixelSize: PixelSize(width: 8, height: 8), source: .generated, createdAt: Fixtures.date)
+            content.sessions[slot.sessionID]?.versions.append(v)
+            versions.append(v)
+        }
+        try await store.save(content, dirty: .all(content))
+        let document = BookDocument(content: content, store: store)
+        let model = StorageModel()
+        let protecting: Set<VersionID> = [versions[0].id]
+        await model.refresh(document, protecting: protecting)
+        #expect(model.plan.versionIDs == [versions[1].id])
+        #expect(await model.cleanUp(document, protecting: protecting) == nil)
+        // The queued request's version is still not offered for deletion.
+        #expect(model.plan.isEmpty)
+        #expect(document.content.sessions[slot.sessionID]?.version(versions[0].id) != nil)
     }
 
     @Test func readOnlyBookDoesNothing() async throws {

@@ -8,17 +8,51 @@ import SwiftUI
 /// isn't redrawn when another one changes. One per book window.
 @MainActor
 final class PageThumbnailRenderer {
+    /// What `PageRenderer` reads to draw a page at the thumbnail target: the template, the
+    /// page's text and placed images, the style's typography, page setup and page-number style,
+    /// and the cover's bound title and author. The rest of the style (description, guidance,
+    /// references) and of the page (status, asset list, flag baselines) never shows.
     private struct Key: Hashable {
-        var page: Page
         var template: Template?
-        var style: StyleGuide
+        var text: [BoxID: RichText]
+        var images: [BoxID: PlacedImage]
+        var typography: Typography
+        var pageSetup: PageSetup
+        var pageNumbers: PageNumberStyle
         var title: String
         var author: String
         var marks: [PageNumberMark]
         var pixelHeight: Int
+
+        init(page: Page, in content: BookContent, marks: [PageNumberMark], pixelHeight: Int) {
+            template = content.template(for: page)
+            text = page.text
+            var images: [BoxID: PlacedImage] = [:]
+            for (box, slot) in page.images {
+                guard let placement = slot.placement else { continue }
+                images[box] = PlacedImage(image: content.placedVersion(page: page.id, box: box)?.image,
+                                          placement: placement)
+            }
+            self.images = images
+            typography = content.style.typography
+            pageSetup = content.style.pageSetup
+            pageNumbers = content.style.pageNumbers
+            title = content.book.title
+            author = content.book.author
+            self.marks = marks
+            self.pixelHeight = pixelHeight
+        }
+    }
+
+    /// A placed picture: the image drawn and how it sits in its box.
+    private struct PlacedImage: Hashable {
+        var image: ImageRef?
+        var placement: ImagePlacement
     }
 
     private let images: any PageImageSource
+    /// Reuses text layouts when a page redraws with the same text (another size, a new picture).
+    private let layouts = TextBoxLayoutCache()
     private var cache: [Key: CGImage] = [:]
     private var order: [Key] = []
     private let capacity: Int
@@ -31,9 +65,7 @@ final class PageThumbnailRenderer {
     /// The whole page (both halves for a spread), `pixelHeight` tall.
     func image(for pageID: PageID, in content: BookContent, marks: [PageNumberMark], pixelHeight: Int) -> CGImage? {
         guard let page = content.pages[pageID], pixelHeight > 0 else { return nil }
-        let template = content.template(for: page)
-        let key = Key(page: page, template: template, style: content.style, title: content.book.title,
-                      author: content.book.author, marks: marks, pixelHeight: pixelHeight)
+        let key = Key(page: page, in: content, marks: marks, pixelHeight: pixelHeight)
         if let image = cache[key] { return image }
 
         // Double width for a spread (its boxes are normalized over both pages, A §4.1).
@@ -46,8 +78,8 @@ final class PageThumbnailRenderer {
         var options = RenderOptions(target: .thumbnail)
         options.pageNumbers = marks
         guard let image = ThumbnailRendering.render(page: page, in: drawContent, trim: size, pixelWidth: width,
-                                                    pixelHeight: height, images: images, options: options,
-                                                    fillWhite: true)
+                                                    pixelHeight: height, images: images, layouts: layouts,
+                                                    options: options, fillWhite: true)
         else { return nil }
 
         cache[key] = image

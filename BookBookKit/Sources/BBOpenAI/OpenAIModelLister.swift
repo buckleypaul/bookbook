@@ -8,23 +8,16 @@ import Foundation
 public struct OpenAIModelLister: ModelLister {
     public var id: ProviderID { .openai }
 
-    private let http: any HTTPClient
-    private let apiKey: @Sendable () async -> APIKey?
-    private let baseURL: URL
+    private let connection: OpenAIConnection
 
     public init(http: any HTTPClient, apiKey: @escaping @Sendable () async -> APIKey?,
                 baseURL: URL = OpenAIImageProvider.defaultBaseURL) {
-        self.http = http
-        self.apiKey = apiKey
-        self.baseURL = baseURL
+        self.connection = OpenAIConnection(http: http, apiKey: apiKey, baseURL: baseURL)
     }
 
     public func listModelIDs() async throws(ProviderError) -> Set<String> {
-        guard let key = await apiKey() else { throw .missingKey }
-        let request = HTTPRequest(
-            method: "GET", url: baseURL.appending(path: "models"),
-            headers: ["Authorization": "Bearer \(key.revealForTransport())"], timeout: 60)
-        let response = try await OpenAIErrorMapper.send(request, via: http, key: key)
+        let key = try await connection.key()
+        let response = try await connection.send("GET", "models", timeout: 60, key: key)
         guard let root = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
               let data = root["data"] as? [[String: Any]] else {
             throw .unknown(OpenAIErrorMapper.raw(response, code: nil, key: key))

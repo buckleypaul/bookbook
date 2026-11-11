@@ -213,13 +213,17 @@ public final class TemplateChatModel {
         do throws(ProviderError) {
             let result = try await provider.generateLayout(request)
             let sent = Self.record(request, parametersSent: result.parametersSent)
-            await recordCost(app, model: model, provider: provider.id, estimate: estimate, usage: result.usage)
+            let actual = result.usage.flatMap {
+                app.prices.calculator.actualCost(of: $0, provider: provider.id, model: model.id)
+            }
+            await recordCost(app, model: model, provider: provider.id, estimate: estimate, .completed(actual: actual))
             apply(result.draft, to: id, instruction: text, sent: sent)
         } catch {
             // A missing key means nothing left the machine, so there is nothing to show as sent.
             let sent = error == .missingKey ? nil : Self.record(request, parametersSent: [:])
-            if let rule = Self.ledgerRule(for: error) {
-                await recordCost(app, model: model, provider: provider.id, estimate: estimate, usage: nil, failure: rule)
+            // The queue's rule (A §7.10), so a layout request is billed like an image request.
+            if let charge = QueueLedgerRule.forFailure(error).charge {
+                await recordCost(app, model: model, provider: provider.id, estimate: estimate, charge)
             }
             if error == .cancelled {
                 append(id, TemplateChatMessage(role: .assistant, text: "Stopped.", sent: sent, retryInstruction: text))
@@ -322,40 +326,11 @@ public final class TemplateChatModel {
                            parametersSent: parametersSent)
     }
 
-    /// A §7.10: error responses are free; unknown outcomes (cancelled, timeout, transport) are the
-    /// estimate; a request that never left (no key) has no line. Mirrors the queue's rule.
-    private enum Failure { case free, estimate(CostStatus) }
-
-    private static func ledgerRule(for error: ProviderError) -> Failure? {
-        switch error {
-        case .missingKey: nil
-        case .cancelled: .estimate(.cancelled)
-        case .timeout, .offline: .estimate(.failed)
-        case .invalidKey, .verificationRequired, .regionUnsupported, .billing, .rateLimited, .refused,
-             .invalidRequest, .modelUnavailable: .free
-        case let .transient(raw), let .noImage(raw), let .unknown(raw):
-            (raw?.status).map { $0 >= 400 } == true ? .free : .estimate(.failed)
-        }
-    }
-
     private func recordCost(_ app: AppModel, model: CatalogTextModel, provider: ProviderID, estimate: CostEstimate,
-                            usage: TokenUsage?, failure: Failure? = nil) async {
-        let status: CostStatus, basis: CostBasis, actual: Decimal?
-        switch failure {
-        case nil:
-            status = .completed
-            actual = usage.flatMap { app.prices.calculator.actualCost(of: $0, provider: provider, model: model.id) }
-            basis = actual == nil ? .estimate : .actual
-        case .free?:
-            (status, basis, actual) = (.failed, .actual, 0)
-        case let .estimate(s)?:
-            (status, basis, actual) = (s, .estimate, nil)
-        }
-        let list = app.prices.current
+                            _ charge: LedgerCharge) async {
         let record = CostRecord(at: app.now(), kind: .template, provider: provider, model: model.id, quality: nil,
-                                target: nil, status: status, estimated: estimate.amount ?? 0, actual: actual,
-                                basis: basis,
-                                priceListAsOf: basis == .actual ? list.asOf : (estimate.priceListAsOf ?? list.asOf))
+                                target: nil, charge: charge, estimate: estimate,
+                                currentPriceListAsOf: app.prices.current.asOf)
         await app.openBooks.recordCost(record, in: document.id)
     }
 }

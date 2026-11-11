@@ -51,38 +51,6 @@ public struct QueueRetryPolicy: Hashable, Sendable {
     }
 }
 
-/// How a provider request's outcome is written to the ledger (A §7.10).
-enum QueueLedgerRule: Hashable, Sendable {
-    /// No request reached the provider (e.g. no key stored): no ledger line.
-    case none
-    /// The provider answered with an error status, which neither provider bills: $0, basis actual.
-    case free
-    /// Unknown whether it was billed (cancelled, timed out, transport failure, or an answer with
-    /// no error status): the estimate, basis estimate.
-    case estimate(CostStatus)
-
-    static func forFailure(_ error: ProviderError) -> QueueLedgerRule {
-        switch error {
-        case .missingKey, .offline:
-            // `.offline` means nothing was sent (no usable network), so nothing can be billed.
-            return .none
-        case .cancelled:
-            return .estimate(.cancelled)
-        case .timeout:
-            return .estimate(.failed)
-        case .invalidKey, .verificationRequired, .regionUnsupported, .billing, .rateLimited, .refused,
-             .invalidRequest, .modelUnavailable:
-            // Always an error response (4xx), with or without the raw body.
-            return .free
-        case let .transient(raw), let .noImage(raw), let .unknown(raw):
-            // A raw status of 4xx/5xx means the provider rejected it; anything else (no response,
-            // or a 200 without an image) may have been billed.
-            if let status = raw?.status, status >= 400 { return .free }
-            return .estimate(.failed)
-        }
-    }
-}
-
 extension Duration {
     var timeInterval: TimeInterval {
         let parts = components

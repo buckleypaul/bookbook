@@ -7,8 +7,6 @@ import UniformTypeIdentifiers
 
 /// What a consistency check of one version needs, decided before any bytes are read (A §7.8).
 public struct ConsistencyPlan: Hashable, Sendable {
-    public var versionID: VersionID
-    public var sessionID: SessionID
     /// The version being checked (sent first).
     public var checked: PlannedImage
     /// The assets' chosen images, then up to two style references, in send order.
@@ -64,10 +62,9 @@ public enum ConsistencyAssembler {
         guard let (references, assets) = references(intent: intent, target: target, messageID: producing,
                                                     content: content, provider: provider,
                                                     excluding: version.image) else { return nil }
-        let checked = PlannedImage(ref: version.image, role: "checked", label: checkedLabel,
+        let checked = PlannedImage(ref: version.image, role: .checked, label: checkedLabel,
                                    pixelSize: version.pixelSize)
-        return ConsistencyPlan(versionID: versionID, sessionID: session.id, checked: checked,
-                               references: references, assets: assets,
+        return ConsistencyPlan(checked: checked, references: references, assets: assets,
                                styleDescription: content.style.visualDescription)
     }
 
@@ -136,12 +133,12 @@ public enum ConsistencyAssembler {
                                    payload: downscaled(checkedData, contentType: plan.checked.ref.contentType,
                                                        ref: plan.checked.ref))
         var references: [LabeledImage] = []
-        var sent = [SentReference(image: plan.checked.ref, role: plan.checked.role, label: plan.checked.label)]
+        var sent = [plan.checked.sentReference]
         for image in plan.references {
             guard let data = imageData[image.ref], !data.isEmpty else { continue }
             references.append(LabeledImage(label: image.label,
                                            payload: downscaled(data, contentType: image.ref.contentType, ref: image.ref)))
-            sent.append(SentReference(image: image.ref, role: image.role, label: image.label))
+            sent.append(image.sentReference)
         }
         let text = instructions(plan.assets, plan.styleDescription, sent.map(\.label))
         let request = ConsistencyRequest(model: model, system: text.system, user: text.user, image: checked,
@@ -156,26 +153,11 @@ public enum ConsistencyAssembler {
     public static func downscaled(_ data: Data, contentType: String, ref: ImageRef? = nil) -> ImagePayload {
         let original = ImagePayload(data: data, contentType: contentType, ref: ref, pixelSize: ImageHeader.pixelSize(of: data))
         guard let size = original.pixelSize, max(size.width, size.height) > maxLongEdge,
-              let source = CGImageSourceCreateWithData(data as CFData, nil) else { return original }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxLongEdge,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-        ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return original }
-        let hasAlpha: Bool
-        switch image.alphaInfo {
-        case .none, .noneSkipFirst, .noneSkipLast: hasAlpha = false
-        default: hasAlpha = true
-        }
+              let image = try? ImageOps.decodeThumbnail(data, maxPixelSize: maxLongEdge) else { return original }
+        let hasAlpha = ImageOps.hasAlpha(image)
         let type = hasAlpha ? UTType.png : UTType.jpeg
-        let out = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(out, type.identifier as CFString, 1, nil)
-        else { return original }
-        let properties: [CFString: Any] = hasAlpha ? [:] : [kCGImageDestinationLossyCompressionQuality: 0.9]
-        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { return original }
-        return ImagePayload(data: out as Data, contentType: type.identifier, ref: ref,
+        guard let encoded = try? ImageOps.encode(image, as: type, quality: hasAlpha ? nil : 0.9) else { return original }
+        return ImagePayload(data: encoded, contentType: type.identifier, ref: ref,
                             pixelSize: PixelSize(width: image.width, height: image.height))
     }
 }

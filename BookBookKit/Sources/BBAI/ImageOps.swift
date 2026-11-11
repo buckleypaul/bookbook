@@ -3,6 +3,7 @@ import BBModel
 import CoreGraphics
 import Foundation
 import ImageIO
+import UniformTypeIdentifiers
 
 // Phase 11 contract: region-edit image operations (A §7.6). Pure functions, no UI, no I/O beyond
 // encoding/decoding bytes. Safe to call off the main actor.
@@ -217,12 +218,40 @@ public enum ImageOps {
         return img
     }
 
+    /// The image decoded at most `maxPixelSize` on its long edge (ImageIO thumbnail, always made
+    /// from the full image, orientation applied).
+    static func decodeThumbnail(_ data: Data, maxPixelSize: Int) throws(ImageOpsError) -> CGImage {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let img = CGImageSourceCreateThumbnailAtIndex(src, 0, options as CFDictionary)
+        else { throw .undecodableImage }
+        return img
+    }
+
+    /// True unless the image's alpha info says it has none.
+    static func hasAlpha(_ image: CGImage) -> Bool {
+        switch image.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast: false
+        default: true
+        }
+    }
+
     private static func encodePNG(_ image: CGImage) throws(ImageOpsError) -> Data {
+        try encode(image, as: .png)
+    }
+
+    /// `image` encoded as `type`; `quality` (0...1) sets lossy compression, nil leaves the default.
+    static func encode(_ image: CGImage, as type: UTType, quality: Double? = nil) throws(ImageOpsError) -> Data {
         let out = NSMutableData()
-        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else {
+        guard let dest = CGImageDestinationCreateWithData(out, type.identifier as CFString, 1, nil) else {
             throw .encodingFailed
         }
-        CGImageDestinationAddImage(dest, image, nil)
+        let properties = quality.map { [kCGImageDestinationLossyCompressionQuality: $0] as CFDictionary }
+        CGImageDestinationAddImage(dest, image, properties)
         guard CGImageDestinationFinalize(dest) else { throw .encodingFailed }
         return out as Data
     }

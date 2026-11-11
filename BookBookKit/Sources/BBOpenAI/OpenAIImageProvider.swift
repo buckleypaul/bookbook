@@ -2,7 +2,6 @@ import BBAICore
 import BBModel
 import BBNet
 import Foundation
-import ImageIO
 import UniformTypeIdentifiers
 
 /// OpenAI GPT Image adapter: `/images/generations`, or `/images/edits` (multipart) when a base
@@ -12,18 +11,14 @@ public struct OpenAIImageProvider: ImageProvider {
 
     public var id: ProviderID { .openai }
 
-    private let http: any HTTPClient
-    private let apiKey: @Sendable () async -> APIKey?
-    private let baseURL: URL
+    private let connection: OpenAIConnection
     private let boundary: @Sendable () -> String
 
     /// `boundary` is injectable so tests can golden the multipart body.
     public init(http: any HTTPClient, apiKey: @escaping @Sendable () async -> APIKey?,
                 baseURL: URL = OpenAIImageProvider.defaultBaseURL,
                 boundary: @escaping @Sendable () -> String = { "bookbook-\(UUID().uuidString)" }) {
-        self.http = http
-        self.apiKey = apiKey
-        self.baseURL = baseURL
+        self.connection = OpenAIConnection(http: http, apiKey: apiKey, baseURL: baseURL)
         self.boundary = boundary
     }
 
@@ -44,10 +39,10 @@ public struct OpenAIImageProvider: ImageProvider {
             // never the raw base image size, which may be invalid for the model.
         }
 
-        guard let key = await apiKey() else { throw .missingKey }
+        let key = try await connection.key()
 
         let prompt = request.instruction.rendered
-        let url: URL
+        let path: String
         let contentType: String
         let bodyData: Data
         if isEdit {
@@ -62,7 +57,7 @@ public struct OpenAIImageProvider: ImageProvider {
             form.addField(name: "prompt", value: prompt)
             for (name, value) in parameters.sorted(by: { $0.key < $1.key }) where name != "mask" { form.addField(name: name, value: "\(value)") }
             let encoded = form.encoded()
-            url = baseURL.appending(path: "images/edits")
+            path = "images/edits"
             contentType = encoded.contentType
             bodyData = encoded.body
         } else {
@@ -71,17 +66,12 @@ public struct OpenAIImageProvider: ImageProvider {
             guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else {
                 throw .invalidRequest(param: nil, nil)
             }
-            url = baseURL.appending(path: "images/generations")
+            path = "images/generations"
             contentType = "application/json"
             bodyData = data
         }
-        let httpRequest = HTTPRequest(
-            method: "POST", url: url,
-            headers: ["Authorization": "Bearer \(key.revealForTransport())", "Content-Type": contentType],
-            body: bodyData)
-
         progress(.sent)
-        let response = try await OpenAIErrorMapper.send(httpRequest, via: http, key: key) {
+        let response = try await connection.send("POST", path, contentType: contentType, body: bodyData, key: key) {
             progress(.receiving)
         }
         return try Self.decode(response, parametersSent: parameters.mapValues { "\($0)" }, key: key)
@@ -169,22 +159,13 @@ public struct OpenAIImageProvider: ImageProvider {
               let b64 = first["b64_json"] as? String, !b64.isEmpty else {
             throw .noImage(raw)
         }
-        guard let png = Data(base64Encoded: b64), let size = pixelSize(of: png) else {
+        guard let png = Data(base64Encoded: b64), let size = ImageHeader.pixelSize(of: png) else {
             throw .unknown(ProviderErrorRaw(status: response.status, code: nil, body: "image could not be decoded"))
         }
         let revised = (first["revised_prompt"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         return ImageResult(imageData: png, contentType: "public.png", pixelSize: size,
                            usage: OpenAIUsage.parse(root["usage"]), revisedPrompt: revised,
                            parametersSent: parametersSent)
-    }
-
-    static func pixelSize(of data: Data) -> PixelSize? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
-              let height = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
-              width > 0, height > 0 else { return nil }
-        return PixelSize(width: width, height: height)
     }
 }
 

@@ -11,15 +11,11 @@ public struct OpenAIChatProvider: LayoutProvider, VisionProvider {
 
     public var id: ProviderID { .openai }
 
-    private let http: any HTTPClient
-    private let apiKey: @Sendable () async -> APIKey?
-    private let baseURL: URL
+    private let connection: OpenAIConnection
 
     public init(http: any HTTPClient, apiKey: @escaping @Sendable () async -> APIKey?,
                 baseURL: URL = OpenAIChatProvider.defaultBaseURL) {
-        self.http = http
-        self.apiKey = apiKey
-        self.baseURL = baseURL
+        self.connection = OpenAIConnection(http: http, apiKey: apiKey, baseURL: baseURL)
     }
 
     public func generateLayout(_ request: LayoutRequest) async throws(ProviderError) -> LayoutResult {
@@ -86,7 +82,7 @@ public struct OpenAIChatProvider: LayoutProvider, VisionProvider {
 
     private func send(model: String, messages: [[String: Any]], name: String,
                       schema: String) async throws(ProviderError) -> Reply {
-        guard let key = await apiKey() else { throw .missingKey }
+        let key = try await connection.key()
         guard let schemaObject = try? JSONSerialization.jsonObject(with: Data(schema.utf8)) else {
             throw .invalidRequest(param: "response_format", nil)
         }
@@ -102,12 +98,8 @@ public struct OpenAIChatProvider: LayoutProvider, VisionProvider {
         guard let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else {
             throw .invalidRequest(param: nil, nil)
         }
-        let httpRequest = HTTPRequest(
-            method: "POST", url: baseURL.appending(path: "chat/completions"),
-            headers: ["Authorization": "Bearer \(key.revealForTransport())", "Content-Type": "application/json"],
-            body: data)
-
-        let response = try await OpenAIErrorMapper.send(httpRequest, via: http, key: key)
+        let response = try await connection.send("POST", "chat/completions", contentType: "application/json",
+                                                 body: data, key: key)
 
         let raw = OpenAIErrorMapper.raw(response, code: nil, key: key)
         guard let root = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],

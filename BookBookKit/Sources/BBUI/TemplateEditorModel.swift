@@ -140,8 +140,21 @@ public final class TemplateEditorModel {
         applyUpdate(actionName: actionName, change)
     }
 
+    /// `update` for any template (book or uncopied preset), open or not: the Layouts chat
+    /// applies a reply to the template it was asked about even after the user opened another.
+    public func update(_ id: TemplateID, actionName: String, _ change: (inout Template) -> Void) {
+        if id == templateID { return update(actionName: actionName, change) }
+        guard let current = Presets.template(id, in: document.content) else { return }
+        applyUpdate(to: current, preset: document.content.templates[id] == nil, actionName: actionName, change)
+    }
+
     private func applyUpdate(actionName: String, _ change: (inout Template) -> Void) {
         guard let current = template else { return }
+        applyUpdate(to: current, preset: isUncopiedPreset, actionName: actionName, change)
+    }
+
+    private func applyUpdate(to current: Template, preset: Bool, actionName: String,
+                             _ change: (inout Template) -> Void) {
         var edited = current
         change(&edited)
         guard edited != current else { return }
@@ -151,8 +164,8 @@ public final class TemplateEditorModel {
             let geometry = PageGeometry(setup: document.content.style.pageSetup, kind: current.kind)
             LayoutEditingMath.dropBleedMovedOffFold(in: &edited, from: current, geometry: geometry)
         }
-        if openInteraction != nil { interactionEdited = true }
-        if isUncopiedPreset {
+        if openInteraction != nil, current.id == templateID { interactionEdited = true }
+        if preset {
             // First edit of a preset: copy it into the book and edit it as one undo step.
             document.beginUndoGroup(actionName: actionName)
             if document.perform(.addTemplate(current)) {

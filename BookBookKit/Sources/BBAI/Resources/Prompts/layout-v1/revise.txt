@@ -1,0 +1,18 @@
+Revise this layout. Change only what the request asks for and keep every other box where it is.
+Return the whole revised layout, listing the boxes in the same order as the current layout; add new boxes at the end.
+
+Current layout:
+{{current}}
+
+Earlier requests in this conversation, oldest first:
+{{history}}
+
+Request:
+{{instruction}}
+
+Page setup:
+- Layout type: {{kind}}
+- Page size: {{size}}
+- Orientation: {{orientation}}
+- Margins: {{margins}}
+- Bleed: {{bleed}}

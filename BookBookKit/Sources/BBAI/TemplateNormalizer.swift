@@ -32,6 +32,40 @@ public enum TemplateNormalizer {
         return Template(name: trimmed.isEmpty ? fallbackName : trimmed, kind: kind, boxes: boxes)
     }
 
+    /// Applies a revised draft (Layouts chat) to `current`, normalized as in `template(from:)`.
+    /// The template keeps its ID, kind, name and page role. Boxes are matched by kind in order
+    /// (the n-th image box of the draft is the n-th image box of `current`, likewise for text),
+    /// so a matched box keeps its ID (pages keep their text and pictures), rotation and role,
+    /// and a text box keeps its font size and colour overrides; frame, bleed edges, corner
+    /// radius, alignment and background panel come from the draft. Unmatched draft boxes are
+    /// new; unmatched current boxes are removed.
+    public static func revise(_ current: Template, with draft: TemplateDraft,
+                              pageSetup: PageSetup) throws(TemplateDraftError) -> Template {
+        let revised = try template(from: draft, kind: current.kind, pageSetup: pageSetup)
+        func isImage(_ box: Box) -> Bool { if case .image = box.content { true } else { false } }
+        var images = current.boxes.filter(isImage)[...]
+        var texts = current.boxes.filter { !isImage($0) }[...]
+        var result = current
+        result.boxes = revised.boxes.map { new in
+            guard let old = isImage(new) ? images.popFirst() : texts.popFirst() else { return new }
+            var box = new
+            box.id = old.id
+            box.rotationDegrees = old.rotationDegrees
+            box.role = old.role
+            if case let .text(oldStyle) = old.content, case let .text(newStyle) = new.content {
+                var style = oldStyle
+                style.alignment = newStyle.alignment
+                style.background = newStyle.background
+                if oldStyle.background == nil, newStyle.background != nil, oldStyle.padding == 0 {
+                    style.padding = newStyle.padding
+                }
+                box.content = .text(style)
+            }
+            return box
+        }
+        return result
+    }
+
     /// The layout area in points: the trim, or two trims side by side for a spread.
     static func layoutArea(kind: TemplateKind, pageSetup: PageSetup) -> PointSize {
         let w = pageSetup.trimSize.width, h = pageSetup.trimSize.height

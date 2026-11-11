@@ -62,6 +62,7 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Pip with "a blue scarf" (reference red): the warning badge reads "scarf is blue; reference is red"; the one-click fix shows its estimate first, then gives a red scarf (needs a generation).
 - Consistency switch off: the estimate drops (sub-cent, hidden by rounding to whole cents) and no follow-up is queued after a generation.
 - "Big picture across the top two-thirds, two lines of text at the bottom in a rounded cream box": a sensible template opens in the editor, snapped to the margins (needs a template call).
+- Layouts chat (2026-11-11): New Layout with AI → describe it → the blank layout fills in; then "make the picture full-bleed" changes only that box, pages using the layout keep their text and picture, Undo and Restore This work, and the panel switches to Box when a box is clicked (needs template calls).
 - Confirm-cost alert wording for a check or fix (Session A noted it says "Generate").
 - Real-person photo: Check Consistency shows the notice first, then the cost step.
 
@@ -98,6 +99,7 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
 ### Phase 17
+- Layouts chat: replies are only a summary line plus a diagram, since the shared `TemplateDraft` schema has no message field; consider adding a short `reply` field (changes the wire schema for every adapter). Threads aren't saved (decided 2026-11-11) (from the Layouts chat change).
 - Performance: a spread exported as single pages prepares its images twice (from Phase 14).
 - Simplify leftovers (from the 2026-11-09 whole-codebase simplify pass): cache `FontFamilies.all` with an app-wide font-registration revision; add `PageStatus.title` shared by `StatusBadge`, `PagesOverview` and `BookWindow`; have `BookDocument.sequence(of:)` use `PageSequencer.layout(for:)`; `PDFExporter` is only used by tests (move them to `BookExporter.pdfData` and delete it).
 - OpenAI-only wording cleanup: v1.0 is OpenAI only, so make sure no Gemini choice shows in the app (a Gemini mention in `ModelCatalog.json`, plus Gemini text in `RealPersonNotice.swift` and `VersionDetailsContent.swift`), and that the final live pass covers only OpenAI (Gemini moved to post-MVP 2026-11-08).

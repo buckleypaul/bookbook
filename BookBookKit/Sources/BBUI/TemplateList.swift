@@ -39,18 +39,18 @@ enum LayoutsListing {
     }
 }
 
-/// The Layouts tab's sidebar: templates grouped by kind, with a New menu (Layout, Spread, AI) and
+/// The Layouts tab's sidebar: templates grouped by kind, with a New menu (Layout, Spread, and each
+/// with AI, which opens the blank layout with the chat focused) and
 /// an actions menu for the selection (Rename, Duplicate, Delete — blocked while in use).
 struct TemplateList: View {
     let document: BookDocument
     let content: BookContent
     let model: TemplateEditorModel
+    let chat: TemplateChatModel
     @State private var renaming: TemplateID?
     @State private var renameText = ""
     @State private var confirmDelete: TemplateID?
     @FocusState private var renameFocused: Bool
-    @Environment(AppModel.self) private var app
-    @State private var showAISheet = false
 
     var body: some View {
         let sections = LayoutsListing.sections(in: content, presets: Presets.bundledTemplates)
@@ -68,9 +68,6 @@ struct TemplateList: View {
         }
         .onDeleteCommand { if let id = model.templateID { requestDelete(id) } }
         .safeAreaInset(edge: .top, spacing: 0) { header }
-        .sheet(isPresented: $showAISheet) {
-            TemplateGenerationSheet(app: app, document: document, editor: model)
-        }
         .confirmationDialog("Delete this layout?", isPresented: Binding(get: { confirmDelete != nil },
                                                                          set: { if !$0 { confirmDelete = nil } }),
                             presenting: confirmDelete) { id in
@@ -150,7 +147,8 @@ struct TemplateList: View {
                     Button("New Layout", systemImage: "rectangle.portrait") { model.newTemplate(kind: .single) }
                     Button("New Spread", systemImage: "rectangle.split.2x1") { model.newTemplate(kind: .spread) }
                     Divider()
-                    Button("New with AI…", systemImage: "sparkles") { showAISheet = true }
+                    Button("New Layout with AI", systemImage: "sparkles") { chat.newTemplateWithAI(kind: .single) }
+                    Button("New Spread with AI", systemImage: "sparkles") { chat.newTemplateWithAI(kind: .spread) }
                 } label: {
                     Label("New", systemImage: "plus")
                         .labelStyle(.titleAndIcon)
@@ -159,7 +157,7 @@ struct TemplateList: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
-                .help("Add a blank page or spread layout, or describe one for AI to draw")
+                .help("Add a blank page or spread layout, or start one in the AI chat")
                 Spacer(minLength: 0)
                 Menu {
                     if let id = model.templateID { menu(id) }

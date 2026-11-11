@@ -149,7 +149,7 @@ Asset images are made in sessions (chat + versions), the same way as pages (§8.
 - A template is either a **single page** or a **two-page spread**, sized to the book's page setup.
 - It contains **image boxes** and **text boxes**, with position, size, layer order and optional rotation/corner radius. A box can be full-bleed. Text boxes have style overrides (size, alignment, colour, background panel).
 - **Built-in presets:** full-bleed image with text overlay, image on top/text below, text on left/image on right, spread with one image across both pages, text-only page, title page, dedication page, "This book belongs to…" page, "The End" page.
-- **AI generation:** describe a layout ("big picture across the top two-thirds, two lines of text at the bottom in a rounded cream box") and get a template, which opens in the visual editor.
+- **AI chat:** the Layouts tab's side panel is a chat thread for the open template. Describe a layout ("big picture across the top two-thirds, two lines of text at the bottom in a rounded cream box") to create it, then keep asking for changes ("make the picture full-bleed"). Each reply changes the template in the visual editor as one undoable step and can be restored later. The thread lasts while the book window is open.
 - **Visual editor:** drag, resize, snap to margins and guides, align and distribute, and preview with sample text and placeholder art. The centre fold is shown on spreads, and the trim line and safe area are shown when bleed is on.
 - Templates can be duplicated within a book and imported into other books.
 

@@ -138,6 +138,7 @@ struct BookEditor: View {
     @Environment(AppModel.self) private var app
     @State private var pages: PagesController
     @State private var layouts: TemplateEditorModel
+    @State private var layoutChat: TemplateChatModel
     @State private var styleModel: StyleTabModel
     @State private var assetsModel = AssetsModel()
     @State private var sheetBatchRequest: AssetID?
@@ -159,7 +160,9 @@ struct BookEditor: View {
         _thumbnails = State(initialValue: PageThumbnailRenderer(images: ImageCache(store: document.store,
                                                                                    maxPixelSize: 512)))
         _pages = State(initialValue: PagesController(document: document))
-        _layouts = State(initialValue: TemplateEditorModel(document: document))
+        let layouts = TemplateEditorModel(document: document)
+        _layouts = State(initialValue: layouts)
+        _layoutChat = State(initialValue: TemplateChatModel(document: document, editor: layouts))
         _styleModel = State(initialValue: StyleTabModel(document: document))
     }
 
@@ -253,7 +256,7 @@ struct BookEditor: View {
         switch sidebarTab {
         case .pages, .style: PageList(document: document, content: content, pages: pages)
         case .assets: AssetsList(document: document, content: content, model: assetsModel, images: images)
-        case .layouts: TemplateList(document: document, content: content, model: layouts)
+        case .layouts: TemplateList(document: document, content: content, model: layouts, chat: layoutChat)
         }
     }
 
@@ -302,7 +305,7 @@ struct BookEditor: View {
     }
 
     /// The inspector: the session panel on the Pages tab (toggled from the toolbar), the asset
-    /// session on Assets and the box inspector on Layouts (always shown); none on Style.
+    /// session on Assets and the chat / box inspector on Layouts (always shown); none on Style.
     private var inspectorShown: Binding<Bool> {
         Binding(
             get: {
@@ -425,8 +428,7 @@ struct BookEditor: View {
         if sidebarTab == .assets {
             AssetsSessionPanel(document: document, content: content, model: assetsModel, images: images)
         } else if sidebarTab == .layouts {
-            BoxInspector(model: layouts)
-                .disabled(!document.isEditable)
+            LayoutsInspector(document: document, editor: layouts, chat: layoutChat)
         } else if pages.mode == .editor, let page = pages.selectedPage, let box = selectedImageBox,
            content.pages[page]?.images[box] != nil {
             VStack(spacing: 0) {

@@ -113,7 +113,7 @@ The Xcode app target stays thin, and the code lives in local Swift packages so t
 - **Money:** `Decimal` in USD.
 - **Revisions:** monotonic `Int` counters on things whose changes cause flags:
   - `StyleGuide.visualRevision` goes up (to `visualRevisionHighWater + 1`, never reusing a number) when the visual description, style references or negative guidance change. Typography and page setup don't count.
-  - `Asset.revision` goes up when the description or primary reference changes.
+  - `Asset.revision` goes up when the description or the chosen image changes.
 
 ### 4.2 Core types (abridged)
 
@@ -187,33 +187,16 @@ struct Asset {                      // assets/<id>.json
     var name: String
     var description: String
     var tags: [String]
-    var references: [ReferenceSlot]  // exactly one with isPrimary == true
-    var sheet: CharacterSheet?       // characters only
+    var sessionID: SessionID         // the asset's one image session (owner .asset(id))
+    var chosen: VersionID?           // the asset's image; nil = none yet (not sent)
     var revision: Int
-}
-
-struct ReferenceSlot {
-    var id: UUID
-    var label: String
-    var isPrimary: Bool
-    var sessionID: SessionID
-    var chosen: VersionID?
-}
-
-struct CharacterSheet {
-    var items: [SheetItem]
-}
-
-struct SheetItem {
-    var id: UUID
-    var kind: SheetItemKind          // .view(.front/.threeQuarter/.side/.back), .expression(name)
-    var sessionID: SessionID
-    var chosen: VersionID?
-    var locked: Bool
+    var revisionHighWater: Int
 }
 ```
 
-**As built (Phase 10):** `Asset` also stores `revisionHighWater` (like `StyleGuide.visualRevisionHighWater`). Only a description change or a change of the primary reference's chosen image (or which slot is primary) bumps `revision` to `highWater + 1`; undo restores the old revision, and numbers are never reused. Renames, tags and sheet edits don't bump. A new character's sheet has 8 items: three-quarter, side and back views plus happy, sad, surprised, angry and sleepy (the primary reference serves as the front view; decided 2026-11-08). `Version.depictsRealPerson: Bool?` holds the import answer (§11). Asset edits are `BookCommand.addAsset` / `updateAsset` (wholesale replace) / `setAssetChecklist`; deletion is irreversible (`BookDocument.deleteAsset`).
+**As built (Phase 10):** `revisionHighWater` works like `StyleGuide.visualRevisionHighWater`. Only a description change or a change of `chosen` bumps `revision` to `highWater + 1`; undo restores the old revision, and numbers are never reused. Renames and tags don't bump. `Version.depictsRealPerson: Bool?` holds the import answer (§11). Asset edits are `BookCommand.addAsset` / `updateAsset` (wholesale replace) / `setAssetChecklist`; choosing a version in the asset's session is an undoable `updateAsset`. Deletion is irreversible (`BookDocument.deleteAsset`).
+
+**As changed (2026-11-11):** an asset has exactly one image, made in one session. Phase 10 built multiple reference slots (one primary) and, for characters, a character sheet (turnaround views and expressions, Generate whole sheet, lock); users found it confusing, so slots, the primary toggle and the sheet were removed from the model and the UI. Legacy decoding: an old `assets/<id>.json` keeps its primary slot (or the first) as `sessionID`/`chosen`; other slots and the `sheet` are ignored. A legacy `.assetReference(asset, slot)` owner or target decodes as `.asset(asset)`, and a session whose ID isn't the asset's `sessionID` is dropped on load. A legacy `.sheetItem` owner or target throws `LegacySheetItemError`, and the loader drops that session or queue entry. The next save writes the new format.
 
 **RichText** is BookBook's own `Codable` attributed-run model. It isn't RTF and it isn't an archived `NSAttributedString`, so it stays diffable, version-proof and limited to the formatting the product supports:
 
@@ -247,7 +230,7 @@ Converting between this model and `NSAttributedString` is done in one place (`BB
 ```swift
 struct Session {                    // sessions/<id>.json
     var id: SessionID
-    var owner: SessionOwner          // .pageBox(PageID, BoxID) | .assetReference(AssetID, slotID) | .sheetItem(AssetID, itemID)
+    var owner: SessionOwner          // .pageBox(PageID, BoxID) | .asset(AssetID)
     var messages: [Message]          // a single linear thread (§8.6 "stays a single conversation")
     var versions: [Version]          // version strip order
     var resetEpoch: Int              // bumped on reset; messages from earlier epochs are hidden
@@ -302,7 +285,7 @@ struct Provenance {
 |---|---|
 | Page **status** | *Empty* when there is no text and no placement. *Done* when `isDone`. Otherwise *in progress*. |
 | **Style changed** | `placedVersion.provenance.styleRevision != currentVisualRevision && acknowledged.styleRevision != currentVisualRevision`. Imported versions (no provenance) are never flagged (Phase 7). Revisions are never reused, so an image made at a revision that an undo has since gone back past is flagged too (Phase 16b). |
-| **Asset changed** | For any asset in the placed version's `assetRevisions`, the recorded revision is below the current one, and that hasn't been acknowledged. |
+| **Asset changed** | For any asset in the placed version's `assetRevisions`, the recorded revision is below the current one, and that hasn't been acknowledged. An asset's revision goes up when its description or its chosen image changes (§4.1; as changed 2026-11-11, there is no primary reference or sheet). |
 | **Layout changed** | `abs(log(currentBoxAspect / (acknowledged.boxAspect ?? placement.boxAspectWhenPlaced))) > 0.05` (about a 5% change in shape). `currentBoxAspect` is the render rect's aspect, so bleed counts. Placing a new version clears `acknowledged.boxAspect` (Phase 7). |
 | **Consistency warning** | The placed version has an undismissed warning. |
 | **Where used** (§8.3) | An in-memory index `[AssetID: Set<UsageSite>]`, rebuilt incrementally from checklists, mentions and version provenance. |
@@ -373,7 +356,7 @@ Image files that no JSON refers to are swept only when the book is opened, and o
 - **Delete** uses `FileManager.trashItem` (§8.1). **Duplicate** is a recursive copy with a new `Book.id`. Internal IDs can stay the same because they are scoped to the book.
 - **Import from another book** (§8.1) is done by `BookImporter`:
   - Templates and the style guide are deep-copied with new IDs.
-  - Assets are copied with their reference and sheet slots. Each chosen image is copied in as a single **imported** version in a new session. Sessions aren't copied, so history stays in the source book and the copies are independent.
+  - Assets are copied with their image. The chosen image is copied in as a single **imported** version in a new session. Sessions aren't copied, so history stays in the source book and the copies are independent.
   - Image files are copied by hash, so duplicates are skipped.
   - Name clashes go through a rename prompt before anything is written.
 - The **sample book** is a bundled read-only `.bookbook` in the app resources. "Open sample" copies it into the library on first use.
@@ -586,13 +569,13 @@ The provider adapters are the only code that knows wire formats. `BBNet.HTTPClie
 
 `ContextAssembler.assemble(intent:book:session:catalogModel:)` → `(ImageRequest, AssemblyReport)`. It's a pure function over a book snapshot, and is snapshot-tested.
 
-1. **Resolve the assets in play.** These are the page's checklist, plus mentions in the current message, plus mentions in earlier messages in the current epoch along the lineage of the refined version (§7.6). For an asset session (reference or sheet item), the owning asset is always included.
+1. **Resolve the assets in play.** These are the page's checklist, plus mentions in the current message, plus mentions in earlier messages in the current epoch along the lineage of the refined version (§7.6). For an asset session, the owning asset is always included.
 2. **Select the reference images** (§7.4), up to the model's `maxReferenceImages` and a byte budget. The selection sets the image order, which the prompt legend depends on.
 3. **Compose the prompt** from versioned templates, kept as resource text files so they can be tuned without code changes. The sections, in order:
    - **Role and medium:** "Illustration for a children's picture book."
    - **Style:** the visual description, plus "Images N–M are style references."
    - **Avoid:** the negative guidance.
-   - **Cast and setting:** for each asset, its name, type, description and "Image K shows <name> (<view/expression>)".
+   - **Cast and setting:** for each asset, its name, type, description and "Image K shows <name>".
    - **Composition:**
      - The box aspect and orientation.
      - Calm areas: any text boxes that overlap this image box are turned into region guidance, e.g. "leave the bottom third calm and low-detail for text".
@@ -604,24 +587,18 @@ The provider adapters are the only code that knows wire formats. `BBNet.HTTPClie
    - **Reference legend:** "Image 1: … Image 2: …"
 4. **Report:** the omitted references (shown to the user, per §5 "Reference limits"), the estimated input size, and the exact text that will be sent.
 
-### 7.4 Choosing "the most relevant sheet images" (§8.3)
+### 7.4 Choosing reference images (§8.3)
 
-This is deterministic, with no AI call, so it adds no cost or latency and its decisions can be explained in Version details.
+This is deterministic, with no AI call, so it adds no cost or latency and its decisions can be explained in Version details. Each asset in play contributes at most one image: its chosen image. An asset with nothing chosen sends only its description.
 
 - **Priority tiers.** Earlier tiers fill first, and the tier order sets the image order:
   1. The base image (when refining or doing a region edit).
   2. References the user explicitly attached ("same kitchen as page 4").
-  3. Primary references of **mentioned** assets.
-  4. Primary references of **checklist-only** assets.
+  3. Images of **mentioned** assets.
+  4. Images of **checklist-only** assets.
   5. Style reference images (at most 2; more only if there's spare capacity).
-  6. Matching sheet items (see below).
-  7. Other reference slots of the assets in play.
-- **Matching sheet items:**
-  - **Expressions:** the current message, plus the story text when it's included, is tokenized and matched against expression names and a bundled synonym table (e.g. *grin, giggle, beaming* → happy; *tears, crying* → sad; *yawn* → sleepy). User-defined expressions match on their own name and its simple inflections.
-  - **Views:** *from behind, walking away* → back; *profile, side-on* → side; *turning, over her shoulder* → three-quarter. With no match, the default is three-quarter.
-  - **Per-asset caps:** a character gets primary + 1 expression + 1 view; a place gets primary + 1; an object gets the primary only.
-  - Unchosen sheet items are skipped. **Phase 10 decision:** locked items are *not* skipped; "lock" means "don't regenerate" (Generate whole sheet skips it), and a locked, chosen item is still sent.
-- **Budget.** Selection stops when the model's reference limit or byte budget is reached. Whatever is cut gets listed: "Left out: Granny Oak – sleepy expression; style reference 3."
+- **As changed (2026-11-11):** the sheet-matching tier (expressions and views via a synonym table, per-asset caps) and the "other reference slots" tier are gone with the character sheet (§4.2).
+- **Budget.** Selection stops when the model's reference limit or byte budget is reached. Whatever is cut gets listed: "Left out: Granny Oak; style reference 3."
 - **Payload prep.** References are downscaled to a 1536 px long edge and sent as JPEG (quality 0.9), or PNG when they have alpha. The base image is sent at its native size, because a mask has to match it.
 
 ### 7.5 Fitting image boxes to model sizes (§8.6)
@@ -693,10 +670,10 @@ The thread is linear in the UI (§8.6), but versions form a **lineage tree** thr
 
 ### 7.8 Consistency check (§8.9)
 
-- **Trigger:** after each successful image generation (page, cover or sheet item), when the global switch is on. The check is queued as a **follow-up item that runs straight after its parent**, ahead of other waiting items, and its cost is included in the parent's estimate.
+- **Trigger:** after each successful image generation (page, cover or asset), when the global switch is on. The check is queued as a **follow-up item that runs straight after its parent**, ahead of other waiting items, and its cost is included in the parent's estimate.
 - **Input:**
   - the new image;
-  - for each asset used, its primary reference plus the sheet images picked by the same §7.4 selector;
+  - for each asset used, its chosen image (the same §7.4 selector);
   - the style description and up to 2 style references.
   
   Images are downscaled to a 1024 px long edge, with `detail: low` or the equivalent Gemini media resolution, to keep the cost down.
@@ -737,7 +714,7 @@ actor GenerationQueue {
 struct QueueItem {
     var id: QueueItemID
     var bookID: BookID
-    var target: GenerationTarget    // page box / cover box / reference slot / sheet item / template / consistency(versionID)
+    var target: GenerationTarget    // .pageBox / .asset(AssetID) / template / consistency(versionID)
     var intent: GenerationIntent    // message text + mentions, refines, attached refs, mask ref,
                                     // provider, model, quality, includeStoryText
     var estimate: CostEstimate
@@ -754,7 +731,7 @@ struct QueueItem {
 - **Failures:** the item stays in the queue as failed (§5) and the queue carries on. Transient errors (429, 500, 503 and 504; network loss) are retried automatically up to 3 times with exponential backoff and jitter, honouring `Retry-After`, before the item is marked failed.
 - **Timeouts:** 300 s per request. Image generation can take up to about 2 minutes.
 - **Persistence:** `queue.json` is rewritten whenever the queue changes. When the app relaunches, waiting and failed items come back with the queue **paused** (the `restoredPause` flag), and a banner offers "Resume N queued requests", where N is the items waiting now; the flag clears when it reaches 0. An item that was running when the app quit is recorded as cancelled.
-- **Batch actions** ("Generate whole sheet", "Draft all empty boxes") build all their items, show the combined estimate (§7.10), and enqueue them in one call.
+- **Batch actions** ("Draft all empty boxes") build all their items, show the combined estimate (§7.10), and enqueue them in one call.
 - **Offline:** when `NWPathMonitor` reports no network, the queue pauses and AI actions show "Offline". Everything else keeps working (§3).
 
 **As built (Phase 9):**
@@ -979,7 +956,7 @@ Each issue carries a navigation target (page, box). The export sheet lists them 
 |---|---|
 | §8.1 Library, import between books | `LibraryIndex`, `BookStore`, `BookImporter`, `LibraryView` |
 | §8.2 Style tab, presets, page setup changes | `StyleGuide`, bundled `StylePresets.json` (with sample images), `PageGeometry`, derived flags |
-| §8.3 Assets, character sheet, where-used | `Asset`, `CharacterSheet`, `ReferenceSelector` (§7.4), `UsageIndex`, sessions |
+| §8.3 Assets (one image each), where-used | `Asset`, `ReferenceSelector` (§7.4), `UsageIndex`, asset sessions |
 | §8.4 Layouts, AI templates, visual editor | `Template`, bundled `TemplatePresets.json`, `LayoutProvider`, `CanvasView` editing mode |
 | §8.5 Pages, order, story import, draft-all | `PageSequencer`, `StoryTextImporter` (plain/RTF via `NSAttributedString(url:)` → split at blank lines or a marker → preview), `GenerationQueue` batch |
 | §8.6 Page editor, sessions | `CanvasView`, `TextBoxLayout`, session panel, `ContextAssembler`, provider adapters, region editor |
@@ -988,7 +965,7 @@ Each issue carries a navigation target (page, box). The export sheet lists them 
 | §8.9 Consistency | `VisionProvider`, a follow-up `QueueItem`, `ConsistencyResult` on `Version` |
 | §8.10 Undo | §6.3 |
 | §8.11 Settings | SwiftUI `Settings` scene, `KeychainStore`, `ModelCatalog`, `PriceList` |
-| §8.12 Book settings, clean-up | Ledger aggregation; `CleanUp` computes the deletable set (unstarred versions not referenced by any placement, reference slot or sheet item) and the bytes freed, from the image files only those versions use |
+| §8.12 Book settings, clean-up | Ledger aggregation; `CleanUp` computes the deletable set (unstarred versions not referenced by any placement or asset image) and the bytes freed, from the image files only those versions use |
 | §8.13 First run, wizard, sample | `OnboardingFlow` (keys → test → typical costs from the price list), `NewBookWizard`, bundled sample |
 
 ---

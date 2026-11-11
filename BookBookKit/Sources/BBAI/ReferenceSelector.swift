@@ -62,11 +62,15 @@ public enum ReferenceSelector {
         /// The asset's image is not sent: it's the owner of the asset session being generated
         /// (when refining, the base image already carries it).
         public var excludesImage: Bool
+        /// The cast line names the asset without its description: it's the owner of the asset
+        /// session, whose request text is that description.
+        public var omitsDescription: Bool
 
-        public init(asset: Asset, mentioned: Bool, excludesImage: Bool = false) {
+        public init(asset: Asset, mentioned: Bool, excludesImage: Bool = false, omitsDescription: Bool = false) {
             self.asset = asset
             self.mentioned = mentioned
             self.excludesImage = excludesImage
+            self.omitsDescription = omitsDescription
         }
     }
 

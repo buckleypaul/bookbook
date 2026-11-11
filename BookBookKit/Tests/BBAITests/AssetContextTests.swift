@@ -105,7 +105,8 @@ import Testing
     @Test func assetSessionSendsNoOwnImage() throws {
         var content = SliceBook.make().content
         let pip = Cast.add(.character, "Pip", description: "A small red fox.", to: &content)
-        let (request, report) = try assemble(.asset(pip.id), assetIntent("Reference image of Pip"), content: content)
+        // The asset editor sends the description as the request (PD §8.3).
+        let (request, report) = try assemble(.asset(pip.id), assetIntent(pip.description), content: content)
         assertPromptSnapshot(request.instruction.rendered)
         #expect(report.referencesSent.isEmpty)
         #expect(request.baseImage == nil)
@@ -113,7 +114,9 @@ import Testing
         #expect(request.instruction.sections.map(\.key) == ["role", "style", "avoid", "cast", "subject", "request"])
         let text = request.instruction.rendered
         #expect(text.contains("full figure"))
-        #expect(text.contains("- Pip (character): A small red fox."))
+        // The cast names the owner without repeating the description the request carries.
+        #expect(text.contains("- Pip (character)."))
+        #expect(text.components(separatedBy: "A small red fox.").count == 2, "the description appears once")
         #expect(!text.contains("Composition") && !text.contains("Story text") && !text.contains("fold"))
         #expect(!report.storyTextIncluded)
         #expect(report.assetRevisions == [pip.id: 1])

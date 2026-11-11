@@ -22,16 +22,20 @@ struct SessionPanel: View {
     let content: BookContent
     let owner: SessionOwner
     let images: ImageCache
+    /// Asset sessions: a request (from the asset editor's Import button) to open the file picker.
+    let importRequest: Binding<SessionOwner?>?
 
     init(document: BookDocument, content: BookContent, pageID: PageID, boxID: BoxID, images: ImageCache) {
         self.init(document: document, content: content, owner: .pageBox(pageID, boxID), images: images)
     }
 
-    init(document: BookDocument, content: BookContent, owner: SessionOwner, images: ImageCache) {
+    init(document: BookDocument, content: BookContent, owner: SessionOwner, images: ImageCache,
+         importRequest: Binding<SessionOwner?>? = nil) {
         self.document = document
         self.content = content
         self.owner = owner
         self.images = images
+        self.importRequest = importRequest
     }
 
     @State private var prompt = ""
@@ -155,6 +159,8 @@ struct SessionPanel: View {
             selectedVersion = nil
             freshEpoch = nil
         }
+        .onAppear(perform: takeImportRequest)
+        .onChange(of: importRequest?.wrappedValue) { takeImportRequest() }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.image]) { result in
             switch result {
             case let .success(url): importImages([url])
@@ -224,6 +230,13 @@ struct SessionPanel: View {
         } message: {
             Text(problem ?? "")
         }
+    }
+
+    /// Opens the file picker when the asset editor asked to import into this owner.
+    private func takeImportRequest() {
+        guard let request = importRequest, request.wrappedValue == owner else { return }
+        request.wrappedValue = nil
+        if document.isEditable, session != nil { showImporter = true }
     }
 
     private var deleteMessage: String {
@@ -672,6 +685,15 @@ struct SessionPanel: View {
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
+                Button {
+                    showImporter = true
+                } label: {
+                    Label("Choose Image…", systemImage: "photo.badge.plus")
+                }
+                .buttonBorderShape(.capsule)
+                .help(isAsset ? "Use an image file from your Mac as a version of this reference"
+                      : "Use an image file from your Mac as a version for this box")
+                .disabled(!document.isEditable)
                 Spacer()
                 if !isAsset {
                     Toggle("Include story text", isOn: Binding(get: { includeStoryText ?? app.defaults.includeStoryText },

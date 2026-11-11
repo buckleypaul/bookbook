@@ -24,7 +24,13 @@ extension Library {
     @discardableResult
     public func resolveDuplicateBookIDs(preferring known: [BookID: URL] = [:],
                                         open: Set<URL> = []) async -> [LibraryEntry] {
-        let groups = Dictionary(grouping: scan(), by: \.id).filter { $0.value.count > 1 }
+        await resolveDuplicateBookIDs(in: scan(), preferring: known, open: open)
+    }
+
+    /// The same, for `entries` from a `scan()` the caller already made.
+    func resolveDuplicateBookIDs(in entries: [LibraryEntry], preferring known: [BookID: URL],
+                                 open: Set<URL>) async -> [LibraryEntry] {
+        let groups = Dictionary(grouping: entries, by: \.id).filter { $0.value.count > 1 }
         guard !groups.isEmpty else { return [] }
         var changed: [LibraryEntry] = []
         for (id, group) in groups.sorted(by: { $0.key.rawValue.uuidString < $1.key.rawValue.uuidString }) {

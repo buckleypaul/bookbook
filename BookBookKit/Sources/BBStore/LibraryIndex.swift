@@ -13,6 +13,9 @@ public actor LibraryIndex {
     private var watcher: FSEventsWatcher?
     private var debounceTask: Task<Void, Never>?
     private var resolving = false
+    /// Whether `cacheURL` holds `current` (it was just loaded or written), so an unchanged scan
+    /// doesn't rewrite it.
+    private var cacheIsCurrent = false
     /// For each id, the package that owned it before the latest scan. Updated by every scan: an
     /// id seen once is owned by its package; a duplicated id keeps its earlier owner if that
     /// package is still in the group, else has none (the keeper rule then decides).
@@ -40,16 +43,16 @@ public actor LibraryIndex {
               let file = try? PackageCoding.decoder().decode(CacheFile.self, from: data),
               file.root == root.path(percentEncoded: false) else { return current }
         current = file.entries
+        cacheIsCurrent = true
         updateOwners(from: current)
         return current
     }
 
-    /// Rescans the folder (`*.bookbook`, `book.json`, `thumbnail.png`), updates `entries` and rewrites the cache.
+    /// Rescans the folder (`*.bookbook`, `book.json`, `thumbnail.png`), updates `entries` and
+    /// rewrites the cache (only when the entries changed).
     @discardableResult
     public func refresh() -> [LibraryEntry] {
-        current = Library(root: root).scan()
-        updateOwners(from: current)
-        writeCache()
+        update(Library(root: root).scan())
         return current
     }
 
@@ -65,13 +68,8 @@ public actor LibraryIndex {
     /// just refreshes.
     @discardableResult
     public func refreshResolvingDuplicates() async -> [LibraryEntry] {
-        if !resolving {
-            resolving = true
-            let open = await openPackages()
-            await Library(root: root).resolveDuplicateBookIDs(preferring: owners, open: open)
-            resolving = false
-        }
-        return refresh()
+        await rescanResolvingDuplicates()
+        return current
     }
 
     public func entry(for id: BookID) -> LibraryEntry? {
@@ -110,6 +108,32 @@ public actor LibraryIndex {
         var entries: [LibraryEntry]
     }
 
+    /// `refreshResolvingDuplicates`, returning whether the entries changed. The resolver works
+    /// from this call's scan, and the folder is rescanned only if it reassigned an id.
+    @discardableResult
+    private func rescanResolvingDuplicates() async -> Bool {
+        let library = Library(root: root)
+        guard !resolving else { return update(library.scan()) }
+        resolving = true
+        let open = await openPackages()
+        var scanned = library.scan()
+        let reassigned = await library.resolveDuplicateBookIDs(in: scanned, preferring: owners, open: open)
+        resolving = false
+        if !reassigned.isEmpty { scanned = library.scan() }
+        return update(scanned)
+    }
+
+    /// Takes a fresh scan: `owners` follow every scan; the cache is rewritten only when the
+    /// entries changed (or it doesn't hold them yet). Returns whether the entries changed.
+    @discardableResult
+    private func update(_ scanned: [LibraryEntry]) -> Bool {
+        let changed = scanned != current
+        current = scanned
+        updateOwners(from: current)
+        if changed || !cacheIsCurrent { writeCache() }
+        return changed
+    }
+
     private func updateOwners(from entries: [LibraryEntry]) {
         let previous = owners
         owners = [:]
@@ -127,11 +151,12 @@ public actor LibraryIndex {
     }
 
     private func writeCache() {
+        cacheIsCurrent = false
         let file = CacheFile(root: root.path(percentEncoded: false), entries: current)
         guard let data = try? PackageCoding.encoder().encode(file) else { return }
         let fm = FileManager.default
         try? fm.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: cacheURL, options: .atomic)
+        cacheIsCurrent = (try? data.write(to: cacheURL, options: .atomic)) != nil
     }
 
     private func startWatchingIfNeeded() {
@@ -155,9 +180,10 @@ public actor LibraryIndex {
 
     private func refreshAndYield() async {
         guard watcher != nil else { return }
-        let fresh = await refreshResolvingDuplicates()
-        guard watcher != nil else { return }
-        for c in continuations.values { c.yield(fresh) }
+        // Only a change is published: an unchanged rescan (the app's own autosave touching
+        // `book.json` is the common case) has nothing new to tell subscribers.
+        guard await rescanResolvingDuplicates(), watcher != nil else { return }
+        for c in continuations.values { c.yield(current) }
     }
 
     /// Whether an FSEvents path matters: the package itself, its `book.json` or its `thumbnail.png`.

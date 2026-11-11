@@ -10,15 +10,18 @@ import Foundation
 public struct DraftAllPlan: Sendable {
     /// Ready to enqueue (pending messages are appended only by `enqueueDraftAll`).
     public var items: [QueueItem]
-    /// The page and box each item fills, parallel to `items`.
-    public var targets: [(page: PageID, box: BoxID)]
     public var estimate: CostEstimate
     public var count: Int { items.count }
 
-    public init(items: [QueueItem] = [], targets: [(page: PageID, box: BoxID)] = [],
-                estimate: CostEstimate = CostEstimate(amount: 0)) {
+    /// The page and box each item fills, in `items` order.
+    public var targets: [(page: PageID, box: BoxID)] {
+        items.compactMap { item in
+            if case let .pageBox(page, box) = item.target { (page, box) } else { nil }
+        }
+    }
+
+    public init(items: [QueueItem] = [], estimate: CostEstimate = CostEstimate(amount: 0)) {
         self.items = items
-        self.targets = targets
         self.estimate = estimate
     }
 }
@@ -111,31 +114,20 @@ extension AppModel {
                                  messageID: MessageID(), intent: intent)
             return prepared(item, content: content)
         }
-        return DraftAllPlan(items: items, targets: targets, estimate: CostEstimate.total(items.map(\.estimateIncludingFollowUp)))
+        return DraftAllPlan(items: items, estimate: CostEstimate.total(items.map(\.estimateIncludingFollowUp)))
     }
 
     /// Appends the pending messages and enqueues every item in one call. False if nothing was queued.
     /// Boxes filled (or already drafted from this plan) since the plan was made are skipped.
     @discardableResult
     public func enqueueDraftAll(_ plan: DraftAllPlan, in document: BookDocument) -> Bool {
-        guard plan.items.count == plan.targets.count else { return false }
-        return enqueuePlanned(plan.items, in: document) { index, content in
-            let target = plan.targets[index]
-            return content.pages[target.page]?.images[target.box]?.placement == nil
-        }
-    }
-
-    /// Appends the pending message of every planned item that is `stillWanted` (given its index
-    /// in `items`) and not already queued, then enqueues them in one call (Draft all, Generate
-    /// whole sheet). False if nothing was queued.
-    func enqueuePlanned(_ items: [QueueItem], in document: BookDocument,
-                        stillWanted: (Int, BookContent) -> Bool) -> Bool {
-        guard !items.isEmpty else { return false }
+        guard !plan.items.isEmpty else { return false }
         var queued: [QueueItem] = []
         document.performIrreversible { content in
             var dirty = DirtySet()
-            for (index, item) in items.enumerated() {
-                guard stillWanted(index, content), content.session(containing: item.messageID) == nil else { continue }
+            for item in plan.items {
+                guard case let .pageBox(page, box) = item.target, content.pages[page]?.images[box]?.placement == nil,
+                      content.session(containing: item.messageID) == nil else { continue }
                 let message = Message(id: item.messageID, role: .user, text: item.intent.messageText,
                                       queueItemID: item.id, createdAt: item.enqueuedAt)
                 let changed = BookMutations.appendPendingMessage(message, target: item.target, to: &content)

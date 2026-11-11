@@ -171,11 +171,18 @@ struct BookEditor: View {
                 // Lists in every tab sit on the sidebar card.
                 .scrollContentBackground(.hidden)
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    SidebarTabPicker(selection: $sidebarTab)
-                        .padding(8)
+                    VStack(spacing: 6) {
+                        SidebarTabPicker(selection: $sidebarTab)
+                        // The Overview / Editor switch belongs to the Pages tab, so it sits on
+                        // the sidebar card rather than in the title bar (which then looks the
+                        // same on every tab).
+                        if sidebarTab == .pages { PagesModePicker(selection: $pages.mode) }
+                    }
+                    .padding(8)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     VStack(spacing: 6) {
+                        if !app.isOnline { OfflineBadge() }
                         QueueBadge()
                         BookSwitcher(document: document) { pages.sheet = .bookSettings }
                     }
@@ -197,7 +204,6 @@ struct BookEditor: View {
             sessionPanel(content)
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .toolbar { toolbar }
         .draftAllFlow(document: document, trigger: $draftAllRequested)
         .navigationTitle(content.book.title)
         .focusedSceneValue(\.focusedBook, document)
@@ -267,32 +273,6 @@ struct BookEditor: View {
 
     private func isReorder(_ command: BookCommand?) -> Bool {
         if case .reorderPages = command { true } else { false }
-    }
-
-    /// The toolbar shows only on the Pages tab: the Overview / Editor switch. Everything else
-    /// lives in the menus, the Pages list (+ / −), the Style tab (typography, page numbers) and
-    /// the book switcher (book settings).
-    @ToolbarContentBuilder
-    private var toolbar: some ToolbarContent {
-        @Bindable var pages = pages
-        if sidebarTab == .pages {
-            ToolbarItem(placement: .navigation) {
-                Picker("View", selection: $pages.mode) {
-                    Label("Overview", systemImage: "square.grid.2x2").tag(PagesController.Mode.overview)
-                    Label("Editor", systemImage: "doc.richtext").tag(PagesController.Mode.editor)
-                }
-                .pickerStyle(.segmented)
-                .labelStyle(.iconOnly)
-                .help("Switch between the spread overview and the page editor")
-            }
-        }
-        if !app.isOnline {
-            ToolbarItem {
-                Label("Offline", systemImage: "wifi.slash")
-                    .foregroundStyle(.secondary)
-                    .help("Offline: queued requests will run when the network returns")
-            }
-        }
     }
 
     /// The inspector card: the session panel on Pages and the chat / box inspector on Layouts,
@@ -579,6 +559,61 @@ private struct SidebarTabPicker: View {
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: selection)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Sidebar")
+    }
+}
+
+/// The Pages tab's Overview / Editor switch: two labelled segments on a card, styled like the
+/// tab picker above it.
+private struct PagesModePicker: View {
+    @Binding var selection: PagesController.Mode
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let tile = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2, style: .continuous)
+        HStack(spacing: 3) {
+            segment("Overview", systemImage: "square.grid.2x2", mode: .overview, tile: tile)
+            segment("Editor", systemImage: "doc.richtext", mode: .editor, tile: tile)
+        }
+        .padding(3)
+        .background {
+            RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
+                .fill(Crayon.card)
+                .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2)
+        }
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: selection)
+        .help("Switch between the spread overview and the page editor")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("View")
+    }
+
+    private func segment(_ title: String, systemImage: String, mode: PagesController.Mode,
+                         tile: RoundedRectangle) -> some View {
+        let selected = selection == mode
+        return Button { selection = mode } label: {
+            Label(title, systemImage: systemImage)
+                .font(Crayon.font(.caption, weight: .bold))
+                .foregroundStyle(selected ? Color.white : Crayon.ink)
+                .frame(maxWidth: .infinity, minHeight: 22)
+                .background { if selected { tile.fill(Crayon.tomato) } }
+                .contentShape(tile)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// Shown at the foot of the sidebar while the network is down (it used to be a toolbar item,
+/// which changed the title bar's height).
+private struct OfflineBadge: View {
+    var body: some View {
+        Label("Offline", systemImage: "wifi.slash")
+            .font(Crayon.font(.caption, weight: .bold))
+            .foregroundStyle(Crayon.inkSoft)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .crayonCard(cornerRadius: Crayon.smallCornerRadius + 2)
+            .help("Offline: queued requests will run when the network returns")
     }
 }
 

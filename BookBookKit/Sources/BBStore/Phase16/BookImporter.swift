@@ -67,10 +67,9 @@ public enum BookImporter {
     /// source ID). Throws `.missingSourceItem` for a selected item absent from `source`, and
     /// `.unresolvedClashes` when a clash remains after the renames (including a rename that clashes).
     ///
-    /// Assets get a new `AssetID`, new slot/sheet-item UUIDs and revision 1. Each slot/item whose
-    /// `chosen` resolves in the source gets a new session holding one `.imported` copy of that
-    /// version (new `VersionID`, no parent, no provenance); otherwise `chosen` is nil and the
-    /// session is empty. Source sessions are not copied (A §5.4).
+    /// Assets get a new `AssetID`, a new session and revision 1. When the asset's `chosen`
+    /// resolves in the source, the new session holds one `.imported` copy of that version (new
+    /// `VersionID`, no parent, no provenance); otherwise `chosen` is nil and the session is empty. Source sessions are not copied (A §5.4).
     public static func build(source: BookContent, target: BookContent, selection: BookImportSelection,
                              renames: [BookImportItem: String] = [:],
                              now: Date = Date()) throws(BookImportError) -> BookImport {
@@ -114,27 +113,9 @@ public enum BookImporter {
                 return (session.id, newChosen)
             }
 
-            for i in asset.references.indices {
-                let slot = asset.references[i]
-                let newSlotID = UUID()
-                let (sid, chosen) = copySession(sessionID: slot.sessionID, chosen: slot.chosen,
-                                                owner: .assetReference(asset.id, newSlotID))
-                asset.references[i].id = newSlotID
-                asset.references[i].sessionID = sid
-                asset.references[i].chosen = chosen
-            }
-            if var sheet = asset.sheet {
-                for i in sheet.items.indices {
-                    let item = sheet.items[i]
-                    let newItemID = UUID()
-                    let (sid, chosen) = copySession(sessionID: item.sessionID, chosen: item.chosen,
-                                                    owner: .sheetItem(asset.id, newItemID))
-                    sheet.items[i].id = newItemID
-                    sheet.items[i].sessionID = sid
-                    sheet.items[i].chosen = chosen
-                }
-                asset.sheet = sheet
-            }
+            let (sid, chosen) = copySession(sessionID: old.sessionID, chosen: old.chosen, owner: .asset(asset.id))
+            asset.sessionID = sid
+            asset.chosen = chosen
             result.assets.append(asset)
         }
 

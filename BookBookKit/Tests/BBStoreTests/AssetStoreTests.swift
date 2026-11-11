@@ -10,7 +10,7 @@ import Testing
         var fox = Asset.makeNew(type: .character, name: "Fox")
         fox.description = "red fox"
         content.assets[fox.id] = fox
-        for (sid, owner) in fox.ownedSessions { content.sessions[sid] = Session(id: sid, owner: owner) }
+        content.sessions[fox.sessionID] = Session(id: fox.sessionID, owner: fox.owner)
         return (content, fox)
     }
 
@@ -70,12 +70,11 @@ import Testing
         let store = BookStore(packageURL: url)
         try BookStore.create(content, at: url)
         let ref = try await store.storeImage(Data([1, 2, 3]), contentType: "public.png")
-        let slot = fox.references[0]
         let version = Version(image: ref, pixelSize: PixelSize(width: 1, height: 1), source: .imported, createdAt: testNow)
-        content.sessions[slot.sessionID]?.versions.append(version)
-        fox.references[0].chosen = version.id
+        content.sessions[fox.sessionID]?.versions.append(version)
+        fox.chosen = version.id
         content.assets[fox.id] = fox
-        try await store.save(content, dirty: DirtySet(sessions: [slot.sessionID], assets: [fox.id]))
+        try await store.save(content, dirty: DirtySet(sessions: [fox.sessionID], assets: [fox.id]))
         let removed = try await store.sweepOrphanImages(referencedBy: content, minimumAge: 0, now: Date().addingTimeInterval(10))
         #expect(removed == 0)
         #expect(exists(store.imageURL(for: ref)))

@@ -3,8 +3,8 @@ import Foundation
 
 /// Clean up (A §10, PD §8.12): drops versions nothing uses and frees the image files only they used.
 public enum CleanUp {
-    /// Unstarred versions not referenced by any page placement (cover included), reference slot
-    /// `chosen` or sheet item `chosen`, and not an ancestor (via `parent`) of a kept or starred version. Versions
+    /// Unstarred versions not referenced by any page placement (cover included) or an asset's
+    /// `chosen`, and not an ancestor (via `parent`) of a kept or starred version. Versions
     /// that queued or running requests refer to are passed as `protecting`: they are kept like
     /// `chosen` versions, lineage included.
     /// `fileNames` are the image files used only by those versions
@@ -19,8 +19,7 @@ public enum CleanUp {
             }
         }
         for asset in content.assets.values {
-            for slot in asset.references { if let c = slot.chosen { keep.insert(c) } }
-            for item in asset.sheet?.items ?? [] { if let c = item.chosen { keep.insert(c) } }
+            if let c = asset.chosen { keep.insert(c) }
         }
         // Keep each kept version's whole lineage (`Version.parent` chain): refining it reads the
         // earlier instructions (`ContextAssembler.lineageInstructions`).

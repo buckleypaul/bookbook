@@ -29,29 +29,15 @@ struct DiskBook {
         return v
     }
 
-    /// Adds an asset whose primary slot (and every sheet item, if `sheetBytes` given) has a chosen version.
-    mutating func addAsset(name: String, type: AssetType = .character, primaryBytes: String?,
-                           sheetBytes: [String] = []) async throws -> Asset {
+    /// Adds an asset with its session; with `primaryBytes`, a chosen version plus one unchosen extra.
+    mutating func addAsset(name: String, type: AssetType = .character, primaryBytes: String?) async throws -> Asset {
         var asset = Asset.makeNew(type: type, name: name)
         asset.description = "desc \(name)"
-        for (i, slot) in asset.references.enumerated() {
-            content.sessions[slot.sessionID] = Session(id: slot.sessionID, owner: .assetReference(asset.id, slot.id))
-            if let primaryBytes, slot.isPrimary {
-                let v = try await addVersion(primaryBytes, to: slot.sessionID)
-                asset.references[i].chosen = v.id
-                // One unchosen extra version that must not be copied.
-                try await addVersion("extra-\(name)", to: slot.sessionID)
-            }
-        }
-        if var sheet = asset.sheet {
-            for (i, item) in sheet.items.enumerated() {
-                content.sessions[item.sessionID] = Session(id: item.sessionID, owner: .sheetItem(asset.id, item.id))
-                if i < sheetBytes.count {
-                    let v = try await addVersion(sheetBytes[i], to: item.sessionID)
-                    sheet.items[i].chosen = v.id
-                }
-            }
-            asset.sheet = sheet
+        content.sessions[asset.sessionID] = Session(id: asset.sessionID, owner: asset.owner)
+        if let primaryBytes {
+            asset.chosen = try await addVersion(primaryBytes, to: asset.sessionID).id
+            // One unchosen extra version that must not be copied.
+            try await addVersion("extra-\(name)", to: asset.sessionID)
         }
         content.assets[asset.id] = asset
         return asset
@@ -142,7 +128,7 @@ struct DiskBook {
         var src = try DiskBook.make(title: "Src")
         let dst = try DiskBook.make(title: "Dst")
         defer { try? FileManager.default.removeItem(at: src.dir); try? FileManager.default.removeItem(at: dst.dir) }
-        let pip = try await src.addAsset(name: "Pip", primaryBytes: "pip-front", sheetBytes: ["pip-3q", "pip-side"])
+        let pip = try await src.addAsset(name: "Pip", primaryBytes: "pip-front")
         var tmpl = try Presets.storyTemplate()
         tmpl.id = TemplateID()
         tmpl.name = "Source layout"
@@ -156,48 +142,26 @@ struct DiskBook {
         #expect(asset.id != pip.id)
         #expect(asset.name == "Pip" && asset.description == pip.description)
         #expect(asset.revision == 1)
-        let oldSlotIDs = Set(pip.references.map(\.id) + (pip.sheet?.items ?? []).map(\.id))
-        let oldSessionIDs = Set(pip.references.map(\.sessionID) + (pip.sheet?.items ?? []).map(\.sessionID))
-        #expect(oldSlotIDs.isDisjoint(with: Set(asset.references.map(\.id) + (asset.sheet?.items ?? []).map(\.id))))
+        #expect(asset.sessionID != pip.sessionID)
 
-        #expect(imp.sessions.count == asset.ownedSessions.count)
-        let sessions = Dictionary(uniqueKeysWithValues: imp.sessions.map { ($0.id, $0) })
-        #expect(Set(sessions.keys).isDisjoint(with: oldSessionIDs))
+        #expect(imp.sessions.count == 1)
+        let session = try #require(imp.sessions.first)
+        #expect(session.id == asset.sessionID)
+        #expect(session.owner == .asset(asset.id))
+        #expect(session.messages.isEmpty)
         var oldVersionIDs: Set<VersionID> = []
         for s in src.content.sessions.values { oldVersionIDs.formUnion(s.versions.map(\.id)) }
-        var chosenCount = 0
-        for (sid, owner) in asset.ownedSessions {
-            let session = try #require(sessions[sid])
-            #expect(session.owner == owner)
-            #expect(session.messages.isEmpty)
-            for v in session.versions {
-                #expect(v.source == .imported && v.parent == nil && v.provenance == nil && !oldVersionIDs.contains(v.id))
-            }
+        let chosen = try #require(asset.chosen)
+        #expect(session.versions.map(\.id) == [chosen])   // single copy; the unchosen extra isn't carried
+        for v in session.versions {
+            #expect(v.source == .imported && v.parent == nil && v.provenance == nil && !oldVersionIDs.contains(v.id))
         }
-        for slot in asset.references {
-            if let chosen = slot.chosen {
-                chosenCount += 1
-                let s = try #require(sessions[slot.sessionID])
-                #expect(s.versions.map(\.id) == [chosen])   // single copy; the unchosen extra isn't carried
-            } else {
-                #expect(sessions[slot.sessionID]?.versions.isEmpty == true)
-            }
-        }
-        for item in asset.sheet?.items ?? [] {
-            if let chosen = item.chosen {
-                chosenCount += 1
-                #expect(sessions[item.sessionID]?.versions.map(\.id) == [chosen])
-            } else {
-                #expect(sessions[item.sessionID]?.versions.isEmpty == true)
-            }
-        }
-        #expect(chosenCount == 3)
 
         let t = try #require(imp.templates.first)
         #expect(t.id != tmpl.id && t.name == tmpl.name && t.boxes.count == tmpl.boxes.count)
         #expect(Set(t.boxes.map(\.id)).isDisjoint(with: Set(tmpl.boxes.map(\.id))))
         #expect(imp.styleGuide == src.content.style)
-        #expect(imp.images.count == 4)   // 3 chosen + 1 style reference; the extra isn't included
+        #expect(imp.images.count == 2)   // 1 chosen + 1 style reference; the extra isn't included
     }
 
     @Test func editingTheCopyDoesNotChangeTheSource() async throws {
@@ -239,11 +203,12 @@ struct DiskBook {
         defer { try? FileManager.default.removeItem(at: src.dir); try? FileManager.default.removeItem(at: dst.dir) }
         // Two assets whose chosen images are byte-identical, plus one distinct image.
         let a = try await src.addAsset(name: "A", primaryBytes: "same")
-        let b = try await src.addAsset(name: "B", primaryBytes: "same", sheetBytes: ["other"])
+        let b = try await src.addAsset(name: "B", primaryBytes: "same")
+        let c = try await src.addAsset(name: "C", primaryBytes: "other")
         let existing = try await dst.store.storeImage(Data("other".utf8), contentType: "public.png")
         _ = existing
         let imp = try BookImporter.build(source: src.content, target: dst.content,
-                                         selection: BookImportSelection(assets: [a.id, b.id]))
+                                         selection: BookImportSelection(assets: [a.id, b.id, c.id]))
         #expect(imp.images.count == 2)   // "same" once, "other" once
 
         let first = try await BookImporter.copyImages(imp.images, from: src.url, into: dst.store)
@@ -258,7 +223,8 @@ struct DiskBook {
         let dst = try DiskBook.make(title: "Dst")
         defer { try? FileManager.default.removeItem(at: src.dir); try? FileManager.default.removeItem(at: dst.dir) }
         let a = try await src.addAsset(name: "A", primaryBytes: "bytes")
-        let ref = try #require(src.content.sessions[a.primary!.sessionID]?.version(a.primary!.chosen!)?.image)
+        let chosen = try #require(a.chosen)
+        let ref = try #require(src.content.sessions[a.sessionID]?.version(chosen)?.image)
         try Data("tampered".utf8).write(to: src.store.imageURL(for: ref))
         do {
             _ = try await BookImporter.copyImages([ref], from: src.url, into: dst.store)

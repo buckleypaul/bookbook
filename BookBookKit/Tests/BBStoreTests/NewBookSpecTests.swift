@@ -67,11 +67,9 @@ struct NewBookSpecTests {
         #expect(asset.type == .character)
         #expect(asset.name == "Pip")
         #expect(asset.description == "A small green frog.")
-        #expect(asset.sheet != nil)
-        #expect(!asset.ownedSessions.isEmpty)
-        for (sessionID, owner) in asset.ownedSessions {
-            #expect(applied.sessions[sessionID]?.owner == owner)
-        }
+        #expect(asset.chosen == nil)
+        #expect(applied.sessions[asset.sessionID]?.owner == .asset(asset.id))
+        #expect(applied.sessions.values.filter { $0.owner.assetID != nil }.count == 1)
         let blank = NewBookSpec(title: "T", mainCharacter: .init(name: " ", description: ""))
         #expect(blank.apply(to: try defaultContent()).assets.isEmpty)
     }
@@ -91,7 +89,7 @@ struct NewBookSpecTests {
         #expect(loaded.book.author == "Me")
         #expect(loaded.style.presetID == spec.stylePresetID)
         #expect(loaded.assets.values.first?.description == "A frog.")
-        #expect(loaded.assets.values.first.map { $0.ownedSessions.allSatisfy { loaded.sessions[$0.0] != nil } } == true)
+        #expect(loaded.assets.values.first.map { loaded.sessions[$0.sessionID]?.owner == $0.owner } == true)
     }
 
     // MARK: Preset samples
@@ -114,6 +112,16 @@ struct NewBookSpecTests {
         #expect(content.book.pageOrder.count >= 6)
         #expect(content.assets.values.contains { $0.type == .character })
         #expect(content.style.presetID == "watercolour")
+        // One image session per asset, in the new format (no slots, no sheet).
+        let assetSessions = content.sessions.values.filter { $0.owner.assetID != nil }
+        #expect(assetSessions.count == content.assets.count)
+        for asset in content.assets.values { #expect(content.sessions[asset.sessionID]?.owner == asset.owner) }
+        let assetFiles = try FileManager.default.contentsOfDirectory(at: url.appending(path: "assets"),
+                                                                     includingPropertiesForKeys: nil)
+        for file in assetFiles where file.pathExtension == "json" {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            #expect(!text.contains("references") && !text.contains("sheet") && text.contains("sessionID"))
+        }
     }
 
     @Test func installSampleCopiesWithNewBookID() async throws {

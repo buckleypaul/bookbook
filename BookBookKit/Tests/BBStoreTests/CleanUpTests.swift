@@ -4,11 +4,11 @@ import Testing
 @testable import BBStore
 
 @Suite struct CleanUpTests {
-    /// A book with: cover placement, story placement, starred, reference chosen, sheet chosen, and
+    /// A book with: cover placement, story placement, starred, asset chosen, and
     /// 5 loose versions (one shares its image with a placed version), all in real files.
     private struct Fixture {
         var book: DiskBook
-        var coverV: Version, storyV: Version, starredV: Version, refV: Version, sheetV: Version
+        var coverV: Version, storyV: Version, starredV: Version, refV: Version
         var loose: [Version]
         var sharedLoose: Version
     }
@@ -31,11 +31,10 @@ import Testing
         // Same bytes as the placed story version: file must survive.
         let sharedLoose = try await book.addVersion("story", to: coverSlot.sessionID)
 
-        let asset = try await book.addAsset(name: "Pip", primaryBytes: "ref", sheetBytes: ["sheet"])
-        let refV = try #require(book.content.sessions[asset.primary!.sessionID]?.version(asset.primary!.chosen!))
-        let item = try #require(asset.sheet?.items.first)
-        let sheetV = try #require(book.content.sessions[item.sessionID]?.version(item.chosen!))
-        return Fixture(book: book, coverV: coverV, storyV: storyV, starredV: starredV, refV: refV, sheetV: sheetV,
+        let asset = try await book.addAsset(name: "Pip", primaryBytes: "ref")
+        let chosen = try #require(asset.chosen)
+        let refV = try #require(book.content.sessions[asset.sessionID]?.version(chosen))
+        return Fixture(book: book, coverV: coverV, storyV: storyV, starredV: starredV, refV: refV,
                        loose: loose, sharedLoose: sharedLoose)
     }
 
@@ -43,9 +42,9 @@ import Testing
         let f = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: f.book.dir) }
         let plan = CleanUp.plan(for: f.book.content) { f.book.store.imageFileSize($0) }
-        let keep = [f.coverV, f.storyV, f.starredV, f.refV, f.sheetV].map(\.id)
+        let keep = [f.coverV, f.storyV, f.starredV, f.refV].map(\.id)
         for id in keep { #expect(!plan.versionIDs.contains(id)) }
-        // Loose versions, the shared-image duplicate, and the unchosen "extra-Pip" reference version.
+        // Loose versions, the shared-image duplicate, and the unchosen "extra-Pip" asset version.
         #expect(plan.versionIDs.isSuperset(of: f.loose.map(\.id) + [f.sharedLoose.id]))
         #expect(plan.versionIDs.count == 6)
         #expect(!plan.isEmpty)
@@ -112,9 +111,9 @@ import Testing
         #expect(before - after >= plan.bytesFreed)
 
         let reloaded = try await BookStore(packageURL: f.book.url).load()
-        #expect(reloaded.sessions.values.flatMap(\.versions).count == 5)
-        for v in [f.coverV, f.storyV, f.starredV, f.refV, f.sheetV] { #expect(exists(f.book.store.imageURL(for: v.image))) }
-        #expect(f.book.fileNames().count == 5)
+        #expect(reloaded.sessions.values.flatMap(\.versions).count == 4)
+        for v in [f.coverV, f.storyV, f.starredV, f.refV] { #expect(exists(f.book.store.imageURL(for: v.image))) }
+        #expect(f.book.fileNames().count == 4)
     }
 
     @Test func deleteImagesIgnoresPathsAndMissingFiles() async throws {

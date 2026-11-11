@@ -213,10 +213,8 @@ public final class TemplateChatModel {
         do throws(ProviderError) {
             let result = try await provider.generateLayout(request)
             let sent = Self.record(request, parametersSent: result.parametersSent)
-            let actual = result.usage.flatMap {
-                app.prices.calculator.actualCost(of: $0, provider: provider.id, model: model.id)
-            }
-            await recordCost(app, model: model, provider: provider.id, estimate: estimate, .completed(actual: actual))
+            await recordCost(app, model: model, provider: provider.id, estimate: estimate, .completed(
+                usage: result.usage, provider: provider.id, model: model.id, pricing: app.prices.calculator))
             apply(result.draft, to: id, instruction: text, sent: sent)
         } catch {
             // A missing key means nothing left the machine, so there is nothing to show as sent.

@@ -56,10 +56,12 @@ public struct LedgerCharge: Hashable, Sendable {
         self.actual = actual
     }
 
-    /// A completed request: its usage priced (basis actual), or the estimate when there's no
-    /// usage or no price entry (`actual` nil).
-    public static func completed(actual: Decimal?) -> LedgerCharge {
-        LedgerCharge(status: .completed, basis: actual == nil ? .estimate : .actual, actual: actual)
+    /// A completed request: `usage` priced under `model` (basis actual), or the estimate when
+    /// there's no usage or no price entry (`actual` nil). Shared by the queue and the Layouts chat.
+    public static func completed(usage: TokenUsage?, provider: ProviderID, model: String,
+                                 pricing: some CostPricing) -> LedgerCharge {
+        let actual = usage.flatMap { pricing.actualCost(of: $0, provider: provider, model: model) }
+        return LedgerCharge(status: .completed, basis: actual == nil ? .estimate : .actual, actual: actual)
     }
 
     /// An error response: $0, basis actual.

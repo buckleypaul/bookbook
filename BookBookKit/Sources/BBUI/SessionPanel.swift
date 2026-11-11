@@ -5,37 +5,25 @@ import BBModel
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The session panel (PD §8.6) for any session owner: an image box or an asset's image. The thread, the version strip, Version details, and the composer.
+/// The session panel (PD §8.6) for a page image box: the thread, the version strip, Version
+/// details, and the composer. Clicking a version puts it on the page (undoable) and selects it.
+/// The composer has `@mention` autocomplete, the page's asset checklist, "Reference another
+/// image…" and the story-text toggle. (Assets don't use it: the asset editor generates from the
+/// description, see `AssetImageControls`.)
 ///
-/// - Page boxes: clicking a version puts it on the page (undoable) and selects it. The composer
-///   has `@mention` autocomplete, the page's asset checklist, "Reference another image…" and the
-///   story-text toggle.
-/// - Assets (the Assets tab's right panel): clicking a version makes it the asset's image
-///   ("Choose Image", undoable). Imports ask the real-person question. A legacy asset whose
-///   session file is missing shows an empty session; the first message or import creates it.
-///
-/// The panel keeps a selected version (default: the placed or chosen one); Details and
-/// refinement use it. Every generation checks the real-person notice, then the cost.
+/// The panel keeps a selected version (default: the placed one); Details and refinement use it. Every generation checks the real-person notice, then the cost.
 struct SessionPanel: View {
     @Environment(AppModel.self) private var app
     let document: BookDocument
     let content: BookContent
     let owner: SessionOwner
     let images: ImageCache
-    /// Asset sessions: a request (from the asset editor's Import button) to open the file picker.
-    let importRequest: Binding<SessionOwner?>?
 
     init(document: BookDocument, content: BookContent, pageID: PageID, boxID: BoxID, images: ImageCache) {
-        self.init(document: document, content: content, owner: .pageBox(pageID, boxID), images: images)
-    }
-
-    init(document: BookDocument, content: BookContent, owner: SessionOwner, images: ImageCache,
-         importRequest: Binding<SessionOwner?>? = nil) {
         self.document = document
         self.content = content
-        self.owner = owner
+        self.owner = .pageBox(pageID, boxID)
         self.images = images
-        self.importRequest = importRequest
     }
 
     @State private var prompt = ""
@@ -58,9 +46,6 @@ struct SessionPanel: View {
     @State private var regionEditing: RegionEditSubject?
     /// The real-person notice waiting for Continue/Cancel, and the action it guards.
     @State private var notice: PendingNotice?
-    /// The import waiting for the real-person answer, and the ones queued behind it.
-    @State private var question: PendingQuestion?
-    @State private var laterQuestions: [PendingQuestion] = []
 
     private var target: GenerationTarget { GenerationTarget(owner: owner) }
 
@@ -68,8 +53,6 @@ struct SessionPanel: View {
         if case let .pageBox(page, box) = owner { return (page, box) }
         return nil
     }
-
-    private var isAsset: Bool { owner.assetID != nil }
 
     private var session: Session? { SessionPanelState.session(for: owner, in: content) }
 
@@ -85,7 +68,7 @@ struct SessionPanel: View {
         return placedID.flatMap { session.version($0)?.id }
     }
 
-    private var storyText: Bool { isAsset ? false : (includeStoryText ?? app.defaults.includeStoryText) }
+    private var storyText: Bool { includeStoryText ?? app.defaults.includeStoryText }
 
     /// The attached references whose versions still exist.
     private var liveAttached: [VersionRef] {
@@ -119,7 +102,7 @@ struct SessionPanel: View {
                     .padding(12)
             } else {
                 CrayonEmptyState("No Session", systemImage: "photo", color: Crayon.sky,
-                                 message: isAsset ? "This asset is gone." : "This image box has no session.")
+                                 message: "This image box has no session.")
             }
         }
         .overlay {
@@ -144,8 +127,6 @@ struct SessionPanel: View {
             selectedVersion = nil
             freshEpoch = nil
         }
-        .onAppear(perform: takeImportRequest)
-        .onChange(of: importRequest?.wrappedValue) { takeImportRequest() }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.image]) { result in
             switch result {
             case let .success(url): importImages([url])
@@ -165,14 +146,6 @@ struct SessionPanel: View {
                                   regionEditing = nil
                                   submitRegionEdit(subject.version, drawing: drawing, prompt: text)
                               })
-        }
-        .sheet(item: $question, onDismiss: nextQuestion) { pending in
-            RealPersonQuestionSheet(fileName: pending.url.lastPathComponent, defaultAnswer: pending.defaultAnswer,
-                                    onAnswer: { answer in
-                                        question = nil
-                                        importAsset(pending.url, depictsRealPerson: answer)
-                                    },
-                                    onCancel: { question = nil })
         }
         .sheet(item: $notice) { pending in
             RealPersonNoticeSheet(provider: pending.provider,
@@ -197,8 +170,7 @@ struct SessionPanel: View {
             Button("Discard Versions", role: .destructive) { reset(keepVersions: false) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(isAsset ? "The chat clears. Discarding versions also clears the chosen image. This can't be undone."
-                 : "The chat clears. Discarding versions also empties this box. This can't be undone.")
+            Text("The chat clears. Discarding versions also empties this box. This can't be undone.")
         }
         .alert("Confirm Cost", isPresented: $costAlert.isPresent()) {
             Button(pendingAction?.kind.buttonTitle ?? "Generate") {
@@ -217,17 +189,9 @@ struct SessionPanel: View {
         }
     }
 
-    /// Opens the file picker when the asset editor asked to import into this owner.
-    private func takeImportRequest() {
-        guard let request = importRequest, request.wrappedValue == owner else { return }
-        request.wrappedValue = nil
-        if document.isEditable, session != nil { showImporter = true }
-    }
-
     private var deleteMessage: String {
         let placed = pendingDelete != nil && pendingDelete == placedID
-        let note = isAsset ? "It is the chosen image, so nothing will be chosen. "
-            : "It is on the page, so the box will be empty. "
+        let note = "It is on the page, so the box will be empty. "
         return (placed ? note : "") + "This can't be undone."
     }
 
@@ -239,7 +203,7 @@ struct SessionPanel: View {
                 .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
                 .accessibilityHidden(true)
-            Text(isAsset ? document.ownerLabel(owner) : "Session")
+            Text("Session")
                 .font(Crayon.font(.headline, weight: .heavy))
                 .foregroundStyle(Crayon.ink)
             Spacer()
@@ -276,8 +240,7 @@ struct SessionPanel: View {
                     .font(.title3.weight(.bold))
                     .foregroundStyle(Crayon.sunflower)
                     .accessibilityHidden(true)
-                Text(isAsset ? "Describe the picture, then press Generate. Or drop in your own image."
-                     : "Describe the picture for this box, then press Generate. Or drop in your own image.")
+                Text("Describe the picture for this box, then press Generate. Or drop in your own image.")
                     .font(Crayon.font(.callout, weight: .medium))
                     .foregroundStyle(Crayon.inkSoft)
                     .fixedSize(horizontal: false, vertical: true)
@@ -309,61 +272,9 @@ struct SessionPanel: View {
                             .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
                     }
                 }
-                statusLine(app.status(of: message), message: message, session: session)
+                MessageStatusLine(message: message, session: session)
             }
         }
-    }
-
-    @ViewBuilder
-    private func statusLine(_ status: MessageStatus, message: Message, session: Session) -> some View {
-        switch status {
-        case .none:
-            EmptyView()
-        case .waiting:
-            StatusPill(color: Crayon.sunflower) {
-                ProgressView().controlSize(.small)
-            } label: {
-                Text("Waiting in the queue…")
-            }
-        case let .running(startedAt, typical):
-            StatusPill(color: Crayon.sky) {
-                ProgressView().controlSize(.small)
-            } label: {
-                TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                    Text("Generating… " + ElapsedTimeText.progress(elapsed: context.date.timeIntervalSince(startedAt),
-                                                                     typical: typical))
-                        .monospacedDigit()
-                }
-            }
-        case let .failed(error):
-            if let advice = failedEntry(for: message).flatMap({ app.advice(for: $0) }) {
-                FailureAdviceView(advice: advice)
-            } else {
-                StatusPill(color: Crayon.tomato, systemImage: "exclamationmark.triangle.fill") {
-                    Text(ProviderErrorText.message(for: error))
-                }
-            }
-        case let .notSaved(text):
-            StatusPill(color: Crayon.tomato, systemImage: "exclamationmark.triangle.fill") {
-                Text(text)
-            }
-        case .interrupted:
-            StatusPill(color: Crayon.inkSoft, systemImage: "clock.badge.xmark") {
-                Text("Not finished: BookBook quit before the picture arrived.")
-            }
-        case let .produced(versionID):
-            if let number = session.versionNumber(versionID) {
-                StatusPill(color: Crayon.grass, systemImage: "photo") {
-                    Text("Version \(number)")
-                }
-            }
-        }
-    }
-
-    private func failedEntry(for message: Message) -> QueueEntry? {
-        let snapshot = app.queueSnapshot
-        if let id = message.queueItemID, let entry = snapshot.entry(for: id) { return entry }
-        return snapshot.entries.first { $0.item.messageID == message.id }
     }
 
     // MARK: Versions
@@ -513,10 +424,8 @@ struct SessionPanel: View {
         selectedVersion = version.id
         freshEpoch = nil
         guard version.id != placedID else { return }
-        switch owner {
-        case let .pageBox(page, box): document.perform(.chooseVersion(page: page, box: box, version: version.id))
-        case let .asset(asset): document.chooseAssetImage(version.id, for: asset)
-        }
+        guard let pageBox else { return }
+        document.perform(.chooseVersion(page: pageBox.page, box: pageBox.box, version: version.id))
     }
 
     private func delete(_ id: VersionID) {
@@ -550,16 +459,6 @@ struct SessionPanel: View {
     private func importImages(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         let document = document
-        if isAsset {
-            // Ask "Is this a photo of a real person?" for each file, defaulting from EXIF.
-            Task {
-                for url in urls {
-                    let pending = PendingQuestion(url: url, defaultAnswer: await BookDocument.looksCameraOriginated(url))
-                    if question == nil { question = pending } else { laterQuestions.append(pending) }
-                }
-            }
-            return
-        }
         guard let pageBox else { return }
         Task {
             for url in urls {
@@ -568,22 +467,6 @@ struct SessionPanel: View {
                 } catch {
                     problem = ImageImportFailure.message(for: error)
                 }
-            }
-        }
-    }
-
-    private func nextQuestion() {
-        if question == nil, !laterQuestions.isEmpty { question = laterQuestions.removeFirst() }
-    }
-
-    private func importAsset(_ url: URL, depictsRealPerson: Bool) {
-        let document = document, owner = owner
-        Task {
-            do {
-                selectedVersion = try await document.importAssetImage(from: url, owner: owner,
-                                                                      depictsRealPerson: depictsRealPerson)
-            } catch {
-                problem = ImageImportFailure.message(for: error)
             }
         }
     }
@@ -623,12 +506,12 @@ struct SessionPanel: View {
     private func composer(_ session: Session) -> some View {
         let base = baseID(session)
         let number = base.flatMap { session.versionNumber($0) }
-        let query = isAsset ? nil : MentionCompletion.activeQuery(in: prompt)
+        let query = MentionCompletion.activeQuery(in: prompt)
         let suggestions = query.map { MentionCompletion.suggestions(for: $0.text, assets: Array(content.assets.values)) }
             ?? []
         return VStack(alignment: .leading, spacing: 8) {
             TextField(number.map { "Describe the change to version \($0)" }
-                      ?? (isAsset ? "Describe the picture" : "Describe the picture (type @ to mention an asset)"),
+                      ?? "Describe the picture (type @ to mention an asset)",
                       text: $prompt, axis: .vertical)
                 .lineLimit(2...6)
                 .textFieldStyle(.plain)
@@ -658,9 +541,7 @@ struct SessionPanel: View {
                     prompt = MentionCompletion.insert(asset, replacing: query, in: prompt)
                 }
             }
-            if !isAsset {
-                attachments
-            }
+            attachments
             HStack {
                 Picker("Quality", selection: Binding(get: { quality ?? app.defaults.quality },
                                                      set: { quality = $0 })) {
@@ -676,16 +557,13 @@ struct SessionPanel: View {
                     Label("Choose Image…", systemImage: "photo.badge.plus")
                 }
                 .buttonBorderShape(.capsule)
-                .help(isAsset ? "Use an image file from your Mac as a version of this asset's image"
-                      : "Use an image file from your Mac as a version for this box")
+                .help("Use an image file from your Mac as a version for this box")
                 .disabled(!document.isEditable)
                 Spacer()
-                if !isAsset {
-                    Toggle("Include story text", isOn: Binding(get: { includeStoryText ?? app.defaults.includeStoryText },
-                                                               set: { includeStoryText = $0 }))
-                        .toggleStyle(.checkbox)
-                        .font(.caption)
-                }
+                Toggle("Include story text", isOn: Binding(get: { includeStoryText ?? app.defaults.includeStoryText },
+                                                           set: { includeStoryText = $0 }))
+                    .toggleStyle(.checkbox)
+                    .font(.caption)
             }
             HStack {
                 Text(app.defaultModelName).font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
@@ -909,42 +787,6 @@ struct SessionPanel: View {
         var provider: ProviderID
         var action: PendingGeneration
     }
-
-    private struct PendingQuestion: Identifiable, Equatable {
-        let id = UUID()
-        var url: URL
-        var defaultAnswer: Bool
-    }
-}
-
-/// Version details rows, with the Cost row loaded from the book's ledger (`Provenance.cost`).
-private struct VersionDetailsGrid: View {
-    @Environment(AppModel.self) private var app
-    let version: Version
-    let session: Session
-    let bookID: BookID
-    let assets: [AssetID: Asset]
-    @State private var cost: CostRecord?
-    @State private var checkCost: CostRecord?
-
-    var body: some View {
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
-            ForEach(VersionDetailsContent.rows(for: version, in: session, cost: cost, assets: assets, checkCost: checkCost), id: \.self) { row in
-                GridRow {
-                    Text(row.label).fontWeight(.semibold).foregroundStyle(Crayon.inkSoft).gridColumnAlignment(.trailing)
-                    Text(row.value).foregroundStyle(Crayon.ink).textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .font(.caption)
-        .padding(.top, 6)
-        .task(id: [version.provenance?.cost, version.consistency?.cost]) {
-            let records = await app.costRecords([version.provenance?.cost, version.consistency?.cost], in: bookID)
-            cost = records[0]
-            checkCost = records[1]
-        }
-    }
 }
 
 /// The shape of a chat bubble in the session thread: rounded, with a small "tail" corner.
@@ -954,46 +796,6 @@ enum ThreadBubble {
                                               bottomTrailingRadius: Crayon.cornerRadius,
                                               topTrailingRadius: Crayon.cornerRadius,
                                               style: .continuous)
-}
-
-/// A status line in the thread: a soft colour wash with a coloured symbol and ink text, so the
-/// state reads at a glance and the text stays legible in both appearances.
-private struct StatusPill<Icon: View, Content: View>: View {
-    let color: Color
-    let icon: Icon
-    let content: Content
-
-    init(color: Color, @ViewBuilder icon: () -> Icon, @ViewBuilder label: () -> Content) {
-        self.color = color
-        self.icon = icon()
-        self.content = label()
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 6) {
-            icon.foregroundStyle(color)
-            content
-                .foregroundStyle(Crayon.ink)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .font(Crayon.font(.caption, weight: .semibold))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(color.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(color.opacity(0.4), lineWidth: 1))
-    }
-}
-
-private extension StatusPill where Icon == StatusSymbol {
-    init(color: Color, systemImage: String, @ViewBuilder label: () -> Content) {
-        self.init(color: color, icon: { StatusSymbol(name: systemImage) }, label: label)
-    }
-}
-
-/// A status symbol that VoiceOver skips, as a `Label`'s icon is.
-private struct StatusSymbol: View {
-    let name: String
-    var body: some View { Image(systemName: name).accessibilityHidden(true) }
 }
 
 /// The availability text for "Edit Region…" (PD §8.6: unavailable, with a short explanation).

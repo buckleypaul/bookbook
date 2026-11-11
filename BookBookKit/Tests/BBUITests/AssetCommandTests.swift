@@ -225,7 +225,7 @@ struct AssetCommandTests {
         let delivered = version()
         s.document.performIrreversible { content in
             content.sessions[pip.sessionID]?.versions.append(delivered)
-            _ = BookMutations.chooseIfUnset(delivered.id, session: pip.sessionID, in: &content)
+            _ = BookMutations.chooseLatest(delivered.id, session: pip.sessionID, in: &content)
             return DirtySet(sessions: [pip.sessionID], assets: [pip.id])
         }
         #expect(s.document.content.assets[pip.id]?.revision == 2)
@@ -357,7 +357,7 @@ struct AssetCommandTests {
         return item
     }
 
-    @Test func delivery_writesVersionIntoAssetSession_andChoosesWhenUnset() throws {
+    @Test func delivery_writesVersionIntoAssetSession_andBecomesTheImage() throws {
         let s = try makeDocument()
         let pip = addPip(s)
         let item = pending(.asset(pip.id), in: s.document)
@@ -377,17 +377,18 @@ struct AssetCommandTests {
         #expect(asset.chosen == first)
         #expect(asset.revision == 2)
 
-        // A second delivery doesn't replace the choice.
+        // A second delivery replaces the image (the newest always wins); the first stays in the session.
         let item2 = pending(.asset(pip.id), in: s.document)
+        let second = VersionID()
         s.document.performIrreversible { content in
             BookMutations.applyDelivery(GenerationDelivery(item: item2, outcome: .success(result: Fixtures.result(),
                                                                                           provenance: Fixtures.provenance())),
-                                        storedImage: Fixtures.ref, to: &content, now: Fixtures.date)
+                                        storedImage: Fixtures.ref, to: &content, versionID: second, now: Fixtures.date)
         }
         asset = try #require(s.document.content.assets[pip.id])
-        #expect(asset.chosen == first)
-        #expect(asset.revision == 2)
-        #expect(s.document.content.sessions[pip.sessionID]?.versions.count == 2)
+        #expect(asset.chosen == second)
+        #expect(asset.revision == 3)
+        #expect(s.document.content.sessions[pip.sessionID]?.versions.map(\.id) == [first, second])
     }
 
     @Test func failedDelivery_clearsPendingOnly() throws {
@@ -410,7 +411,7 @@ struct AssetCommandTests {
         let v = version()
         s.document.performIrreversible { content in
             content.sessions[pip.sessionID]?.versions.append(v)
-            _ = BookMutations.chooseIfUnset(v.id, session: pip.sessionID, in: &content)
+            _ = BookMutations.chooseLatest(v.id, session: pip.sessionID, in: &content)
             return DirtySet(sessions: [pip.sessionID], assets: [pip.id])
         }
         #expect(s.document.deleteVersion(v.id, owner: pip.owner))
@@ -481,7 +482,7 @@ struct AssetCommandTests {
 
     // MARK: Import into asset sessions
 
-    @Test func importAssetImage_storesTheAnswer_andChoosesWhenUnset() async throws {
+    @Test func importAssetImage_storesTheAnswer_andBecomesTheImage() async throws {
         let s = try makeDocument()
         let pip = addPip(s)
         let file = try writeJPEG(camera: false)
@@ -496,6 +497,9 @@ struct AssetCommandTests {
         #expect(v.depictsRealPerson == true)
         #expect(v.source == .imported)
         #expect(s.document.content.assets[pip.id]?.chosen == id)
+        // A second import replaces it.
+        let again = try await s.document.importAssetImage(from: file, owner: pip.owner, depictsRealPerson: false)
+        #expect(s.document.content.assets[pip.id]?.chosen == again)
         #expect(await BookDocument.looksCameraOriginated(file) == false)
         #expect(await BookDocument.looksCameraOriginated(photo) == true)
 

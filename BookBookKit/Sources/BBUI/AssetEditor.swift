@@ -35,17 +35,13 @@ enum AssetEditing {
 
     /// The large image's empty placeholder text.
     static func emptyImageMessage(for asset: Asset) -> String {
-        "Describe \(asset.name) in the panel on the right and press Generate, or import an image file."
+        "Describe \(asset.name) below and press Generate, or import an image file."
     }
 
-    // MARK: Tags
-
-    static func tagsText(_ tags: [String]) -> String { tags.joined(separator: ", ") }
-
-    static func parseTags(_ text: String) -> [String] {
-        var seen = Set<String>()
-        return text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    /// What the description is for, under its header.
+    static func descriptionHelp(for asset: Asset) -> String {
+        "What \(asset.name) looks like. Generate draws \(asset.name) from this and the style guide, "
+            + "and pages that mention or tick \(asset.name) get this text along with the picture."
     }
 
     // MARK: Delete
@@ -63,6 +59,8 @@ struct CommittedTextField: View {
     let value: String
     var multiline = false
     let commit: (String) -> Void
+    /// Called with the draft as it's typed (before it's committed).
+    var onDraftChange: ((String) -> Void)?
     @State private var draft = ""
     /// The last value `draft` was brought in line with; only a draft that differs from it is committed.
     @State private var synced = ""
@@ -89,6 +87,7 @@ struct CommittedTextField: View {
         .onAppear { draft = value; synced = value }
         // An outside change (an undo while focused) wins over a stale draft.
         .onChange(of: value) { _, new in synced = new; draft = new }
+        .onChange(of: draft) { _, new in onDraftChange?(new) }
         .onChange(of: focused) { _, now in if !now { flush() } }
         .onDisappear(perform: flush)
         .accessibilityLabel(title)
@@ -107,8 +106,9 @@ enum CommittedText {
     }
 }
 
-/// The asset editor (PD §8.3): the asset's large image (made in the session panel on the
-/// right), name, type, description, tags, where used and delete.
+/// The asset editor (PD §8.3): the asset's large image, name, type, the description with
+/// Generate / Regenerate (a fresh picture from the description) and Import Image…, the image's
+/// details, where used and delete.
 struct AssetEditor: View {
     let document: BookDocument
     let content: BookContent
@@ -117,6 +117,9 @@ struct AssetEditor: View {
     let model: AssetsModel
     let onOpenPage: (PageID, BoxID?) -> Void
     @State private var confirmDelete = false
+    /// The description as typed; Generate commits it first.
+    @State private var descriptionDraft: String?
+    @State private var detailsExpanded = false
 
     private var editable: Bool { document.isEditable }
 
@@ -125,21 +128,24 @@ struct AssetEditor: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 AssetImageCard(asset: asset, image: AssetEditing.image(of: asset, in: content), images: images,
-                               color: color, editable: editable, onImport: model.requestImport)
+                               color: color)
                 header
-                VStack(alignment: .leading, spacing: 14) {
-                    field("Description", color: Crayon.sky) {
-                        CommittedTextField(title: "Description", value: asset.description, multiline: true) { text in
-                            model.update(asset, in: document, actionName: "Edit Description") { $0.description = text }
-                        }
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        CrayonHeader("Description", color: Crayon.sky)
+                        Text(AssetEditing.descriptionHelp(for: asset))
+                            .font(Crayon.font(.caption, weight: .medium))
+                            .foregroundStyle(Crayon.inkSoft)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    field("Tags", color: Crayon.sunflower) {
-                        CommittedTextField(title: "Tags, separated by commas", value: AssetEditing.tagsText(asset.tags)) { text in
-                            model.update(asset, in: document, actionName: "Edit Tags") { $0.tags = AssetEditing.parseTags(text) }
-                        }
-                    }
+                    CommittedTextField(title: "Description", value: asset.description, multiline: true,
+                                       commit: commitDescription, onDraftChange: { descriptionDraft = $0 })
+                    AssetImageControls(document: document, content: content, asset: asset,
+                                       description: descriptionDraft ?? asset.description,
+                                       commitDescription: { if let descriptionDraft { commitDescription(descriptionDraft) } })
                 }
                 .crayonCard(padding: 14)
+                imageDetails
                 VStack(alignment: .leading, spacing: 8) {
                     CrayonHeader("Where Used", color: Crayon.grass)
                     WhereUsedList(sites: sites, content: content, onOpen: onOpenPage)
@@ -181,25 +187,34 @@ struct AssetEditor: View {
         }
     }
 
-    private func field(_ title: String, color: Color, @ViewBuilder _ body: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            CrayonHeader(title, color: color)
-            body()
+    private func commitDescription(_ text: String) {
+        model.update(asset, in: document, actionName: "Edit Description") { $0.description = text }
+    }
+
+    /// Version details (what was sent to the provider) for the asset's current image.
+    @ViewBuilder
+    private var imageDetails: some View {
+        if let id = asset.chosen, let session = content.sessions[asset.sessionID],
+           let version = session.version(id) {
+            DisclosureGroup(isExpanded: $detailsExpanded) {
+                VersionDetailsGrid(version: version, session: session, bookID: document.id, assets: content.assets)
+            } label: {
+                Text("Image details")
+                    .font(Crayon.font(.subheadline, weight: .bold))
+                    .foregroundStyle(Crayon.ink)
+            }
+            .crayonCard(padding: 14)
         }
     }
 }
 
 /// The asset's one image, large, in a card framed in the asset's colour; or a friendly
-/// placeholder pointing at the session panel. "Import Image…" sits under it and opens the
-/// session panel's file picker (the import becomes a version there, with the real-person
-/// question).
+/// placeholder pointing at the description and Generate.
 private struct AssetImageCard: View {
     let asset: Asset
     let image: ImageRef?
     let images: ImageCache
     let color: Color
-    let editable: Bool
-    let onImport: () -> Void
     @State private var preview: CGImage?
 
     var body: some View {
@@ -240,15 +255,9 @@ private struct AssetImageCard: View {
             .overlay(RoundedRectangle(cornerRadius: Crayon.cornerRadius, style: .continuous)
                 .strokeBorder(color.opacity(cg == nil ? 0.35 : 0.8),
                               style: StrokeStyle(lineWidth: 3, dash: cg == nil ? [8, 6] : [])))
-            HStack {
-                Button(action: onImport) {
-                    Label("Import Image…", systemImage: "photo.badge.plus")
-                }
-                .buttonStyle(.crayon(Crayon.grass))
-                .help("Use an image file from your Mac as a version in \(asset.name)'s session")
-                .disabled(!editable)
-                Spacer()
-                if let cg {
+            if let cg {
+                HStack {
+                    Spacer()
                     Button("View Larger", systemImage: "arrow.up.left.and.arrow.down.right") { preview = cg }
                         .buttonBorderShape(.capsule)
                 }

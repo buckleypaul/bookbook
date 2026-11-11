@@ -4,25 +4,8 @@ import SwiftUI
 /// Selection and edit plumbing for the Assets tab.
 @MainActor @Observable
 final class AssetsModel {
-    var selectedAsset: AssetID? {
-        didSet { if selectedAsset != oldValue { importRequest = nil } }
-    }
-    /// Set by the editor's Import Image… button: the session panel showing this asset's session
-    /// opens its file picker once and clears it.
-    var importRequest: SessionOwner?
+    var selectedAsset: AssetID?
     var typeFilter: AssetType?
-
-    /// The session the right-hand panel shows: always the selected asset's (nil with none).
-    func sessionOwner(in content: BookContent) -> SessionOwner? {
-        guard let id = selectedAsset, let asset = content.assets[id] else { return nil }
-        return asset.owner
-    }
-
-    /// Asks the session panel to open its file picker for the selected asset.
-    func requestImport() {
-        guard let id = selectedAsset else { return }
-        importRequest = .asset(id)
-    }
 
     /// Applies `edit` to `asset` and performs one `updateAsset` command (skipped when nothing changed).
     func update(_ asset: Asset, in document: BookDocument, actionName: String, _ edit: (inout Asset) -> Void) {
@@ -147,26 +130,6 @@ struct AssetsDetail: View {
         } else {
             CrayonEmptyState("No Asset Selected", systemImage: "person.crop.square", color: Crayon.grape,
                              message: "Choose an asset, or add one with +.")
-        }
-    }
-}
-
-/// The session panel for the Assets tab: always the selected asset's image session.
-struct AssetsSessionPanel: View {
-    let document: BookDocument
-    let content: BookContent
-    let model: AssetsModel
-    let images: ImageCache
-
-    var body: some View {
-        if let owner = model.sessionOwner(in: content) {
-            SessionPanel(document: document, content: content, owner: owner, images: images,
-                         importRequest: Binding(get: { model.importRequest }, set: { model.importRequest = $0 }))
-                .id(owner)
-                .disabled(!document.isEditable)
-        } else {
-            CrayonEmptyState("No Asset Selected", systemImage: "photo", color: Crayon.sky,
-                             message: "Choose an asset to make its picture here.")
         }
     }
 }

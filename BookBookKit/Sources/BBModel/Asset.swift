@@ -293,8 +293,7 @@ public struct UsageIndex: Hashable, Sendable {
     /// Sites for `asset`, merged per (page, box), cover first then reading order, page-level
     /// entry before its boxes, boxes in template layer order.
     public func sites(for asset: AssetID, in content: BookContent) -> [UsageSite] {
-        var order: [PageID] = [content.book.coverPageID]
-        order += content.book.pageOrder.filter { $0 != content.book.coverPageID }
+        var order = content.pageIDsCoverFirst
         let known = Set(order)
         order += byPage.keys.filter { !known.contains($0) }.sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
         var out: [UsageSite] = []

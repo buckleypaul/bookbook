@@ -12,10 +12,8 @@ public enum DraftAllPlanner {
     /// `isPending` says whether a session message still has a live queue item.
     public static func emptyTargets(in content: BookContent,
                                     isPending: (Message) -> Bool) -> [(page: PageID, box: BoxID)] {
-        var pageIDs = [content.book.coverPageID]
-        pageIDs.append(contentsOf: content.book.pageOrder.filter { $0 != content.book.coverPageID })
         var out: [(page: PageID, box: BoxID)] = []
-        for pageID in pageIDs {
+        for pageID in content.pageIDsCoverFirst {
             guard let page = content.pages[pageID], let template = content.template(for: page) else { continue }
             for box in template.imageBoxes {
                 guard let slot = page.images[box.id], slot.placement == nil,

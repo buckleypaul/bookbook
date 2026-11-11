@@ -254,3 +254,94 @@ public protocol VisionProvider: Sendable {
     var id: ProviderID { get }
     func checkConsistency(_ request: ConsistencyRequest) async throws(ProviderError) -> ConsistencyResult
 }
+
+// MARK: - AI text styling (A §7.13)
+
+/// The structured output of a text-styling request: typography for one text box plus a
+/// description of the decoration to paint around it. Validated locally by
+/// `BBAI.TextStyleNormalizer` (font checked against the allowed list, numbers clamped, colours
+/// parsed); raw values may be out of range.
+public struct TextStyleDraft: Hashable, Codable, Sendable {
+    /// One of the font families listed in the prompt; nil = keep the current font.
+    public var fontFamily: String?
+    /// Points; nil = keep the current size.
+    public var fontSize: Double?
+    /// `#RRGGBB`; nil = keep the current colour.
+    public var textColor: String?
+    /// nil = keep the current alignment.
+    public var alignment: DraftBox.Alignment?
+    /// Fraction of the box's shorter side (0…0.35) to keep the text inside a frame.
+    public var textInset: Double
+    /// Flat panel behind the text, `#RRGGBB`; nil = none.
+    public var panelColor: String?
+    /// What to paint around and behind the text, for the image model; nil = typography only.
+    public var decoration: String?
+    /// One short sentence describing the design, for the user.
+    public var summary: String
+
+    public init(fontFamily: String? = nil, fontSize: Double? = nil, textColor: String? = nil,
+                alignment: DraftBox.Alignment? = nil, textInset: Double = 0, panelColor: String? = nil,
+                decoration: String? = nil, summary: String) {
+        self.fontFamily = fontFamily
+        self.fontSize = fontSize
+        self.textColor = textColor
+        self.alignment = alignment
+        self.textInset = textInset
+        self.panelColor = panelColor
+        self.decoration = decoration
+        self.summary = summary
+    }
+}
+
+extension StructuredSchemas {
+    public static let textStyleName = "text_style"
+    public static let textStyle = #"""
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fontFamily", "fontSize", "textColor", "alignment", "textInset", "panelColor", "decoration", "summary"],
+      "properties": {
+        "fontFamily": {"type": ["string", "null"]},
+        "fontSize": {"type": ["number", "null"]},
+        "textColor": {"type": ["string", "null"]},
+        "alignment": {"type": ["string", "null"], "enum": ["leading", "center", "trailing", "justified", null]},
+        "textInset": {"type": "number"},
+        "panelColor": {"type": ["string", "null"]},
+        "decoration": {"type": ["string", "null"]},
+        "summary": {"type": "string"}
+      }
+    }
+    """#
+}
+
+/// A provider-neutral text-styling request. `system` and `user` are fully rendered by BBAI
+/// (`TextStylePrompt`), including the allowed font families and the box's current look.
+public struct TextStyleRequest: Hashable, Sendable {
+    public var model: CatalogTextModel
+    public var system: String
+    public var user: String
+
+    public init(model: CatalogTextModel, system: String, user: String) {
+        self.model = model
+        self.system = system
+        self.user = user
+    }
+}
+
+public struct TextStyleResult: Hashable, Sendable {
+    public var draft: TextStyleDraft
+    public var usage: TokenUsage?
+    public var parametersSent: [String: String]
+
+    public init(draft: TextStyleDraft, usage: TokenUsage? = nil, parametersSent: [String: String] = [:]) {
+        self.draft = draft
+        self.usage = usage
+        self.parametersSent = parametersSent
+    }
+}
+
+/// Same error mapping as `LayoutProvider`.
+public protocol TextStyleProvider: Sendable {
+    var id: ProviderID { get }
+    func styleText(_ request: TextStyleRequest) async throws(ProviderError) -> TextStyleResult
+}

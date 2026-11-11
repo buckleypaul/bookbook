@@ -457,9 +457,15 @@ public struct Page: Hashable, Codable, Sendable, Identifiable {
     public var images: [BoxID: ImageSlot]
     public var assetChecklist: [AssetID]
     public var isDone: Bool
+    /// AI text styling (A §7.13): a styled text box's session and shown version. Only boxes
+    /// that have been styled have an entry. Additive: absent in older files, and not written
+    /// when empty, so existing files and snapshots are unchanged.
+    public var textStyles: [BoxID: TextStyleSlot]
 
     public init(id: PageID = PageID(), kind: PageKind, templateID: TemplateID, text: [BoxID: RichText] = [:],
-                images: [BoxID: ImageSlot] = [:], assetChecklist: [AssetID] = [], isDone: Bool = false) {
+                images: [BoxID: ImageSlot] = [:], assetChecklist: [AssetID] = [], isDone: Bool = false,
+                textStyles: [BoxID: TextStyleSlot] = [:]) {
+        self.textStyles = textStyles
         self.id = id
         self.kind = kind
         self.templateID = templateID
@@ -467,6 +473,34 @@ public struct Page: Hashable, Codable, Sendable, Identifiable {
         self.images = images
         self.assetChecklist = assetChecklist
         self.isDone = isDone
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, templateID, text, images, assetChecklist, isDone, textStyles
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(PageID.self, forKey: .id)
+        kind = try c.decode(PageKind.self, forKey: .kind)
+        templateID = try c.decode(TemplateID.self, forKey: .templateID)
+        text = try c.decode([BoxID: RichText].self, forKey: .text)
+        images = try c.decode([BoxID: ImageSlot].self, forKey: .images)
+        assetChecklist = try c.decode([AssetID].self, forKey: .assetChecklist)
+        isDone = try c.decode(Bool.self, forKey: .isDone)
+        textStyles = try c.decodeIfPresent([BoxID: TextStyleSlot].self, forKey: .textStyles) ?? [:]
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(templateID, forKey: .templateID)
+        try c.encode(text, forKey: .text)
+        try c.encode(images, forKey: .images)
+        try c.encode(assetChecklist, forKey: .assetChecklist)
+        try c.encode(isDone, forKey: .isDone)
+        if !textStyles.isEmpty { try c.encode(textStyles, forKey: .textStyles) }
     }
 }
 

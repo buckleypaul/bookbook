@@ -5,6 +5,8 @@ import Foundation
 
 public enum CostKind: String, Codable, Sendable, CaseIterable {
     case image, consistency, template
+    /// A text-styling request's text-model call (A §7.13); its decoration is an `.image` line.
+    case textStyle
 }
 
 public enum CostStatus: String, Codable, Sendable {

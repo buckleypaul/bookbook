@@ -47,13 +47,18 @@ public struct ImageCapabilities: Hashable, Codable, Sendable {
     public var maxImageBytes: Int
     public var maxRequestBytes: Int
     public var supportsMask: Bool
+    /// The provider honours a transparent-background request (OpenAI `background: transparent`).
+    /// Absent in older catalogs = false.
+    public var supportsTransparentBackground: Bool
     public var nativeMultiTurn: Bool
     public var aspect: AspectRule
     /// Provider parameters per quality level.
     public var quality: [QualityLevel: QualityMapping]
 
     public init(maxReferenceImages: Int, maxImageBytes: Int, maxRequestBytes: Int, supportsMask: Bool,
-                nativeMultiTurn: Bool, aspect: AspectRule, quality: [QualityLevel: QualityMapping]) {
+                nativeMultiTurn: Bool, aspect: AspectRule, quality: [QualityLevel: QualityMapping],
+                supportsTransparentBackground: Bool = false) {
+        self.supportsTransparentBackground = supportsTransparentBackground
         self.maxReferenceImages = maxReferenceImages
         self.maxImageBytes = maxImageBytes
         self.maxRequestBytes = maxRequestBytes
@@ -61,6 +66,23 @@ public struct ImageCapabilities: Hashable, Codable, Sendable {
         self.nativeMultiTurn = nativeMultiTurn
         self.aspect = aspect
         self.quality = quality
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maxReferenceImages, maxImageBytes, maxRequestBytes, supportsMask, supportsTransparentBackground,
+             nativeMultiTurn, aspect, quality
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        maxReferenceImages = try c.decode(Int.self, forKey: .maxReferenceImages)
+        maxImageBytes = try c.decode(Int.self, forKey: .maxImageBytes)
+        maxRequestBytes = try c.decode(Int.self, forKey: .maxRequestBytes)
+        supportsMask = try c.decode(Bool.self, forKey: .supportsMask)
+        supportsTransparentBackground = try c.decodeIfPresent(Bool.self, forKey: .supportsTransparentBackground) ?? false
+        nativeMultiTurn = try c.decode(Bool.self, forKey: .nativeMultiTurn)
+        aspect = try c.decode(AspectRule.self, forKey: .aspect)
+        quality = try c.decode([QualityLevel: QualityMapping].self, forKey: .quality)
     }
 }
 
@@ -176,9 +198,15 @@ public struct ImageRequest: Sendable {
     public var references: [ReferenceImage]
     /// Region edit only (requires `baseImage`). nil for every other request.
     public var mask: MaskPayload?
+    /// Ask for a transparent background (text-box decorations, A §7.13). Adapters send it only
+    /// when the model's `supportsTransparentBackground` is true; otherwise the prompt asks for
+    /// plain white and BBAI keys the white out locally.
+    public var transparentBackground: Bool
 
     public init(model: CatalogModel, quality: QualityLevel, output: OutputShape, instruction: ComposedPrompt,
-                baseImage: ImagePayload? = nil, references: [ReferenceImage] = [], mask: MaskPayload? = nil) {
+                baseImage: ImagePayload? = nil, references: [ReferenceImage] = [], mask: MaskPayload? = nil,
+                transparentBackground: Bool = false) {
+        self.transparentBackground = transparentBackground
         self.model = model
         self.quality = quality
         self.output = output

@@ -29,11 +29,13 @@ public enum SessionOwner: Hashable, Sendable {
     case pageBox(PageID, BoxID)
     /// The asset's one image session (`Asset.sessionID`).
     case asset(AssetID)
+    /// A page text box's AI styling session (`Page.textStyles`, A §7.13).
+    case textBox(PageID, BoxID)
 
     /// The asset that owns this session, if any.
     public var assetID: AssetID? {
         switch self {
-        case .pageBox: nil
+        case .pageBox, .textBox: nil
         case let .asset(asset): asset
         }
     }
@@ -42,7 +44,7 @@ public enum SessionOwner: Hashable, Sendable {
 /// Coding keys shared by `SessionOwner` and `GenerationTarget`, matching the synthesized enum
 /// format (`{"pageBox":{"_0":…,"_1":…}}`). `assetReference` and `sheetItem` are legacy cases
 /// (before 2026-11-11) that are only decoded.
-private enum OwnerCaseKey: String, CodingKey { case pageBox, asset, assetReference, sheetItem }
+private enum OwnerCaseKey: String, CodingKey { case pageBox, asset, textBox, assetReference, sheetItem }
 private enum OwnerValueKey: String, CodingKey { case _0, _1 }
 
 /// Thrown when decoding a legacy character-sheet owner or target: the sheet no longer exists,
@@ -60,6 +62,7 @@ private enum OwnerCoding {
         let v = try c.nestedContainer(keyedBy: OwnerValueKey.self, forKey: key)
         switch key {
         case .pageBox: return .pageBox(try v.decode(PageID.self, forKey: ._0), try v.decode(BoxID.self, forKey: ._1))
+        case .textBox: return .textBox(try v.decode(PageID.self, forKey: ._0), try v.decode(BoxID.self, forKey: ._1))
         case .asset, .assetReference: return .asset(try v.decode(AssetID.self, forKey: ._0))
         case .sheetItem: throw LegacySheetItemError(asset: try v.decode(AssetID.self, forKey: ._0))
         }
@@ -75,6 +78,10 @@ private enum OwnerCoding {
         case let .asset(a):
             var v = c.nestedContainer(keyedBy: OwnerValueKey.self, forKey: .asset)
             try v.encode(a, forKey: ._0)
+        case let .textBox(p, b):
+            var v = c.nestedContainer(keyedBy: OwnerValueKey.self, forKey: .textBox)
+            try v.encode(p, forKey: ._0)
+            try v.encode(b, forKey: ._1)
         }
     }
 }
@@ -223,10 +230,15 @@ public struct GenerationIntent: Hashable, Codable, Sendable {
     /// Phase 12: the source recorded on the resulting version when it isn't derived (e.g.
     /// `.consistencyFix` for a one-click fix). nil = `.generated`, or `.regionEdit` with a mask.
     public var versionSource: VersionSource?
+    /// AI text styling (A §7.13): the text model's answer, fixed when the decoration is queued.
+    /// nil for picture generations (and older files).
+    public var textStyle: TextStyleIntent?
 
     public init(messageText: String, refines: VersionID? = nil, attachedReferences: [VersionRef] = [],
                 provider: ProviderID, model: String, quality: QualityLevel, includeStoryText: Bool = true,
-                regionMask: ImageRef? = nil, checkConsistency: Bool? = nil, versionSource: VersionSource? = nil) {
+                regionMask: ImageRef? = nil, checkConsistency: Bool? = nil, versionSource: VersionSource? = nil,
+                textStyle: TextStyleIntent? = nil) {
+        self.textStyle = textStyle
         self.checkConsistency = checkConsistency
         self.versionSource = versionSource
         self.messageText = messageText
@@ -304,11 +316,14 @@ public enum GenerationTarget: Hashable, Sendable {
     case pageBox(PageID, BoxID)
     /// The asset's one image session.
     case asset(AssetID)
+    /// A page text box's styling decoration (A §7.13).
+    case textBox(PageID, BoxID)
 
     public var owner: SessionOwner {
         switch self {
         case let .pageBox(p, b): .pageBox(p, b)
         case let .asset(a): .asset(a)
+        case let .textBox(p, b): .textBox(p, b)
         }
     }
 
@@ -316,6 +331,7 @@ public enum GenerationTarget: Hashable, Sendable {
         switch owner {
         case let .pageBox(p, b): self = .pageBox(p, b)
         case let .asset(a): self = .asset(a)
+        case let .textBox(p, b): self = .textBox(p, b)
         }
     }
 }

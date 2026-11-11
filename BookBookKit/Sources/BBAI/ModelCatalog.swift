@@ -174,6 +174,7 @@ private struct RawImage: Decodable {
     var maxImageBytes: Int?
     var maxRequestBytes: Int?
     var supportsMask: Bool?
+    var supportsTransparentBackground: Bool?
     var nativeMultiTurn: Bool?
     var aspect: RawAspect?
     var quality: [String: QualityMapping]?
@@ -215,6 +216,7 @@ private struct RawImage: Decodable {
         return ImageCapabilities(
             maxReferenceImages: maxReferenceImages ?? 0, maxImageBytes: maxImageBytes ?? 0,
             maxRequestBytes: maxRequestBytes ?? 0, supportsMask: supportsMask ?? false,
-            nativeMultiTurn: nativeMultiTurn ?? false, aspect: rule, quality: levels)
+            nativeMultiTurn: nativeMultiTurn ?? false, aspect: rule, quality: levels,
+            supportsTransparentBackground: supportsTransparentBackground ?? false)
     }
 }

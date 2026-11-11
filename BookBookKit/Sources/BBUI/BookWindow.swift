@@ -142,6 +142,7 @@ struct BookEditor: View {
     @State private var styleModel: StyleTabModel
     @State private var assetsModel = AssetsModel()
     @State private var sidebarTab: SidebarTab = .pages
+    @State private var styleSection: StyleSection = .visual
     @State private var selectedImageBox: BoxID?
     @State private var canvasImportError: String?
     @State private var showSession = true
@@ -252,7 +253,8 @@ struct BookEditor: View {
     @ViewBuilder
     private func sidebar(_ content: BookContent) -> some View {
         switch sidebarTab {
-        case .pages, .style: PageList(document: document, content: content, pages: pages)
+        case .pages: PageList(document: document, content: content, pages: pages)
+        case .style: StyleSectionList(selection: $styleSection)
         case .assets: AssetsList(document: document, content: content, model: assetsModel, images: images)
         case .layouts: TemplateList(document: document, content: content, model: layouts, chat: layoutChat)
         }
@@ -379,7 +381,7 @@ struct BookEditor: View {
             } else if sidebarTab == .layouts {
                 LayoutsDetail(document: document, model: layouts, images: images)
             } else if sidebarTab == .style {
-                StyleTab(document: document, model: styleModel,
+                StyleTab(document: document, model: styleModel, section: styleSection,
                          onEditPageNumbers: { [pages] in pages.sheet = .pageNumbers })
             } else {
             switch pages.mode {

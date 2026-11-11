@@ -184,14 +184,58 @@ enum FlagText {
     }
 }
 
-/// The Style tab's main area: visual style, typography, then page setup.
+/// The Style tab's sections, in form order. The sidebar lists them; choosing one scrolls the form.
+enum StyleSection: String, CaseIterable, Identifiable {
+    case visual, typography, pageSetup
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .visual: "Visual style"; case .typography: "Typography and page numbers"; case .pageSetup: "Page setup" }
+    }
+    var symbol: String {
+        switch self { case .visual: "paintbrush.pointed"; case .typography: "textformat"; case .pageSetup: "doc.plaintext" }
+    }
+    var color: Color {
+        switch self { case .visual: Crayon.grape; case .typography: Crayon.sky; case .pageSetup: Crayon.grass }
+    }
+}
+
+/// The Style tab's sidebar: one row per form section.
+struct StyleSectionList: View {
+    @Binding var selection: StyleSection
+
+    var body: some View {
+        List(selection: Binding(get: { selection }, set: { if let s = $0 { selection = s } })) {
+            ForEach(StyleSection.allCases) { section in
+                Label {
+                    Text(section.title).font(Crayon.font(.body, weight: .semibold)).foregroundStyle(Crayon.ink)
+                } icon: {
+                    Image(systemName: section.symbol).foregroundStyle(section.color)
+                }
+                .tag(section)
+            }
+        }
+    }
+}
+
+/// The Style tab's main area: visual style, typography, then page setup. `section` is the one
+/// chosen in the sidebar; changing it scrolls there.
 struct StyleTab: View {
     let document: BookDocument
     let model: StyleTabModel
+    var section: StyleSection = .visual
     let onEditPageNumbers: () -> Void
     @State private var showTypography = false
 
     var body: some View {
+        ScrollViewReader { proxy in
+            form
+                .onChange(of: section) { _, target in
+                    withAnimation { proxy.scrollTo(target, anchor: .top) }
+                }
+        }
+    }
+
+    private var form: some View {
         Form {
             Section {
                 presetPicker
@@ -207,8 +251,9 @@ struct StyleTab: View {
                     CommitTextEditor(text: model.visual.negativeGuidance, minHeight: 50) { model.setNegativeGuidance($0) }
                 }
             } header: {
-                CrayonHeader("Visual style", color: Crayon.grape)
+                CrayonHeader(StyleSection.visual.title, color: StyleSection.visual.color)
             }
+            .id(StyleSection.visual)
             Section {
                 HStack(spacing: 8) {
                     Button("Edit Typography…") { showTypography = true }
@@ -218,9 +263,11 @@ struct StyleTab: View {
                 Text("Typography and page setup changes don't mark images as style changed.")
                     .font(.caption).foregroundStyle(Crayon.inkSoft)
             } header: {
-                CrayonHeader("Typography and page numbers", color: Crayon.sky)
+                CrayonHeader(StyleSection.typography.title, color: StyleSection.typography.color)
             }
+            .id(StyleSection.typography)
             PageSetupForm(model: model)
+                .id(StyleSection.pageSetup)
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)

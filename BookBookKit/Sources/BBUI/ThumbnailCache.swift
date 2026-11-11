@@ -21,8 +21,8 @@ public actor ThumbnailCache {
     }
 
     /// A PNG of `source` with its longest side at most `maxPixelSize`, cached under `<root>/<bookID>/`.
-    /// Writing a new rendition deletes the older ones of the same source and size. Returns nil if
-    /// `source` can't be read as an image.
+    /// Writing a new rendition deletes the older ones of the same source file and size (and any
+    /// left in the old `<hash>.png` naming). Returns nil if `source` can't be read as an image.
     public func rendition(of source: URL, bookID: BookID, maxPixelSize: Int) -> URL? {
         // URL caches resource values per instance; a reused URL would hide a changed mtime.
         var source = source
@@ -31,12 +31,14 @@ public actor ThumbnailCache {
               let values = try? source.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
               let size = values.fileSize, let modified = values.contentModificationDate
         else { return nil }
-        // Named `<group>-<version>.png`. The group hashes the source's name and the size; the
-        // version also hashes the source's byte size and mtime, so a changed source gets a new
-        // name (stale renditions are never served) and its older versions share the group prefix.
-        let group = Self.digest("\(source.lastPathComponent)|\(maxPixelSize)", length: 16)
-        let version = Self.digest(
-            "\(source.lastPathComponent)|\(size)|\(modified.timeIntervalSince1970)|\(maxPixelSize)", length: 32)
+        // Named `<group>-<version>.png`. The group hashes the source's full path and the size, so
+        // two sources never share one (every library thumbnail is a `thumbnail.png`, and a Finder
+        // copy of a book keeps its ID); the version also hashes the source's byte size and mtime,
+        // so a changed source gets a new name (stale renditions are never served) and its older
+        // versions share the group prefix.
+        let path = source.standardizedFileURL.path(percentEncoded: false)
+        let group = Self.digest("\(path)|\(maxPixelSize)", length: 16)
+        let version = Self.digest("\(path)|\(size)|\(modified.timeIntervalSince1970)|\(maxPixelSize)", length: 32)
         let name = "\(group)-\(version).png"
         let directory = root.appending(path: bookID.rawValue.uuidString, directoryHint: .isDirectory)
         let output = directory.appending(path: name, directoryHint: .notDirectory)
@@ -59,12 +61,20 @@ public actor ThumbnailCache {
         try? FileManager.default.removeItem(at: root.appending(path: bookID.rawValue.uuidString, directoryHint: .isDirectory))
     }
 
-    /// Deletes the renditions in `directory` named `<group>-…`, except `kept`.
+    /// Deletes the renditions in `directory` named `<group>-…`, except `kept`, and every
+    /// rendition in the old `<hash>.png` naming (nothing returns those any more).
     private func removeRenditions(in directory: URL, group: String, keeping kept: String) {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
-        for name in names where name != kept && name.hasPrefix("\(group)-") {
+        for name in names where name != kept && (name.hasPrefix("\(group)-") || Self.isLegacyRendition(name)) {
             try? FileManager.default.removeItem(at: directory.appending(path: name, directoryHint: .notDirectory))
         }
+    }
+
+    /// A rendition named before groups: 32 lowercase hex digits, then `.png`.
+    static func isLegacyRendition(_ name: String) -> Bool {
+        guard name.hasSuffix(".png") else { return false }
+        let stem = name.dropLast(4)
+        return stem.count == 32 && stem.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
     }
 
     /// The first `length` hex digits of the SHA-256 of `key`.

@@ -83,6 +83,46 @@ struct ThumbnailCacheTests {
         for url in [small, other, renewed] { #expect(FileManager.default.fileExists(atPath: url.path)) }
     }
 
+    @Test func sourcesWithTheSameFileNameDoNotPruneEachOther() async throws {
+        // Every library thumbnail is a `thumbnail.png`; a Finder copy of a book keeps its ID.
+        let first = dir.appending(path: "One.bookbook/thumbnail.png")
+        let copy = dir.appending(path: "One copy.bookbook/thumbnail.png")
+        for url in [first, copy] {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Self.writePNG(width: 64, height: 64, to: url)
+        }
+        let cache = ThumbnailCache(root: dir.appending(path: "cache"))
+        let id = BookID()
+        let a = try #require(await cache.rendition(of: first, bookID: id, maxPixelSize: 32))
+        let b = try #require(await cache.rendition(of: copy, bookID: id, maxPixelSize: 32))
+        #expect(a != b)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 100)], ofItemAtPath: copy.path)
+        let renewed = try #require(await cache.rendition(of: copy, bookID: id, maxPixelSize: 32))
+        #expect(FileManager.default.fileExists(atPath: a.path), "the other source's rendition stays")
+        #expect(!FileManager.default.fileExists(atPath: b.path))
+        #expect(FileManager.default.fileExists(atPath: renewed.path))
+    }
+
+    @Test func writingARenditionPrunesOldStyleNames() async throws {
+        let src = dir.appending(path: "a.png")
+        try Self.writePNG(width: 64, height: 64, to: src)
+        let root = dir.appending(path: "cache")
+        let id = BookID()
+        let folder = root.appending(path: id.rawValue.uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let legacy = folder.appending(path: String(repeating: "0123456789abcdef", count: 2) + ".png")
+        let unrelated = folder.appending(path: "notes.png")
+        for url in [legacy, unrelated] { try Data([1]).write(to: url) }
+        #expect(ThumbnailCache.isLegacyRendition(legacy.lastPathComponent))
+        #expect(!ThumbnailCache.isLegacyRendition(unrelated.lastPathComponent))
+
+        let out = try #require(await ThumbnailCache(root: root).rendition(of: src, bookID: id, maxPixelSize: 32))
+        #expect(!ThumbnailCache.isLegacyRendition(out.lastPathComponent))
+        #expect(!FileManager.default.fileExists(atPath: legacy.path))
+        #expect(FileManager.default.fileExists(atPath: unrelated.path))
+        #expect(FileManager.default.fileExists(atPath: out.path))
+    }
+
     @Test func unreadableSourceIsNil() async throws {
         let cache = ThumbnailCache(root: dir.appending(path: "cache"))
         let missing = dir.appending(path: "missing.png")

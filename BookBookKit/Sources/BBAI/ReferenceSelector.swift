@@ -71,7 +71,9 @@ public enum ReferenceSelector {
         }
 
         /// How provenance records it when sent.
-        public var sentReference: SentReference { SentReference(image: ref, role: role.rawValue, label: label) }
+        public var sentReference: SentReference {
+            SentReference(image: ref, role: role.rawValue, label: label, depictsRealPerson: depictsRealPerson)
+        }
     }
 
     /// An asset in play (A §7.3 step 1), with how it got there.
@@ -176,7 +178,8 @@ public enum ReferenceSelector {
             public var reason: OmissionReason
             /// `SentReference` for provenance: label "Pip (over the limit)".
             public var sentReference: SentReference {
-                SentReference(image: candidate.ref, role: candidate.role.rawValue, label: "\(candidate.label) (\(reason.rawValue))")
+                SentReference(image: candidate.ref, role: candidate.role.rawValue, label: "\(candidate.label) (\(reason.rawValue))",
+                              depictsRealPerson: candidate.depictsRealPerson)
             }
         }
     }

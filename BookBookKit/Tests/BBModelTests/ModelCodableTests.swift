@@ -95,6 +95,24 @@ private func sampleTemplates() -> (story: Template, cover: Template) {
     #expect(Array(text.keys) == [id.rawValue.uuidString])
 }
 
+/// Review fix: `SentReference.depictsRealPerson` is additive. Books and queue files written
+/// before it existed decode it as false; it's written only when true, so they stay byte-identical.
+@Test func sentReferenceRealPersonFlagIsAdditive() throws {
+    let sha = String(repeating: "ab", count: 32)
+    let old = Data(#"{"image":{"contentType":"public.png","sha256":"\#(sha)"},"label":"Pip","role":"asset"}"#.utf8)
+    let decoded = try JSONDecoder().decode(SentReference.self, from: old)
+    let image = ImageRef(sha256: sha, contentType: "public.png")
+    #expect(decoded == SentReference(image: image, role: "asset", label: "Pip"))
+    #expect(!decoded.depictsRealPerson)
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    #expect(try encoder.encode(decoded) == old, "false is omitted")
+    let real = SentReference(image: image, role: "photo", label: "Reference photo", depictsRealPerson: true)
+    #expect(String(decoding: try encoder.encode(real), as: UTF8.self).contains(#""depictsRealPerson":true"#))
+    #expect(try roundTrip(real) == real)
+}
+
 @Test func makeNewBuildsCoverStoryPageAndSessions() throws {
     let (story, cover) = sampleTemplates()
     let content = BookContent.makeNew(title: "B", storyTemplate: story, coverTemplate: cover, storyPageCount: 1, now: t0)

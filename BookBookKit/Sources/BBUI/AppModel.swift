@@ -506,7 +506,8 @@ public final class AppModel {
 
     /// "Regenerate with same settings": a new pending message and queue item built from the
     /// version's stored intent, unchanged (same text, same `refines`), for any target. False for
-    /// versions with no provenance (imported) or a target that's gone.
+    /// versions with no provenance (imported), a target that's gone, or a real-person photo the
+    /// book hasn't acknowledged sending (A §11).
     @discardableResult
     public func regenerate(_ version: Version, target: GenerationTarget, in document: BookDocument) -> Bool {
         guard let intent = (version.provenance?.intent).map(replayed) else { return false }
@@ -573,8 +574,13 @@ public final class AppModel {
         pendingThisLaunch.formUnion(ids)
     }
 
+    /// The one path every single-request generation (`generate`, `enqueueGeneration`,
+    /// `regenerate`, region edits) enqueues through. Refuses (false, nothing appended) when the
+    /// request would send a real-person photo to a provider the book hasn't acknowledged (A §11):
+    /// callers show the notice first, but the book can change while the cost alert is up.
     func enqueue(_ message: Message, _ item: QueueItem, in document: BookDocument) -> Bool {
-        guard document.performIrreversible({
+        guard realPersonNoticeNeeded(intent: item.intent, target: item.target, in: document) == nil,
+              document.performIrreversible({
             BookMutations.appendPendingMessage(message, target: item.target, to: &$0)
         }) else { return false }
         pendingThisLaunch.insert(item.id)

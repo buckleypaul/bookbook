@@ -1,28 +1,16 @@
 import BBModel
 import BBStore
 import Foundation
-import UniformTypeIdentifiers
 
 extension BookDocument {
-    /// Copies an image file into the book's `images/` folder and returns its ref. Accepts PNG,
-    /// JPEG, HEIC and WebP. Doesn't change the style (the caller sends `.setStyleVisual`).
+    /// Copies an image file into the book's `images/` folder and returns its ref. Accepts any
+    /// picture ImageIO reads (PNG, JPEG, HEIC, WebP, ...), whatever its extension: it's read off the
+    /// main actor and normalized like a reference photo (upright, scaled down, metadata dropped, since
+    /// it's sent to the provider), so it's always stored as PNG or JPEG. Doesn't change the style (the
+    /// caller sends `.setStyleVisual`). Throws `ImageImportFailure`.
     func storeStyleReference(from url: URL) async throws -> ImageRef {
-        guard isEditable else { throw StoreError.readOnly }
-        guard url.isFileURL else { throw StoreError.io("\(url.lastPathComponent) isn't a file on this Mac") }
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let data = try Data(contentsOf: url)
-        guard let type = UTType(filenameExtension: url.pathExtension.lowercased()),
-              let identifier = Self.referenceContentType(for: type)
-        else { throw StoreError.io("\(url.lastPathComponent) isn't a PNG, JPEG, HEIC or WebP image") }
-        return try await store.storeImage(data, contentType: identifier)
-    }
-
-    static func referenceContentType(for type: UTType) -> String? {
-        if type.conforms(to: .png) { return "public.png" }
-        if type.conforms(to: .jpeg) { return "public.jpeg" }
-        if type.conforms(to: .heic) { return "public.heic" }
-        if type.identifier == "org.webmproject.webp" { return "org.webmproject.webp" }
-        return nil
+        guard url.isFileURL else { throw ImageImportFailure.notAFileURL }
+        guard isEditable else { throw ImageImportFailure.readOnly }
+        return try await readAndStore(url, asReferencePhoto: true).0
     }
 }

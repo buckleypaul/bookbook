@@ -141,8 +141,9 @@ extension AppModel {
 
     /// Appends the pending message and enqueues a prepared intent unchanged (its
     /// `versionSource` and `checkConsistency` included), like `generate`. Callers run the cost
-    /// and real-person checks first. False if the message is empty, the target is gone or the
-    /// book is read-only.
+    /// and real-person checks first. False if the message is empty, the target is gone, the
+    /// book is read-only, or it would send a real-person photo whose notice the book hasn't
+    /// acknowledged (`realPersonNoticeNeeded(intent:target:in:)`, A §11).
     @discardableResult
     public func enqueueGeneration(_ intent: GenerationIntent, target: GenerationTarget,
                                   in document: BookDocument) -> Bool {

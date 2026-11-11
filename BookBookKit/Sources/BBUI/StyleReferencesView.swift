@@ -100,7 +100,7 @@ struct StyleReferencesView: View {
             var refs: [ImageRef] = []
             for url in urls {
                 do { refs.append(try await document.storeStyleReference(from: url)) } catch {
-                    errorText = "Couldn't add \(url.lastPathComponent): \(error)"
+                    errorText = "Couldn't add \(url.lastPathComponent). \(ImageImportFailure.message(for: error))"
                 }
             }
             model.addReferences(refs)

@@ -41,11 +41,13 @@ extension AppModel {
         return DraftAllPlan(items: items, estimate: CostEstimate.total(items.map(\.estimateIncludingFollowUp)))
     }
 
-    /// Appends the pending messages and enqueues every item in one call. False if nothing was queued.
-    /// Boxes filled (or already drafted from this plan) since the plan was made are skipped.
+    /// Appends the pending messages and enqueues every item in one call. False if nothing was
+    /// queued, including when an item needs the real-person notice first (A §11; callers show it
+    /// via `realPersonNoticeNeeded(for:in:)`). Boxes filled (or already drafted from this plan)
+    /// since the plan was made are skipped.
     @discardableResult
     public func enqueueDraftAll(_ plan: DraftAllPlan, in document: BookDocument) -> Bool {
-        guard !plan.items.isEmpty else { return false }
+        guard !plan.items.isEmpty, realPersonNoticeNeeded(for: plan.items, in: document) == nil else { return false }
         var queued: [QueueItem] = []
         document.performIrreversible { content in
             var dirty = DirtySet()

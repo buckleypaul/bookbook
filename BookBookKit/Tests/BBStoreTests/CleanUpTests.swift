@@ -116,6 +116,48 @@ import Testing
         #expect(f.book.fileNames().count == 4)
     }
 
+    @Test func applyClearsProducedVersionOfRemovedVersionsOnly() async throws {
+        var f = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.book.dir) }
+        let storyID = try #require(f.book.content.book.pageOrder.first)
+        let sid = try #require(f.book.content.pages[storyID]?.images.first?.value.sessionID)
+        let gone = try #require(f.loose.first)
+        f.book.content.sessions[sid]?.messages = [
+            Message(role: .assistant, text: "made", producedVersion: gone.id, createdAt: testNow),
+            Message(role: .assistant, text: "kept", producedVersion: f.storyV.id, createdAt: testNow),
+        ]
+        let plan = CleanUp.plan(for: f.book.content) { _ in 1 }
+        #expect(plan.versionIDs.contains(gone.id))
+        var cleaned = f.book.content
+        CleanUp.apply(plan, to: &cleaned)
+        let messages = try #require(cleaned.sessions[sid]?.messages)
+        #expect(messages.map(\.text) == ["made", "kept"])
+        #expect(messages[0].producedVersion == nil)
+        #expect(messages[1].producedVersion == f.storyV.id)
+    }
+
+    @Test func filesToDeleteSkipsFilesInUseAgainProtectedOrKept() async throws {
+        let f = try await makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.book.dir) }
+        let plan = CleanUp.plan(for: f.book.content) { _ in 1 }
+        let names = Array(plan.fileNames).sorted()
+        #expect(names.count >= 3)
+        var cleaned = f.book.content
+        CleanUp.apply(plan, to: &cleaned)
+        #expect(CleanUp.filesToDelete(plan, in: cleaned, protection: SweepProtection()) == plan.fileNames)
+
+        // A version stored from the same bytes since (storeImage returns the existing file).
+        let reused = try #require(f.loose.first { $0.image.fileName == names[0] })
+        let storyID = try #require(cleaned.book.pageOrder.first)
+        let sid = try #require(cleaned.pages[storyID]?.images.first?.value.sessionID)
+        cleaned.sessions[sid]?.versions.append(Version(image: reused.image, pixelSize: PixelSize(width: 10, height: 10),
+                                                       source: .generated, createdAt: testNow))
+        let protection = SweepProtection()
+        protection.set([names[1]], for: cleaned.book.id)
+        let files = CleanUp.filesToDelete(plan, in: cleaned, keeping: [names[2]], protection: protection)
+        #expect(files == plan.fileNames.subtracting(names[0...2]))
+    }
+
     @Test func deleteImagesIgnoresPathsAndMissingFiles() async throws {
         let f = try await makeFixture()
         defer { try? FileManager.default.removeItem(at: f.book.dir) }

@@ -62,18 +62,17 @@ final class LayoutEditingController: CanvasController {
     // MARK: Scene
 
     var scene: CanvasScene? {
-        guard let template = model.template, let geometry = model.geometry else { return nil }
+        guard let template = model.template else { return nil }
         var content = model.document.content
         content.templates[template.id] = template
-        content.style.pageSetup = geometry.setup
         let page = Page(id: previewPageID, kind: .story, templateID: template.id)
         var options = RenderOptions.screen
         options.previewSampleContent = model.showSampleContent
         return CanvasScene(content: content, page: page, options: options, images: imageSource)
     }
 
-    /// The scene's sheet straight from the model's geometry (the scene draws in `geometry.setup`
-    /// with the same spread flag), without building the scene's content.
+    /// The scene's sheet straight from the model's geometry (the scene draws the template on the
+    /// same page setup), without building the scene's content.
     var sheetRect: CGRect? {
         model.geometry?.bleedRect
     }

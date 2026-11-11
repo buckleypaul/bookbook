@@ -28,7 +28,7 @@ public struct PageRenderer {
     }
 
     /// Draws `page` into `ctx`. The caller sets up `ctx` so its user space is the page's trim in
-    /// points, origin top-left, y down (e.g. a flipped NSView, or a PDF context after
+    /// points (double width for a spread: `PageGeometry(setup:kind:)`), origin top-left, y down (e.g. a flipped NSView, or a PDF context after
     /// `translateBy(0, h); scaleBy(1, -1)`). Missing templates or images draw nothing / a placeholder.
     public func draw(page: Page, in content: BookContent, into ctx: CGContext, options: RenderOptions) {
         draw(page: page, in: content, into: ctx, options: options, visibleRect: nil)
@@ -40,7 +40,7 @@ public struct PageRenderer {
     public func draw(page: Page, in content: BookContent, into ctx: CGContext, options: RenderOptions,
                      visibleRect: CGRect?) {
         let template = content.template(for: page)
-        let geometry = PageGeometry(drawSetup: content.style.pageSetup, isSpread: template?.kind == .spread)
+        let geometry = PageGeometry(setup: content.style.pageSetup, kind: template?.kind)
         ctx.saveGState()
         defer { ctx.restoreGState() }
 
@@ -87,7 +87,7 @@ public struct PageRenderer {
     /// True if any text box on the page overflows.
     public func overflowingTextBoxes(page: Page, in content: BookContent) -> Set<BoxID> {
         guard let template = content.template(for: page) else { return [] }
-        let geometry = PageGeometry(drawSetup: content.style.pageSetup, isSpread: template.kind == .spread)
+        let geometry = PageGeometry(setup: content.style.pageSetup, kind: template.kind)
         var result: Set<BoxID> = []
         for box in template.boxes {
             guard case .text(let style) = box.content,

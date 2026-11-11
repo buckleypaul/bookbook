@@ -49,8 +49,8 @@ struct Phase16bLayoutEditingTests {
         var setup = PageSetup(trimSize: PointSize(width: 600, height: 800), orientation: .portrait,
                               margins: EdgeInsetsPt(top: 36, leading: 36, bottom: 36, trailing: 36))
         setup.bleedEnabled = true
-        let spread = PageGeometry(drawSetup: setup, isSpread: true)
-        let single = PageGeometry(drawSetup: setup, isSpread: false)
+        let spread = PageGeometry(setup: setup, kind: .spread)
+        let single = PageGeometry(setup: setup, kind: .single)
         let left = Box(frame: NormalizedRect(x: 0, y: 0, width: 0.5, height: 1), bleedEdges: .all, content: .image)
         let right = Box(frame: NormalizedRect(x: 0.5, y: 0, width: 0.5, height: 1), bleedEdges: .all, content: .image)
         #expect(LayoutEditingMath.foldEdges(of: left, geometry: spread) == .trailing)
@@ -65,7 +65,7 @@ struct Phase16bLayoutEditingTests {
         var setup = PageSetup(trimSize: PointSize(width: 600, height: 800), orientation: .portrait,
                               margins: EdgeInsetsPt(top: 36, leading: 36, bottom: 36, trailing: 36))
         setup.bleedEnabled = true
-        let spread = PageGeometry(drawSetup: setup, isSpread: true)
+        let spread = PageGeometry(setup: setup, kind: .spread)
         var box = Box(frame: NormalizedRect(x: 0.5, y: 0, width: 0.5, height: 1), bleedEdges: .all, content: .image)
         let before = LayoutEditingMath.foldEdges(of: box, geometry: spread)
         // Still on the fold: unchanged.

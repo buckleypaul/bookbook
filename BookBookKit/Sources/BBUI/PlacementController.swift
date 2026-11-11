@@ -21,8 +21,6 @@ final class PlacementController: CanvasController {
 
     private(set) var content: BookContent?
     private(set) var pageID: PageID?
-    /// `content` with a spread's double-width trim, for `PageRenderer` (A §8.2).
-    private var renderContent: BookContent?
     /// The page's numbers, drawn on screen as in the PDF (PD §8.2).
     private(set) var pageNumberMarks: [PageNumberMark] = []
     private var selectedImageBox: BoxID?
@@ -85,11 +83,10 @@ final class PlacementController: CanvasController {
         self.content = content
         self.pageID = pageID
         let page = pageID.flatMap { content.pages[$0] }
-        renderContent = page.map { PageGeometry.drawContent(for: $0, in: content) } ?? content
         pageNumberMarks = pageID.map { PageNumberMarks(content: content).marks(for: $0) } ?? []
         self.selectedImageBox = selectedImageBox
         self.imageSource = imageSource
-        geometry = page.flatMap { page in renderContent.map { PageGeometry.drawGeometry(for: page, in: $0) } }
+        geometry = page.map { PageGeometry.drawGeometry(for: $0, in: content) }
         if let page, let template = content.template(for: page), let geometry {
             boxRects = template.boxes.map { ($0, geometry.renderRect(for: $0)) }
         } else {
@@ -118,16 +115,16 @@ final class PlacementController: CanvasController {
     private var page: Page? { pageID.flatMap { content?.pages[$0] } }
 
     var scene: CanvasScene? {
-        guard let renderContent, let page, let imageSource else { return nil }
+        guard let content, let page, let imageSource else { return nil }
         var options = RenderOptions.screen
         if let editing = textEditing.editingBoxID { options.hiddenTextBoxes = [editing] }
         options.pageNumbers = pageNumberMarks
-        return CanvasScene(content: renderContent, page: page, options: options, images: imageSource)
+        return CanvasScene(content: content, page: page, options: options, images: imageSource)
     }
 
     /// The scene's sheet from the cached geometry (the scene shows the bleed whenever it's on).
     var sheetRect: CGRect? {
-        guard renderContent != nil, page != nil, imageSource != nil, let geometry else { return nil }
+        guard page != nil, imageSource != nil, let geometry else { return nil }
         return geometry.bleedRect
     }
 
@@ -150,10 +147,10 @@ final class PlacementController: CanvasController {
 
     /// Text boxes on the page whose text doesn't fit (same container as `PageRenderer`).
     func overflowingTextBoxes() -> [(box: Box, rect: CGRect)] {
-        guard let renderContent, let page, let imageSource, let layoutCache = canvas?.layoutCache else { return [] }
+        guard let content, let page, let imageSource, let layoutCache = canvas?.layoutCache else { return [] }
         var renderer = PageRenderer(images: imageSource)
         renderer.layouts = layoutCache
-        let overflowing = renderer.overflowingTextBoxes(page: page, in: renderContent)
+        let overflowing = renderer.overflowingTextBoxes(page: page, in: content)
         guard !overflowing.isEmpty else { return [] }
         return boxRects.filter { overflowing.contains($0.box.id) }
     }

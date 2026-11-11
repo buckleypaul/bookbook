@@ -98,6 +98,33 @@ struct PreflightTests {
         #expect(issues[0].box == PF.textBox.id)
     }
 
+    @Test func textOverflow_onASpread_measuresAtTheSpreadWidth() throws {
+        // A text box across both halves of a spread: 0.92 of 600 pt, not of the 300 pt page.
+        var c = PF.clean()
+        let box = Box(id: BoxID("00000000-0000-0000-0000-0000000000C6"),
+                      frame: NormalizedRect(x: 0.04, y: 0.6, width: 0.92, height: 0.3),
+                      content: .text(TextBoxStyle(padding: 6)))
+        let spread = Template(id: TemplateID("00000000-0000-0000-0000-0000000000C7"), name: "Sp", kind: .spread,
+                              boxes: [box])
+        c.templates[spread.id] = spread
+        let p = c.book.pageOrder[1]
+        c.pages[p]?.templateID = spread.id
+        c.pages[p]?.images = [:]
+        // Fits at the spread's width; wraps past the box at a single page's width.
+        let text = RichText(plain: String(repeating: "The fox ran home. ", count: 10))
+        c.pages[p]?.text = [box.id: text]
+        let geometry = PageGeometry(setup: c.style.pageSetup, kind: .spread)
+        let inner = geometry.renderRect(for: box).insetBy(dx: 6, dy: 6).size
+        let typography = c.style.typography.resolved(for: box.role)
+        #expect(!TextBoxLayout(text: text, typography: typography, containerSize: inner).isOverflowing)
+        #expect(TextBoxLayout(text: text, typography: typography,
+                              containerSize: CGSize(width: inner.width / 2 - 6, height: inner.height)).isOverflowing)
+        #expect(!PF.run(c).contains { $0.kind == .textOverflow })
+
+        c.pages[p]?.text = [box.id: RichText(plain: String(repeating: "The fox ran home. ", count: 60))]
+        #expect(PF.run(c).contains { $0.kind == .textOverflow && $0.page == p && $0.box == box.id })
+    }
+
     @Test func spellingOnePerWordPerBox() {
         var c = PF.clean()
         let p = c.book.pageOrder[0]

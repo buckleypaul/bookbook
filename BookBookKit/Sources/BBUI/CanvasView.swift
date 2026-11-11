@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// What the canvas draws: one page or spread, through `PageRenderer`.
 @MainActor
 struct CanvasScene {
-    /// The content to render. `style.pageSetup` is the draw trim (double width for a spread).
+    /// The content to render (`PageRenderer` doubles the trim for a spread).
     var content: BookContent
     var page: Page
     var options: RenderOptions
@@ -119,7 +119,7 @@ final class CanvasView: NSView {
 
     // MARK: Geometry
 
-    /// The scene's geometry (its `setup` is the draw trim: double width for a spread).
+    /// The scene's draw geometry (double width for a spread).
     var geometry: PageGeometry? { controller?.scene?.geometry }
 
     /// View ↔ page transform. Page points stay trim space (origin at the trim's top-left) even

@@ -69,15 +69,13 @@ final class PageThumbnailRenderer {
         if let image = cache[key] { return image }
 
         // Double width for a spread (its boxes are normalized over both pages, A §4.1).
-        let drawContent = PageGeometry.drawContent(for: page, in: content)
-        let trim = drawContent.style.pageSetup.trimSize
-        let size = CGSize(width: trim.width, height: trim.height)
+        let size = PageGeometry.drawGeometry(for: page, in: content).trimSize
         guard size.width > 0, size.height > 0 else { return nil }
         let height = pixelHeight
         let width = max(1, Int((Double(height) * size.width / size.height).rounded()))
         var options = RenderOptions(target: .thumbnail)
         options.pageNumbers = marks
-        guard let image = ThumbnailRendering.render(page: page, in: drawContent, trim: size, pixelWidth: width,
+        guard let image = ThumbnailRendering.render(page: page, in: content, trim: size, pixelWidth: width,
                                                     pixelHeight: height, images: images, layouts: layouts,
                                                     options: options, fillWhite: true)
         else { return nil }

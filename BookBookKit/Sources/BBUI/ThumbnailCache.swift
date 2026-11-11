@@ -80,7 +80,8 @@ public enum BookThumbnail {
     /// longest side `maxPixelSize`. Nil if the book has no pages.
     public static func png(for content: BookContent, imageURL: (ImageRef) -> URL, maxPixelSize: Int = 512) -> Data? {
         guard maxPixelSize > 0, let page = page(in: content) else { return nil }
-        let trim = content.style.pageSetup.trimSize
+        // A spread (a book without a cover) is drawn whole, at double width.
+        let trim = PageGeometry.drawGeometry(for: page, in: content).trimSize
         guard trim.width > 0, trim.height > 0 else { return nil }
         let scale = Double(maxPixelSize) / max(trim.width, trim.height)
         let width = max(1, Int((trim.width * scale).rounded()))
@@ -89,7 +90,7 @@ public enum BookThumbnail {
             // Placed images are decoded downsampled, to twice the thumbnail's longest side, so an
             // aspect-filled or zoomed-in image still has about a pixel per output pixel. The cache
             // lives for this one render.
-            ThumbnailRendering.render(page: page, in: content, trim: CGSize(width: trim.width, height: trim.height),
+            ThumbnailRendering.render(page: page, in: content, trim: trim,
                                       pixelWidth: width, pixelHeight: height,
                                       images: ImageCache(maxPixelSize: maxPixelSize * 2, urlForRef: escapable),
                                       options: RenderOptions(target: .thumbnail))
@@ -105,7 +106,7 @@ public enum BookThumbnail {
 
 /// The bitmap set-up and PNG encoding shared by the library and Pages-overview thumbnails.
 enum ThumbnailRendering {
-    /// Draws `page` of `content` (whose page setup is the draw trim, `trim` points) into a new
+    /// Draws `page` of `content` (its draw trim is `trim` points, double width for a spread) into a new
     /// `pixelWidth`×`pixelHeight` sRGB bitmap. `fillWhite` paints the bitmap white first.
     /// `layouts` reuses text layouts across renders.
     @MainActor

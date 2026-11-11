@@ -43,7 +43,7 @@ struct AssetTests {
     @Test func revisedRules() {
         let old = Asset.makeNew(type: .character, name: "Fox")
         var e = old
-        e.name = "Foxy"; e.tags = ["x"]
+        e.name = "Foxy"
         #expect(e.revised(from: old).revision == 1)
 
         e = old

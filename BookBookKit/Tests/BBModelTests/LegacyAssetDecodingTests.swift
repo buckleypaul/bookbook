@@ -45,7 +45,6 @@ struct LegacyAssetDecodingTests {
         let asset = try Self.decode(Asset.self, json)
         #expect(asset.id == AssetID(Self.assetID))
         #expect(asset.type == .character && asset.name == "Pip" && asset.description == "A frog")
-        #expect(asset.tags == ["green"])
         #expect(asset.sessionID == SessionID(Self.sessionB))
         #expect(asset.chosen == VersionID(Self.versionB))
         #expect(asset.revision == 3 && asset.revisionHighWater == 4)

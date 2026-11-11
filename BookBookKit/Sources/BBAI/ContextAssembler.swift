@@ -143,13 +143,17 @@ public enum ContextAssembler {
                              content: BookContent) -> [ReferenceSelector.AssetInPlay] {
         var out: [ReferenceSelector.AssetInPlay] = []
         var seen = Set<AssetID>()
-        func add(_ id: AssetID, mentioned: Bool, excludesImage: Bool = false) {
+        func add(_ id: AssetID, mentioned: Bool, excludesImage: Bool = false, omitsDescription: Bool = false) {
             guard let asset = content.assets[id], seen.insert(id).inserted else { return }
-            out.append(.init(asset: asset, mentioned: mentioned, excludesImage: excludesImage))
+            out.append(.init(asset: asset, mentioned: mentioned, excludesImage: excludesImage,
+                             omitsDescription: omitsDescription))
         }
-        // The owner of an asset session is in play (its description goes in the cast), but its own
-        // image is never sent as a reference for itself.
-        if case let .asset(resolved) = context { add(resolved.asset.id, mentioned: true, excludesImage: true) }
+        // The owner of an asset session is in play (named in the cast; its description is the
+        // request text, so the cast line doesn't repeat it), but its own image is never sent as a
+        // reference for itself.
+        if case let .asset(resolved) = context {
+            add(resolved.asset.id, mentioned: true, excludesImage: true, omitsDescription: true)
+        }
         for id in MentionText.mentionedAssets(in: intent.messageText) { add(id, mentioned: true) }
         if let refines = intent.refines {
             for message in context.session.lineageInstructions(of: refines) {
@@ -374,7 +378,7 @@ public enum ContextAssembler {
         let imageTemplate = PromptTemplates.text(for: "cast-image") ?? "Image {{n}} shows {{name}}."
         return assets.map { entry in
             let asset = entry.asset
-            let description = asset.description.trimmed
+            let description = entry.omitsDescription ? "" : asset.description.trimmed
             var describing = description.isEmpty ? "." : ": " + description
             if let last = describing.last, !".!?".contains(last) { describing += "." }
             let images = sent.filter { $0.asset == asset.id }.compactMap { candidate -> String? in

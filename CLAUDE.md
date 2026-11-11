@@ -15,6 +15,7 @@ BookBook is a macOS 27 app for writing and illustrating picture books with AI im
 - `cd BookBookKit && swift test --filter <Target>Tests`: fast package-only loop.
 - `make build` / `make run` / `make project` (xcodegen) / `make clean`: app convenience targets; DerivedData in `build/DerivedData`.
 - Needs XcodeGen exactly 2.46.0 (`scripts/test.sh xcodeproj` enforces it).
+- Local signing (optional, untracked): `App/Config/Local.xcconfig` with `DEVELOPMENT_TEAM`, `CODE_SIGN_STYLE = Manual`, `CODE_SIGN_IDENTITY = Apple Development` signs Debug app + tests so Keychain "Always Allow" survives rebuilds. Without it, builds are ad-hoc (CI).
 - Run the app on a throwaway library: `-BookBookLibraryRoot <path>` launch argument (never saved).
 
 ## Module map

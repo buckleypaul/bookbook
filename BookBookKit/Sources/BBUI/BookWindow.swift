@@ -302,15 +302,15 @@ struct BookEditor: View {
         }
     }
 
-    /// The inspector: the session panel on the Pages tab (toggled from the toolbar), the asset
-    /// session on Assets and the chat / box inspector on Layouts (always shown); none on Style.
+    /// The inspector: the session panel on the Pages tab (toggled from the toolbar) and the chat /
+    /// box inspector on Layouts (always shown); none on Assets (the editor generates in place) or Style.
     private var inspectorShown: Binding<Bool> {
         Binding(
             get: {
                 switch sidebarTab {
                 case .pages: showSession
-                case .assets, .layouts: true
-                case .style: false
+                case .layouts: true
+                case .assets, .style: false
                 }
             },
             set: { shown in if sidebarTab == .pages { showSession = shown } })
@@ -423,9 +423,7 @@ struct BookEditor: View {
 
     @ViewBuilder
     private func sessionPanel(_ content: BookContent) -> some View {
-        if sidebarTab == .assets {
-            AssetsSessionPanel(document: document, content: content, model: assetsModel, images: images)
-        } else if sidebarTab == .layouts {
+        if sidebarTab == .layouts {
             LayoutsInspector(document: document, editor: layouts, chat: layoutChat)
         } else if pages.mode == .editor, let page = pages.selectedPage, let box = selectedImageBox,
            content.pages[page]?.images[box] != nil {

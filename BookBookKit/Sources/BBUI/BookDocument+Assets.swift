@@ -29,7 +29,7 @@ extension BookDocument {
     }
 
     /// Import a file into an asset's session as an `.imported` version with
-    /// `depictsRealPerson` set (A §11), choosing it if nothing is chosen yet. Not undoable.
+    /// `depictsRealPerson` set (A §11); it becomes the asset's image. Not undoable.
     /// `owner` must be `.asset`. A missing session (legacy asset) is created.
     @discardableResult
     public func importAssetImage(from url: URL, owner: SessionOwner, depictsRealPerson: Bool) async throws -> VersionID {

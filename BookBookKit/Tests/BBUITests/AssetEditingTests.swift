@@ -21,29 +21,57 @@ struct AssetEditingTests {
         #expect(AssetEditing.emptyImageMessage(for: pip).contains("Pip"))
     }
 
-    @MainActor @Test func selectingAnAssetShowsItsSession() {
+    @MainActor @Test func deletingTheSelectedAssetClearsTheSelection() {
         var content = Fixtures.book(pages: 1)
-        let pip = Asset.makeNew(type: .character, name: "Pip")
         let wood = Asset.makeNew(type: .place, name: "Wood")
-        content.assets[pip.id] = pip
         content.assets[wood.id] = wood
         let model = AssetsModel()
-        #expect(model.sessionOwner(in: content) == nil, "no asset selected: the empty state")
-        model.requestImport()
-        #expect(model.importRequest == nil)
-
-        model.select(pip)
-        #expect(model.sessionOwner(in: content) == .asset(pip.id))
-        model.requestImport()
-        #expect(model.importRequest == .asset(pip.id))
         model.select(wood)
-        #expect(model.sessionOwner(in: content) == .asset(wood.id))
-        #expect(model.importRequest == nil, "a pending import doesn't follow the selection")
-
+        #expect(model.selectedAsset == wood.id)
         content.assets[wood.id] = nil
-        #expect(model.sessionOwner(in: content) == nil)
         model.validate(content)
         #expect(model.selectedAsset == nil)
+    }
+
+    @Test func descriptionHelpNamesTheAsset() {
+        let pip = Asset.makeNew(type: .character, name: "Pip")
+        #expect(AssetEditing.descriptionHelp(for: pip).contains("Pip"))
+        #expect(AssetEditing.emptyImageMessage(for: pip).contains("Generate"))
+    }
+
+    // MARK: Generate from the description
+
+    @Test func generateTitleAndPrompt() {
+        #expect(AssetGeneration.buttonTitle(hasImage: false) == "Generate")
+        #expect(AssetGeneration.buttonTitle(hasImage: true) == "Regenerate")
+        #expect(AssetGeneration.prompt(from: "  a green frog \n") == "a green frog")
+        #expect(AssetGeneration.prompt(from: " \n ").isEmpty)
+    }
+
+    @Test func generateIsAlwaysAFreshImage() {
+        let base = GenerationIntent(messageText: "a frog", refines: VersionID(),
+                                    attachedReferences: [VersionRef(sessionID: SessionID(), versionID: VersionID())],
+                                    provider: .openai, model: "m", quality: .draft, includeStoryText: true,
+                                    checkConsistency: true)
+        let intent = AssetGeneration.intent(base)
+        #expect(intent.refines == nil)
+        #expect(intent.attachedReferences.isEmpty)
+        #expect(intent.includeStoryText == false)
+        #expect(intent.checkConsistency == false)
+        #expect(intent.messageText == "a frog" && intent.quality == .draft && intent.model == "m")
+    }
+
+    @Test func latestRequestAndBusy() {
+        let pip = Asset.makeNew(type: .character, name: "Pip")
+        #expect(AssetGeneration.latestRequest(in: nil) == nil)
+        let old = Message(role: .user, text: "first", createdAt: Fixtures.date)
+        let new = Message(role: .user, text: "second", createdAt: Fixtures.date)
+        let session = Session(id: pip.sessionID, owner: pip.owner, messages: [old, new])
+        #expect(AssetGeneration.latestRequest(in: session)?.id == new.id)
+        #expect(AssetGeneration.isBusy(.waiting))
+        #expect(AssetGeneration.isBusy(.running(startedAt: Fixtures.date, typicalSeconds: nil)))
+        #expect(!AssetGeneration.isBusy(.none))
+        #expect(!AssetGeneration.isBusy(.produced(VersionID())))
     }
 
     @Test func panelCopesWithAMissingAssetSession() {
@@ -57,11 +85,6 @@ struct AssetEditingTests {
         // A gone asset or box has no session.
         #expect(SessionPanelState.session(for: .asset(AssetID()), in: content) == nil)
         #expect(SessionPanelState.session(for: .pageBox(PageID(), BoxID()), in: content) == nil)
-    }
-
-    @Test func tags() {
-        #expect(AssetEditing.parseTags(" fox, red ,, Fox,small") == ["fox", "red", "small"])
-        #expect(AssetEditing.tagsText(["a", "b"]) == "a, b")
     }
 
     @Test func listSortedAndFiltered() {

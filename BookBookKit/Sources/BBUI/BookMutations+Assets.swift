@@ -45,8 +45,8 @@ extension BookMutations {
     }
 
     /// A finished generation for an asset: the version goes into the session (found by
-    /// message first), and becomes the asset's `chosen` if nothing is chosen yet (bumping the
-    /// revision).
+    /// message first) and becomes the asset's `chosen` (the newest image always wins, bumping
+    /// the revision; earlier versions stay in the session).
     static func applyAssetDelivery(_ delivery: GenerationDelivery, storedImage: ImageRef?,
                                    to content: inout BookContent, versionID: VersionID, now: Date) -> DirtySet {
         let owner = delivery.item.target.owner
@@ -59,7 +59,7 @@ extension BookMutations {
         if changed { dirty.sessions.insert(sessionID) }
         if let version = delivered {
             content.sessions[sessionID] = session
-            if let asset = chooseIfUnset(version.id, session: sessionID, in: &content) { dirty.assets.insert(asset) }
+            if let asset = chooseLatest(version.id, session: sessionID, in: &content) { dirty.assets.insert(asset) }
             return dirty
         }
         content.sessions[sessionID] = session
@@ -78,8 +78,8 @@ extension BookMutations {
         return out
     }
 
-    /// Adds an imported picture to an asset's session, with the real-person answer, choosing
-    /// it if nothing is chosen. Creates the session if it's missing (legacy asset). Empty if
+    /// Adds an imported picture to an asset's session, with the real-person answer, and
+    /// makes it the asset's image. Creates the session if it's missing (legacy asset). Empty if
     /// the asset is gone.
     public static func appendImportedAssetVersion(image: ImageRef, pixelSize: PixelSize, owner: SessionOwner,
                                                   depictsRealPerson: Bool, to content: inout BookContent,
@@ -90,15 +90,16 @@ extension BookMutations {
                                                       source: .imported, createdAt: now,
                                                       depictsRealPerson: depictsRealPerson))
         var dirty = DirtySet(sessions: [id])
-        if let asset = chooseIfUnset(versionID, session: id, in: &content) { dirty.assets.insert(asset) }
+        if let asset = chooseLatest(versionID, session: id, in: &content) { dirty.assets.insert(asset) }
         return dirty
     }
 
-    /// Sets the asset's `chosen` to `version` if it has none and `session` is its session.
-    /// Returns the asset changed. The revision follows `Asset.revised(from:)`.
-    static func chooseIfUnset(_ version: VersionID, session: SessionID, in content: inout BookContent) -> AssetID? {
+    /// Makes `version` the asset's `chosen` when `session` is its session (the asset's image is
+    /// always its newest version). Returns the asset changed, nil when nothing changed. The
+    /// revision follows `Asset.revised(from:)`.
+    static func chooseLatest(_ version: VersionID, session: SessionID, in content: inout BookContent) -> AssetID? {
         guard let assetID = content.sessions[session]?.owner.assetID, let old = content.assets[assetID],
-              old.sessionID == session, old.chosen == nil else { return nil }
+              old.sessionID == session, old.chosen != version else { return nil }
         var asset = old
         asset.chosen = version
         content.assets[assetID] = asset.revised(from: old)

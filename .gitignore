@@ -51,3 +51,6 @@ Icon?
 .claude/*.lock
 .claude/settings.local.json
 .claude/worktrees/
+
+# Local signing overrides (see App/Config/BookBook-Debug.xcconfig)
+App/Config/Local.xcconfig

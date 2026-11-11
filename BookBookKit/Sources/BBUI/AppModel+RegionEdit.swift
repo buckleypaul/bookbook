@@ -13,7 +13,7 @@ public enum RegionEditRefusal: Error, Hashable, Sendable {
     case sizeMismatch(expected: PixelSize, actual: PixelSize)
     /// The chosen model can't edit a selected area (`supportsMask` is false). Holds its name.
     case maskUnsupported(model: String)
-    /// The version to edit (or its box, slot or sheet item) is gone.
+    /// The version to edit (or its box or asset) is gone.
     case baseVersionGone
     case readOnly
     /// The mask couldn't be encoded or saved into the book.

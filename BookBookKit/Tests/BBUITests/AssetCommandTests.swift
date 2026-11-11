@@ -58,19 +58,16 @@ struct AssetCommandTests {
 
     // MARK: addAsset
 
-    @Test func addAsset_createsSessionsForEveryOwnedSlot_andUndoRedo() throws {
+    @Test func addAsset_createsItsSession_andUndoRedo() throws {
         let s = try makeDocument()
         let pip = addPip(s)
-        #expect(pip.sheet?.items.count == 8)
-        for (sessionID, owner) in pip.ownedSessions {
-            #expect(s.document.content.sessions[sessionID]?.owner == owner)
-        }
+        #expect(s.document.content.sessions[pip.sessionID]?.owner == .asset(pip.id))
         #expect(s.undo.undoActionName == "New Asset")
 
         s.undo.undo()
         #expect(s.document.content.assets[pip.id] == nil)
-        // Sessions stay behind as orphans (created irreversibly).
-        #expect(pip.ownedSessions.allSatisfy { s.document.content.sessions[$0.0] != nil })
+        // The session stays behind as an orphan (created irreversibly).
+        #expect(s.document.content.sessions[pip.sessionID] != nil)
         s.undo.redo()
         #expect(s.document.content.assets[pip.id] == pip)
         // Adding the same ID again is ignored.
@@ -127,63 +124,96 @@ struct AssetCommandTests {
         #expect(s.document.content.assets[pip.id]?.revision == 3)
     }
 
-    @Test func updateAsset_ignoresTypeChange_andNormalizes() throws {
+    @Test func updateAsset_ignoresTypeAndSessionChange() throws {
         let s = try makeDocument()
         var pip = addPip(s)
         pip.type = .object
         pip.name = "Pip the fox"
-        pip.references.append(ReferenceSlot(label: "Side", isPrimary: true))
+        pip.sessionID = SessionID()
         perform(s, .updateAsset(pip, actionName: "Edit Asset"))
         let stored = try #require(s.document.content.assets[pip.id])
         #expect(stored.type == .character)
-        #expect(stored.sheet != nil)
-        #expect(stored.references.filter(\.isPrimary).count == 1)
-        #expect(stored.references.first?.isPrimary == true)
+        #expect(stored.name == "Pip the fox")
+        #expect(stored.sessionID == s.document.content.assets[pip.id]?.sessionID)
+        #expect(s.document.content.sessions[stored.sessionID]?.owner == .asset(pip.id))
     }
 
-    @Test func updateAsset_newSlotsAndItemsGetSessions() throws {
-        let s = try makeDocument()
-        var pip = addPip(s)
-        let slot = ReferenceSlot(label: "Winter coat", isPrimary: false)
-        let item = SheetItem(kind: .expression("giggling"))
-        pip.references.append(slot)
-        pip.sheet?.items.append(item)
-        perform(s, .updateAsset(pip, actionName: "Add Reference"))
-        #expect(s.document.content.sessions[slot.sessionID]?.owner == .assetReference(pip.id, slot.id))
-        #expect(s.document.content.sessions[item.sessionID]?.owner == .sheetItem(pip.id, item.id))
-        s.undo.undo()
-        #expect(s.document.content.assets[pip.id]?.references.count == 1)
-        #expect(s.document.content.sessions[slot.sessionID] != nil) // orphan
+    @Test func legacyAssetWithoutSession_getsOneOnEditMessageOrImport() async throws {
+        // A legacy book: the asset decodes with a sessionID that has no session behind it.
+        var content = Fixtures.book(pages: 1)
+        let pip = Asset.makeNew(type: .character, name: "Pip")
+        content.assets[pip.id] = pip
+        let url = FileManager.default.temporaryDirectory.appending(path: "Legacy-\(UUID().uuidString).bookbook")
+        try BookStore.create(content, at: url)
+        let document = BookDocument(content: content, store: BookStore(packageURL: url, debounce: .milliseconds(20)))
+        #expect(document.content.sessions[pip.sessionID] == nil)
+        #expect(document.session(for: pip.owner) == nil)
+
+        // The first prompt creates it.
+        let item = pending(.asset(pip.id), in: document)
+        let session = try #require(document.content.sessions[pip.sessionID])
+        #expect(session.owner == .asset(pip.id))
+        #expect(session.messages.first?.queueItemID == item.id)
+
+        // An import into a second legacy asset creates it too.
+        let wood = Asset.makeNew(type: .place, name: "Wood")
+        document.performIrreversible { content in
+            content.assets[wood.id] = wood
+            return DirtySet(assets: [wood.id])
+        }
+        let file = try writeJPEG(camera: false)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let id = try await document.importAssetImage(from: file, owner: wood.owner, depictsRealPerson: false)
+        #expect(document.content.sessions[wood.sessionID]?.version(id) != nil)
+        #expect(document.content.assets[wood.id]?.chosen == id)
+
+        // And an undoable edit of a third.
+        let hat = Asset.makeNew(type: .object, name: "Hat")
+        document.performIrreversible { content in
+            content.assets[hat.id] = hat
+            return DirtySet(assets: [hat.id])
+        }
+        var renamed = hat
+        renamed.name = "Top Hat"
+        #expect(document.perform(.updateAsset(renamed, actionName: "Rename Asset")))
+        #expect(document.content.sessions[hat.sessionID]?.owner == .asset(hat.id))
     }
 
-    @Test func chooseReference_isUndoable_andBumpsRevisionForPrimary() throws {
+    @Test func chooseAssetImage_isUndoable_andBumpsRevision() throws {
         let s = try makeDocument()
         let pip = addPip(s)
-        let primary = try #require(pip.primary)
         let v1 = version(), v2 = version()
-        append(v1, to: primary.sessionID, in: s.document)
-        append(v2, to: primary.sessionID, in: s.document)
+        append(v1, to: pip.sessionID, in: s.document)
+        append(v2, to: pip.sessionID, in: s.document)
 
         s.undo.beginUndoGrouping()
-        #expect(s.document.chooseReference(v1.id, for: .assetReference(pip.id, primary.id)))
+        #expect(s.document.chooseAssetImage(v1.id, for: pip.id))
         s.undo.endUndoGrouping()
-        #expect(s.undo.undoActionName == "Choose Reference")
-        #expect(s.document.content.assets[pip.id]?.primary?.chosen == v1.id)
+        #expect(s.undo.undoActionName == "Choose Image")
+        #expect(s.document.content.assets[pip.id]?.chosen == v1.id)
         #expect(s.document.content.assets[pip.id]?.revision == 2)
-        #expect(s.document.chosenVersion(for: .assetReference(pip.id, primary.id)) == v1.id)
+        #expect(s.document.chosenVersion(for: pip.owner) == v1.id)
+        #expect(SessionPanelState.placedVersion(for: pip.owner, in: s.document.content) == v1.id)
+        // Choosing it again is no change; a version from elsewhere is refused.
+        #expect(!s.document.chooseAssetImage(v1.id, for: pip.id))
+        #expect(!s.document.chooseAssetImage(VersionID(), for: pip.id))
+
+        s.undo.beginUndoGrouping()
+        #expect(s.document.chooseAssetImage(v2.id, for: pip.id))
+        s.undo.endUndoGrouping()
+        #expect(s.document.content.assets[pip.id]?.chosen == v2.id)
+        #expect(s.document.content.assets[pip.id]?.revision == 3)
 
         s.undo.undo()
-        #expect(s.document.content.assets[pip.id]?.primary?.chosen == nil)
+        #expect(s.document.content.assets[pip.id]?.chosen == v1.id)
+        #expect(s.document.content.assets[pip.id]?.revision == 2)
+        s.undo.undo()
+        #expect(s.document.content.assets[pip.id]?.chosen == nil)
         #expect(s.document.content.assets[pip.id]?.revision == 1)
-
-        // Choosing a sheet item doesn't bump the revision.
-        let item = try #require(pip.sheet?.items.first)
-        append(v2, to: item.sessionID, in: s.document)
-        s.undo.beginUndoGrouping()
-        s.document.chooseReference(v2.id, for: .sheetItem(pip.id, item.id))
-        s.undo.endUndoGrouping()
-        #expect(s.document.content.assets[pip.id]?.sheet?.items.first?.chosen == v2.id)
-        #expect(s.document.content.assets[pip.id]?.revision == 1)
+        #expect(s.document.content.assets[pip.id]?.revisionHighWater == 3)
+        s.undo.redo()
+        #expect(s.document.content.assets[pip.id]?.chosen == v1.id)
+        #expect(s.document.content.assets[pip.id]?.revision == 2)
     }
 
     @Test func undoRename_keepsAChoiceADeliveryMadeSince() throws {
@@ -191,19 +221,18 @@ struct AssetCommandTests {
         var pip = addPip(s)
         pip.name = "Pippa"
         perform(s, .updateAsset(pip, actionName: "Rename Asset"))
-        // A delivery arrives and chooses the primary image (irreversible).
-        let primary = try #require(pip.primary)
+        // A delivery arrives and chooses the image (irreversible).
         let delivered = version()
         s.document.performIrreversible { content in
-            content.sessions[primary.sessionID]?.versions.append(delivered)
-            _ = BookMutations.chooseIfUnset(delivered.id, session: primary.sessionID, in: &content)
-            return DirtySet(sessions: [primary.sessionID], assets: [pip.id])
+            content.sessions[pip.sessionID]?.versions.append(delivered)
+            _ = BookMutations.chooseIfUnset(delivered.id, session: pip.sessionID, in: &content)
+            return DirtySet(sessions: [pip.sessionID], assets: [pip.id])
         }
         #expect(s.document.content.assets[pip.id]?.revision == 2)
         s.undo.undo()
         let after = try #require(s.document.content.assets[pip.id])
         #expect(after.name == "Pip")
-        #expect(after.primary?.chosen == delivered.id)
+        #expect(after.chosen == delivered.id)
         #expect(after.revision == 2)
     }
 
@@ -247,7 +276,7 @@ struct AssetCommandTests {
         #expect(content.assets[pip.id] == nil)
         #expect(content.pages[page]?.assetChecklist == [])
         #expect(content.sessions[boxSession]?.messages.first?.text == "Pip yawning by the fire")
-        #expect(pip.ownedSessions.allSatisfy { content.sessions[$0.0] != nil })
+        #expect(content.sessions[pip.sessionID] != nil)
         #expect(s.document.usageSites(of: pip.id).isEmpty)
 
         await s.document.flush()
@@ -331,9 +360,8 @@ struct AssetCommandTests {
     @Test func delivery_writesVersionIntoAssetSession_andChoosesWhenUnset() throws {
         let s = try makeDocument()
         let pip = addPip(s)
-        let primary = try #require(pip.primary)
-        let item = pending(.assetReference(pip.id, primary.id), in: s.document)
-        #expect(s.document.content.sessions[primary.sessionID]?.messages.first?.queueItemID == item.id)
+        let item = pending(.asset(pip.id), in: s.document)
+        #expect(s.document.content.sessions[pip.sessionID]?.messages.first?.queueItemID == item.id)
 
         let first = VersionID()
         s.document.performIrreversible { content in
@@ -342,61 +370,51 @@ struct AssetCommandTests {
                                         storedImage: Fixtures.ref, to: &content, versionID: first, now: Fixtures.date)
         }
         var asset = try #require(s.document.content.assets[pip.id])
-        let session = try #require(s.document.content.sessions[primary.sessionID])
+        let session = try #require(s.document.content.sessions[pip.sessionID])
         #expect(session.versions.map(\.id) == [first])
         #expect(session.messages.first?.producedVersion == first)
         #expect(session.messages.first?.queueItemID == nil)
-        #expect(asset.primary?.chosen == first)
+        #expect(asset.chosen == first)
         #expect(asset.revision == 2)
 
         // A second delivery doesn't replace the choice.
-        let item2 = pending(.assetReference(pip.id, primary.id), in: s.document)
+        let item2 = pending(.asset(pip.id), in: s.document)
         s.document.performIrreversible { content in
             BookMutations.applyDelivery(GenerationDelivery(item: item2, outcome: .success(result: Fixtures.result(),
                                                                                           provenance: Fixtures.provenance())),
                                         storedImage: Fixtures.ref, to: &content, now: Fixtures.date)
         }
         asset = try #require(s.document.content.assets[pip.id])
-        #expect(asset.primary?.chosen == first)
+        #expect(asset.chosen == first)
         #expect(asset.revision == 2)
-        #expect(s.document.content.sessions[primary.sessionID]?.versions.count == 2)
+        #expect(s.document.content.sessions[pip.sessionID]?.versions.count == 2)
     }
 
-    @Test func delivery_toSheetItem_choosesWithoutRevisionBump_failureClearsPendingOnly() throws {
+    @Test func failedDelivery_clearsPendingOnly() throws {
         let s = try makeDocument()
         let pip = addPip(s)
-        let item = try #require(pip.sheet?.items.last)
-        let failed = pending(.sheetItem(pip.id, item.id), in: s.document)
+        let failed = pending(.asset(pip.id), in: s.document)
         s.document.performIrreversible { content in
             BookMutations.applyDelivery(GenerationDelivery(item: failed, outcome: .failure(.offline)),
                                         storedImage: nil, to: &content, now: Fixtures.date)
         }
-        #expect(s.document.content.sessions[item.sessionID]?.messages.first?.queueItemID == nil)
-        #expect(s.document.content.sessions[item.sessionID]?.versions.isEmpty == true)
-
-        let ok = pending(.sheetItem(pip.id, item.id), in: s.document)
-        let id = VersionID()
-        s.document.performIrreversible { content in
-            BookMutations.applyDelivery(GenerationDelivery(item: ok, outcome: .success(result: Fixtures.result(),
-                                                                                       provenance: Fixtures.provenance())),
-                                        storedImage: Fixtures.ref, to: &content, versionID: id, now: Fixtures.date)
-        }
-        #expect(s.document.content.assets[pip.id]?.sheet?.items.last?.chosen == id)
+        #expect(s.document.content.sessions[pip.sessionID]?.messages.first?.queueItemID == nil)
+        #expect(s.document.content.sessions[pip.sessionID]?.versions.isEmpty == true)
+        #expect(s.document.content.assets[pip.id]?.chosen == nil)
         #expect(s.document.content.assets[pip.id]?.revision == 1)
     }
 
     @Test func deletingTheChosenVersion_clearsTheChoice() throws {
         let s = try makeDocument()
         let pip = addPip(s)
-        let primary = try #require(pip.primary)
         let v = version()
         s.document.performIrreversible { content in
-            content.sessions[primary.sessionID]?.versions.append(v)
-            _ = BookMutations.chooseIfUnset(v.id, session: primary.sessionID, in: &content)
-            return DirtySet(sessions: [primary.sessionID], assets: [pip.id])
+            content.sessions[pip.sessionID]?.versions.append(v)
+            _ = BookMutations.chooseIfUnset(v.id, session: pip.sessionID, in: &content)
+            return DirtySet(sessions: [pip.sessionID], assets: [pip.id])
         }
-        #expect(s.document.deleteVersion(v.id, owner: .assetReference(pip.id, primary.id)))
-        #expect(s.document.content.assets[pip.id]?.primary?.chosen == nil)
+        #expect(s.document.deleteVersion(v.id, owner: pip.owner))
+        #expect(s.document.content.assets[pip.id]?.chosen == nil)
         #expect(s.document.content.assets[pip.id]?.revision == 3)
     }
 
@@ -466,7 +484,6 @@ struct AssetCommandTests {
     @Test func importAssetImage_storesTheAnswer_andChoosesWhenUnset() async throws {
         let s = try makeDocument()
         let pip = addPip(s)
-        let primary = try #require(pip.primary)
         let file = try writeJPEG(camera: false)
         let photo = try writeJPEG(camera: true)
         defer {
@@ -474,18 +491,16 @@ struct AssetCommandTests {
             try? FileManager.default.removeItem(at: photo)
         }
 
-        let id = try await s.document.importAssetImage(from: file, owner: .assetReference(pip.id, primary.id),
-                                                       depictsRealPerson: true)
-        let v = try #require(s.document.content.sessions[primary.sessionID]?.version(id))
+        let id = try await s.document.importAssetImage(from: file, owner: pip.owner, depictsRealPerson: true)
+        let v = try #require(s.document.content.sessions[pip.sessionID]?.version(id))
         #expect(v.depictsRealPerson == true)
         #expect(v.source == .imported)
-        #expect(s.document.content.assets[pip.id]?.primary?.chosen == id)
+        #expect(s.document.content.assets[pip.id]?.chosen == id)
         #expect(await BookDocument.looksCameraOriginated(file) == false)
         #expect(await BookDocument.looksCameraOriginated(photo) == true)
 
         await #expect(throws: ImageImportFailure.assetGone) {
-            try await s.document.importAssetImage(from: file, owner: .assetReference(pip.id, UUID()),
-                                                  depictsRealPerson: false)
+            try await s.document.importAssetImage(from: file, owner: .asset(AssetID()), depictsRealPerson: false)
         }
     }
 

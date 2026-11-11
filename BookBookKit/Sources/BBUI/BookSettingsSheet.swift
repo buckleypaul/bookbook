@@ -89,7 +89,7 @@ struct BookSettingsSheet: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Text("Clean Up deletes versions that aren't starred and aren't used on a page, as an asset's chosen picture or as a sheet item.")
+            Text("Clean Up deletes versions that aren't starred and aren't used on a page or as an asset's picture.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .alert("Delete \(storage.plan.versionIDs.count) unused versions?", isPresented: $confirmCleanUp) {

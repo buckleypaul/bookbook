@@ -28,9 +28,9 @@ extension BookDocument {
         return deleted
     }
 
-    /// Import a file into an asset reference slot or sheet item session as an `.imported`
-    /// version with `depictsRealPerson` set (A §11), choosing it if nothing is chosen yet.
-    /// Not undoable. `owner` must be `.assetReference` or `.sheetItem`.
+    /// Import a file into an asset's session as an `.imported` version with
+    /// `depictsRealPerson` set (A §11), choosing it if nothing is chosen yet. Not undoable.
+    /// `owner` must be `.asset`. A missing session (legacy asset) is created.
     @discardableResult
     public func importAssetImage(from url: URL, owner: SessionOwner, depictsRealPerson: Bool) async throws -> VersionID {
         guard url.isFileURL else { throw ImageImportFailure.notAFileURL }
@@ -79,40 +79,30 @@ extension BookDocument {
 
     // MARK: Session lookups for any owner
 
-    /// The session of a page box, asset slot or sheet item.
+    /// The session of a page box or asset (nil if the asset's session doesn't exist yet).
     public func session(for owner: SessionOwner) -> Session? {
         BookMutations.sessionID(for: owner, in: content).flatMap { content.sessions[$0] }
     }
 
-    /// The version an asset slot or sheet item uses as its reference (nil for page boxes).
+    /// The version an asset uses as its image (nil for page boxes).
     public func chosenVersion(for owner: SessionOwner) -> VersionID? {
         switch owner {
         case .pageBox: nil
-        case let .assetReference(asset, slot): content.assets[asset]?.references.first { $0.id == slot }?.chosen
-        case let .sheetItem(asset, item): content.assets[asset]?.sheet?.items.first { $0.id == item }?.chosen
+        case let .asset(asset): content.assets[asset]?.chosen
         }
     }
 
-    /// "Choose Reference": makes `version` the slot's or item's reference image (undoable,
-    /// through `updateAsset`). False if nothing changed or the owner is a page box.
+    /// "Choose Image": makes `version` the asset's image (undoable, through `updateAsset`,
+    /// which bumps the revision). False if nothing changed or the version isn't in its session.
     @discardableResult
-    public func chooseReference(_ version: VersionID, for owner: SessionOwner) -> Bool {
-        guard let id = owner.assetID, var asset = content.assets[id],
-              session(for: owner)?.version(version) != nil else { return false }
-        switch owner {
-        case .pageBox:
-            return false
-        case let .assetReference(_, slot):
-            guard let i = asset.references.firstIndex(where: { $0.id == slot }) else { return false }
-            asset.references[i].chosen = version
-        case let .sheetItem(_, item):
-            guard let i = asset.sheet?.items.firstIndex(where: { $0.id == item }) else { return false }
-            asset.sheet?.items[i].chosen = version
-        }
-        return perform(.updateAsset(asset, actionName: "Choose Reference"))
+    public func chooseAssetImage(_ version: VersionID, for id: AssetID) -> Bool {
+        guard var asset = content.assets[id], session(for: asset.owner)?.version(version) != nil,
+              asset.chosen != version else { return false }
+        asset.chosen = version
+        return perform(.updateAsset(asset, actionName: "Choose Image"))
     }
 
-    /// A short label for an owner: "Page 3 · Image 1", "Pip · Primary", "Pip · Sleepy expression".
+    /// A short label for an owner: "Page 3 · Image 1", or the asset's name.
     public func ownerLabel(_ owner: SessionOwner) -> String {
         Self.ownerLabel(owner, in: content)
     }
@@ -122,33 +112,8 @@ extension BookDocument {
         case let .pageBox(page, box):
             let display = DraftAllPlanner.display(page: page, box: box, in: content)
             return "\(display.pageLabel) · \(display.boxLabel)"
-        case let .assetReference(id, slot):
-            let asset = content.assets[id]
-            let label = asset?.references.first { $0.id == slot }?.label ?? "Reference"
-            return "\(asset?.name ?? "Asset") · \(label)"
-        case let .sheetItem(id, item):
-            let asset = content.assets[id]
-            let kind = asset?.sheet?.items.first { $0.id == item }?.kind
-            return "\(asset?.name ?? "Asset") · \(kind.map(SheetItemText.title) ?? "Sheet item")"
-        }
-    }
-}
-
-/// Display names for sheet items ("Three-quarter view", "Sleepy expression").
-public enum SheetItemText {
-    public static func title(_ kind: SheetItemKind) -> String {
-        switch kind {
-        case let .view(view): viewName(view) + " view"
-        case let .expression(name): name.prefix(1).uppercased() + name.dropFirst() + " expression"
-        }
-    }
-
-    public static func viewName(_ view: SheetView) -> String {
-        switch view {
-        case .front: "Front"
-        case .threeQuarter: "Three-quarter"
-        case .side: "Side"
-        case .back: "Back"
+        case let .asset(id):
+            return content.assets[id]?.name ?? "Asset"
         }
     }
 }

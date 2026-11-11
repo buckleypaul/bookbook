@@ -12,20 +12,18 @@ struct CanvasScene {
     var page: Page
     var options: RenderOptions
     var images: any PageImageSource
-    /// Draw the centre fold (screen only).
-    var showsFold: Bool = false
-    /// Show the bleed area around the trim (the sheet grows by the bleed). Both editors set
-    /// it whenever bleed is on, so full-bleed boxes visibly extend past the trim line.
-    var showsBleed: Bool = false
 
     /// The draw geometry (spread-aware: fold, per-page safe areas, no bleed at the fold).
     var geometry: PageGeometry { PageGeometry.drawGeometry(for: page, in: content) }
 
-    /// The area fitted to the view: the trim, grown by the bleed when it's shown.
-    var sheetRect: CGRect {
-        let geometry = geometry
-        return showsBleed ? geometry.bleedRect : geometry.trimRect
-    }
+    /// Draw the centre fold (screen only): on a spread.
+    var showsFold: Bool { geometry.isSpread }
+    /// Both editors show the bleed area around the trim whenever bleed is on (the sheet grows
+    /// by the bleed), so full-bleed boxes visibly extend past the trim line.
+    var showsBleed: Bool { geometry.bleed > 0 }
+
+    /// The area fitted to the view: the trim, grown by the bleed when it's on.
+    var sheetRect: CGRect { geometry.bleedRect }
 }
 
 /// A canvas mode (plan Phase 6 Risks): supplies the scene and its overlays and handles input.
@@ -323,58 +321,6 @@ extension CanvasView {
     /// Every box on the page with its render rect, in layer order.
     var boxRects: [(box: Box, rect: CGRect)] { placement.boxRects }
     func endEditing() { placement.textEditing.end() }
-
-    var onSelectImageBox: (BoxID?) -> Void {
-        get { placement.onSelectImageBox }
-        set { placement.onSelectImageBox = newValue }
-    }
-    /// Double-click on a title/author box (bound to the book, PD §8.7).
-    var onOpenBookSettings: () -> Void {
-        get { placement.onOpenBookSettings }
-        set { placement.onOpenBookSettings = newValue }
-    }
-    /// Crop gestures (Phase 8): open the undo group, update the crop, close the group.
-    var onBeginCrop: (_ onClosedByReplay: @escaping @MainActor () -> Void) -> Void {
-        get { placement.onBeginCrop }
-        set { placement.onBeginCrop = newValue }
-    }
-    var onCrop: (PageID, BoxID, Double, NormalizedPoint) -> Void {
-        get { placement.onCrop }
-        set { placement.onCrop = newValue }
-    }
-    var onEndCrop: () -> Void {
-        get { placement.onEndCrop }
-        set { placement.onEndCrop = newValue }
-    }
-    /// A text change: page, box, text, and whether it may coalesce with the typing before it.
-    var onTextChange: (PageID, BoxID, RichText, Bool) -> Void {
-        get { placement.textEditing.onTextChange }
-        set { placement.textEditing.onTextChange = newValue }
-    }
-    /// Ends the document's typing undo step (formatting with no text change, editor closing).
-    var onEndTypingStep: () -> Void {
-        get { placement.textEditing.onEndTypingStep }
-        set { placement.textEditing.onEndTypingStep = newValue }
-    }
-
-    var onBeginUndoGroup: (String, @escaping @MainActor () -> Void) -> Void {
-        get { placement.textEditing.onBeginUndoGroup }
-        set { placement.textEditing.onBeginUndoGroup = newValue }
-    }
-
-    var onEndUndoGroup: (String) -> Void {
-        get { placement.textEditing.onEndUndoGroup }
-        set { placement.textEditing.onEndUndoGroup = newValue }
-    }
-    var undoManagerProvider: () -> UndoManager? {
-        get { placement.textEditing.undoManagerProvider }
-        set { placement.textEditing.undoManagerProvider = newValue }
-    }
-    /// The window's format bar / Format menu controller; the editor drives it.
-    var formatting: TextFormatController? {
-        get { placement.textEditing.formatting }
-        set { placement.textEditing.formatting = newValue }
-    }
 }
 
 /// SwiftUI wrapper for the page canvas.
@@ -399,26 +345,27 @@ struct PageCanvas: NSViewRepresentable {
     func updateNSView(_ view: CanvasView, context: Context) {
         let document = document, selection = $selectedImageBox
         let undoManager = context.environment.undoManager
-        view.onSelectImageBox = { selection.wrappedValue = $0 }
-        view.onTextChange = { page, box, text, coalescing in
+        let placement = view.placement
+        placement.onSelectImageBox = { selection.wrappedValue = $0 }
+        placement.textEditing.onTextChange = { page, box, text, coalescing in
             document.perform(.setRichText(page: page, box: box, text: text, coalescing: coalescing))
         }
-        view.onEndTypingStep = { document.endTypingStep() }
-        view.onBeginUndoGroup = { name, onClosed in
+        placement.textEditing.onEndTypingStep = { document.endTypingStep() }
+        placement.textEditing.onBeginUndoGroup = { name, onClosed in
             document.beginUndoGroup(actionName: name, onClosedByReplay: onClosed)
         }
-        view.onEndUndoGroup = { name in document.endUndoGroup(actionName: name) }
-        view.onOpenBookSettings = onOpenBookSettings
+        placement.textEditing.onEndUndoGroup = { name in document.endUndoGroup(actionName: name) }
+        placement.onOpenBookSettings = onOpenBookSettings
         view.onDropImageFiles = onDropImageFiles
-        view.onBeginCrop = { closed in
+        placement.onBeginCrop = { closed in
             document.beginUndoGroup(actionName: BookCommand.cropActionName, onClosedByReplay: closed)
         }
-        view.onCrop = { page, box, zoom, center in
+        placement.onCrop = { page, box, zoom, center in
             document.perform(.setCrop(page: page, box: box, zoom: zoom, center: center))
         }
-        view.onEndCrop = { document.endUndoGroup(actionName: BookCommand.cropActionName) }
-        view.formatting = document.formatting
-        view.undoManagerProvider = { [weak undoManager] in undoManager }
+        placement.onEndCrop = { document.endUndoGroup(actionName: BookCommand.cropActionName) }
+        placement.textEditing.formatting = document.formatting
+        placement.textEditing.undoManagerProvider = { [weak undoManager] in undoManager }
         view.update(content: content, pageID: pageID, selectedImageBox: selectedImageBox, imageSource: imageSource,
                     fontsRevision: document.fontsRevision)
     }

@@ -122,15 +122,13 @@ final class PlacementController: CanvasController {
         var options = RenderOptions.screen
         if let editing = textEditing.editingBoxID { options.hiddenTextBoxes = [editing] }
         options.pageNumbers = pageNumberMarks
-        guard let geometry else { return nil }
-        return CanvasScene(content: renderContent, page: page, options: options, images: imageSource,
-                           showsFold: geometry.isSpread, showsBleed: geometry.bleed > 0)
+        return CanvasScene(content: renderContent, page: page, options: options, images: imageSource)
     }
 
     /// The scene's sheet from the cached geometry (the scene shows the bleed whenever it's on).
     var sheetRect: CGRect? {
         guard renderContent != nil, page != nil, imageSource != nil, let geometry else { return nil }
-        return geometry.bleed > 0 ? geometry.bleedRect : geometry.trimRect
+        return geometry.bleedRect
     }
 
     /// The draw geometry: double width with a fold for a spread template. Set in `update`.

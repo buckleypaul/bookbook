@@ -69,15 +69,13 @@ final class LayoutEditingController: CanvasController {
         let page = Page(id: previewPageID, kind: .story, templateID: template.id)
         var options = RenderOptions.screen
         options.previewSampleContent = model.showSampleContent
-        return CanvasScene(content: content, page: page, options: options, images: imageSource,
-                           showsFold: geometry.isSpread, showsBleed: geometry.bleed > 0)
+        return CanvasScene(content: content, page: page, options: options, images: imageSource)
     }
 
     /// The scene's sheet straight from the model's geometry (the scene draws in `geometry.setup`
     /// with the same spread flag), without building the scene's content.
     var sheetRect: CGRect? {
-        guard let geometry = model.geometry else { return nil }
-        return geometry.bleed > 0 ? geometry.bleedRect : geometry.trimRect
+        model.geometry?.bleedRect
     }
 
     /// Re-registers observation of everything the canvas shows; a change redraws.

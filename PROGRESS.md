@@ -149,8 +149,6 @@ Collected from the finished phase logs. Remove an item when it is done; add new 
 - `RealPersonCheck` sets byte counts to 0, so a skipped (missing/too-large) image can hide a later real-person photo from the check (only matters at the image-count cap; the check errs towards showing the notice) (from Phase 10 review).
 - Undoing New Asset after it's mentioned leaves dangling tokens (rare: a mention followed by an immediate undo) (from Phase 10 review).
 - Where-used ignores mentions in asset-session prompts (display only; `UsageSite` is page-based) (from Phase 10 review).
-- Synonym inflections over-match ("beams", "glare", "tear") (tuning; risky) (from Phase 10 review).
-- `SheetRequests.referenceMessageText` is unused (harmless unused helper) (from Phase 10 review).
 - The real-person notice isn't re-checked when a queued item actually sends (needs a host hook into the queue) (from Phase 10 review).
 - A token whose answered message is gone still renders empty (rare; same family as the undo-after-mention item) (from Phase 10 review).
 - Pages grid: thumbnails for pages 2 and 3 overlapped after adding a page (can't reproduce from code; recheck in the app pass) (from Phase 10 hand checks).

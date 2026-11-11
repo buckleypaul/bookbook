@@ -400,17 +400,32 @@ public actor GenerationQueue {
     }
 
     private func run(_ item: QueueItem) async {
-        if case let .consistencyCheck(version) = item.kind { return await runConsistencyCheck(item, version: version) }
-        guard let (provider, model, request, report, storedMask) = await prepare(item) else { return }
+        do throws(ProviderError) {
+            if case let .consistencyCheck(version) = item.kind {
+                guard let check = try await prepareCheck(item, version: version) else { return finishDropped(item) }
+                await runCheck(item, check)
+            } else {
+                await runImage(item, try await prepareImage(item))
+            }
+        } catch {
+            // Preparation failed, so nothing was sent. `finishFailed` finishes a cancelled item
+            // as cancelled, which is how a cancel during preparation (`.cancelled`) ends.
+            await finishFailed(item, error, report: nil, attempts: 0)
+        }
+    }
+
+    private func runImage(_ item: QueueItem, _ prepared: PreparedImage) async {
+        let (provider, request) = (prepared.provider, prepared.request)
         let id = item.id
         let onProgress: @Sendable (Int, GenerationProgress) -> Void = { [weak self] attempt, progress in
             Task { await self?.updateProgress(id, attempt: attempt, progress) }
         }
-        let result = await perform(item, model: model.id, report: report) { attempt async throws(ProviderError) in
+        let result = await perform(item, model: prepared.model.id, report: prepared.report) {
+            attempt async throws(ProviderError) in
             try await provider.generate(request) { onProgress(attempt, $0) }
         }
         guard let result else { return }
-        await finishSuccess(item, model: model, request: request, storedMask: storedMask, result: result, report: report)
+        await finishSuccess(item, prepared, result: result)
     }
 
     /// Sends the request with automatic retries (`QueueRetryPolicy`), each attempt raced against
@@ -459,54 +474,62 @@ public actor GenerationQueue {
         }
     }
 
-    /// Resolves the provider, model and request, plus the stored region-edit mask's bytes (nil when
-    /// not a region edit). On failure the item is finished and nil returned.
-    private func prepare(_ item: QueueItem) async
-        -> (any ImageProvider, CatalogModel, ImageRequest, AssemblyReport, Data?)? {
-        guard let content = await host.content(for: item.bookID) else {
-            await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
-            return nil
-        }
+    /// An image item ready to send.
+    private struct PreparedImage {
+        var provider: any ImageProvider
+        var model: CatalogModel
+        var request: ImageRequest
+        var report: AssemblyReport
+        /// The stored region-edit mask's bytes; nil when not a region edit.
+        var storedMask: Data?
+    }
+
+    /// Resolves the provider, model and request. Throws what the failed item reports, or
+    /// `.cancelled` when the item was cancelled while its images were read.
+    private func prepareImage(_ item: QueueItem) async throws(ProviderError) -> PreparedImage {
+        guard let content = await host.content(for: item.bookID) else { throw .unknown(nil) }
         guard let model = catalog.imageModel(provider: item.intent.provider, id: item.intent.model) else {
-            await finishFailed(item, .modelUnavailable(nil), report: nil, attempts: 0)
-            return nil
+            throw .modelUnavailable(nil)
         }
-        guard let provider = providers[item.intent.provider] else {
-            await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
-            return nil
-        }
+        guard let provider = providers[item.intent.provider] else { throw .unknown(nil) }
         guard let prepared = ContextAssembler.prepare(intent: item.intent, target: item.target,
                                                       messageID: item.messageID, content: content) else {
-            await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
-            return nil
-        }
-        var imageData: [ImageRef: Data] = [:]
-        for image in ContextAssembler.plan(prepared) {
-            if let data = await host.imageData(for: image.ref, in: item.bookID) { imageData[image.ref] = data }
+            throw .unknown(nil)
         }
         // Region edit (A §7.6): the user's mask is read with the other images.
-        if let mask = item.intent.regionMask, imageData[mask] == nil,
-           let data = await host.imageData(for: mask, in: item.bookID) {
-            imageData[mask] = data
-        }
-        if isCancelled(item.id) {
-            await finishCancelled(item)
-            return nil
-        }
+        let refs = ContextAssembler.plan(prepared).map(\.ref) + [item.intent.regionMask].compactMap { $0 }
+        let imageData = await loadImages(refs, for: item)
+        guard !isCancelled(item.id) else { throw .cancelled }
         // Off the actor: a region edit decodes and re-encodes its mask here (A §7.6).
         let intent = item.intent
-        let assembled = await Task.detached(priority: .userInitiated) { [imageData] in
-            Result { () throws(AssemblyError) in
-                try ContextAssembler.assemble(prepared: prepared, intent: intent, content: content, model: model,
-                                              imageData: imageData)
-            }
+        let (request, report) = try await Self.assembleOffActor { () throws(AssemblyError) in
+            try ContextAssembler.assemble(prepared: prepared, intent: intent, content: content, model: model,
+                                          imageData: imageData)
+        }
+        return PreparedImage(provider: provider, model: model, request: request, report: report,
+                             storedMask: item.intent.regionMask.flatMap { imageData[$0] })
+    }
+
+    /// The bytes the host has for `refs` (each read once; missing files are left out).
+    private func loadImages(_ refs: [ImageRef], for item: QueueItem) async -> [ImageRef: Data] {
+        var imageData: [ImageRef: Data] = [:]
+        for ref in refs where imageData[ref] == nil {
+            if let data = await host.imageData(for: ref, in: item.bookID) { imageData[ref] = data }
+        }
+        return imageData
+    }
+
+    /// Runs `assemble` off the actor (it may decode and re-encode images); its error becomes the
+    /// failed item's `ProviderError`.
+    private nonisolated static func assembleOffActor<T: Sendable>(
+        _ assemble: @escaping @Sendable () throws(AssemblyError) -> T
+    ) async throws(ProviderError) -> T {
+        let result = await Task.detached(priority: .userInitiated) {
+            Result { () throws(AssemblyError) in try assemble() }
         }.value
-        switch assembled {
-        case let .success((request, report)):
-            return (provider, model, request, report, item.intent.regionMask.flatMap { imageData[$0] })
-        case let .failure(error):
-            await finishFailed(item, error.providerError, report: nil, attempts: 0)
-            return nil
+        switch result {
+        case let .success(value): return value
+        case let .failure(error): throw error.providerError
         }
     }
 
@@ -549,13 +572,11 @@ public actor GenerationQueue {
         }
     }
 
-    private func finishSuccess(_ item: QueueItem, model: CatalogModel, request: ImageRequest, storedMask: Data?,
-                               result: ImageResult, report: AssemblyReport) async {
-        let actual = result.usage.flatMap {
-            pricing.actualCost(of: $0, provider: item.intent.provider, model: model.pricingModelID)
-        }
+    private func finishSuccess(_ item: QueueItem, _ prepared: PreparedImage, result: ImageResult) async {
+        let (model, report) = (prepared.model, prepared.report)
         // The call happened, so it's charged even if a region edit's output is then rejected.
-        let costID = await recordCost(for: item, model: model.id, .completed(actual: actual))
+        let costID = await recordCompleted(item, model: model.id, pricingModel: model.pricingModelID,
+                                           usage: result.usage)
         var provenance = Provenance(
             provider: item.intent.provider, model: model.id, quality: item.intent.quality,
             outputSize: result.pixelSize, promptSent: report.promptText,
@@ -569,7 +590,8 @@ public actor GenerationQueue {
         if let maskRef = item.intent.regionMask {
             // Region edit (A §7.6): the provider's output is composited locally through the user's
             // mask; the composite becomes the version and the raw output is kept for Version details.
-            let composited = await compositeRegionEdit(result.imageData, request.baseImage?.data, storedMask)
+            let composited = await compositeRegionEdit(result.imageData, prepared.request.baseImage?.data,
+                                                       prepared.storedMask)
             // A cancel during the off-thread composite wins: the call stays charged, nothing lands.
             if isCancelled(item.id) { return await finishCancelled(item) }
             switch composited {
@@ -586,8 +608,7 @@ public actor GenerationQueue {
                 provenance.featherPixels = edit.featherPixels
             }
         }
-        entries.removeAll { $0.id == item.id }
-        changed()
+        removeEntry(item.id)
         await deliver(GenerationDelivery(item: item, outcome: .success(result: delivered, provenance: provenance),
                                          costRecordID: costID, additionalImages: additionalImages,
                                          versionID: VersionID()))
@@ -617,43 +638,43 @@ public actor GenerationQueue {
         enqueue([item], position: .front)
     }
 
-    private func runConsistencyCheck(_ item: QueueItem, version: VersionID) async {
+    /// A consistency check ready to send.
+    private struct PreparedCheck {
+        var provider: any VisionProvider
+        var model: CatalogTextModel
+        var assembled: AssembledConsistency
+    }
+
+    /// Resolves the vision provider, model and request. Nil when the check is to be dropped
+    /// quietly (its book or version is gone); throws what the failed item reports, or
+    /// `.cancelled` when the item was cancelled while its images were read.
+    private func prepareCheck(_ item: QueueItem, version: VersionID) async throws(ProviderError) -> PreparedCheck? {
         // A check of a book that's gone is dropped quietly, like a gone version.
-        guard let content = await host.content(for: item.bookID) else { return finishDropped(item) }
-        guard let plan = ConsistencyAssembler.plan(version: version, content: content, provider: item.intent.provider)
-        else { return finishDropped(item) }
+        guard let content = await host.content(for: item.bookID),
+              let plan = ConsistencyAssembler.plan(version: version, content: content, provider: item.intent.provider)
+        else { return nil }
         guard let model = catalog.textModel(provider: item.intent.provider, id: item.intent.model),
-              model.kind == .vision else {
-            return await finishFailed(item, .modelUnavailable(nil), report: nil, attempts: 0)
-        }
-        guard let provider = visionProviders[item.intent.provider] else {
-            return await finishFailed(item, .unknown(nil), report: nil, attempts: 0)
-        }
-        var imageData: [ImageRef: Data] = [:]
-        for image in [plan.checked] + plan.references where imageData[image.ref] == nil {
-            if let data = await host.imageData(for: image.ref, in: item.bookID) { imageData[image.ref] = data }
-        }
-        if isCancelled(item.id) { return await finishCancelled(item) }
+              model.kind == .vision else { throw .modelUnavailable(nil) }
+        guard let provider = visionProviders[item.intent.provider] else { throw .unknown(nil) }
+        let imageData = await loadImages(([plan.checked] + plan.references).map(\.ref), for: item)
+        guard !isCancelled(item.id) else { throw .cancelled }
         // Off the actor: every image may be decoded and downscaled.
         let instructions = consistencyInstructions
-        let assembling = await Task.detached(priority: .userInitiated) { [imageData] in
-            Result { () throws(AssemblyError) in
-                try ConsistencyAssembler.assemble(plan, model: model, imageData: imageData, instructions: instructions)
-            }
-        }.value
-        let assembled: AssembledConsistency
-        switch assembling {
-        case let .success(value): assembled = value
-        case let .failure(error): return await finishFailed(item, error.providerError, report: nil, attempts: 0)
+        let assembled = try await Self.assembleOffActor { () throws(AssemblyError) in
+            try ConsistencyAssembler.assemble(plan, model: model, imageData: imageData, instructions: instructions)
         }
+        return PreparedCheck(provider: provider, model: model, assembled: assembled)
+    }
+
+    private func runCheck(_ item: QueueItem, _ prepared: PreparedCheck) async {
+        let (provider, model, assembled) = (prepared.provider, prepared.model, prepared.assembled)
         let request = assembled.request
         let result = await perform(item, model: model.id, report: nil) { _ async throws(ProviderError) in
             try await provider.checkConsistency(request)
         }
         guard let result else { return }
 
-        let actual = result.usage.flatMap { pricing.actualCost(of: $0, provider: item.intent.provider, model: model.id) }
-        let costID = await recordCost(for: item, model: model.id, .completed(actual: actual))
+        let costID = await recordCompleted(item, model: model.id, pricingModel: model.id, usage: result.usage)
         let thresholds = model.consistency ?? .standard
         let report = ConsistencyReport(
             checkedAt: now(), provider: item.intent.provider, model: model.id, consistent: result.consistent,
@@ -661,15 +682,19 @@ public actor GenerationQueue {
             sent: ConsistencySent(promptSent: assembled.promptText, imagesSent: assembled.imagesSent,
                                   parametersSent: result.parametersSent),
             cost: costID, usage: result.usage)
-        entries.removeAll { $0.id == item.id }
-        changed()
+        removeEntry(item.id)
         await deliver(GenerationDelivery(item: item, outcome: .consistency(report), costRecordID: costID))
     }
 
     /// A check whose version (or its page, box or asset) is gone: removed without a
     /// request, a ledger line or a delivery.
     private func finishDropped(_ item: QueueItem) {
-        entries.removeAll { $0.id == item.id }
+        removeEntry(item.id)
+    }
+
+    /// Removes the item's entry and publishes the change.
+    private func removeEntry(_ id: QueueItemID) {
+        entries.removeAll { $0.id == id }
         changed()
     }
 
@@ -689,8 +714,7 @@ public actor GenerationQueue {
 
     /// A cancelled (or removed-while-retrying) item is not kept: the user asked for it to go.
     private func finishCancelled(_ item: QueueItem) async {
-        entries.removeAll { $0.id == item.id }
-        changed()
+        removeEntry(item.id)
         await deliver(GenerationDelivery(item: item, outcome: .failure(.cancelled)))
     }
 
@@ -705,6 +729,13 @@ public actor GenerationQueue {
             estimate: item.estimate, currentPriceListAsOf: pricing.priceListAsOf, queueItemID: item.id)
         await host.recordCost(record, in: item.bookID)
         return record.id
+    }
+
+    /// The line for a request that completed: `usage` priced under `pricingModel`, else the estimate.
+    private func recordCompleted(_ item: QueueItem, model: String, pricingModel: String,
+                                 usage: TokenUsage?) async -> CostRecordID {
+        let actual = usage.flatMap { pricing.actualCost(of: $0, provider: item.intent.provider, model: pricingModel) }
+        return await recordCost(for: item, model: model, .completed(actual: actual))
     }
 
     // MARK: - Delivery

@@ -75,7 +75,8 @@ public final class BookExporter {
     public func bitmapData(page pageID: PageID, format: BitmapFormat) async throws -> Data {
         guard let page = content.pages[pageID] else { throw ExportError.noPages }
         let slot = OutputSlot(page: page, half: nil)
-        let prepared = try await prepareImages(for: [page])
+        var cache: PreparedPages = [:]
+        let prepared = try await prepareImages(for: [page], cache: &cache)
         try Task.checkCancellation()
 
         let size = OutputPageDrawing.trimSize(of: slot, in: content)
@@ -188,9 +189,10 @@ public final class BookExporter {
 
         let marks = PageNumberMarks(content: content)
         let total = slots.count
+        var cache: PreparedPages = [:]
         for (index, slot) in slots.enumerated() {
             try Task.checkCancellation()
-            let prepared = try await prepareImages(for: slot.page.map { [$0] } ?? [])
+            let prepared = try await prepareImages(for: slot.page.map { [$0] } ?? [], cache: &cache)
             try Task.checkCancellation()
 
             let trim = OutputPageDrawing.trimSize(of: slot, in: content)
@@ -240,10 +242,11 @@ public final class BookExporter {
         else { throw ExportError.contextCreationFailed }
 
         let marks = PageNumberMarks(content: content)
+        var cache: PreparedPages = [:]
         for (index, side) in sides.enumerated() {
             try Task.checkCancellation()
             let placed = [(all[side.leftPage - 1], layout.firstSlot), (all[side.rightPage - 1], layout.secondSlot)]
-            let prepared = try await prepareImages(for: placed.compactMap(\.0.page))
+            let prepared = try await prepareImages(for: placed.compactMap(\.0.page), cache: &cache)
             try Task.checkCancellation()
 
             ctx.beginPDFPage([kCGPDFContextMediaBox: OutputPageDrawing.boxValue(media)] as CFDictionary)
@@ -291,24 +294,31 @@ public final class BookExporter {
 
     // MARK: Images
 
-    /// Prepares every placed image on `pages` (deduplicated by page). The result is dropped by
-    /// the caller after the unit is drawn, so at most one unit's bitmaps are held at a time.
-    private func prepareImages(for pages: [Page]) async throws -> PreparedImages {
-        var result: [BoxImageKey: CGImage] = [:]
-        var seen: Set<PageID> = []
-        for page in pages where seen.insert(page.id).inserted {
+    /// Prepared bitmaps by page, then box: the previous unit's, carried into the next.
+    private typealias PreparedPages = [PageID: [BoxImageKey: CGImage]]
+
+    /// Prepares every placed image on `pages` (deduplicated by page). `cache` holds the previous
+    /// unit's pages: those this unit doesn't draw are dropped first, so at most one unit's
+    /// bitmaps are held at a time, and those it draws again are reused rather than prepared
+    /// twice (the two halves of a split spread, or a spread on consecutive booklet sides).
+    private func prepareImages(for pages: [Page], cache: inout PreparedPages) async throws -> PreparedImages {
+        let wanted = Set(pages.map(\.id))
+        cache = cache.filter { wanted.contains($0.key) }
+        for page in pages where cache[page.id] == nil {
+            var boxes: [BoxImageKey: CGImage] = [:]
             for request in requestBuilder(page, content) {
                 try Task.checkCancellation()
                 do {
-                    result[request.key] = try await preparer.prepare(request)
+                    boxes[request.key] = try await preparer.prepare(request)
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
                     throw ExportError.imageUnreadable(request.image)
                 }
             }
+            cache[page.id] = boxes
         }
-        return PreparedImages(result)
+        return PreparedImages(cache.values.reduce(into: [:]) { $0.merge($1) { first, _ in first } })
     }
 
     // MARK: Encoding

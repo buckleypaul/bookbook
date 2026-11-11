@@ -185,8 +185,7 @@ struct Asset {                      // assets/<id>.json
     var id: AssetID
     var type: AssetType              // .character, .place, .object
     var name: String
-    var description: String
-    var tags: [String]
+    var description: String          // the request text for the asset's image; also in page casts
     var sessionID: SessionID         // the asset's one image session (owner .asset(id))
     var chosen: VersionID?           // the asset's image; nil = none yet (not sent)
     var revision: Int
@@ -194,7 +193,7 @@ struct Asset {                      // assets/<id>.json
 }
 ```
 
-**As built (Phase 10):** `revisionHighWater` works like `StyleGuide.visualRevisionHighWater`. Only a description change or a change of `chosen` bumps `revision` to `highWater + 1`; undo restores the old revision, and numbers are never reused. Renames and tags don't bump. `Version.depictsRealPerson: Bool?` holds the import answer (§11). Asset edits are `BookCommand.addAsset` / `updateAsset` (wholesale replace) / `setAssetChecklist`; choosing a version in the asset's session is an undoable `updateAsset`. Deletion is irreversible (`BookDocument.deleteAsset`).
+**As built (Phase 10):** `revisionHighWater` works like `StyleGuide.visualRevisionHighWater`. Only a description change or a change of `chosen` bumps `revision` to `highWater + 1`; undo restores the old revision, and numbers are never reused. Renames don't bump. (Tags were removed on 2026-11-11; an old `tags` key is ignored on decode.) `Version.depictsRealPerson: Bool?` holds the import answer (§11). Asset edits are `BookCommand.addAsset` / `updateAsset` (wholesale replace) / `setAssetChecklist`; editing the description is an undoable `updateAsset`. **Generate from the description (2026-11-11):** the asset editor has no session panel. Generate / Regenerate enqueues a fresh request whose message text is the description (no `refines`, no attachments, no story text, no consistency check; `AssetGeneration.intent`). A delivered or imported version always becomes `chosen` (`BookMutations.chooseLatest`, irreversible like any delivery); earlier versions stay in the session but aren't shown. Deletion is irreversible (`BookDocument.deleteAsset`).
 
 **As changed (2026-11-11):** an asset has exactly one image, made in one session. Phase 10 built multiple reference slots (one primary) and, for characters, a character sheet (turnaround views and expressions, Generate whole sheet, lock); users found it confusing, so slots, the primary toggle and the sheet were removed from the model and the UI. Legacy decoding: an old `assets/<id>.json` keeps its primary slot (or the first) as `sessionID`/`chosen`; other slots and the `sheet` are ignored. A legacy `.assetReference(asset, slot)` owner or target decodes as `.asset(asset)`, and a session whose ID isn't the asset's `sessionID` is dropped on load. A legacy `.sheetItem` owner or target throws `LegacySheetItemError`, and the loader drops that session or queue entry. The next save writes the new format.
 
@@ -575,7 +574,7 @@ The provider adapters are the only code that knows wire formats. `BBNet.HTTPClie
    - **Role and medium:** "Illustration for a children's picture book."
    - **Style:** the visual description, plus "Images N–M are style references."
    - **Avoid:** the negative guidance.
-   - **Cast and setting:** for each asset, its name, type, description and "Image K shows <name>".
+   - **Cast and setting:** for each asset, its name, type, description and "Image K shows <name>". In an asset session the owner's line has no description, because the request is that description.
    - **Composition:**
      - The box aspect and orientation.
      - Calm areas: any text boxes that overlap this image box are turned into region guidance, e.g. "leave the bottom third calm and low-detail for text".

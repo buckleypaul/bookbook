@@ -127,17 +127,15 @@ The style guide applies to the whole book and feeds into every image generation.
 Asset types: **Character**, **Place/Scene**, **Object**.
 
 Every asset has:
-- Name (used for `@mentions`), type, text description, tags.
-- **Exactly one image**, made and refined in the asset's own session (chat + versions, the same way as pages, §8.6). It's generated with AI using the style guide, or imported from a file as a version in that session (e.g. a photo of the user's child to base a character on; see the privacy notice in §3).
-- Clicking a version makes it the asset's image. This can be undone.
+- Name (used for `@mentions`), type and a text description.
+- **Exactly one image.** The user writes the description and presses **Generate** (**Regenerate** once there's an image). Each press makes a fresh picture from the description and the style guide; the current image isn't sent, so editing the description and regenerating fully takes effect. The newest picture always becomes the asset's image, and earlier ones aren't shown. The user can instead import a file as the image (e.g. a photo of the user's child to base a character on; see the privacy notice in §3). There's no chat and no refinement for assets.
 - A **where used** list of the pages, cover and boxes that use it, each linked.
 
 **Layout**
 - Left: the asset list.
-- Middle: the asset editor (large image, name, description, tags, where used, delete).
-- Right: the selected asset's image session, always shown.
+- Right: the asset editor: large image; name and type; the description, with a short note on what it's used for, the quality picker, cost estimate, Import Image… and Generate / Regenerate, and the newest request's status; the image's details (what was sent); where used; delete.
 
-When generating a page, the app sends each mentioned or checked asset's image.
+When generating a page, the app sends each mentioned or checked asset's image and description.
 
 **Changes and deletion**
 - Changing an asset's description or image doesn't regenerate anything. Pages that use the asset are marked "asset changed" so the user can redo them if they want.

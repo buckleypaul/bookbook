@@ -339,6 +339,8 @@ The in-memory model tracks dirty entities. Each save is one **transaction**:
 
 Image files that no JSON refers to are swept only when the book is opened, and only if they are more than 24 hours old, so a generation that is still being delivered never loses its file. Ledger lines are appended with `O_APPEND`. A truncated last line is ignored and repaired.
 
+- **As built (2026-11-11), style reference repair:** style references saved before they went through `ImageImportNormalizer` kept the file's raw bytes and an extension-guessed type (HEIC, WebP, or bytes that don't match `contentType`), which providers reject. When a book opens with its lock, `BookDocument.open` calls `BookStore.repairingStyleReferences(in:)` after `load()`: each reference whose bytes aren't PNG/JPEG matching its `contentType` is re-normalized with `normalizeReferencePhoto`, stored, and `style.json` is saved in one journaled transaction. It's a data repair, not a `BookCommand`, so it never appears in undo. Undecodable or missing files are left as they are; a sound book writes nothing, so the repair is idempotent; the old file is left to the orphan sweep. Asset reference photos and imported versions always went through the normalizer, so they need no repair.
+
 ### 5.3 Autosave
 
 - `BookStore` is an actor (one per open book) that serializes all I/O for that book.

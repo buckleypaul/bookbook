@@ -545,7 +545,7 @@ public final class AppModel {
         switch item.target {
         case let .pageBox(page, box):
             item.display = DraftAllPlanner.display(page: page, box: box, in: content)
-        case .assetReference, .sheetItem:
+        case .asset:
             item.display = AssetQueueDisplay.display(item.target.owner, in: content)
         }
         item.enqueuedAt = now()

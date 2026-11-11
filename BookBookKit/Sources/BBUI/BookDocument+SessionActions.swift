@@ -12,7 +12,7 @@ extension BookDocument {
         mutateSession(page: page, box: box) { BookMutations.resetSession($0, keepVersions: keepVersions, to: &$1) }
     }
 
-    // Phase 10: the same for any session owner (asset slots and sheet items included).
+    // Phase 10: the same for any session owner (assets included).
     // Deleting an asset's chosen version clears that choice too.
 
     @discardableResult

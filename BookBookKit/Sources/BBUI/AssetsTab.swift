@@ -5,14 +5,24 @@ import SwiftUI
 @MainActor @Observable
 final class AssetsModel {
     var selectedAsset: AssetID? {
-        didSet { if selectedAsset != oldValue { selectedOwner = nil } }
+        didSet { if selectedAsset != oldValue { importRequest = nil } }
     }
-    /// The slot or sheet item whose session the session panel shows.
-    var selectedOwner: SessionOwner?
-    /// Set by a reference row's Import button: the session panel for this owner opens its
-    /// file picker once and clears it.
+    /// Set by the editor's Import Image… button: the session panel showing this asset's session
+    /// opens its file picker once and clears it.
     var importRequest: SessionOwner?
     var typeFilter: AssetType?
+
+    /// The session the right-hand panel shows: always the selected asset's (nil with none).
+    func sessionOwner(in content: BookContent) -> SessionOwner? {
+        guard let id = selectedAsset, let asset = content.assets[id] else { return nil }
+        return asset.owner
+    }
+
+    /// Asks the session panel to open its file picker for the selected asset.
+    func requestImport() {
+        guard let id = selectedAsset else { return }
+        importRequest = .asset(id)
+    }
 
     /// Applies `edit` to `asset` and performs one `updateAsset` command (skipped when nothing changed).
     func update(_ asset: Asset, in document: BookDocument, actionName: String, _ edit: (inout Asset) -> Void) {
@@ -35,21 +45,16 @@ final class AssetsModel {
 
     func select(_ asset: Asset) {
         selectedAsset = asset.id
-        selectedOwner = asset.primary.map { .assetReference(asset.id, $0.id) }
     }
 
     func didDelete(_ id: AssetID) {
         if selectedAsset == id { selectedAsset = nil }
     }
 
-    /// An undo can remove the selected asset or slot.
+    /// An undo can remove the selected asset.
     func validate(_ content: BookContent) {
         guard let id = selectedAsset else { return }
-        guard let asset = content.assets[id] else { selectedAsset = nil; return }
-        let owners = Set(asset.ownedSessions.map(\.1))
-        if let owner = selectedOwner, !owners.contains(owner) {
-            selectedOwner = asset.primary.map { .assetReference(id, $0.id) }
-        }
+        if content.assets[id] == nil { selectedAsset = nil }
     }
 }
 
@@ -133,12 +138,11 @@ struct AssetsDetail: View {
     let model: AssetsModel
     let images: ImageCache
     let onOpenPage: (PageID, BoxID?) -> Void
-    let onGenerateSheet: (AssetID) -> Void
 
     var body: some View {
         if let id = model.selectedAsset, let asset = content.assets[id] {
             AssetEditor(document: document, content: content, asset: asset, images: images, model: model,
-                        onOpenPage: onOpenPage, onGenerateSheet: { onGenerateSheet(id) })
+                        onOpenPage: onOpenPage)
                 .id(id)
         } else {
             CrayonEmptyState("No Asset Selected", systemImage: "person.crop.square", color: Crayon.grape,
@@ -147,7 +151,7 @@ struct AssetsDetail: View {
     }
 }
 
-/// The session panel for the Assets tab.
+/// The session panel for the Assets tab: always the selected asset's image session.
 struct AssetsSessionPanel: View {
     let document: BookDocument
     let content: BookContent
@@ -155,14 +159,14 @@ struct AssetsSessionPanel: View {
     let images: ImageCache
 
     var body: some View {
-        if let owner = model.selectedOwner, let id = owner.assetID, content.assets[id] != nil {
-            AssetSessionHost(document: document, content: content, owner: owner, images: images,
-                             importRequest: Binding(get: { model.importRequest }, set: { model.importRequest = $0 }))
+        if let owner = model.sessionOwner(in: content) {
+            SessionPanel(document: document, content: content, owner: owner, images: images,
+                         importRequest: Binding(get: { model.importRequest }, set: { model.importRequest = $0 }))
                 .id(owner)
                 .disabled(!document.isEditable)
         } else {
-            CrayonEmptyState("No Reference Selected", systemImage: "photo", color: Crayon.sky,
-                             message: "Choose a reference image or sheet item to see its session.")
+            CrayonEmptyState("No Asset Selected", systemImage: "photo", color: Crayon.sky,
+                             message: "Choose an asset to make its picture here.")
         }
     }
 }

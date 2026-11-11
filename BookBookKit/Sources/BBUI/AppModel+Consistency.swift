@@ -87,7 +87,7 @@ extension AppModel {
         var display: QueueItemDisplay
         switch target {
         case let .pageBox(page, box): display = DraftAllPlanner.display(page: page, box: box, in: content)
-        case .assetReference, .sheetItem: display = AssetQueueDisplay.display(target.owner, in: content)
+        case .asset: display = AssetQueueDisplay.display(target.owner, in: content)
         }
         display.boxLabel = ConsistencyQueueLabel.label(for: display.boxLabel)
         let item = QueueItem(bookID: bookID, target: target,

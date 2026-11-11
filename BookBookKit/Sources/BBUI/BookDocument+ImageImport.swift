@@ -8,7 +8,7 @@ public enum ImageImportFailure: Error, Hashable, Sendable {
     case unreadable
     case notAnImage
     case boxGone
-    /// Phase 10: the asset, reference slot or sheet item is gone.
+    /// Phase 10: the asset is gone.
     case assetGone
     case readOnly
     case store(String)
@@ -19,7 +19,7 @@ public enum ImageImportFailure: Error, Hashable, Sendable {
         case .unreadable: "BookBook couldn't read that file."
         case .notAnImage: "That file isn't a picture BookBook can use."
         case .boxGone: "That image box is no longer on the page."
-        case .assetGone: "That asset or sheet item no longer exists."
+        case .assetGone: "That asset no longer exists."
         case .readOnly: "This book is open in another BookBook window, so it can't be changed here."
         case let .store(text): "The picture couldn't be saved: \(text)"
         }

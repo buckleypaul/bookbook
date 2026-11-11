@@ -584,10 +584,8 @@ public final class BookDocument {
             }
             let newAssets = Set(imported.assets.filter { content.assets[$0.id] == nil }.map(\.id))
             for session in imported.sessions where content.sessions[session.id] == nil {
-                switch session.owner {
-                case let .assetReference(owner, _), let .sheetItem(owner, _):
-                    if newAssets.contains(owner) { created.sessions[session.id] = session }
-                default: break
+                if let owner = session.owner.assetID, newAssets.contains(owner) {
+                    created.sessions[session.id] = session
                 }
             }
             if let guide = imported.styleGuide {
@@ -714,16 +712,16 @@ public final class BookDocument {
 
         case let .addAsset(asset):
             guard content.assets[asset.id] == nil else { return nil }
-            let normalized = asset.normalized()
-            addMissingSessions(of: normalized, to: &created)
-            edit = .insertAsset(normalized)
+            addMissingSessions(of: asset, to: &created)
+            edit = .insertAsset(asset)
 
         case let .updateAsset(asset, _):
             guard let old = content.assets[asset.id] else { return nil }
             var proposed = asset
             proposed.id = old.id
             proposed.type = old.type
-            let stored = proposed.normalized().revised(from: old)
+            proposed.sessionID = old.sessionID
+            let stored = proposed.revised(from: old)
             guard stored != old else { return nil }
             addMissingSessions(of: stored, to: &created)
             edit = .updateAsset(from: old, to: stored)
@@ -801,11 +799,11 @@ public final class BookDocument {
         return preset
     }
 
-    /// Empty sessions (irreversible) for the asset's slots and sheet items that have none yet.
+    /// An empty session (irreversible) for the asset if it has none yet (a new asset, or a
+    /// legacy asset whose session file never existed).
     private func addMissingSessions(of asset: Asset, to prepared: inout Prepared) {
-        for (sessionID, owner) in asset.ownedSessions where content.sessions[sessionID] == nil {
-            prepared.sessions[sessionID] = Session(id: sessionID, owner: owner)
-        }
+        guard content.sessions[asset.sessionID] == nil else { return }
+        prepared.sessions[asset.sessionID] = Session(id: asset.sessionID, owner: asset.owner)
     }
 
     private func clamped(_ index: Int) -> Int { min(max(0, index), content.book.pageOrder.count) }
@@ -1085,40 +1083,18 @@ public final class BookDocument {
     }
 
     /// Three-way merge for `Edit.updateAsset`: start from the live asset and take every field
-    /// the edit changes (`from` → `to`). Slot and sheet-item lists follow `to`, but a `chosen`
-    /// the edit didn't change keeps its live value (set by a delivery since). Revision: `to`'s
-    /// when the result matches `to` in description and primary choice (undo restores it), else
-    /// bumped past the high water; the high water never goes down.
+    /// the edit changes (`from` → `to`); a `chosen` the edit didn't change keeps its live value
+    /// (set by a delivery since). Revision: `to`'s when the result matches `to` in description
+    /// and choice (undo restores it), else bumped past the high water; the high water never
+    /// goes down.
     static func mergeAsset(current: Asset, from: Asset, to: Asset) -> Asset {
         var out = current
         if to.name != from.name { out.name = to.name }
         if to.description != from.description { out.description = to.description }
         if to.tags != from.tags { out.tags = to.tags }
-        if to.references != from.references {
-            out.references = to.references.map { slot in
-                var slot = slot
-                if let before = from.references.first(where: { $0.id == slot.id }), before.chosen == slot.chosen,
-                   let live = current.references.first(where: { $0.id == slot.id }) {
-                    slot.chosen = live.chosen
-                }
-                return slot
-            }
-        }
-        if to.sheet != from.sheet {
-            out.sheet = to.sheet.map { sheet in
-                CharacterSheet(items: sheet.items.map { item in
-                    var item = item
-                    if let before = from.sheet?.items.first(where: { $0.id == item.id }), before.chosen == item.chosen,
-                       let live = current.sheet?.items.first(where: { $0.id == item.id }) {
-                        item.chosen = live.chosen
-                    }
-                    return item
-                })
-            }
-        }
+        if to.chosen != from.chosen { out.chosen = to.chosen }
         let highWater = max(current.revisionHighWater, from.revisionHighWater, to.revisionHighWater)
-        if out.description == to.description, out.primary?.id == to.primary?.id,
-           out.primary?.chosen == to.primary?.chosen {
+        if out.description == to.description, out.chosen == to.chosen {
             out.revision = to.revision
             out.revisionHighWater = highWater
         } else {

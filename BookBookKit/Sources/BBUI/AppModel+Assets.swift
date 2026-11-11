@@ -6,32 +6,11 @@ import Foundation
 
 // Phase 10 contract (main thread); bodies by the UI-core lane.
 
-/// "Generate whole sheet" (PD §8.3): one item per unlocked sheet item, at the user's default
-/// quality, with the combined estimate. Nothing is appended or enqueued yet.
-public struct SheetBatchPlan: Sendable {
-    public var asset: AssetID
-    public var items: [QueueItem]
-    /// The sheet item each queue item fills, parallel to `items`.
-    public var sheetItems: [UUID]
-    public var estimate: CostEstimate
-    public var count: Int { items.count }
-
-    public init(asset: AssetID, items: [QueueItem] = [], sheetItems: [UUID] = [],
-                estimate: CostEstimate = CostEstimate(amount: 0)) {
-        self.asset = asset
-        self.items = items
-        self.sheetItems = sheetItems
-        self.estimate = estimate
-    }
-}
-
-/// Queue labels for asset targets: the asset's name and the slot or sheet item.
+/// Queue labels for asset targets: the asset's name, then "Image".
 enum AssetQueueDisplay {
     static func display(_ owner: SessionOwner, in content: BookContent) -> QueueItemDisplay {
-        let label = BookDocument.ownerLabel(owner, in: content)
-        let parts = label.components(separatedBy: " · ")
-        return QueueItemDisplay(bookTitle: content.book.title, pageLabel: parts.first ?? label,
-                                boxLabel: parts.dropFirst().joined(separator: " · "))
+        QueueItemDisplay(bookTitle: content.book.title, pageLabel: BookDocument.ownerLabel(owner, in: content),
+                         boxLabel: "Image")
     }
 }
 
@@ -63,8 +42,7 @@ extension AppModel {
         return estimate(intent, target: target, content: document.content)
     }
 
-    /// Like `generate(prompt:…page:box:in:)` for any target (asset slots and sheet items
-    /// included). `prompt` is stored text (mention tokens). Shows nothing itself; callers run
+    /// Like `generate(prompt:…page:box:in:)` for any target (assets included). `prompt` is stored text (mention tokens). Shows nothing itself; callers run
     /// the cost and real-person checks first.
     @discardableResult
     public func generate(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID?,
@@ -73,42 +51,6 @@ extension AppModel {
         enqueueGeneration(generationIntent(prompt: prompt, quality: quality, includeStoryText: includeStoryText,
                                            refines: refines, attachedReferences: attachedReferences),
                           target: target, in: document)
-    }
-
-    /// Unlocked sheet items with nothing pending (empty or not), planned like Draft all.
-    public func sheetBatchPlan(asset: AssetID, in document: BookDocument) -> SheetBatchPlan {
-        let content = document.content
-        guard let sheet = content.assets[asset]?.sheet else { return SheetBatchPlan(asset: asset) }
-        let settings = defaults
-        var items: [QueueItem] = []
-        var ids: [UUID] = []
-        for sheetItem in sheet.items where !sheetItem.locked {
-            guard let session = content.sessions[sheetItem.sessionID],
-                  !session.messages.contains(where: { isPending($0) }) else { continue }
-            let intent = GenerationIntent(messageText: SheetRequests.messageText(for: sheetItem.kind),
-                                          provider: settings.provider, model: settings.model,
-                                          quality: settings.quality, includeStoryText: false)
-            let item = QueueItem(bookID: document.id, target: .sheetItem(asset, sheetItem.id),
-                                 messageID: MessageID(), intent: intent)
-            items.append(prepared(item, content: content))
-            ids.append(sheetItem.id)
-        }
-        return SheetBatchPlan(asset: asset, items: items, sheetItems: ids,
-                              estimate: CostEstimate.total(items.map(\.estimateIncludingFollowUp)))
-    }
-
-    /// Appends the pending messages and enqueues the plan. False if nothing was queued.
-    /// Items locked, removed or already queued from this plan since it was made are skipped.
-    @discardableResult
-    public func enqueueSheetBatch(_ plan: SheetBatchPlan, in document: BookDocument) -> Bool {
-        guard plan.items.count == plan.sheetItems.count else { return false }
-        return enqueuePlanned(plan.items, in: document) { index, content in
-            let id = plan.sheetItems[index]
-            guard let sheetItem = content.assets[plan.asset]?.sheet?.items.first(where: { $0.id == id }) else {
-                return false
-            }
-            return !sheetItem.locked
-        }
     }
 
     /// The provider this request would send a real-person photo to, when the book hasn't
@@ -124,8 +66,8 @@ extension AppModel {
     }
 
     /// The first provider among `items` (a batch's requests) that would be sent a real-person
-    /// photo before the book acknowledged its notice; nil = enqueue without a notice. Shared by
-    /// Generate Whole Sheet and Draft All.
+    /// photo before the book acknowledged its notice; nil = enqueue without a notice. Used by
+    /// Draft All.
     public func realPersonNoticeNeeded(for items: [QueueItem], in document: BookDocument) -> ProviderID? {
         for item in items {
             if let provider = realPersonNoticeNeeded(intent: item.intent, target: item.target, in: document) {

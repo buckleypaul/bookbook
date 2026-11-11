@@ -48,11 +48,15 @@ public struct PriceEntry: Hashable, Codable, Sendable, Identifiable {
         public var textTokensPerPromptChar: Double?
         public var typicalTemplateRequest: TypicalRequest?
         public var typicalConsistencyRequest: TypicalRequest?
+        /// A text-styling request (A §7.13); estimates fall back to `typicalTemplateRequest`.
+        public var typicalTextStyleRequest: TypicalRequest?
         public var notes: String?
 
         public init(outputImageTokens: [String: Int]? = nil, inputImageTokens: [String: Int]? = nil,
                     textTokensPerPromptChar: Double? = nil, typicalTemplateRequest: TypicalRequest? = nil,
-                    typicalConsistencyRequest: TypicalRequest? = nil, notes: String? = nil) {
+                    typicalConsistencyRequest: TypicalRequest? = nil, notes: String? = nil,
+                    typicalTextStyleRequest: TypicalRequest? = nil) {
+            self.typicalTextStyleRequest = typicalTextStyleRequest
             self.outputImageTokens = outputImageTokens
             self.inputImageTokens = inputImageTokens
             self.textTokensPerPromptChar = textTokensPerPromptChar

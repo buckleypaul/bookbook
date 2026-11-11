@@ -227,8 +227,8 @@ struct AssetEditor: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            AssetThumbnail(ref: AssetEditing.thumbnail(of: asset, in: content), images: images, size: 52, ring: color)
-                .accessibilityHidden(true)
+            AssetThumbnail(ref: AssetEditing.thumbnail(of: asset, in: content), images: images, size: 52, ring: color,
+                           expandTitle: asset.name)
             VStack(alignment: .leading, spacing: 4) {
                 CommittedTextField(title: "Name", value: asset.name) { text in
                     let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -276,7 +276,8 @@ struct AssetEditor: View {
                         .accessibilityLabel(slot.isPrimary ? "Primary reference" : "Make primary")
                     AssetThumbnail(ref: AssetEditing.chosenImage(sessionID: slot.sessionID, chosen: slot.chosen,
                                                                  in: content), images: images,
-                                   ring: slot.isPrimary ? color : nil)
+                                   ring: slot.isPrimary ? color : nil,
+                                   expandTitle: "\(asset.name): \(slot.label)")
                     CommittedTextField(title: "Reference name", value: slot.label) { text in
                         model.update(asset, in: document, actionName: "Rename Reference") {
                             AssetEditing.renameSlot(slot.id, to: text, in: &$0)

@@ -16,7 +16,8 @@ struct AssetThumbnail: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: min(Crayon.smallCornerRadius + 2, size * 0.28), style: .continuous)
-        let cg = ref.flatMap { images.image(for: $0) }
+        // A small decode for the thumbnail itself; the enlarged view uses `images`' full-size one.
+        let cg = ref.flatMap { images.previews.image(for: $0) }
         let canExpand = expandTitle != nil && cg != nil
         ZStack {
             shape.fill(Crayon.paperDeep)
@@ -30,7 +31,7 @@ struct AssetThumbnail: View {
         .clipShape(shape)
         .overlay(alignment: .bottomTrailing) {
             if canExpand, hovering, let cg {
-                Button { expanded = ExpandedImage(image: cg) } label: {
+                Button { expand(cg) } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: size >= 48 ? 11 : 9, weight: .bold))
                         .foregroundStyle(.white)
@@ -53,14 +54,19 @@ struct AssetThumbnail: View {
         .contextMenu {
             if canExpand, let cg {
                 Button("View Larger", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    expanded = ExpandedImage(image: cg)
+                    expand(cg)
                 }
             }
         }
-        .accessibilityAction(named: "View larger") { if canExpand, let cg { expanded = ExpandedImage(image: cg) } }
+        .accessibilityAction(named: "View larger") { if canExpand, let cg { expand(cg) } }
         .sheet(item: $expanded) { item in
             ImagePreviewSheet(title: expandTitle ?? "", image: item.image)
         }
+    }
+
+    /// Opens the enlarged view on the full-size image (the `preview` if that can't be read).
+    private func expand(_ preview: CGImage) {
+        expanded = ExpandedImage(image: ref.flatMap { images.image(for: $0) } ?? preview)
     }
 }
 

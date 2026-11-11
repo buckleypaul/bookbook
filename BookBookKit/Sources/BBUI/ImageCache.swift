@@ -6,15 +6,26 @@ import Foundation
 import ImageIO
 
 /// Loads a book's images from `store.imageURL(for:)` with ImageIO (A §6.2: the canvas draws
-/// downsampled images; export uses full-resolution files). A small in-memory cache per window.
+/// downsampled images; export uses full-resolution files). A small in-memory cache per window;
+/// past `capacity`, the least recently used image is dropped.
 @MainActor
 public final class ImageCache: PageImageSource {
+    /// Longest side of a `previews` image, in pixels.
+    public static let previewPixelSize = 256
+
     /// Longest side for the screen; nil = full resolution (export).
     public let maxPixelSize: Int?
     private let urlForRef: (ImageRef) -> URL
     private var cache: [ImageRef: CGImage] = [:]
+    /// Cached refs, least recently used first.
     private var order: [ImageRef] = []
     private let capacity: Int
+
+    /// A companion cache of small images (`previewPixelSize` on the longest side) for list rows
+    /// and small thumbnails, so they don't push this cache's larger images out. Same files;
+    /// made on first use.
+    public private(set) lazy var previews = ImageCache(maxPixelSize: Self.previewPixelSize, capacity: 64,
+                                                       urlForRef: urlForRef)
 
     public init(maxPixelSize: Int? = 2048, capacity: Int = 32, urlForRef: @escaping (ImageRef) -> URL) {
         self.maxPixelSize = maxPixelSize
@@ -27,7 +38,12 @@ public final class ImageCache: PageImageSource {
     }
 
     public func image(for ref: ImageRef) -> CGImage? {
-        if let image = cache[ref] { return image }
+        if let image = cache[ref] {
+            if let index = order.firstIndex(of: ref), index != order.count - 1 {
+                order.append(order.remove(at: index))
+            }
+            return image
+        }
         // A miss isn't cached: the file may be written a moment later.
         guard let image = Self.load(urlForRef(ref), maxPixelSize: maxPixelSize) else { return nil }
         cache[ref] = image

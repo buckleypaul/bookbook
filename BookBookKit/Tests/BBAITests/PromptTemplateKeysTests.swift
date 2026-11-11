@@ -12,7 +12,7 @@ import Testing
     @Test func everyImagePromptKeyHasAFile() {
         let sections = ["role", "style", "avoid", "cast", "subject", "composition", "story", "history", "region",
                         "request", "legend", "style-references", "cast-entry", "cast-image", "fold", "safe-area"]
-        let legends = ["base", "reference", "asset", "style"].map { "legend-\($0)" }
+        let legends = ["base", "reference", "asset", "style", "photo"].map { "legend-\($0)" }
         let assetTypes = ["character", "object", "place"].map { "asset-reference-\($0)" }
         for key in sections + legends + assetTypes {
             #expect(PromptTemplates.text(for: key) != nil, "missing Prompts/image-v1/\(key).txt")

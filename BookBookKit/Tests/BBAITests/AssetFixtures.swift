@@ -44,6 +44,7 @@ enum Cast {
         var data: [ImageRef: Data] = [:]
         for session in content.sessions.values { for version in session.versions { data[version.image] = Data(count: size) } }
         for ref in content.style.styleReferences { data[ref] = Data(count: size) }
+        for asset in content.assets.values { if let photo = asset.referencePhoto { data[photo.image] = Data(count: size) } }
         return data
     }
 }

@@ -163,4 +163,45 @@ struct ThumbnailCacheTests {
         empty.pages = [:] // no cover either
         #expect(BookThumbnail.png(for: empty, imageURL: { _ in none }) == nil)
     }
+
+    @Test func placedImagesDecodeAtAboutAPixelPerOutputPixel() {
+        func use(_ width: Double, _ height: Double, zoom: Double = 1) -> PlacedImageSource.Use {
+            PlacedImageSource.Use(boxPixelSize: CGSize(width: width, height: height),
+                                  placement: ImagePlacement(versionID: VersionID(), zoom: zoom,
+                                                            boxAspectWhenPlaced: width / height))
+        }
+        let big = CGSize(width: 4000, height: 3000)
+        // Zoom 1, same aspect: about the box's size.
+        #expect(PlacedImageSource.decodePixelSize(imageSize: big, uses: [use(400, 300)]) == 400)
+        // Aspect-fill into a wide box: the image overflows the box's height.
+        #expect(PlacedImageSource.decodePixelSize(imageSize: CGSize(width: 1000, height: 1000),
+                                                  uses: [use(400, 200)]) == 400)
+        // A zoomed-in crop needs zoom times as much; the largest use wins.
+        #expect(PlacedImageSource.decodePixelSize(imageSize: big, uses: [use(400, 300, zoom: 4)]) == 1600)
+        #expect(PlacedImageSource.decodePixelSize(imageSize: big, uses: [use(100, 75), use(400, 300, zoom: 2)]) == 800)
+        // Capped at the image's full size (nil = decode whole).
+        #expect(PlacedImageSource.decodePixelSize(imageSize: CGSize(width: 1024, height: 768),
+                                                  uses: [use(400, 300, zoom: 4)]) == nil)
+    }
+
+    @MainActor
+    @Test func placedImageSourceDecodesEachRefAtItsSize() throws {
+        let ref = Fixtures.ref
+        let url = dir.appending(path: ref.fileName)
+        try Self.writePNG(width: 2000, height: 1000, to: url)
+        func source(zoom: Double) -> PlacedImageSource {
+            let placement = ImagePlacement(versionID: VersionID(), zoom: zoom, boxAspectWhenPlaced: 2)
+            return PlacedImageSource(uses: [ref: [PlacedImageSource.Use(boxPixelSize: CGSize(width: 200, height: 100),
+                                                                        placement: placement)]],
+                                     urlForRef: { _ in url })
+        }
+        let plain = source(zoom: 1)
+        let small = try #require(plain.image(for: ref))
+        #expect(small.width == 200 && small.height == 100)
+        #expect(plain.image(for: ref) === small)
+        let zoomed = try #require(source(zoom: 4).image(for: ref))
+        #expect(zoomed.width == 800 && zoomed.height == 400)
+        let whole = try #require(source(zoom: 20).image(for: ref))
+        #expect(whole.width == 2000 && whole.height == 1000)
+    }
 }

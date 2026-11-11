@@ -91,18 +91,26 @@ public enum BookThumbnail {
     public static func png(for content: BookContent, imageURL: (ImageRef) -> URL, maxPixelSize: Int = 512) -> Data? {
         guard maxPixelSize > 0, let page = page(in: content) else { return nil }
         // A spread (a book without a cover) is drawn whole, at double width.
-        let trim = PageGeometry.drawGeometry(for: page, in: content).trimSize
+        let geometry = PageGeometry.drawGeometry(for: page, in: content)
+        let trim = geometry.trimSize
         guard trim.width > 0, trim.height > 0 else { return nil }
         let scale = Double(maxPixelSize) / max(trim.width, trim.height)
         let width = max(1, Int((trim.width * scale).rounded()))
         let height = max(1, Int((trim.height * scale).rounded()))
+        // Each placed image's box in output pixels, with its crop: the decode size is picked from these.
+        let xScale = Double(width) / trim.width, yScale = Double(height) / trim.height
+        var uses: [ImageRef: [PlacedImageSource.Use]] = [:]
+        for box in content.template(for: page)?.imageBoxes ?? [] {
+            guard let placement = page.images[box.id]?.placement,
+                  let ref = content.placedVersion(page: page.id, box: box.id)?.image else { continue }
+            let rect = geometry.renderRect(for: box)
+            uses[ref, default: []].append(PlacedImageSource.Use(
+                boxPixelSize: CGSize(width: rect.width * xScale, height: rect.height * yScale), placement: placement))
+        }
         let image = withoutActuallyEscaping(imageURL) { escapable in
-            // Placed images are decoded downsampled, to twice the thumbnail's longest side, so an
-            // aspect-filled or zoomed-in image still has about a pixel per output pixel. The cache
-            // lives for this one render.
             ThumbnailRendering.render(page: page, in: content, trim: trim,
                                       pixelWidth: width, pixelHeight: height,
-                                      images: ImageCache(maxPixelSize: maxPixelSize * 2, urlForRef: escapable),
+                                      images: PlacedImageSource(uses: uses, urlForRef: escapable),
                                       options: RenderOptions(target: .thumbnail))
         }
         return image.flatMap(ThumbnailRendering.pngData)
@@ -111,6 +119,57 @@ public enum BookThumbnail {
     /// The page the thumbnail draws: the cover, or the first story page if there is none.
     static func page(in content: BookContent) -> Page? {
         content.coverPage ?? content.storyPages.first
+    }
+}
+
+/// The library thumbnail's placed images, each decoded once for one render, downsampled only as
+/// far as every box it fills keeps about one source pixel per output pixel (a zoomed-in crop
+/// needs more of the image than the thumbnail's size; an aspect-fill crop at zoom 1 about the
+/// box's size).
+@MainActor
+final class PlacedImageSource: PageImageSource {
+    /// One box drawing the image: its size in output pixels and how the image sits in it.
+    struct Use {
+        var boxPixelSize: CGSize
+        var placement: ImagePlacement
+    }
+
+    private let uses: [ImageRef: [Use]]
+    private let urlForRef: (ImageRef) -> URL
+    private var decoded: [ImageRef: CGImage] = [:]
+
+    init(uses: [ImageRef: [Use]], urlForRef: @escaping (ImageRef) -> URL) {
+        self.uses = uses
+        self.urlForRef = urlForRef
+    }
+
+    func image(for ref: ImageRef) -> CGImage? {
+        if let image = decoded[ref] { return image }
+        guard let source = CGImageSourceCreateWithURL(urlForRef(ref) as CFURL,
+                                                      [kCGImageSourceShouldCache: false] as CFDictionary)
+        else { return nil }
+        // An unreadable header decodes whole, as before downsampling.
+        let maxPixelSize = ImageCache.orientedPixelSize(source).flatMap {
+            Self.decodePixelSize(imageSize: $0, uses: uses[ref] ?? [])
+        }
+        guard let image = ImageCache.load(source, maxPixelSize: maxPixelSize) else { return nil }
+        decoded[ref] = image
+        return image
+    }
+
+    /// The longest side to decode an `imageSize` image at so that, drawn into each of `uses`
+    /// (aspect-filled, zoomed and panned as `PageRenderer` draws it), it has at least one pixel
+    /// per output pixel. Nil means full resolution: the image is no bigger than that.
+    nonisolated static func decodePixelSize(imageSize: CGSize, uses: [Use]) -> Int? {
+        guard imageSize.width > 0, imageSize.height > 0, !uses.isEmpty else { return nil }
+        // The drawn rect's size depends only on the image's aspect, not its resolution.
+        let needed = uses.map { use in
+            let box = CGRect(origin: .zero, size: use.boxPixelSize)
+            let drawn = PageGeometry.imageRect(imageSize: imageSize, boxRect: box, placement: use.placement)
+            return max(drawn.width, drawn.height)
+        }.max() ?? 0
+        guard needed.isFinite, needed < max(imageSize.width, imageSize.height) else { return nil }
+        return max(1, Int(needed.rounded(.up)))
     }
 }
 

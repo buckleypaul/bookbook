@@ -67,9 +67,22 @@ public final class ImageCache: PageImageSource {
         return load(source, maxPixelSize: maxPixelSize)
     }
 
+    /// The pixel size of the first image of `source` with its orientation applied (as a
+    /// downsampled `load` returns it), read from the header without decoding.
+    nonisolated static func orientedPixelSize(_ source: CGImageSource) -> CGSize? {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+              width > 0, height > 0
+        else { return nil }
+        // EXIF orientations 5–8 turn the image a quarter.
+        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        return (5...8).contains(orientation) ? CGSize(width: height, height: width) : CGSize(width: width, height: height)
+    }
+
     /// The first image of `source`: whole, or a thumbnail (orientation applied) at most
     /// `maxPixelSize` on its longest side.
-    nonisolated private static func load(_ source: CGImageSource, maxPixelSize: Int?) -> CGImage? {
+    nonisolated static func load(_ source: CGImageSource, maxPixelSize: Int?) -> CGImage? {
         guard let maxPixelSize else {
             return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
         }

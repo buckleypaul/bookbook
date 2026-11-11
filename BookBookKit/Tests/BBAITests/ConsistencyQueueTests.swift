@@ -290,6 +290,47 @@ func pngData(width: Int, height: Int, alpha: Bool = false) throws -> Data {
         #expect(await host.recorded().last?.actual == 0)
     }
 
+    /// Follow-up fix: a refused check reports what it sent, so a real-person photo among its
+    /// images gets rule 1's advice (A §7.11); a clean check doesn't.
+    @Test func refusedCheckReportsARealPersonPhotoForTheAdvice() async throws {
+        let photo = "Describe the child in words instead of uploading a photo."
+        for realPerson in [true, false] {
+            var content = book.content
+            content.book.acknowledgements.realPersonPhotoNotice = [.openai]
+            let version = Version(image: ImageRef(sha256: "v", contentType: "public.png"),
+                                  pixelSize: PixelSize(width: 8, height: 8), source: .imported,
+                                  createdAt: .distantPast, depictsRealPerson: realPerson)
+            content.sessions[book.sessionID]?.versions = [version]
+            let host = ApplyingHost(content: content, images: [version.image: Data([1])])
+            let vision = FakeVision([.failure(.refused(stage: .input, categories: [], nil))])
+            let (queue, _) = try makeQueue(vision: vision, host: host)
+            await queue.enqueue([checkItem(version.id)], position: .front)
+            await eventually("check failed") { await queue.snapshot().entries.first?.failure != nil }
+            let failure = try #require(await queue.snapshot().entries.first?.failure)
+            let report = try #require(failure.report)
+            #expect(report.referencesSent.first?.label == ConsistencyAssembler.checkedLabel)
+            #expect(report.sentRealPersonPhoto == realPerson)
+            #expect(!report.storyTextIncluded)
+            #expect(report.styleRevision == content.style.visualRevision)
+            let advice = RefusalAdvisor.advise(failure.error, context: AdviceContext(provider: .openai, report: report))
+            #expect(advice.fixes.contains(photo) == realPerson)
+        }
+    }
+
+    @Test func plannedRealPersonImagesAreRecordedAsSent() throws {
+        var content = book.content
+        content.book.acknowledgements.realPersonPhotoNotice = [.openai]
+        let version = Version(image: ImageRef(sha256: "v", contentType: "public.png"),
+                              pixelSize: PixelSize(width: 8, height: 8), source: .imported, createdAt: .distantPast,
+                              depictsRealPerson: true)
+        content.sessions[book.sessionID]?.versions = [version]
+        let plan = try #require(ConsistencyAssembler.plan(version: version.id, content: content, provider: .openai))
+        #expect(plan.checked.depictsRealPerson)
+        let assembled = try ConsistencyAssembler.assemble(plan, model: visionModel, imageData: [version.image: Data([1])],
+                                                          instructions: fakeInstructions)
+        #expect(assembled.imagesSent.first?.depictsRealPerson == true)
+    }
+
     @Test func checkOfADeletedVersionIsDroppedQuietly() async throws {
         let vision = FakeVision()
         let (queue, host) = try makeQueue(vision: vision)

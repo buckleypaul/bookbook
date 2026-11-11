@@ -71,6 +71,9 @@ struct PendingConfirmation<Action: Sendable>: Identifiable, Sendable {
     let id = UUID()
     var action: Action
     var step: Step
+    /// The user already confirmed the cost, and the notice became needed after that (the book
+    /// changed while the alert was up), so continuing on the notice goes straight to the request.
+    var costConfirmed = false
 
     var noticeProvider: ProviderID? {
         if case let .notice(provider) = step { provider } else { nil }
@@ -84,38 +87,65 @@ struct PendingConfirmation<Action: Sendable>: Identifiable, Sendable {
 /// Runs a generation through the real-person notice (when one is needed), then the cost
 /// decision: a confirmation or budget warning is shown but never blocks (A §7.10). The state is
 /// the one `pending` optional; `generationConfirmation(_:buttonTitle:)` presents it.
+///
+/// The notice is checked again right before `perform`, because the book can change while the
+/// cost alert is up (e.g. a real-person reference photo is set, A §11): the flow then shows the
+/// notice instead of performing, and continuing on it performs the same action. The enqueue
+/// paths still refuse an unacknowledged photo on their own.
 @MainActor
 struct GenerationConfirmFlow<Action: Sendable> {
     let app: AppModel
     let document: BookDocument
     let pending: Binding<PendingConfirmation<Action>?>
+    /// The provider whose real-person notice `action` needs first; nil = none.
+    let notice: @MainActor (Action) -> ProviderID?
     /// The estimate the cost decision is made on.
     let estimate: @MainActor (Action) -> CostEstimate
     let perform: @MainActor (Action) -> Void
 
-    /// Shows the notice for `provider` first when there is one, else goes straight to the cost.
-    func start(_ action: Action, notice provider: ProviderID?) {
-        if let provider {
-            pending.wrappedValue = PendingConfirmation(action: action, step: .notice(provider))
+    /// The notice first when one is needed, then the cost decision.
+    func start(_ action: Action) {
+        proceed(action, costConfirmed: false)
+    }
+
+    /// The "Confirm Cost" button: performs `confirmation`'s action unless the notice became
+    /// needed meanwhile, in which case the notice is shown instead.
+    func confirmCost(_ confirmation: PendingConfirmation<Action>) {
+        if pending.wrappedValue?.id == confirmation.id { pending.wrappedValue = nil }
+        proceed(confirmation.action, costConfirmed: true)
+    }
+
+    /// Continue on the notice: records the acknowledgement, then the cost decision (or the
+    /// action itself when its cost was already confirmed).
+    func acknowledge(_ confirmation: PendingConfirmation<Action>) {
+        guard let provider = confirmation.noticeProvider else { return }
+        if pending.wrappedValue?.id == confirmation.id { pending.wrappedValue = nil }
+        app.acknowledgeRealPersonNotice(provider, in: document)
+        proceed(confirmation.action, costConfirmed: confirmation.costConfirmed)
+    }
+
+    /// The next step for `action`: the notice when it's needed now, else the action when its cost
+    /// is settled, else the cost decision.
+    func proceed(_ action: Action, costConfirmed: Bool) {
+        if let provider = notice(action) {
+            pending.wrappedValue = PendingConfirmation(action: action, step: .notice(provider),
+                                                       costConfirmed: costConfirmed)
+        } else if costConfirmed {
+            perform(action)
         } else {
             confirmCostThenPerform(action)
         }
     }
 
-    /// Continue on the notice: records the acknowledgement, then the cost decision.
-    func acknowledge(_ provider: ProviderID, then action: Action) {
-        app.acknowledgeRealPersonNotice(provider, in: document)
-        confirmCostThenPerform(action)
-    }
-
-    func confirmCostThenPerform(_ action: Action) {
+    private func confirmCostThenPerform(_ action: Action) {
         let current = estimate(action)
-        let app = app, document = document, pending = pending, perform = perform
+        let flow = self
         Task {
-            if let text = await app.costAlertText(for: current, in: document) {
-                pending.wrappedValue = PendingConfirmation(action: action, step: .cost(text))
+            if let text = await flow.app.costAlertText(for: current, in: flow.document) {
+                flow.pending.wrappedValue = PendingConfirmation(action: action, step: .cost(text))
             } else {
-                perform(action)
+                // No alert: the cost is settled, but the book may have changed during the read.
+                flow.proceed(action, costConfirmed: true)
             }
         }
     }
@@ -134,10 +164,7 @@ private struct GenerationConfirmModifier<Action: Sendable>: ViewModifier {
                                  } })) { notice in
                 if let provider = notice.noticeProvider {
                     RealPersonNoticeSheet(provider: provider,
-                                          onContinue: {
-                                              pending.wrappedValue = nil
-                                              flow.acknowledge(provider, then: notice.action)
-                                          },
+                                          onContinue: { flow.acknowledge(notice) },
                                           onCancel: { pending.wrappedValue = nil })
                 }
             }
@@ -147,10 +174,7 @@ private struct GenerationConfirmModifier<Action: Sendable>: ViewModifier {
                                             pending.wrappedValue = nil
                                         } }),
                    presenting: pending.wrappedValue) { confirmation in
-                Button(buttonTitle(confirmation.action)) {
-                    flow.perform(confirmation.action)
-                    if pending.wrappedValue?.id == confirmation.id { pending.wrappedValue = nil }
-                }
+                Button(buttonTitle(confirmation.action)) { flow.confirmCost(confirmation) }
                 .keyboardShortcut(.defaultAction)
                 Button("Cancel", role: .cancel) { pending.wrappedValue = nil }
             } message: { confirmation in

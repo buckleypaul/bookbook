@@ -26,6 +26,13 @@ public struct AssembledConsistency: Sendable {
     public var promptText: String
     /// The checked image first, then the references actually sent.
     public var imagesSent: [SentReference]
+
+    /// What a failed check reports as sent (`QueueFailure.report`), so refusal advice sees the
+    /// prompt and any real-person photo among the images (A §7.11 rule 1). Never story text.
+    public func report(styleRevision: Int) -> AssemblyReport {
+        AssemblyReport(promptText: promptText, referencesSent: imagesSent, storyTextIncluded: false,
+                       styleRevision: styleRevision)
+    }
 }
 
 /// Builds consistency-check requests (A §7.8). Pure over a book snapshot, like
@@ -63,7 +70,7 @@ public enum ConsistencyAssembler {
                                                     content: content, provider: provider,
                                                     excluding: version.image) else { return nil }
         let checked = PlannedImage(ref: version.image, role: .checked, label: checkedLabel,
-                                   pixelSize: version.pixelSize)
+                                   pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
         return ConsistencyPlan(checked: checked, references: references, assets: assets,
                                styleDescription: content.style.visualDescription)
     }
@@ -113,7 +120,8 @@ public enum ConsistencyAssembler {
         let assetImages = usable.filter { assetTiers.contains($0.tier) }
         let style = usable.filter { $0.tier == .style }.prefix(maxStyleReferences)
         let planned = (assetImages + style).map {
-            PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize)
+            PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize,
+                         depictsRealPerson: $0.depictsRealPerson)
         }
         let assets = prepared.assets.map {
             ConsistencyAssetContext(name: $0.asset.name, description: $0.asset.description)

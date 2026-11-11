@@ -6,7 +6,7 @@ import Foundation
 import Testing
 @testable import BBUI
 
-/// Phase 10: generation for asset targets, Generate whole sheet, the real-person notice check,
+/// Phase 10: generation for asset targets, the real-person notice check,
 /// and the pure helpers behind @mentions, the reference picker and Version details.
 @MainActor
 struct AssetGenerationTests {
@@ -22,8 +22,8 @@ struct AssetGenerationTests {
         var content = Fixtures.book(pages: 1)
         let pip = Asset.makeNew(type: .character, name: "Pip")
         content.assets[pip.id] = pip
-        for (id, owner) in pip.ownedSessions { content.sessions[id] = Session(id: id, owner: owner) }
-        let url = h.dir.appending(path: "Sheet.bookbook", directoryHint: .isDirectory)
+        content.sessions[pip.sessionID] = Session(id: pip.sessionID, owner: pip.owner)
+        let url = h.dir.appending(path: "Assets.bookbook", directoryHint: .isDirectory)
         try BookStore.create(content, at: url)
         let document = BookDocument(content: content, store: BookStore(packageURL: url))
         return Setup(h: h, app: h.makeApp(), document: document, pip: pip)
@@ -32,21 +32,19 @@ struct AssetGenerationTests {
     @Test func generate_forAssetTarget_appendsPendingMessageWithAttachments() throws {
         let s = try setup()
         defer { s.h.tearDown() }
-        let primary = try #require(s.pip.primary)
         let ref = VersionRef(sessionID: SessionID(), versionID: VersionID())
         #expect(s.app.generate(prompt: "  Pip, front view  ", quality: .draft, includeStoryText: false, refines: nil,
-                               attachedReferences: [ref], target: .assetReference(s.pip.id, primary.id),
-                               in: s.document))
-        let message = try #require(s.document.content.sessions[primary.sessionID]?.messages.first)
+                               attachedReferences: [ref], target: .asset(s.pip.id), in: s.document))
+        let message = try #require(s.document.content.sessions[s.pip.sessionID]?.messages.first)
         #expect(message.text == "Pip, front view")
         #expect(message.attachedReferences == [ref])
         #expect(message.queueItemID != nil)
         #expect(s.app.isPending(message))
         // Empty prompts and missing targets queue nothing.
         #expect(!s.app.generate(prompt: " ", quality: .draft, includeStoryText: false, refines: nil,
-                                attachedReferences: [], target: .assetReference(s.pip.id, primary.id), in: s.document))
+                                attachedReferences: [], target: .asset(s.pip.id), in: s.document))
         #expect(!s.app.generate(prompt: "x", quality: .draft, includeStoryText: false, refines: nil,
-                                attachedReferences: [], target: .sheetItem(s.pip.id, UUID()), in: s.document))
+                                attachedReferences: [], target: .asset(AssetID()), in: s.document))
     }
 
     @Test func pageGenerate_stillWritesToTheBoxSession() throws {
@@ -59,68 +57,15 @@ struct AssetGenerationTests {
         #expect(s.document.content.sessions[sessionID]?.messages.map(\.text) == ["a fox"])
     }
 
-    @Test func sheetBatchPlan_skipsLockedAndPending_countsAndTotals() throws {
-        let s = try setup()
-        defer { s.h.tearDown() }
-        var pip = s.pip
-        let items = try #require(pip.sheet?.items)
-        #expect(items.count == 8)
-        // Lock the side view; queue something for the back view.
-        pip.sheet?.items[1].locked = true
-        s.document.perform(.updateAsset(pip, actionName: "Lock Sheet Item"))
-        #expect(s.app.generate(prompt: "Back view", quality: .draft, includeStoryText: false, refines: nil,
-                               attachedReferences: [], target: .sheetItem(pip.id, items[2].id), in: s.document))
-
-        let plan = s.app.sheetBatchPlan(asset: pip.id, in: s.document)
-        #expect(plan.count == 6)
-        #expect(plan.sheetItems == items.enumerated().filter { $0.offset != 1 && $0.offset != 2 }.map(\.element.id))
-        for (item, id) in zip(plan.items, plan.sheetItems) {
-            let sheetItem = try #require(items.first { $0.id == id })
-            #expect(item.target == .sheetItem(pip.id, id))
-            #expect(item.intent.messageText == SheetRequests.messageText(for: sheetItem.kind))
-            #expect(item.intent.quality == s.app.defaults.quality)
-            #expect(item.intent.refines == nil)
-            #expect(item.display.pageLabel == "Pip")
-        }
-        #expect(plan.estimate == CostEstimate.total(plan.items.map(\.estimateIncludingFollowUp)))
-        #expect(s.app.sheetBatchPlan(asset: AssetID(), in: s.document).count == 0)
-
-        // Planning changed nothing; enqueueing appends one pending message per item.
-        let before = s.document.content
-        #expect(s.document.content == before)
-        #expect(s.app.enqueueSheetBatch(plan, in: s.document))
-        for (item, id) in zip(plan.items, plan.sheetItems) {
-            let sessionID = try #require(items.first { $0.id == id }?.sessionID)
-            let message = try #require(s.document.content.sessions[sessionID]?.messages.last)
-            #expect(message.id == item.messageID)
-            #expect(message.queueItemID == item.id)
-        }
-        // Everything is pending now: a second plan is empty, and the same plan isn't queued twice.
-        #expect(s.app.sheetBatchPlan(asset: pip.id, in: s.document).count == 0)
-        #expect(!s.app.enqueueSheetBatch(plan, in: s.document))
-    }
-
-    @Test func enqueueSheetBatch_skipsItemsLockedSincePlanning() throws {
-        let s = try setup()
-        defer { s.h.tearDown() }
-        let plan = s.app.sheetBatchPlan(asset: s.pip.id, in: s.document)
-        #expect(plan.count == 8)
-        var pip = s.pip
-        for i in pip.sheet!.items.indices { pip.sheet?.items[i].locked = true }
-        s.document.perform(.updateAsset(pip, actionName: "Lock Sheet Item"))
-        #expect(!s.app.enqueueSheetBatch(plan, in: s.document))
-    }
-
     @Test func realPersonNotice_dependsOnAssemblerAndAcknowledgement() throws {
         let s = try setup()
         defer { s.h.tearDown() }
-        let primary = try #require(s.pip.primary)
-        // A real-person photo chosen as Pip's primary reference, Pip ticked on the page.
+        // A real-person photo chosen as Pip's image, Pip ticked on the page.
         let photo = Version(image: Fixtures.ref, pixelSize: PixelSize(width: 1024, height: 1024), source: .imported,
                             createdAt: Fixtures.date, depictsRealPerson: true)
         s.document.performIrreversible { content in
             BookMutations.appendImportedAssetVersion(image: Fixtures.ref, pixelSize: photo.pixelSize,
-                                                     owner: .assetReference(s.pip.id, primary.id),
+                                                     owner: s.pip.owner,
                                                      depictsRealPerson: true, to: &content, now: Fixtures.date)
         }
         let page = Fixtures.firstPage(s.document.content)
@@ -139,28 +84,23 @@ struct AssetGenerationTests {
         #expect(s.app.realPersonNoticeNeeded(intent: intent, target: target, in: s.document) == nil)
     }
 
-    /// Review fix: Generate Whole Sheet and Draft All run the same real-person check as a single send.
+    /// Review fix: Draft All runs the same real-person check as a single send.
     @Test func batches_needTheRealPersonNotice_untilAcknowledged() throws {
         let s = try setup()
         defer { s.h.tearDown() }
-        let primary = try #require(s.pip.primary)
         s.document.performIrreversible { content in
             BookMutations.appendImportedAssetVersion(image: Fixtures.ref, pixelSize: PixelSize(width: 1024, height: 1024),
-                                                     owner: .assetReference(s.pip.id, primary.id),
+                                                     owner: s.pip.owner,
                                                      depictsRealPerson: true, to: &content, now: Fixtures.date)
         }
         let page = Fixtures.firstPage(s.document.content)
         s.document.perform(.setAssetChecklist(page: page, [s.pip.id]))
 
-        let sheet = s.app.sheetBatchPlan(asset: s.pip.id, in: s.document)
-        #expect(sheet.count > 0)
-        #expect(s.app.realPersonNoticeNeeded(for: sheet.items, in: s.document) == .openai)
         let draft = s.app.draftAllPlan(in: s.document)
         #expect(draft.count > 0)
         #expect(s.app.realPersonNoticeNeeded(for: draft.items, in: s.document) == .openai)
 
         s.app.acknowledgeRealPersonNotice(.openai, in: s.document)
-        #expect(s.app.realPersonNoticeNeeded(for: sheet.items, in: s.document) == nil)
         #expect(s.app.realPersonNoticeNeeded(for: draft.items, in: s.document) == nil)
         #expect(s.app.realPersonNoticeNeeded(for: [], in: s.document) == nil)
     }
@@ -168,10 +108,9 @@ struct AssetGenerationTests {
     @Test func batchNotice_oneNeedingItemAmongCleanOnes_andMixedProviders() throws {
         let s = try setup()
         defer { s.h.tearDown() }
-        let primary = try #require(s.pip.primary)
         s.document.performIrreversible { content in
             BookMutations.appendImportedAssetVersion(image: Fixtures.ref, pixelSize: PixelSize(width: 1024, height: 1024),
-                                                     owner: .assetReference(s.pip.id, primary.id),
+                                                     owner: s.pip.owner,
                                                      depictsRealPerson: true, to: &content, now: Fixtures.date)
         }
         // Pip is ticked on the story page only; the cover's request is clean.
@@ -252,23 +191,22 @@ struct AssetGenerationTests {
         var content = Fixtures.book(pages: 2)
         let pip = Asset.makeNew(type: .character, name: "Pip")
         content.assets[pip.id] = pip
-        for (id, owner) in pip.ownedSessions { content.sessions[id] = Session(id: id, owner: owner) }
+        content.sessions[pip.sessionID] = Session(id: pip.sessionID, owner: pip.owner)
         let v = Version(image: Fixtures.ref, pixelSize: PixelSize(width: 8, height: 8), source: .imported,
                         createdAt: Fixtures.date)
         let page1 = content.book.pageOrder[0], page2 = content.book.pageOrder[1]
         let box = Fixtures.imageBox.id
         let s1 = try #require(content.pages[page1]?.images[box]?.sessionID)
         let s2 = try #require(content.pages[page2]?.images[box]?.sessionID)
-        let primary = try #require(pip.primary)
-        for id in [s1, s2, primary.sessionID] { content.sessions[id]?.versions.append(v) }
+        for id in [s1, s2, pip.sessionID] { content.sessions[id]?.versions.append(v) }
 
         let sources = ReferenceSources.list(in: content, excluding: s1)
-        #expect(sources.map(\.sessionID) == [s2, primary.sessionID])
-        #expect(sources.map(\.label) == ["Page 2 · Image 1", "Pip · Primary"])
+        #expect(sources.map(\.sessionID) == [s2, pip.sessionID])
+        #expect(sources.map(\.label) == ["Page 2 · Image 1", "Pip"])
         #expect(ReferenceSources.chipLabel(VersionRef(sessionID: s2, versionID: v.id), in: content) == "Page 2 · Image 1 v1")
         #expect(ReferenceSources.chipLabel(VersionRef(sessionID: s2, versionID: VersionID()), in: content) == nil)
-        let sleepy = try #require(pip.sheet?.items.last)
-        #expect(BookDocument.ownerLabel(.sheetItem(pip.id, sleepy.id), in: content) == "Pip · Sleepy expression")
+        #expect(BookDocument.ownerLabel(pip.owner, in: content) == "Pip")
+        #expect(AssetQueueDisplay.display(pip.owner, in: content).pageLabel == "Pip")
     }
 
     @Test func versionDetails_showAssetsLeftOutAndRealPerson() {
@@ -277,13 +215,13 @@ struct AssetGenerationTests {
         var provenance = Fixtures.provenance()
         provenance.intent.messageText = "\(MentionText.token(for: pip.id)) by \(MentionText.token(for: AssetID()))"
         provenance.assetRevisions = [pip.id: 3, oak.id: 1, AssetID(): 2]
-        provenance.referencesOmitted = [SentReference(image: Fixtures.ref, role: "asset", label: "Pip (side)")]
+        provenance.referencesOmitted = [SentReference(image: Fixtures.ref, role: "asset", label: "Pip")]
         let generated = Version(image: Fixtures.ref, pixelSize: PixelSize(width: 8, height: 8), source: .generated,
                                 createdAt: Fixtures.date, provenance: provenance)
         let rows = Dictionary(VersionDetailsContent.rows(for: generated, assets: [pip.id: pip, oak.id: oak])
             .map { ($0.label, $0.value) }, uniquingKeysWith: { a, _ in a })
         #expect(rows["Assets"] == "Granny Oak (revision 1), Pip (revision 3), 1 deleted asset")
-        #expect(rows["Left out"] == "Pip (side) (asset)")
+        #expect(rows["Left out"] == "Pip (asset)")
         #expect(rows["Your request"] == "Pip by (deleted asset)")
 
         let photo = Version(image: Fixtures.ref, pixelSize: PixelSize(width: 8, height: 8), source: .imported,

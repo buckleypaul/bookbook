@@ -27,12 +27,11 @@ struct ImportFromBookTests {
 
         var pip = Asset.makeNew(type: .character, name: "Pip")
         pip.description = "A small fox"
-        let slot = try #require(pip.references.first { $0.isPrimary })
-        var session = Session(id: slot.sessionID, owner: .assetReference(pip.id, slot.id))
+        var session = Session(id: pip.sessionID, owner: pip.owner)
         let ref = try await sourceStore.storeImage(Data("pip-image".utf8), contentType: "public.png")
         let version = Version(image: ref, pixelSize: PixelSize(width: 8, height: 8), source: .generated, createdAt: Fixtures.date)
         session.versions.append(version)
-        if let i = pip.references.firstIndex(where: { $0.id == slot.id }) { pip.references[i].chosen = version.id }
+        pip.chosen = version.id
         source.sessions[session.id] = session
         source.assets[pip.id] = pip
         var template = Fixtures.storyTemplate
@@ -70,8 +69,7 @@ struct ImportFromBookTests {
         document.undoManager = undo
 
         let pip = Asset.makeNew(type: .character, name: "Pip")
-        let slot = try #require(pip.references.first)
-        let imported = Session(id: slot.sessionID, owner: .assetReference(pip.id, slot.id))
+        let imported = Session(id: pip.sessionID, owner: pip.owner)
         var template = Fixtures.storyTemplate
         template.id = TemplateID()
         var guide = Fixtures.book().style
@@ -84,7 +82,7 @@ struct ImportFromBookTests {
         #expect(document.perform(.importFromBook(item)))
         undo.endUndoGrouping()
         #expect(document.content.assets[pip.id] != nil)
-        #expect(document.content.sessions[slot.sessionID] != nil)
+        #expect(document.content.sessions[pip.sessionID] != nil)
         #expect(document.content.templates[template.id] != nil)
         #expect(document.content.style.visualDescription == "new style")
         #expect(document.content.style.pageSetup == setup)

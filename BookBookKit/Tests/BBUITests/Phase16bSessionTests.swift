@@ -57,10 +57,4 @@ struct Phase16bSessionTests {
         #expect(CommittedText.textToCommit(draft: "old", synced: "old") == nil)
         #expect(CommittedText.textToCommit(draft: "new", synced: "old") == "new")
     }
-
-    @Test func sheetWarningWhenPrimaryHasNoPicture() {
-        let asset = Asset.makeNew(type: .character, name: "Pip")
-        #expect(SheetBatchWarning.primaryHasNoImage(asset))
-        #expect(!SheetBatchWarning.primaryHasNoImage(nil))
-    }
 }

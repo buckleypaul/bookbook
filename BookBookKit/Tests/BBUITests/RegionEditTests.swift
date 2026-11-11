@@ -171,19 +171,18 @@ struct RegionEditTests {
         #expect(made.pixelSize == Self.size)
         #expect(made.provenance?.rawOutput == raw)
 
-        // Asset slot path.
+        // Asset path.
         let pip = Asset.makeNew(type: .character, name: "Pip")
         content.assets[pip.id] = pip
-        for (id, owner) in pip.ownedSessions { content.sessions[id] = Session(id: id, owner: owner) }
-        let slot = try #require(pip.primary)
-        content.sessions[slot.sessionID]?.versions = [base]
+        content.sessions[pip.sessionID] = Session(id: pip.sessionID, owner: pip.owner)
+        content.sessions[pip.sessionID]?.versions = [base]
         let assetMessage = Message(role: .user, text: "yellow", refines: base.id, queueItemID: QueueItemID(),
                                    createdAt: Fixtures.date)
-        content.sessions[slot.sessionID]?.messages = [assetMessage]
-        let assetDelivery = regionDelivery(target: .assetReference(pip.id, slot.id), messageID: assetMessage.id,
+        content.sessions[pip.sessionID]?.messages = [assetMessage]
+        let assetDelivery = regionDelivery(target: .asset(pip.id), messageID: assetMessage.id,
                                            refines: base.id, raw: raw)
         _ = BookMutations.applyDelivery(assetDelivery, storedImage: Fixtures.ref, to: &content, now: Fixtures.date)
-        let assetMade = try #require(content.sessions[slot.sessionID]?.versions.last)
+        let assetMade = try #require(content.sessions[pip.sessionID]?.versions.last)
         #expect(assetMade.source == .regionEdit)
         #expect(assetMade.parent == base.id)
     }

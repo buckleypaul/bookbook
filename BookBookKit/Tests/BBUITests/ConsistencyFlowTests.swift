@@ -144,13 +144,12 @@ struct ConsistencyFlowTests {
         var content = Fixtures.book(pages: 2)
         let pip = Asset.makeNew(type: .character, name: "Pip")
         content.assets[pip.id] = pip
-        for (id, owner) in pip.ownedSessions { content.sessions[id] = Session(id: id, owner: owner) }
+        content.sessions[pip.sessionID] = Session(id: pip.sessionID, owner: pip.owner)
         let url = s.h.dir.appending(path: "Batch.bookbook", directoryHint: .isDirectory)
         try BookStore.create(content, at: url)
         let document = BookDocument(content: content, store: BookStore(packageURL: url))
 
         let draftOn = s.app.draftAllPlan(in: document)
-        let sheetOn = s.app.sheetBatchPlan(asset: pip.id, in: document)
         #expect(draftOn.items.allSatisfy { $0.consistencyFollowUp != nil && $0.intent.checkConsistency == true })
         // The item's own estimate (its ledger line) leaves the follow-up out; the plan total has it.
         #expect(draftOn.estimate == CostEstimate.total(draftOn.items.flatMap {
@@ -158,14 +157,9 @@ struct ConsistencyFlowTests {
         }))
         s.app.preferences.consistencyCheckEnabled = false
         let draftOff = s.app.draftAllPlan(in: document)
-        let sheetOff = s.app.sheetBatchPlan(asset: pip.id, in: document)
         #expect(draftOff.items.allSatisfy { $0.consistencyFollowUp == nil && $0.intent.checkConsistency == false })
         let draftOnAmount = try #require(draftOn.estimate.amount), draftOffAmount = try #require(draftOff.estimate.amount)
-        let sheetOnAmount = try #require(sheetOn.estimate.amount), sheetOffAmount = try #require(sheetOff.estimate.amount)
         #expect(draftOnAmount > draftOffAmount)
-        #expect(sheetOnAmount > sheetOffAmount)
-        // A sheet item's check sends the item and Pip's primary when chosen; nothing chosen here: 1 image each.
-        #expect(sheetOnAmount - sheetOffAmount == Decimal(sheetOn.count) / 1000)
     }
 
     // MARK: On demand
@@ -339,16 +333,15 @@ struct ConsistencyDeliveryTests {
         // Asset sessions too.
         let pip = Asset.makeNew(type: .character, name: "Pip")
         content.assets[pip.id] = pip
-        for (id, owner) in pip.ownedSessions { content.sessions[id] = Session(id: id, owner: owner) }
-        let primary = try #require(pip.primary)
+        content.sessions[pip.sessionID] = Session(id: pip.sessionID, owner: pip.owner)
         let (_, assetItem) = BookMutations.makeGeneration(intent: provenance.intent, bookID: content.book.id,
-                                                          target: .assetReference(pip.id, primary.id), now: Fixtures.date)
+                                                          target: .asset(pip.id), now: Fixtures.date)
         let assetVersion = VersionID()
         _ = BookMutations.applyDelivery(GenerationDelivery(item: assetItem, outcome: .success(result: Fixtures.result(),
                                                                                               provenance: provenance),
                                                            versionID: assetVersion),
                                         storedImage: Fixtures.ref, to: &content, now: Fixtures.date)
-        #expect(content.sessions[primary.sessionID]?.version(assetVersion)?.source == .consistencyFix)
+        #expect(content.sessions[pip.sessionID]?.version(assetVersion)?.source == .consistencyFix)
     }
 
     @Test func queueFileFromPhase9StillLoads() async throws {

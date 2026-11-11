@@ -94,7 +94,7 @@ public struct ExportResult: Hashable, Sendable {
     /// Booklet only: e.g. "Print double-sided, flip on short edge."
     public var printingInstructions: String?
     /// Booklet only: pages were scaled down to fit two-up (`scale` < 1), as `BookletSheetLayout`.
-    public var scaledToFit: Bool { scale < 0.9999 }
+    public var scaledToFit: Bool { BookletImposition.isScaledToFit(scale) }
     public init(pageCount: Int, blanksAdded: Int = 0, scale: CGFloat = 1, printingInstructions: String? = nil) {
         self.pageCount = pageCount
         self.blanksAdded = blanksAdded
@@ -138,7 +138,7 @@ public struct BookletSheetLayout: Hashable, Sendable {
     public var secondSlot: CGRect
     /// ≤ 1. Pages are scaled by this and centred in their slot.
     public var scale: CGFloat
-    public var scaledToFit: Bool { scale < 0.9999 }
+    public var scaledToFit: Bool { BookletImposition.isScaledToFit(scale) }
     public var printingInstructions: String
     public init(sheetSize: CGSize, firstSlot: CGRect, secondSlot: CGRect, scale: CGFloat,
                 printingInstructions: String) {
@@ -151,6 +151,10 @@ public struct BookletSheetLayout: Hashable, Sendable {
 }
 
 public enum BookletImposition {
+    /// Whether a booklet `scale` shrinks pages. `layout(pageSize:sheet:)` already snaps a scale
+    /// within `tolerance` of 1 to exactly 1; the margin here only absorbs float noise.
+    static func isScaledToFit(_ scale: CGFloat) -> Bool { scale < 0.9999 }
+
     /// `n` rounded up to a multiple of 4 (minimum 4).
     public static func paddedCount(_ n: Int) -> Int {
         max(4, (n + 3) / 4 * 4)

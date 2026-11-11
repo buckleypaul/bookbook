@@ -449,8 +449,8 @@ struct BookEditor: View {
 }
 
 /// The page list: the cover, then story pages in reading order. Click selects; double-click
-/// opens the page editor; right-click for page commands; + inserts a page after the selection
-/// and − deletes the selected story page (all undoable).
+/// opens the page editor; right-click for page commands (including delete); the + row under the
+/// last page inserts a page after the selection (all undoable).
 struct PageList: View {
     let document: BookDocument
     let content: BookContent
@@ -466,6 +466,18 @@ struct PageList: View {
             ForEach(PageListing.items(content)) { item in
                 row(item.title, status: item.status, flags: item.flags).tag(item.id)
             }
+            Button { pages.sheet = .addPage(index: pages.insertionIndex) } label: {
+                Image(systemName: "plus")
+                    .font(.system(.body, design: .rounded, weight: .bold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Add a page after the selected one")
+            .accessibilityLabel("Add Page")
+            .disabled(!document.isEditable)
+            .selectionDisabled()
+            .listRowSeparator(.hidden)
         }
         .contextMenu(forSelectionType: PageID.self) { ids in
             if let page = ids.first {
@@ -479,22 +491,6 @@ struct PageList: View {
         }
         .onDeleteCommand {
             if let page = pages.selectedPage { pages.delete(page) }
-        }
-        .safeAreaInset(edge: .bottom) {
-            HStack(spacing: 2) {
-                Button { pages.sheet = .addPage(index: pages.insertionIndex) } label: { Image(systemName: "plus") }
-                    .help("Add a page after the selected one")
-                    .disabled(!document.isEditable)
-                Button {
-                    if let page = pages.selectedPage { pages.delete(page) }
-                } label: { Image(systemName: "minus") }
-                    .help("Delete the selected page")
-                    .disabled(!document.isEditable || !pages.isStoryPage(pages.selectedPage))
-                Spacer()
-            }
-            .buttonStyle(.borderless)
-            .font(.system(.body, design: .rounded, weight: .bold))
-            .padding(8)
         }
     }
 

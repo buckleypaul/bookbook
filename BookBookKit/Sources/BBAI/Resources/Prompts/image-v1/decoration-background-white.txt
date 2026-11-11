@@ -1,0 +1,1 @@
+Background: plain pure white (#FFFFFF) with nothing else: no paper texture, shadow, vignette or tint. The empty centre is the same pure white.

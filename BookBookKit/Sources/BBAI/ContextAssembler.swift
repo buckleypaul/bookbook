@@ -70,15 +70,27 @@ public enum ContextAssembler {
         var session: Session
     }
 
+    /// A text box's styling target, resolved (A §7.13): the page, its template, the text box and
+    /// the session making the box's decoration.
+    struct TextBoxResolved {
+        var page: Page
+        var template: Template
+        var box: Box
+        var session: Session
+    }
+
     /// What the request is for.
     enum Context {
         case page(Resolved)
         case asset(AssetResolved)
+        /// A text box's decoration (A §7.13).
+        case textBox(TextBoxResolved)
 
         var session: Session {
             switch self {
             case let .page(resolved): resolved.session
             case let .asset(resolved): resolved.session
+            case let .textBox(resolved): resolved.session
             }
         }
     }
@@ -118,7 +130,7 @@ public enum ContextAssembler {
         }
         let owner = messageSession?.owner ?? target.owner
         switch owner {
-        case .pageBox:
+        case .pageBox, .textBox:
             return nil
         case let .asset(assetID):
             guard let asset = content.assets[assetID],
@@ -127,10 +139,36 @@ public enum ContextAssembler {
         }
     }
 
+    /// Text-box targets (A §7.13): the session by the queue item's message first (box IDs can
+    /// move), then by the box's `Page.textStyles` slot. The box must be a text box.
+    static func resolveTextBox(target: GenerationTarget, messageID: MessageID?,
+                               content: BookContent) -> TextBoxResolved? {
+        guard case let .textBox(targetPage, targetBox) = target else { return nil }
+        var pageID = targetPage, boxID = targetBox
+        let session: Session
+        if let messageID, let owner = content.session(containing: messageID) {
+            guard case .textBox = owner.owner else { return nil }
+            if content.pages[targetPage]?.textStyles[targetBox]?.sessionID != owner.id {
+                guard case let .textBox(home, box) = ConsistencyAssembler.target(for: owner, in: content)
+                else { return nil }
+                (pageID, boxID) = (home, box)
+            }
+            session = owner
+        } else {
+            guard let slot = content.pages[pageID]?.textStyles[boxID], let found = content.sessions[slot.sessionID]
+            else { return nil }
+            session = found
+        }
+        guard let page = content.pages[pageID], let template = content.template(for: page),
+              let box = template.box(boxID), case .text = box.content else { return nil }
+        return TextBoxResolved(page: page, template: template, box: box, session: session)
+    }
+
     static func context(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> Context? {
         switch target {
         case .pageBox: resolve(target: target, messageID: messageID, content: content).map(Context.page)
         case .asset: resolveAsset(target: target, messageID: messageID, content: content).map(Context.asset)
+        case .textBox: resolveTextBox(target: target, messageID: messageID, content: content).map(Context.textBox)
         }
     }
 
@@ -148,6 +186,8 @@ public enum ContextAssembler {
 
     static func assetsInPlay(intent: GenerationIntent, context: Context,
                              content: BookContent) -> [ReferenceSelector.AssetInPlay] {
+        // A text box's decoration is ornament only: no characters, objects or places (A §7.13).
+        if case .textBox = context { return [] }
         var out: [ReferenceSelector.AssetInPlay] = []
         var seen = Set<AssetID>()
         func add(_ id: AssetID, mentioned: Bool, excludesImage: Bool = false, omitsDescription: Bool = false) {
@@ -209,7 +249,8 @@ public enum ContextAssembler {
         var base: ReferenceSelector.Candidate?
         if let refines = intent.refines, let version = session.version(refines) {
             let number = session.versionNumber(refines).map { " (v\($0))" } ?? ""
-            base = .init(ref: version.image, role: .base, label: "Current illustration\(number)", tier: .base,
+            let noun = if case .textBox = context { "Current decoration" } else { "Current illustration" }
+            base = .init(ref: version.image, role: .base, label: "\(noun)\(number)", tier: .base,
                          pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
         }
         var attached = intent.attachedReferences.compactMap { attached -> ReferenceSelector.Candidate? in
@@ -306,9 +347,11 @@ public enum ContextAssembler {
         }
         let history = earlier.enumerated().map { "\($0.offset + 1)) \($0.element)" }.joined(separator: "; ")
         let requestText = prepared.requestText.trimmed
+        let isDecoration = if case .textBox = prepared.context { true } else { false }
         let legend = sent.enumerated().map { index, entry in
             let name = entry.plan.asset.flatMap { content.assets[$0]?.name } ?? ""
-            return PromptTemplates.render(PromptTemplates.text(for: "legend-\(entry.plan.role.rawValue)") ?? "Image {{n}}.",
+            let key = isDecoration && entry.plan.role == .base ? "decoration-legend-base" : "legend-\(entry.plan.role.rawValue)"
+            return PromptTemplates.render(PromptTemplates.text(for: key) ?? "Image {{n}}.",
                                           ["n": "\(index + 1)", "name": name])
         }.joined(separator: "\n")
         let cast = castLines(prepared.assets, sent: sent.map(\.plan), numbers: numbers)
@@ -327,8 +370,11 @@ public enum ContextAssembler {
             // Asset images have no page geometry: square by default (the fitter snaps it per model).
             aspect = 1
             subject = assetSubject(resolved.asset)
+        case let .textBox(resolved):
+            aspect = content.boxAspect(resolved.box, in: resolved.template)
         }
         let isPage = !composition.isEmpty
+        let transparent = isDecoration && model.image.supportsTransparentBackground
 
         let values: [(key: String, placeholders: [String: String], required: Bool)] = [
             ("role", [:], true),
@@ -343,10 +389,13 @@ public enum ContextAssembler {
             ("request", ["request": requestText], !requestText.isEmpty),
             ("legend", ["lines": legend], !legend.isEmpty),
         ]
-        let sections = values.compactMap { entry -> ComposedPrompt.Section? in
-            guard entry.required, let template = PromptTemplates.text(for: entry.key) else { return nil }
-            return .init(key: entry.key, text: PromptTemplates.render(template, entry.placeholders))
-        }
+        let sections = isDecoration
+            ? decorationSections(intent: intent, styleText: styleText, avoid: style.negativeGuidance.trimmed,
+                                 history: history, legend: legend, aspect: aspect, transparent: transparent)
+            : values.compactMap { entry -> ComposedPrompt.Section? in
+                guard entry.required, let template = PromptTemplates.text(for: entry.key) else { return nil }
+                return .init(key: entry.key, text: PromptTemplates.render(template, entry.placeholders))
+            }
         let prompt = ComposedPrompt(sections: sections)
 
         // Refinements keep the base image's shape (A §7.6), snapped to the model's size rules so imported
@@ -360,7 +409,8 @@ public enum ContextAssembler {
         let mask = try regionMask(intent: intent, baseImage: baseImage, imageData: imageData)
         let request = ImageRequest(model: model, quality: intent.quality,
                                    output: OutputShape(boxAspect: aspect, exactSize: exactSize),
-                                   instruction: prompt, baseImage: baseImage, references: references, mask: mask)
+                                   instruction: prompt, baseImage: baseImage, references: references, mask: mask,
+                                   transparentBackground: isDecoration)
         var report = AssemblyReport(
             promptText: prompt.rendered,
             referencesSent: sent.map(\.plan.sentReference),
@@ -371,6 +421,33 @@ public enum ContextAssembler {
         report.assetRevisions = Dictionary(prepared.assets.map { ($0.asset.id, $0.asset.revision) },
                                            uniquingKeysWith: { first, _ in first })
         return (request, report)
+    }
+
+    /// A text box's decoration prompt (A §7.13): ornament only, in the book's style, with an
+    /// empty centre for the text and a transparent (or plain white, keyed out locally)
+    /// background. The request is the text model's decoration description, else the message.
+    /// Section keys match the picture prompt's where the meaning is the same; the wording comes
+    /// from the `decoration-*` files.
+    static func decorationSections(intent: GenerationIntent, styleText: String, avoid: String, history: String,
+                                   legend: String, aspect: Double, transparent: Bool) -> [ComposedPrompt.Section] {
+        let described = intent.textStyle?.decorationPrompt?.trimmed ?? ""
+        let request = described.isEmpty ? intent.messageText.trimmed : described
+        let background = transparent ? "decoration-background-transparent" : "decoration-background-white"
+        let entries: [(key: String, file: String, placeholders: [String: String], required: Bool)] = [
+            ("role", "decoration-role", [:], true),
+            ("style", "style", ["style": styleText], !styleText.isEmpty),
+            ("avoid", "avoid", ["avoid": avoid], !avoid.isEmpty),
+            ("history", "decoration-history", ["earlier": history], !history.isEmpty),
+            ("region", "region", [:], intent.regionMask != nil),
+            ("request", "request", ["request": request], !request.isEmpty),
+            ("composition", "decoration-composition", ["aspect": describeAspect(aspect)], true),
+            ("background", background, [:], true),
+            ("legend", "legend", ["lines": legend], !legend.isEmpty),
+        ]
+        return entries.compactMap { entry in
+            guard entry.required, let template = PromptTemplates.text(for: entry.file) else { return nil }
+            return .init(key: entry.key, text: PromptTemplates.render(template, entry.placeholders))
+        }
     }
 
     /// Region edit (A §7.6): the stored 8-bit mask, checked against the base payload's pixel size

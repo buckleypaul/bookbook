@@ -15,13 +15,16 @@ import Testing
         // Every role an image request sends has a legend line (checks use their own prompt).
         let legends = ReferenceRole.allCases.filter { $0 != .checked }.map { "legend-\($0.rawValue)" }
         let assetTypes = ["character", "object", "place"].map { "asset-reference-\($0)" }
-        for key in sections + legends + assetTypes {
+        // Text-box decorations (A §7.13).
+        let decoration = ["role", "history", "composition", "background-transparent", "background-white",
+                          "legend-base"].map { "decoration-\($0)" }
+        for key in sections + legends + assetTypes + decoration {
             #expect(PromptTemplates.text(for: key) != nil, "missing Prompts/image-v1/\(key).txt")
         }
     }
 
     @Test func textPromptsHaveSystemAndUserFiles() {
-        for set in ["layout-v1", "consistency-v1"] {
+        for set in ["layout-v1", "consistency-v1", TextStylePrompt.set] {
             for key in ["system", "user"] {
                 #expect(exists("\(set)/\(key)"), "missing Prompts/\(set)/\(key).txt")
             }

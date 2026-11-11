@@ -257,7 +257,7 @@ public enum ImageOps {
     }
 
     /// Premultiplied-last sRGB RGBA bytes, resampled (high quality) to `width` x `height`.
-    private static func rgba(of image: CGImage, width: Int, height: Int) throws(ImageOpsError) -> [UInt8] {
+    static func rgba(of image: CGImage, width: Int, height: Int) throws(ImageOpsError) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         let ok: Bool = bytes.withUnsafeMutableBytes { buf in
             guard let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -273,7 +273,7 @@ public enum ImageOps {
         return bytes
     }
 
-    private static func encodeRGBA(_ bytes: [UInt8], width: Int, height: Int) throws(ImageOpsError) -> Data {
+    static func encodeRGBA(_ bytes: [UInt8], width: Int, height: Int) throws(ImageOpsError) -> Data {
         guard width > 0, height > 0, let provider = CGDataProvider(data: Data(bytes) as CFData),
               let space = CGColorSpace(name: CGColorSpace.sRGB),
               let image = CGImage(

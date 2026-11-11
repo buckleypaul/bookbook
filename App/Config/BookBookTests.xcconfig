@@ -4,3 +4,6 @@ PRODUCT_NAME = BookBookTests
 GENERATE_INFOPLIST_FILE = YES
 TEST_HOST = $(BUILT_PRODUCTS_DIR)/BookBook.app/Contents/MacOS/BookBook
 BUNDLE_LOADER = $(TEST_HOST)
+
+// Must match the host app's signing (see BookBook-Debug.xcconfig).
+#include? "Local.xcconfig"

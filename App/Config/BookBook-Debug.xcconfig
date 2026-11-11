@@ -6,3 +6,6 @@ CODE_SIGN_ENTITLEMENTS = App/BookBook/BookBook.entitlements
 ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
 ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
 GENERATE_INFOPLIST_FILE = NO
+
+// Optional, untracked: local signing (team ID) so Keychain "Always Allow" survives rebuilds.
+#include? "Local.xcconfig"

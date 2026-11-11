@@ -62,7 +62,7 @@ public enum ConsistencyAssembler {
         guard let (references, assets) = references(intent: intent, target: target, messageID: producing,
                                                     content: content, provider: provider,
                                                     excluding: version.image) else { return nil }
-        let checked = PlannedImage(ref: version.image, role: "checked", label: checkedLabel,
+        let checked = PlannedImage(ref: version.image, role: .checked, label: checkedLabel,
                                    pixelSize: version.pixelSize)
         return ConsistencyPlan(checked: checked, references: references, assets: assets,
                                styleDescription: content.style.visualDescription)
@@ -133,12 +133,12 @@ public enum ConsistencyAssembler {
                                    payload: downscaled(checkedData, contentType: plan.checked.ref.contentType,
                                                        ref: plan.checked.ref))
         var references: [LabeledImage] = []
-        var sent = [SentReference(image: plan.checked.ref, role: plan.checked.role, label: plan.checked.label)]
+        var sent = [plan.checked.sentReference]
         for image in plan.references {
             guard let data = imageData[image.ref], !data.isEmpty else { continue }
             references.append(LabeledImage(label: image.label,
                                            payload: downscaled(data, contentType: image.ref.contentType, ref: image.ref)))
-            sent.append(SentReference(image: image.ref, role: image.role, label: image.label))
+            sent.append(image.sentReference)
         }
         let text = instructions(plan.assets, plan.styleDescription, sent.map(\.label))
         let request = ConsistencyRequest(model: model, system: text.system, user: text.user, image: checked,

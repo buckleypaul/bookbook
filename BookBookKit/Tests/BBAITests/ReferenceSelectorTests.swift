@@ -151,7 +151,7 @@ import Testing
 
     @Test func selectSkipsMissingAndTooLargeButStopsAtBudget() {
         func c(_ name: String) -> ReferenceSelector.Candidate {
-            .init(ref: ImageRef(sha256: name, contentType: "public.png"), role: "style", label: name, tier: .style)
+            .init(ref: ImageRef(sha256: name, contentType: "public.png"), role: .style, label: name, tier: .style)
         }
         let candidates = ["a", "missing", "huge", "b", "c", "d"].map(c)
         let sizes: [ImageRef: Int] = [candidates[0].ref: 10, candidates[2].ref: 500, candidates[3].ref: 10,

@@ -89,7 +89,7 @@ public enum CostEstimator {
             // Region edit (A §7.6): the assembler decodes the mask and checks it against the base's
             // pixel size, so give it a blank mask at that size (and a base header to match when the
             // book doesn't know the base's size).
-            let base = planned.first { $0.role == "base" }
+            let base = planned.first { $0.role == .base }
             let size = base?.pixelSize ?? assumedImageSize
             guard let blank = try? placeholderMaskPNG(size) else { return nil }
             data[maskRef] = blank

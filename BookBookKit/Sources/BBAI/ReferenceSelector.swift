@@ -1,6 +1,23 @@
 import BBModel
 import Foundation
 
+/// What an image is in a request (A §7.3, §7.4, §7.8). The raw value is what provenance stores
+/// as `SentReference.role` and names the image prompt's legend file (`legend-<role>.txt`).
+public enum ReferenceRole: String, Hashable, Sendable, CaseIterable {
+    /// The image being refined or region-edited (sent first).
+    case base
+    /// A version the user attached.
+    case reference
+    /// An asset's reference photo, sent only with that asset's own requests.
+    case photo
+    /// An asset's chosen image.
+    case asset
+    /// A style reference.
+    case style
+    /// The version a consistency check looks at (no legend: checks have their own prompt).
+    case checked
+}
+
 /// Chooses and orders the reference images for a request (A §7.4). Deterministic, no AI call.
 ///
 /// Two steps, so the queue can load bytes in between:
@@ -30,8 +47,8 @@ public enum ReferenceSelector {
     /// One image that may be sent.
     public struct Candidate: Hashable, Sendable {
         public var ref: ImageRef
-        /// `base`, `reference` (attached), `asset` or `style` (`SentReference.role`).
-        public var role: String
+        /// `SentReference.role` is its raw value.
+        public var role: ReferenceRole
         /// e.g. "Pip", "Style reference 3", "Reference v2".
         public var label: String
         public var tier: Tier
@@ -42,7 +59,7 @@ public enum ReferenceSelector {
         /// The version was imported as a photo of a real person (A §11).
         public var depictsRealPerson: Bool
 
-        public init(ref: ImageRef, role: String, label: String, tier: Tier, pixelSize: PixelSize? = nil,
+        public init(ref: ImageRef, role: ReferenceRole, label: String, tier: Tier, pixelSize: PixelSize? = nil,
                     asset: AssetID? = nil, depictsRealPerson: Bool = false) {
             self.ref = ref
             self.role = role
@@ -52,6 +69,9 @@ public enum ReferenceSelector {
             self.asset = asset
             self.depictsRealPerson = depictsRealPerson
         }
+
+        /// How provenance records it when sent.
+        public var sentReference: SentReference { SentReference(image: ref, role: role.rawValue, label: label) }
     }
 
     /// An asset in play (A §7.3 step 1), with how it got there.
@@ -107,7 +127,7 @@ public enum ReferenceSelector {
         for entry in input.assets where !entry.excludesImage {
             let asset = entry.asset
             guard let chosen = asset.chosen, let v = input.sessions[asset.sessionID]?.version(chosen) else { continue }
-            out.append(Candidate(ref: v.image, role: "asset", label: asset.name,
+            out.append(Candidate(ref: v.image, role: .asset, label: asset.name,
                                  tier: entry.mentioned ? .mentionedAsset : .checklistAsset,
                                  pixelSize: v.pixelSize, asset: asset.id,
                                  depictsRealPerson: v.depictsRealPerson == true))
@@ -115,7 +135,7 @@ public enum ReferenceSelector {
 
         // Tier 5 (and the spare tail).
         for (index, ref) in input.styleReferences.enumerated() {
-            out.append(Candidate(ref: ref, role: "style", label: "Style reference \(index + 1)",
+            out.append(Candidate(ref: ref, role: .style, label: "Style reference \(index + 1)",
                                  tier: index < styleReferenceCap ? .style : .spareStyle))
         }
 
@@ -156,7 +176,7 @@ public enum ReferenceSelector {
             public var reason: OmissionReason
             /// `SentReference` for provenance: label "Pip (over the limit)".
             public var sentReference: SentReference {
-                SentReference(image: candidate.ref, role: candidate.role, label: "\(candidate.label) (\(reason.rawValue))")
+                SentReference(image: candidate.ref, role: candidate.role.rawValue, label: "\(candidate.label) (\(reason.rawValue))")
             }
         }
     }
@@ -196,7 +216,7 @@ public enum ReferenceSelector {
                 label.removeLast(reason.rawValue.count + 3)
             }
             // Asset labels start with a name; the others ("Style reference 3") read lower-case mid-sentence.
-            if reference.role != "asset", let first = label.first {
+            if reference.role != ReferenceRole.asset.rawValue, let first = label.first {
                 label = first.lowercased() + label.dropFirst()
             }
             return label

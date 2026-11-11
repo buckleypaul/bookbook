@@ -83,7 +83,7 @@ import Testing
         data[style] = Data("s".utf8)
         let plan = try #require(ContextAssembler.plan(intent: walk.refine(0, attached: [attached]), target: walk.book.target,
                                                       messageID: walk.pendingMessage, content: walk.book.content))
-        #expect(plan.map(\.role) == ["base", "reference", "style"])
+        #expect(plan.map(\.role) == [.base, .reference, .style])
         #expect(plan.map(\.ref) == [walk.versions[0].image, walk.versions[3].image, style])
         let (request, report) = try assembleBook(walk.book, walk.refine(0, attached: [attached]),
                                                  messageID: walk.pendingMessage, imageData: data)
@@ -98,7 +98,7 @@ import Testing
         let attached = VersionRef(sessionID: walk.book.sessionID, versionID: walk.versions[0].id)
         let plan = try #require(ContextAssembler.plan(intent: walk.refine(0, attached: [attached]), target: walk.book.target,
                                                       messageID: walk.pendingMessage, content: walk.book.content))
-        #expect(plan.map(\.role) == ["base"])
+        #expect(plan.map(\.role) == [.base])
     }
 
     @Test func missingReferenceBytesAreOmitted() throws {

@@ -6,11 +6,14 @@ import Synchronization
 /// An image the assembler needs bytes for, in send order (A §7.3, §7.9).
 public struct PlannedImage: Hashable, Sendable {
     public var ref: ImageRef
-    /// `base`, `reference` (attached), `asset` or `style`.
-    public var role: String
+    /// `base`, `reference` (attached), `photo`, `asset` or `style`; `checked` in a consistency plan.
+    public var role: ReferenceRole
     public var label: String
     /// Known for versions; nil for style references until the bytes are read.
     public var pixelSize: PixelSize?
+
+    /// How provenance records it when sent.
+    public var sentReference: SentReference { SentReference(image: ref, role: role.rawValue, label: label) }
 }
 
 /// Why assembly could not produce a request.
@@ -201,20 +204,20 @@ public enum ContextAssembler {
         var base: ReferenceSelector.Candidate?
         if let refines = intent.refines, let version = session.version(refines) {
             let number = session.versionNumber(refines).map { " (v\($0))" } ?? ""
-            base = .init(ref: version.image, role: "base", label: "Current illustration\(number)", tier: .base,
+            base = .init(ref: version.image, role: .base, label: "Current illustration\(number)", tier: .base,
                          pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
         }
         var attached = intent.attachedReferences.compactMap { attached -> ReferenceSelector.Candidate? in
             guard let other = content.sessions[attached.sessionID],
                   let version = other.version(attached.versionID) else { return nil }
             let number = other.versionNumber(attached.versionID).map { " v\($0)" } ?? ""
-            return .init(ref: version.image, role: "reference", label: "Reference\(number)", tier: .attached,
+            return .init(ref: version.image, role: .reference, label: "Reference\(number)", tier: .attached,
                          pixelSize: version.pixelSize, depictsRealPerson: version.depictsRealPerson == true)
         }
         // An asset's own request sends its reference photo (PD §8.3), ahead of attached
         // references. Page requests never do: they get the image the photo produced.
         if case let .asset(resolved) = context, let photo = resolved.asset.referencePhoto {
-            attached.insert(.init(ref: photo.image, role: "photo", label: "Reference photo", tier: .attached,
+            attached.insert(.init(ref: photo.image, role: .photo, label: "Reference photo", tier: .attached,
                                   pixelSize: photo.pixelSize, asset: resolved.asset.id,
                                   depictsRealPerson: photo.depictsRealPerson), at: 0)
         }
@@ -266,7 +269,7 @@ public enum ContextAssembler {
         // Pick what fits. The base goes first; overflow and missing bytes are omitted, never dropped silently.
         let selection = ReferenceSelector.select(prepared.candidates, byteCounts: imageData.mapValues(\.count),
                                                  limits: limits(model))
-        if let base = selection.omitted.first(where: { $0.candidate.role == "base" }) {
+        if let base = selection.omitted.first(where: { $0.candidate.role == .base }) {
             throw base.reason == .fileMissing ? .baseImageMissing : .baseImageTooLarge
         }
         let sent: [(plan: ReferenceSelector.Candidate, payload: ImagePayload)] = selection.sent.map { candidate in
@@ -280,14 +283,14 @@ public enum ContextAssembler {
                                  uniquingKeysWith: { first, _ in first })
 
         // Prompt sections (A §7.3).
-        let styleIndexes = sent.enumerated().filter { $0.element.plan.role == "style" }.map { $0.offset + 1 }
+        let styleIndexes = sent.enumerated().filter { $0.element.plan.role == .style }.map { $0.offset + 1 }
         var styleText = style.visualDescription.trimmed
         if let first = styleIndexes.first, let last = styleIndexes.last {
             let range = first == last ? "Image \(first) is a style reference" : "Images \(first)–\(last) are style references"
             let note = PromptTemplates.render(PromptTemplates.text(for: "style-references") ?? "{{range}}.", ["range": range])
             styleText = styleText.isEmpty ? note : styleText + " " + note
         }
-        let isRefinement = sent.first?.plan.role == "base"
+        let isRefinement = sent.first?.plan.role == .base
         var earlier: [String] = []
         if isRefinement, let refines = intent.refines {
             earlier = session.lineageInstructions(of: refines)
@@ -297,7 +300,7 @@ public enum ContextAssembler {
         let requestText = prepared.requestText.trimmed
         let legend = sent.enumerated().map { index, entry in
             let name = entry.plan.asset.flatMap { content.assets[$0]?.name } ?? ""
-            return PromptTemplates.render(PromptTemplates.text(for: "legend-\(entry.plan.role)") ?? "Image {{n}}.",
+            return PromptTemplates.render(PromptTemplates.text(for: "legend-\(entry.plan.role.rawValue)") ?? "Image {{n}}.",
                                           ["n": "\(index + 1)", "name": name])
         }.joined(separator: "\n")
         let cast = castLines(prepared.assets, sent: sent.map(\.plan), numbers: numbers)
@@ -344,7 +347,7 @@ public enum ContextAssembler {
             ? sent.first?.plan.pixelSize.flatMap { AspectFitter.snap($0, model: model, quality: intent.quality) } : nil
         let baseImage = isRefinement ? sent.first?.payload : nil
         let references = sent.dropFirst(isRefinement ? 1 : 0).map {
-            ReferenceImage(payload: $0.payload, sent: SentReference(image: $0.plan.ref, role: $0.plan.role, label: $0.plan.label))
+            ReferenceImage(payload: $0.payload, sent: $0.plan.sentReference)
         }
         let mask = try regionMask(intent: intent, baseImage: baseImage, imageData: imageData)
         let request = ImageRequest(model: model, quality: intent.quality,
@@ -352,7 +355,7 @@ public enum ContextAssembler {
                                    instruction: prompt, baseImage: baseImage, references: references, mask: mask)
         var report = AssemblyReport(
             promptText: prompt.rendered,
-            referencesSent: sent.map { SentReference(image: $0.plan.ref, role: $0.plan.role, label: $0.plan.label) },
+            referencesSent: sent.map(\.plan.sentReference),
             referencesOmitted: selection.omitted.map(\.sentReference), storyTextIncluded: includeStory,
             styleRevision: style.visualRevision,
             estimatedInputBytes: prompt.rendered.utf8.count + selection.bytes + (mask?.pngData.count ?? 0),

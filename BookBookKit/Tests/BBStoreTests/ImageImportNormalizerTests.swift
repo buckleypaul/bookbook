@@ -82,3 +82,73 @@ struct ImageImportNormalizerTests {
         #expect(throws: ImageImportError.notAnImage) { try ImageImportNormalizer.normalize(Data()) }
     }
 }
+
+/// Asset reference photos (PD §8.3): scaled down, upright, no metadata.
+struct ReferencePhotoNormalizerTests {
+    private static func makeImage(width: Int, height: Int, alpha: Bool = false) -> CGImage {
+        let info = alpha ? CGImageAlphaInfo.premultipliedLast : .noneSkipLast
+        let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: info.rawValue)!
+        context.setFillColor(CGColor(red: 0.8, green: 0.4, blue: 0.2, alpha: alpha ? 0.5 : 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()!
+    }
+
+    private static func encode(_ image: CGImage, as type: UTType, properties: [CFString: Any] = [:]) -> Data? {
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, type.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
+    }
+
+    private static func properties(of data: Data) -> [CFString: Any] {
+        let source = CGImageSourceCreateWithData(data as CFData, nil)!
+        return CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as! [CFString: Any]
+    }
+
+    @Test func largePhotoIsScaledDownToTheLongEdgeAsJPEG() throws {
+        let png = try #require(Self.encode(Self.makeImage(width: 400, height: 200), as: .png))
+        let result = try ImageImportNormalizer.normalizeReferencePhoto(png, maxPixelSize: 100)
+        #expect(result.contentType == "public.jpeg")
+        #expect(result.pixelSize == PixelSize(width: 100, height: 50))
+        let out = Self.properties(of: result.data)
+        #expect(out[kCGImagePropertyPixelWidth] as? Int == 100)
+    }
+
+    @Test func smallPhotoIsNotEnlarged() throws {
+        let jpeg = try #require(Self.encode(Self.makeImage(width: 60, height: 40), as: .jpeg))
+        let result = try ImageImportNormalizer.normalizeReferencePhoto(jpeg, maxPixelSize: 1536)
+        #expect(result.pixelSize == PixelSize(width: 60, height: 40))
+    }
+
+    @Test func rotationIsAppliedAndMetadataIsDropped() throws {
+        let gps: [CFString: Any] = [kCGImagePropertyGPSLatitude: 51.5, kCGImagePropertyGPSLatitudeRef: "N"]
+        let tiff: [CFString: Any] = [kCGImagePropertyTIFFMake: "TestCam", kCGImagePropertyTIFFModel: "One"]
+        let exif: [CFString: Any] = [kCGImagePropertyExifDateTimeOriginal: "2026:01:02 03:04:05"]
+        let jpeg = try #require(Self.encode(Self.makeImage(width: 40, height: 20), as: .jpeg, properties: [
+            kCGImagePropertyOrientation: 6, kCGImagePropertyGPSDictionary: gps,
+            kCGImagePropertyTIFFDictionary: tiff, kCGImagePropertyExifDictionary: exif,
+        ]))
+        #expect(Self.properties(of: jpeg)[kCGImagePropertyGPSDictionary] != nil, "the fixture carries GPS")
+        let result = try ImageImportNormalizer.normalizeReferencePhoto(jpeg)
+        #expect(result.pixelSize == PixelSize(width: 20, height: 40))
+        let out = Self.properties(of: result.data)
+        #expect(out[kCGImagePropertyGPSDictionary] == nil)
+        #expect((out[kCGImagePropertyTIFFDictionary] as? [CFString: Any])?[kCGImagePropertyTIFFMake] == nil)
+        #expect((out[kCGImagePropertyExifDictionary] as? [CFString: Any])?[kCGImagePropertyExifDateTimeOriginal] == nil)
+        #expect((out[kCGImagePropertyOrientation] as? Int ?? 1) == 1)
+    }
+
+    @Test func transparentPictureStaysPNG() throws {
+        let png = try #require(Self.encode(Self.makeImage(width: 20, height: 20, alpha: true), as: .png))
+        let result = try ImageImportNormalizer.normalizeReferencePhoto(png)
+        #expect(result.contentType == "public.png")
+    }
+
+    @Test func notAnImageThrows() {
+        #expect(throws: ImageImportError.notAnImage) {
+            try ImageImportNormalizer.normalizeReferencePhoto(Data("hello".utf8))
+        }
+    }
+}

@@ -116,6 +116,7 @@ public enum BookImporter {
             let (sid, chosen) = copySession(sessionID: old.sessionID, chosen: old.chosen, owner: .asset(asset.id))
             asset.sessionID = sid
             asset.chosen = chosen
+            if let photo = asset.referencePhoto { images.insert(photo.image) }
             result.assets.append(asset)
         }
 

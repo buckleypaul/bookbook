@@ -109,7 +109,10 @@ public actor BookStore {
         }
         // Older packages have no `assets/` folder (readAll tolerates that); no schema bump.
         var assets: [AssetID: Asset] = [:]
-        for a in try readAll("assets", Asset.self) { assets[a.id] = a }
+        for var a in try readAll("assets", Asset.self) {
+            if a.referencePhoto?.image.isValid == false { a.referencePhoto = nil }
+            assets[a.id] = a
+        }
         retired.formUnion(RetiredAssetSessions.drop(from: &sessions, assets: assets))
         let content = BookContent(book: book, style: style, templates: templates, pages: pages,
                                   sessions: sessions, assets: assets)

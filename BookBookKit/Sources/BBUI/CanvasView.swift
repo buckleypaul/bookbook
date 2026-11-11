@@ -180,15 +180,6 @@ final class CanvasView: NSView {
         ctx.restoreGState()
     }
 
-    /// Applies `rotationDegrees` about `rect`'s centre (as `PageRenderer` does). Pass the box's
-    /// render rect (`PageGeometry.renderRect(for:)`), the pivot every drawer agrees on.
-    static func applyRotation(_ rotationDegrees: Double, about rect: CGRect, ctx: CGContext) {
-        guard rotationDegrees != 0, rotationDegrees.isFinite else { return }
-        ctx.translateBy(x: rect.midX, y: rect.midY)
-        ctx.rotate(by: CGFloat(rotationDegrees) * .pi / 180)
-        ctx.translateBy(x: -rect.midX, y: -rect.midY)
-    }
-
     // MARK: Input
 
     override func mouseDown(with event: NSEvent) {

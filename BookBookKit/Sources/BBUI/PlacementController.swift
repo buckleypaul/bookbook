@@ -164,7 +164,7 @@ final class PlacementController: CanvasController {
 
         if let dropTargetBox, let target = boxRects.first(where: { $0.box.id == dropTargetBox }) {
             ctx.saveGState()
-            CanvasView.applyRotation(target.box.rotationDegrees, about: target.rect, ctx: ctx)
+            ctx.rotate(byDegrees: target.box.rotationDegrees, about: target.rect)
             ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor)
             ctx.fill(target.rect)
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
@@ -175,7 +175,7 @@ final class PlacementController: CanvasController {
 
         if let selectedImageBox, let selected = boxRects.first(where: { $0.box.id == selectedImageBox }) {
             ctx.saveGState()
-            CanvasView.applyRotation(selected.box.rotationDegrees, about: selected.rect, ctx: ctx)
+            ctx.rotate(byDegrees: selected.box.rotationDegrees, about: selected.rect)
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
             ctx.setLineWidth(2 / transform.scale)
             ctx.stroke(selected.rect.insetBy(dx: -1 / transform.scale, dy: -1 / transform.scale))
@@ -188,7 +188,7 @@ final class PlacementController: CanvasController {
     private func drawOverflowBadge(box: Box, rect: CGRect, scale: CGFloat, ctx: CGContext) {
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        CanvasView.applyRotation(box.rotationDegrees, about: rect, ctx: ctx)
+        ctx.rotate(byDegrees: box.rotationDegrees, about: rect)
         let diameter = Self.overflowBadgeDiameter / scale
         let badge = CGRect(x: rect.maxX - diameter / 2, y: rect.maxY - diameter / 2, width: diameter, height: diameter)
         ctx.setFillColor(NSColor.systemRed.cgColor)

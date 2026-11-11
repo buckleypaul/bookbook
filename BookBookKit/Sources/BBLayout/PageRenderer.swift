@@ -110,7 +110,7 @@ public struct PageRenderer {
         guard rect.width > 0, rect.height > 0 else { return }
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        applyRotation(box, rect: rect, ctx: ctx)
+        ctx.rotate(byDegrees: box.rotationDegrees, about: rect)
         let path = boxPath(rect, cornerRadius: box.cornerRadius)
         let isOutput = options.target == .pdfBleed || options.target == .print
 
@@ -173,7 +173,7 @@ public struct PageRenderer {
         guard rect.width > 0, rect.height > 0 else { return }
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        applyRotation(box, rect: rect, ctx: ctx)
+        ctx.rotate(byDegrees: box.rotationDegrees, about: rect)
 
         if let background = style.background {
             ctx.addPath(boxPath(rect, cornerRadius: box.cornerRadius))
@@ -206,7 +206,7 @@ public struct PageRenderer {
         for box in template.boxes {
             let rect = geometry.renderRect(for: box)
             ctx.saveGState()
-            applyRotation(box, rect: rect, ctx: ctx)
+            ctx.rotate(byDegrees: box.rotationDegrees, about: rect)
             ctx.addPath(boxPath(rect, cornerRadius: box.cornerRadius))
             ctx.strokePath()
             ctx.restoreGState()
@@ -249,27 +249,26 @@ public struct PageRenderer {
     /// The box's render rect, grown to cover its rotation (about the render rect's centre, see
     /// `PageGeometry.renderRect(for:)`).
     static func bounds(of box: Box, geometry: PageGeometry) -> CGRect {
-        let rect = geometry.renderRect(for: box)
-        guard box.rotationDegrees != 0, box.rotationDegrees.isFinite else { return rect }
-        let transform = CGAffineTransform(translationX: rect.midX, y: rect.midY)
-            .rotated(by: CGFloat(box.rotationDegrees) * .pi / 180)
-            .translatedBy(x: -rect.midX, y: -rect.midY)
-        return rect.applying(transform)
-    }
-
-    /// Rotates the context around the centre of the box's RENDER rect (bleed-extended when bleed
-    /// is on; clockwise on the page for positive degrees). The editors outline and hit-test
-    /// about the same centre (`PageGeometry.renderRect(for:)`).
-    private func applyRotation(_ box: Box, rect: CGRect, ctx: CGContext) {
-        guard box.rotationDegrees != 0, box.rotationDegrees.isFinite else { return }
-        ctx.translateBy(x: rect.midX, y: rect.midY)
-        ctx.rotate(by: CGFloat(box.rotationDegrees) * .pi / 180)
-        ctx.translateBy(x: -rect.midX, y: -rect.midY)
+        BoxHitTesting.rotatedBounds(EditableBox(id: box.id, rect: geometry.renderRect(for: box),
+                                                rotationDegrees: box.rotationDegrees))
     }
 
     private func boxPath(_ rect: CGRect, cornerRadius: Double) -> CGPath {
         let radius = min(CGFloat(max(0, cornerRadius)), rect.width / 2, rect.height / 2)
         guard radius > 0 else { return CGPath(rect: rect, transform: nil) }
         return CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+}
+
+extension CGContext {
+    /// Rotates by `degrees` (clockwise on a y-down page for positive degrees) about `rect`'s
+    /// centre; nothing for 0 or a non-finite angle. Pass a box's RENDER rect
+    /// (`PageGeometry.renderRect(for:)`, bleed-extended when bleed is on): `PageRenderer` draws
+    /// and the editors outline and hit-test about that centre.
+    public func rotate(byDegrees degrees: Double, about rect: CGRect) {
+        guard degrees != 0, degrees.isFinite else { return }
+        translateBy(x: rect.midX, y: rect.midY)
+        rotate(by: CGFloat(degrees) * .pi / 180)
+        translateBy(x: -rect.midX, y: -rect.midY)
     }
 }

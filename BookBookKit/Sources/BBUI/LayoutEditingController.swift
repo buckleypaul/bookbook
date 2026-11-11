@@ -126,7 +126,7 @@ final class LayoutEditingController: CanvasController {
         let accent = NSColor.controlAccentColor.cgColor
         for box in boxes where model.selection.contains(box.id) {
             ctx.saveGState()
-            CanvasView.applyRotation(box.rotationDegrees, about: box.rect, ctx: ctx)
+            ctx.rotate(byDegrees: box.rotationDegrees, about: box.rect)
             ctx.setStrokeColor(accent)
             ctx.setLineWidth(1.5 / s)
             ctx.stroke(box.rect)

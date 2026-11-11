@@ -63,7 +63,7 @@ enum CropMath {
     }
 
     /// `point` mapped into the unrotated frame of a box drawn rotated by `degrees` about
-    /// `rect`'s centre (the inverse of `CanvasView.applyRotation`).
+    /// `rect`'s centre (the inverse of `CGContext.rotate(byDegrees:about:)`).
     static func unrotated(_ point: CGPoint, about rect: CGRect, degrees: Double) -> CGPoint {
         BoxHitTesting.unrotate(point, rect: rect, rotationDegrees: degrees)
     }

@@ -131,7 +131,7 @@ public actor GenerationQueue {
             if !undelivered.isEmpty { startRedeliveryWorker() }
         }
         for item in interrupted {
-            await recordCost(for: item, model: item.intent.model, status: .cancelled, basis: .estimate, actual: nil)
+            await recordCost(for: item, model: item.intent.model, .estimate(.cancelled))
             await deliver(GenerationDelivery(item: item, outcome: .failure(.cancelled)))
         }
         startNextIfIdle()
@@ -435,7 +435,7 @@ public actor GenerationQueue {
             current?.inFlight = false
 
             if isCancelled(item.id) {
-                await recordCost(for: item, model: model, status: .cancelled, basis: .estimate, actual: nil)
+                await recordCost(for: item, model: model, .estimate(.cancelled))
                 await finishCancelled(item)
                 return nil
             }
@@ -443,10 +443,8 @@ public actor GenerationQueue {
             case let .success(result):
                 return result
             case let .failure(error):
-                switch QueueLedgerRule.forFailure(error) {
-                case .none: break
-                case .free: await recordCost(for: item, model: model, status: .failed, basis: .actual, actual: 0)
-                case let .estimate(status): await recordCost(for: item, model: model, status: status, basis: .estimate, actual: nil)
+                if let charge = QueueLedgerRule.forFailure(error).charge {
+                    await recordCost(for: item, model: model, charge)
                 }
                 guard let delay = retryPolicy.delay(after: error, retriesSoFar: attempt - 1, jitter: jitter()) else {
                     await finishFailed(item, error, report: report, attempts: attempt)
@@ -557,8 +555,7 @@ public actor GenerationQueue {
             pricing.actualCost(of: $0, provider: item.intent.provider, model: model.pricingModelID)
         }
         // The call happened, so it's charged even if a region edit's output is then rejected.
-        let costID = await recordCost(for: item, model: model.id, status: .completed,
-                                      basis: actual == nil ? .estimate : .actual, actual: actual)
+        let costID = await recordCost(for: item, model: model.id, .completed(actual: actual))
         var provenance = Provenance(
             provider: item.intent.provider, model: model.id, quality: item.intent.quality,
             outputSize: result.pixelSize, promptSent: report.promptText,
@@ -656,8 +653,7 @@ public actor GenerationQueue {
         guard let result else { return }
 
         let actual = result.usage.flatMap { pricing.actualCost(of: $0, provider: item.intent.provider, model: model.id) }
-        let costID = await recordCost(for: item, model: model.id, status: .completed,
-                                      basis: actual == nil ? .estimate : .actual, actual: actual)
+        let costID = await recordCost(for: item, model: model.id, .completed(actual: actual))
         let thresholds = model.consistency ?? .standard
         let report = ConsistencyReport(
             checkedAt: now(), provider: item.intent.provider, model: model.id, consistent: result.consistent,
@@ -701,15 +697,12 @@ public actor GenerationQueue {
     // MARK: - Ledger
 
     @discardableResult
-    private func recordCost(for item: QueueItem, model: String, status: CostStatus, basis: CostBasis,
-                            actual: Decimal?) async -> CostRecordID {
+    private func recordCost(for item: QueueItem, model: String, _ charge: LedgerCharge) async -> CostRecordID {
         let isImage = item.kind == .image
         let record = CostRecord(
             at: now(), kind: isImage ? .image : .consistency, provider: item.intent.provider, model: model,
-            quality: isImage ? item.intent.quality : nil,
-            target: item.target, status: status, estimated: item.estimate.amount ?? 0, actual: actual, basis: basis,
-            priceListAsOf: basis == .actual ? pricing.priceListAsOf : (item.estimate.priceListAsOf ?? pricing.priceListAsOf),
-            queueItemID: item.id)
+            quality: isImage ? item.intent.quality : nil, target: item.target, charge: charge,
+            estimate: item.estimate, currentPriceListAsOf: pricing.priceListAsOf, queueItemID: item.id)
         await host.recordCost(record, in: item.bookID)
         return record.id
     }

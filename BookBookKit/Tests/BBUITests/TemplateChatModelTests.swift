@@ -284,6 +284,28 @@ struct TemplateChatModelTests {
         #expect(await s.app.openBooks.costRecords(for: s.entry.id).isEmpty)
     }
 
+    @Test func offline_isAdvice_withNoLedgerLine() async throws {
+        // The queue's ledger rule: offline means nothing reached the provider, so nothing is billed.
+        let s = try await setup(FakeLayoutProvider(.failure(.offline)))
+        defer { s.h.tearDown() }
+        let (chat, editor) = chat(s)
+        let id = try blank(s, chat, editor)
+        await send(s, chat, "Top picture", to: id)
+        #expect(chat.messages(for: id).last?.failure != nil)
+        #expect(await s.app.openBooks.costRecords(for: s.entry.id).isEmpty)
+    }
+
+    @Test func timeout_recordsTheEstimateAsFailed() async throws {
+        let s = try await setup(FakeLayoutProvider(.failure(.timeout)))
+        defer { s.h.tearDown() }
+        let (chat, editor) = chat(s)
+        let id = try blank(s, chat, editor)
+        await send(s, chat, "Top picture", to: id)
+        let record = try #require(await s.app.openBooks.costRecords(for: s.entry.id).first)
+        #expect(record.kind == .template && record.status == .failed && record.basis == .estimate)
+        #expect(record.actual == nil)
+    }
+
     @Test func aboveThreshold_asksBeforeSending_andAddsNothingUntilSent() async throws {
         let provider = FakeLayoutProvider(.success(LayoutResult(draft: Self.draft)))
         let s = try await setup(provider)

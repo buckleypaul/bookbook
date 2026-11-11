@@ -19,8 +19,9 @@ public enum Crayon {
     public static let paper = adaptive(light: 0xFFF8EC, dark: 0x1E1B2E)
     /// A slightly deeper paper for wells, insets and the sidebar.
     public static let paperDeep = adaptive(light: 0xFCEFD9, dark: 0x171425)
-    /// The desk under the book window's panel cards: a little deeper than `paperDeep`.
-    public static let desk = adaptive(light: 0xF0E3D0, dark: 0x110E1C)
+    /// The desk under the book window's panel cards: a cooler taupe than `paperDeep`, so the
+    /// white cards stand out.
+    public static let desk = adaptive(light: 0xE2D6CA, dark: 0x110E1C)
     /// Raised cards.
     public static let card = adaptive(light: 0xFFFFFF, dark: 0x2A2640)
     /// Primary text on paper.

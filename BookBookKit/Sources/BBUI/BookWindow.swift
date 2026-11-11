@@ -250,7 +250,7 @@ struct BookEditor: View {
     @ViewBuilder
     private func sidebar(_ content: BookContent) -> some View {
         switch sidebarTab {
-        case .pages: PageList(document: document, content: content, pages: pages)
+        case .pages: PageList(document: document, content: content, pages: pages, thumbnails: thumbnails)
         case .style: StyleSectionList(selection: $styleSection)
         case .assets: AssetsList(document: document, content: content, model: assetsModel, images: images)
         case .layouts: TemplateList(document: document, content: content, model: layouts, chat: layoutChat)
@@ -439,17 +439,19 @@ struct PageList: View {
     let document: BookDocument
     let content: BookContent
     let pages: PagesController
+    let thumbnails: PageThumbnailRenderer
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         @Bindable var pages = pages
         let cover = content.coverPage
         List(selection: $pages.selectedPage) {
             if let cover {
-                row("Cover", status: content.status(of: cover), flags: content.imageFlags(of: cover),
+                row("Cover", page: cover.id, status: content.status(of: cover), flags: content.imageFlags(of: cover),
                     selected: pages.selectedPage == cover.id).tag(cover.id)
             }
             ForEach(PageListing.items(content)) { item in
-                row(item.title, status: item.status, flags: item.flags,
+                row(item.title, page: item.id, status: item.status, flags: item.flags,
                     selected: pages.selectedPage == item.id).tag(item.id)
             }
             Button { pages.sheet = .addPage(index: pages.insertionIndex) } label: {
@@ -480,27 +482,61 @@ struct PageList: View {
         }
     }
 
-    /// A page row as a mini card on the sidebar card; the selected one is filled tomato and
-    /// lifts on a deeper shadow.
-    private func row(_ title: String, status: PageStatus, flags: ImageFlags, selected: Bool) -> some View {
+    /// A page row as a white mini card on the sidebar card: a thumbnail of the page, its title
+    /// and layout name. The selected one is filled tomato and lifts on a deeper shadow.
+    private func row(_ title: String, page: PageID, status: PageStatus, flags: ImageFlags,
+                     selected: Bool) -> some View {
         let tile = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
-        return HStack {
-            Text(title)
-                .font(Crayon.font(.body, weight: .semibold))
-                .foregroundStyle(selected ? Color.white : Crayon.ink)
-            Spacer()
+        let layoutName = content.pages[page].flatMap { content.templates[$0.templateID]?.name }
+        return HStack(spacing: 8) {
+            thumbnail(page, selected: selected)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(Crayon.font(.body, weight: .bold))
+                    .foregroundStyle(selected ? Color.white : Crayon.ink)
+                if let layoutName {
+                    Text(layoutName)
+                        .font(Crayon.font(.caption, weight: .semibold))
+                        .foregroundStyle(selected ? Color.white.opacity(0.85) : Crayon.inkSoft)
+                }
+            }
+            .lineLimit(1)
+            Spacer(minLength: 0)
             ImageFlagIcons(flags: flags).font(.caption)
             StatusBadge(status: status, compact: true)
         }
         .padding(.vertical, 2)
         .listRowSeparator(.hidden)
         .listRowBackground(
-            tile.fill(selected ? Crayon.tomato : Crayon.paper)
+            tile.fill(selected ? Crayon.tomato : Crayon.card)
                 .overlay { tile.strokeBorder(Crayon.ink.opacity(selected ? 0 : 0.08), lineWidth: 1) }
                 .background { tile.fill(Crayon.shadow).offset(y: selected ? 3 : 2) }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
         )
+    }
+
+    /// The page's art, 30 pt high (a spread comes out wider), on a paper well until it renders.
+    private func thumbnail(_ page: PageID, selected: Bool) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        let image = thumbnails.image(for: page, in: content, marks: [],
+                                     pixelHeight: Int(30 * max(1, displayScale)),
+                                     fontsRevision: document.fontsRevision)
+        return Group {
+            if let image {
+                Image(decorative: image, scale: max(1, displayScale))
+                    .resizable()
+                    .frame(width: min(52, 30 * Double(image.width) / Double(max(1, image.height))), height: 30)
+                    .clipShape(shape)
+                    .overlay {
+                        shape.strokeBorder(selected ? Color.white : Crayon.ink.opacity(0.15),
+                                           lineWidth: selected ? 2 : 1)
+                    }
+            } else {
+                shape.fill(Crayon.paperDeep).frame(width: 24)
+            }
+        }
+        .frame(height: 30)
     }
 }
 
@@ -518,7 +554,7 @@ private struct SidebarTabPicker: View {
                 Button { selection = tab } label: {
                     Image(systemName: tab.symbol)
                         .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(selected ? Color.white : Crayon.inkSoft)
+                        .foregroundStyle(selected ? Color.white : tab.crayonColor)
                         .frame(maxWidth: .infinity, minHeight: 26)
                         .background {
                             if selected {

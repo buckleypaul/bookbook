@@ -14,6 +14,30 @@ enum AssetGeneration {
         description.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The request text when the asset may have a reference photo (PD §8.3): the description, or,
+    /// when that's empty and there's a photo, a short request to draw the asset from the photo.
+    static func prompt(from description: String, name: String, hasReferencePhoto: Bool) -> String {
+        let text = prompt(from: description)
+        guard text.isEmpty, hasReferencePhoto else { return text }
+        return "Draw \(name) from the reference photo."
+    }
+
+    /// Generate's tooltip.
+    static func generateHelp(prompt: String, hasReferencePhoto: Bool) -> String {
+        if prompt.isEmpty { return "Write a description or add a reference photo first" }
+        return hasReferencePhoto ? "Make a new picture from the description and the reference photo"
+            : "Make a new picture from the description"
+    }
+
+    /// The reference photo row's explanation.
+    static func referencePhotoHelp(name: String, hasPhoto: Bool) -> String {
+        hasPhoto
+            ? "Generate draws \(name) from this photo, in the book's style. The photo is sent only when you press "
+            + "Generate here; pages get the picture it makes."
+            : "Optional: add a photo (of a real person, a pet or a toy) and Generate draws \(name) from it, "
+            + "in the book's style."
+    }
+
     /// A fresh image of the asset from its description (PD §8.3): never a refinement of the
     /// current image, no story text and no consistency check.
     static func intent(_ base: GenerationIntent) -> GenerationIntent {
@@ -39,8 +63,9 @@ enum AssetGeneration {
     }
 }
 
-/// The asset editor's Generate row (PD §8.3): quality, model, cost estimate, Import Image… and
-/// Generate / Regenerate, which makes a fresh picture from the description. The newest
+/// The asset editor's Generate row (PD §8.3): the optional reference photo, quality, model, cost
+/// estimate, Import Image… and Generate / Regenerate, which makes a fresh picture from the
+/// description (and the reference photo, when there is one). The newest
 /// request's status shows below. Each generation checks the real-person notice, then the cost.
 /// The new picture becomes the asset's image when it arrives.
 struct AssetImageControls: View {
@@ -48,6 +73,7 @@ struct AssetImageControls: View {
     let document: BookDocument
     let content: BookContent
     let asset: Asset
+    let images: ImageCache
     /// The description as typed (it may not be committed yet).
     let description: String
     /// Commits the typed description (one undo step) before a generation uses it.
@@ -59,19 +85,23 @@ struct AssetImageControls: View {
     @State private var pendingIntent: GenerationIntent?
     @State private var notice: PendingNotice?
     @State private var showImporter = false
+    @State private var showPhotoImporter = false
     @State private var question: PendingQuestion?
     @State private var laterQuestions: [PendingQuestion] = []
     @State private var problem: String?
 
     private var target: GenerationTarget { GenerationTarget(owner: asset.owner) }
     private var session: Session? { SessionPanelState.session(for: asset.owner, in: content) }
-    private var prompt: String { AssetGeneration.prompt(from: description) }
+    private var prompt: String {
+        AssetGeneration.prompt(from: description, name: asset.name, hasReferencePhoto: asset.referencePhoto != nil)
+    }
     private var chosenQuality: QualityLevel { quality ?? app.defaults.quality }
 
     var body: some View {
         let latest = AssetGeneration.latestRequest(in: session)
         let busy = latest.map { AssetGeneration.isBusy(app.status(of: $0)) } ?? false
         VStack(alignment: .leading, spacing: 8) {
+            referencePhotoRow
             HStack(spacing: 8) {
                 Picker("Quality", selection: Binding(get: { chosenQuality }, set: { quality = $0 })) {
                     ForEach(QualityLevel.allCases, id: \.self) {
@@ -107,7 +137,7 @@ struct AssetImageControls: View {
                 }
                 .buttonStyle(.crayon)
                 .keyboardShortcut(.return, modifiers: .command)
-                .help(prompt.isEmpty ? "Write a description first" : "Make a new picture from the description")
+                .help(AssetGeneration.generateHelp(prompt: prompt, hasReferencePhoto: asset.referencePhoto != nil))
                 .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey || prompt.isEmpty || busy)
             }
             if let latest, let session {
@@ -131,22 +161,36 @@ struct AssetImageControls: View {
                 .font(.caption).foregroundStyle(Crayon.inkSoft)
             }
         }
-        .onChange(of: EstimateKey(prompt: prompt, quality: chosenQuality, model: app.defaults.model),
+        .onChange(of: EstimateKey(prompt: prompt, quality: chosenQuality, model: app.defaults.model,
+                                  photo: asset.referencePhoto),
                   initial: true) { _, key in
             estimate = app.estimate(for: makeIntent(prompt: key.prompt, quality: key.quality), target: target,
                                     in: document)
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.image]) { result in
             switch result {
-            case let .success(url): ask(about: [url])
+            case let .success(url): ask(about: [url], forPhoto: false)
             case let .failure(error): problem = error.localizedDescription
+            }
+        }
+        .background {
+            // A second importer on its own view: SwiftUI keeps one `fileImporter` per view.
+            Color.clear.fileImporter(isPresented: $showPhotoImporter, allowedContentTypes: [.image]) { result in
+                switch result {
+                case let .success(url): ask(about: [url], forPhoto: true)
+                case let .failure(error): problem = error.localizedDescription
+                }
             }
         }
         .sheet(item: $question, onDismiss: nextQuestion) { pending in
             RealPersonQuestionSheet(fileName: pending.url.lastPathComponent, defaultAnswer: pending.defaultAnswer,
                                     onAnswer: { answer in
                                         question = nil
-                                        importImage(pending.url, depictsRealPerson: answer)
+                                        if pending.forPhoto {
+                                            setReferencePhoto(pending.url, depictsRealPerson: answer)
+                                        } else {
+                                            importImage(pending.url, depictsRealPerson: answer)
+                                        }
                                     },
                                     onCancel: { question = nil })
         }
@@ -173,6 +217,67 @@ struct AssetImageControls: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(problem ?? "")
+        }
+    }
+
+    // MARK: Reference photo
+
+    /// The optional photo Generate bases the picture on (PD §8.3): a thumbnail with Replace and
+    /// Remove, or an Add button.
+    private var referencePhotoRow: some View {
+        let photo = asset.referencePhoto
+        return HStack(alignment: .center, spacing: 10) {
+            if let photo {
+                Group {
+                    if let cg = images.image(for: photo.image) {
+                        Image(decorative: cg, scale: 1).resizable().interpolation(.high).scaledToFill()
+                    } else {
+                        Image(systemName: "photo").foregroundStyle(Crayon.inkSoft)
+                    }
+                }
+                .frame(width: 56, height: 56)
+                .background(Crayon.paperDeep)
+                .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
+                .accessibilityLabel("\(asset.name)'s reference photo")
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Reference Photo")
+                    .font(Crayon.font(.subheadline, weight: .bold))
+                    .foregroundStyle(Crayon.ink)
+                Text(AssetGeneration.referencePhotoHelp(name: asset.name, hasPhoto: photo != nil))
+                    .font(Crayon.font(.caption, weight: .medium))
+                    .foregroundStyle(Crayon.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button {
+                showPhotoImporter = true
+            } label: {
+                Label(photo == nil ? "Add Photo…" : "Replace…", systemImage: "person.crop.square.badge.camera")
+            }
+            .buttonBorderShape(.capsule)
+            .help("Choose a photo for Generate to base \(asset.name) on")
+            .disabled(!document.isEditable)
+            if photo != nil {
+                Button("Remove", systemImage: "xmark.circle") {
+                    document.removeAssetReferencePhoto(for: asset.id)
+                }
+                .labelStyle(.iconOnly)
+                .buttonBorderShape(.capsule)
+                .help("Stop basing Generate on this photo")
+                .disabled(!document.isEditable)
+            }
+        }
+    }
+
+    private func setReferencePhoto(_ url: URL, depictsRealPerson: Bool) {
+        let document = document, id = asset.id
+        Task {
+            do {
+                _ = try await document.setAssetReferencePhoto(from: url, for: id, depictsRealPerson: depictsRealPerson)
+            } catch {
+                problem = ImageImportFailure.message(for: error)
+            }
         }
     }
 
@@ -218,10 +323,11 @@ struct AssetImageControls: View {
     // MARK: Import
 
     /// Asks "Is this a photo of a real person?" for each file, defaulting from EXIF.
-    private func ask(about urls: [URL]) {
+    private func ask(about urls: [URL], forPhoto: Bool) {
         Task {
             for url in urls {
-                let pending = PendingQuestion(url: url, defaultAnswer: await BookDocument.looksCameraOriginated(url))
+                let pending = PendingQuestion(url: url, defaultAnswer: await BookDocument.looksCameraOriginated(url),
+                                              forPhoto: forPhoto)
                 if question == nil { question = pending } else { laterQuestions.append(pending) }
             }
         }
@@ -246,6 +352,7 @@ struct AssetImageControls: View {
         var prompt: String
         var quality: QualityLevel
         var model: String
+        var photo: AssetReferencePhoto?
     }
 
     private struct PendingNotice: Identifiable {
@@ -258,5 +365,7 @@ struct AssetImageControls: View {
         let id = UUID()
         var url: URL
         var defaultAnswer: Bool
+        /// The file is for the reference photo rather than the asset's image.
+        var forPhoto: Bool
     }
 }

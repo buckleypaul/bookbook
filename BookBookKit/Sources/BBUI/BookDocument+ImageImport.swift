@@ -57,7 +57,8 @@ extension BookDocument {
     }
 
     /// Reads and normalizes the file off the main actor, then stores it in the package.
-    func readAndStore(_ url: URL) async throws -> (ImageRef, ImageImportNormalizer.Result) {
+    /// `asReferencePhoto` scales the picture down and strips its metadata (PD §8.3 reference photos).
+    func readAndStore(_ url: URL, asReferencePhoto: Bool = false) async throws -> (ImageRef, ImageImportNormalizer.Result) {
         let normalized = try await Task.detached(priority: .userInitiated) { () throws -> ImageImportNormalizer.Result in
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -65,7 +66,8 @@ extension BookDocument {
                 throw ImageImportFailure.unreadable
             }
             do {
-                return try ImageImportNormalizer.normalize(data)
+                return try asReferencePhoto ? ImageImportNormalizer.normalizeReferencePhoto(data)
+                    : ImageImportNormalizer.normalize(data)
             } catch {
                 throw ImageImportFailure.notAnImage
             }

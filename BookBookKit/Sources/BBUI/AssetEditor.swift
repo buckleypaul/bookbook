@@ -35,7 +35,7 @@ enum AssetEditing {
 
     /// The large image's empty placeholder text.
     static func emptyImageMessage(for asset: Asset) -> String {
-        "Describe \(asset.name) below and press Generate, or import an image file."
+        "Describe \(asset.name) below (or add a reference photo) and press Generate, or import an image file."
     }
 
     /// What the description is for, under its header.
@@ -140,7 +140,7 @@ struct AssetEditor: View {
                     }
                     CommittedTextField(title: "Description", value: asset.description, multiline: true,
                                        commit: commitDescription, onDraftChange: { descriptionDraft = $0 })
-                    AssetImageControls(document: document, content: content, asset: asset,
+                    AssetImageControls(document: document, content: content, asset: asset, images: images,
                                        description: descriptionDraft ?? asset.description,
                                        commitDescription: { if let descriptionDraft { commitDescription(descriptionDraft) } })
                 }

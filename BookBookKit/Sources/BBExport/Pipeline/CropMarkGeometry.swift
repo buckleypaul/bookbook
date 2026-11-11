@@ -1,13 +1,13 @@
 import CoreGraphics
 
 /// Crop-mark geometry for print-shop output (A §9.1). Media space: origin top-left, y down.
-enum CropMarkGeometry {
-    /// Two marks per trim corner, on the extensions of the trim lines, running from
-    /// `CropMarks.offsetFromBleed` past the bleed edge out to the media edge
-    /// (`CropMarks.markArea` beyond the bleed).
-    static func segments(trim: CGRect, bleed: CGFloat) -> [CropMarkSegment] {
-        let inner = max(0, bleed) + CropMarks.offsetFromBleed
-        let outer = max(0, bleed) + CropMarks.markArea
+extension CropMarks {
+    /// Line segments in media space for a media box laid out as mark area + bleed + trim.
+    /// Eight segments, two per trim corner, on the extensions of the trim lines, running from
+    /// `offsetFromBleed` past the bleed edge out to the media edge (`markArea` beyond the bleed).
+    public static func segments(trim: CGRect, bleed: CGFloat) -> [CropMarkSegment] {
+        let inner = max(0, bleed) + offsetFromBleed
+        let outer = max(0, bleed) + markArea
         var result: [CropMarkSegment] = []
         for y in [trim.minY, trim.maxY] {
             // Horizontal marks, left then right of the trim.

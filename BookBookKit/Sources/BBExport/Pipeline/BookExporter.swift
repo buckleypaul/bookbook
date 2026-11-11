@@ -116,10 +116,12 @@ public final class BookExporter {
                                                   range: ClosedRange<Int>?) -> [(page: Page, position: PagePosition)] {
         let story = content.storyPages
         let layout = PageSequencer.layout(for: content)
-        let pairs = Array(zip(story, layout.pages))
-        let selected = PageRangeWidening.selected(pairs.map { (position: $0.1.position, span: $0.1.span) }, in: range)
-        let keep = Set(selected.map(\.position))
-        return pairs.filter { keep.contains($0.1.position) }.map { (page: $0.0, position: $0.1) }
+        return zip(story, layout.pages)
+            .filter { _, position in
+                guard let range else { return true }
+                return (position.position...(position.position + position.span - 1)).overlaps(range)
+            }
+            .map { (page: $0, position: $1) }
     }
 
     /// Output pages for standard and print-shop exports.
@@ -251,7 +253,7 @@ public final class BookExporter {
             var renderer = PageRenderer(images: images)
             renderer.prepared = prepared
             for (slot, slotRect) in placed {
-                let rect = BookletLayoutEngine.pageRect(in: slotRect, pageSize: pageSize, scale: layout.scale)
+                let rect = BookletImposition.pageRect(in: slotRect, pageSize: pageSize, scale: layout.scale)
                 ctx.saveGState()
                 ctx.translateBy(x: rect.minX, y: rect.minY)
                 ctx.scaleBy(x: layout.scale, y: layout.scale)
@@ -267,8 +269,7 @@ public final class BookExporter {
             await Task.yield()
         }
         ctx.closePDF()
-        return ExportResult(pageCount: sides.count, blanksAdded: blanks, scaledToFit: layout.scaledToFit,
-                            scale: layout.scale, printingInstructions: layout.printingInstructions)
+        return ExportResult(pageCount: sides.count, blanksAdded: blanks, scale: layout.scale, printingInstructions: layout.printingInstructions)
     }
 
     /// Crop marks in media space (y down), black hairlines.

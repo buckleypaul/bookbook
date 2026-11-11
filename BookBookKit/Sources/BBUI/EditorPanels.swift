@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The book window's "paper cards on a desk" layout: the sidebar, the detail area and the
@@ -38,8 +39,38 @@ struct EditorPanels<Sidebar: View, Detail: View, Inspector: View>: View {
             .padding(.vertical, EditorPanelMetrics.gap / 2)
             .padding(.bottom, EditorPanelMetrics.gap / 2)
         }
-        .background(Crayon.desk.ignoresSafeArea())
+        .background {
+            ZStack {
+                Crayon.desk
+                DeskGrain.image.resizable(resizingMode: .tile).opacity(0.5)
+            }
+            .ignoresSafeArea()
+        }
     }
+}
+
+/// A faint, tiling paper grain over the desk: a fixed pseudo-random dot field (the same every
+/// launch), made once.
+enum DeskGrain {
+    static let image: Image = {
+        let size = 128
+        // Grey-alpha pixels: black ink, with a pseudo-random alpha per pixel.
+        var pixels = [UInt8](repeating: 0, count: size * size * 2)
+        var seed: UInt32 = 0x9E37_79B9
+        for i in 0..<(size * size) {
+            // xorshift32: cheap and stable.
+            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5
+            pixels[i * 2 + 1] = UInt8(seed % 18)
+        }
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+              let grain = CGImage(width: size, height: size, bitsPerComponent: 8, bitsPerPixel: 16,
+                                  bytesPerRow: size * 2, space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: false,
+                                  intent: .defaultIntent)
+        else { return Image(nsImage: NSImage()) }
+        return Image(decorative: grain, scale: 2)
+    }()
 }
 
 /// Panel widths in points. The window minimum (`BookWindow.minimumWidth`) fits both panels at

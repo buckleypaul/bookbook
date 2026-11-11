@@ -239,12 +239,13 @@ struct AssetImageControls: View {
         guard document.isEditable, app.hasOpenAIKey, app.isOnline, !prompt.isEmpty else { return }
         commitDescription()
         let intent = makeIntent(prompt: prompt, quality: chosenQuality)
-        confirmFlow.start(intent, notice: app.realPersonNoticeNeeded(intent: intent, target: target, in: document))
+        confirmFlow.start(intent)
     }
 
     /// The real-person notice first (once per provider and book, A §11), then the cost decision.
     private var confirmFlow: GenerationConfirmFlow<GenerationIntent> {
         GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
+                              notice: { app.realPersonNoticeNeeded(intent: $0, target: target, in: document) },
                               estimate: { app.estimate(for: $0, target: target, in: document) },
                               perform: { enqueue($0) })
     }

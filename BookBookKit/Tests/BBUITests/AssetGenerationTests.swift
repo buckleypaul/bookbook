@@ -3,6 +3,7 @@ import BBAICore
 import BBModel
 import BBStore
 import Foundation
+import SwiftUI
 import Testing
 @testable import BBUI
 
@@ -143,6 +144,98 @@ struct AssetGenerationTests {
         #expect(s.app.enqueueGeneration(intent, target: target, in: s.document))
         #expect(s.app.regenerate(generated, target: target, in: s.document))
         #expect(messages() == before + 2)
+    }
+
+    /// Holds a flow's `pending` state for tests (what `@State` holds in the views). Only touched
+    /// from these main-actor tests; `Binding`'s closures are `@Sendable`, hence unchecked.
+    private final class PendingBox<Action: Sendable>: @unchecked Sendable {
+        var value: PendingConfirmation<Action>?
+        var binding: Binding<PendingConfirmation<Action>?> {
+            Binding(get: { self.value }, set: { self.value = $0 })
+        }
+    }
+
+    /// Follow-up fix: the notice becomes needed while the cost alert is up (a real-person photo
+    /// arrives). Confirming shows the notice instead of silently doing nothing; continuing on it
+    /// sends the same request without asking about the cost again.
+    @Test func confirmingAfterTheNoticeBecameNeeded_showsTheNoticeThenSendsTheSameRequest() async throws {
+        let s = try setup()
+        defer { s.h.tearDown() }
+        let page = Fixtures.firstPage(s.document.content)
+        s.document.perform(.setAssetChecklist(page: page, [s.pip.id]))
+        let target = GenerationTarget.pageBox(page, Fixtures.imageBox.id)
+        let intent = s.app.generationIntent(prompt: "Pip in the garden", quality: .draft, includeStoryText: true,
+                                            refines: nil)
+        #expect(s.app.realPersonNoticeNeeded(intent: intent, target: target, in: s.document) == nil)
+
+        let box = PendingBox<GenerationIntent>()
+        var performed: [GenerationIntent] = []
+        var enqueued: [Bool] = []
+        let app = s.app, document = s.document
+        let flow = GenerationConfirmFlow(app: app, document: document, pending: box.binding,
+                                         notice: { app.realPersonNoticeNeeded(intent: $0, target: target, in: document) },
+                                         estimate: { app.estimate(for: $0, target: target, in: document) },
+                                         perform: {
+                                             performed.append($0)
+                                             enqueued.append(app.enqueueGeneration($0, target: target, in: document))
+                                         })
+        func messages() -> Int { s.document.content.sessions.values.reduce(0) { $0 + $1.messages.count } }
+        let before = messages()
+
+        // The cost alert is up; meanwhile Pip's image becomes a real-person photo.
+        let alert = PendingConfirmation(action: intent, step: .cost("About $0.01"))
+        box.value = alert
+        s.document.performIrreversible { content in
+            BookMutations.appendImportedAssetVersion(image: Fixtures.ref, pixelSize: PixelSize(width: 1024, height: 1024),
+                                                     owner: s.pip.owner,
+                                                     depictsRealPerson: true, to: &content, now: Fixtures.date)
+        }
+        #expect(s.app.realPersonNoticeNeeded(intent: intent, target: target, in: s.document) == .openai)
+
+        flow.confirmCost(alert)
+        let notice = try #require(box.value)
+        #expect(notice.noticeProvider == .openai, "routed to the notice")
+        #expect(notice.costConfirmed)
+        #expect(notice.action == intent)
+        #expect(performed.isEmpty)
+        #expect(messages() == before, "nothing appended")
+        await s.app.queueOperationsSettled()
+        #expect(await s.app.queue.snapshot().entries.isEmpty, "nothing enqueued")
+
+        // Continuing on the notice records the acknowledgement and sends the request.
+        flow.acknowledge(notice)
+        #expect(box.value == nil, "no second cost alert")
+        #expect(s.document.content.book.acknowledgements.realPersonPhotoNotice == [.openai])
+        #expect(performed == [intent], "the same request")
+        #expect(enqueued == [true])
+        #expect(messages() == before + 1)
+        await s.app.queueOperationsSettled()
+        #expect(await s.app.queue.snapshot().entries.map(\.item.intent) == [intent])
+    }
+
+    /// Starting a flow that needs the notice shows it first and performs nothing.
+    @Test func startingAFlowThatNeedsTheNotice_showsItFirst() throws {
+        let s = try setup()
+        defer { s.h.tearDown() }
+        s.document.performIrreversible { content in
+            BookMutations.appendImportedAssetVersion(image: Fixtures.ref, pixelSize: PixelSize(width: 1024, height: 1024),
+                                                     owner: s.pip.owner,
+                                                     depictsRealPerson: true, to: &content, now: Fixtures.date)
+        }
+        let page = Fixtures.firstPage(s.document.content)
+        s.document.perform(.setAssetChecklist(page: page, [s.pip.id]))
+        let target = GenerationTarget.pageBox(page, Fixtures.imageBox.id)
+        let intent = s.app.generationIntent(prompt: "Pip", quality: .draft, includeStoryText: true, refines: nil)
+        let box = PendingBox<GenerationIntent>()
+        var performed = 0
+        let app = s.app, document = s.document
+        let flow = GenerationConfirmFlow(app: app, document: document, pending: box.binding,
+                                         notice: { app.realPersonNoticeNeeded(intent: $0, target: target, in: document) },
+                                         estimate: { _ in .unknown }, perform: { _ in performed += 1 })
+        flow.start(intent)
+        #expect(box.value?.noticeProvider == .openai)
+        #expect(box.value?.costConfirmed == false)
+        #expect(performed == 0)
     }
 
     /// Review fix: a refused request whose report sent a real-person photo gets rule 1's advice.

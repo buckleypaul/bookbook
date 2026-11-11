@@ -327,11 +327,14 @@ public final class BookDocument {
 
     /// For non-undoable writes (A §6.3): AI results, session changes, renaming the book. Never
     /// registers undo. `body` returns what it changed. Does nothing if read-only or closed.
-    public func performIrreversible(_ body: (inout BookContent) -> DirtySet) {
-        guard isEditable else { return }
+    /// Returns true if `body` changed something (false when read-only or closed).
+    @discardableResult
+    public func performIrreversible(_ body: (inout BookContent) -> DirtySet) -> Bool {
+        guard isEditable else { return false }
         let dirty = body(&content)
-        guard !dirty.isEmpty else { return }
+        guard !dirty.isEmpty else { return false }
         didApply(dirty)
+        return true
     }
 
     /// True when performing `command` (with `fixSplits: false`) would leave a spread split
@@ -371,27 +374,15 @@ public final class BookDocument {
     /// redraws from `content.book`. Returns false for a read-only book.
     @discardableResult
     public func setAuthor(_ author: String) -> Bool {
-        let author = author.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isEditable else { return false }
-        performIrreversible { content in
-            guard content.book.author != author else { return DirtySet() }
-            content.book.author = author
-            return DirtySet(book: true)
-        }
-        return true
+        setBookField(\.author, to: author.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Phase 9: the optional per-book budget (PD §5, §8.12). Not undoable, like the author.
     /// Negative values are refused; nil clears it.
     @discardableResult
     public func setBudget(_ budget: Decimal?) -> Bool {
-        guard isEditable, (budget ?? 0) >= 0 else { return false }
-        performIrreversible { content in
-            guard content.book.budget != budget else { return DirtySet() }
-            content.book.budget = budget
-            return DirtySet(book: true)
-        }
-        return true
+        guard (budget ?? 0) >= 0 else { return false }
+        return setBookField(\.budget, to: budget)
     }
 
     /// Renames the book (`Book.title`; the package folder keeps its name). Not undoable
@@ -399,10 +390,17 @@ public final class BookDocument {
     @discardableResult
     public func rename(to title: String) -> Bool {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isEditable, !title.isEmpty else { return false }
+        guard !title.isEmpty else { return false }
+        return setBookField(\.title, to: title)
+    }
+
+    /// Sets one `Book` field irreversibly (saving only if it changed). False if the book can't
+    /// be edited; true otherwise, changed or not.
+    private func setBookField<Value: Equatable>(_ field: WritableKeyPath<Book, Value>, to value: Value) -> Bool {
+        guard isEditable else { return false }
         performIrreversible { content in
-            guard content.book.title != title else { return DirtySet() }
-            content.book.title = title
+            guard content.book[keyPath: field] != value else { return DirtySet() }
+            content.book[keyPath: field] = value
             return DirtySet(book: true)
         }
         return true

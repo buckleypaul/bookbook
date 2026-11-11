@@ -157,12 +157,8 @@ extension AppModel {
     @discardableResult
     public func setConsistencyWarningDismissed(_ dismissed: Bool, sessionID: SessionID, versionID: VersionID,
                                                in document: BookDocument) -> Bool {
-        var changed = false
-        document.performIrreversible { content in
-            let dirty = BookMutations.setConsistencyDismissed(dismissed, version: versionID, in: sessionID, to: &content)
-            changed = !dirty.isEmpty
-            return dirty
+        document.performIrreversible {
+            BookMutations.setConsistencyDismissed(dismissed, version: versionID, in: sessionID, to: &$0)
         }
-        return changed
     }
 }

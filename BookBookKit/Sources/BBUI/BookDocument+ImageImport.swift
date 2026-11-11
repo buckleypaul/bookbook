@@ -44,13 +44,10 @@ extension BookDocument {
         let (ref, normalized) = try await readAndStore(url)
         // Re-check after the awaits: the box may have gone, or the book closed.
         let versionID = VersionID()
-        var appended = false
         let stamp = Date()
-        performIrreversible { content in
-            let dirty = BookMutations.appendImportedVersion(image: ref, pixelSize: normalized.pixelSize, page: page,
-                                                            box: box, to: &content, versionID: versionID, now: stamp)
-            appended = !dirty.isEmpty
-            return dirty
+        let appended = performIrreversible { content in
+            BookMutations.appendImportedVersion(image: ref, pixelSize: normalized.pixelSize, page: page,
+                                                box: box, to: &content, versionID: versionID, now: stamp)
         }
         guard appended else { throw ImageImportFailure.boxGone }
         return versionID

@@ -90,6 +90,30 @@ final class TestFlag: Sendable {
         #expect(try fileNumber() != first)
     }
 
+    /// A `refresh()` that lands while the duplicate resolver is suspended (e.g. after
+    /// `AppModel.createBook`) wins: the resolving rescan must not commit its older scan over it.
+    @Test func refreshDuringDuplicateResolutionIsNotOverwritten() async throws {
+        let (index, lib, dir) = try makeIndex()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = try lib.createBook(title: "A", now: Date(timeIntervalSince1970: 1_700_000_000))
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        let (release, releaseContinuation) = AsyncStream<Void>.makeStream()
+        await index.setDuplicateResolver { _, _, _, _ in
+            enteredContinuation.yield()
+            for await _ in release { break }
+            return []
+        }
+        let resolving = Task { await index.refreshResolvingDuplicates() }
+        for await _ in entered { break }
+        let b = try lib.createBook(title: "B", now: Date(timeIntervalSince1970: 1_700_000_100))
+        #expect(await index.refresh().map(\.id) == [b.id, a.id])
+        releaseContinuation.yield()
+        #expect(await resolving.value.map(\.id) == [b.id, a.id])
+        #expect(await index.entries.map(\.id) == [b.id, a.id])
+        let cached = LibraryIndex(root: index.root, cacheURL: index.cacheURL)
+        #expect(await cached.loadCache().map(\.id) == [b.id, a.id])
+    }
+
     @Test func changesYieldsAfterPackageCopiedIn() async throws {
         let (index, lib, dir) = try makeIndex()
         defer { try? FileManager.default.removeItem(at: dir) }

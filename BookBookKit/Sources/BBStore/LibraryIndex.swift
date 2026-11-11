@@ -8,7 +8,12 @@ public actor LibraryIndex {
     public nonisolated let root: URL
     public nonisolated let cacheURL: URL
 
-    private var current: [LibraryEntry] = []
+    /// Every assignment bumps `generation`, so a scan taken before an `await` can tell whether
+    /// it went stale.
+    private var current: [LibraryEntry] = [] {
+        didSet { generation &+= 1 }
+    }
+    private var generation: UInt64 = 0
     private var continuations: [UUID: AsyncStream<[LibraryEntry]>.Continuation] = [:]
     private var watcher: FSEventsWatcher?
     private var debounceTask: Task<Void, Never>?
@@ -22,6 +27,12 @@ public actor LibraryIndex {
     private var owners: [BookID: URL] = [:]
     /// Package URLs open in this process; `refreshResolvingDuplicates` never rewrites these.
     private var openPackages: @Sendable @MainActor () -> Set<URL> = { [] }
+    /// The duplicate resolver (`Library.resolveDuplicateBookIDs(in:preferring:open:)`). Tests
+    /// swap in one that pauses, to run a `refresh()` while it is suspended.
+    typealias DuplicateResolver = @Sendable (Library, [LibraryEntry], [BookID: URL], Set<URL>) async -> [LibraryEntry]
+    private var resolveDuplicates: DuplicateResolver = { library, entries, known, open in
+        await library.resolveDuplicateBookIDs(in: entries, preferring: known, open: open)
+    }
 
     /// `~/Library/Application Support/BookBook/library-index.json`.
     public static var defaultCacheURL: URL {
@@ -72,6 +83,10 @@ public actor LibraryIndex {
         return current
     }
 
+    func setDuplicateResolver(_ resolver: @escaping DuplicateResolver) {
+        resolveDuplicates = resolver
+    }
+
     public func entry(for id: BookID) -> LibraryEntry? {
         current.first { $0.id == id }
     }
@@ -109,17 +124,21 @@ public actor LibraryIndex {
     }
 
     /// `refreshResolvingDuplicates`, returning whether the entries changed. The resolver works
-    /// from this call's scan, and the folder is rescanned only if it reassigned an id.
+    /// from this call's scan. The actor is free while it runs, so that scan is committed only if
+    /// nothing reassigned an id and no `refresh()` or `loadCache()` changed `current` meanwhile
+    /// (`generation` didn't move); otherwise the folder is rescanned, so a stale scan never
+    /// overwrites newer entries.
     @discardableResult
     private func rescanResolvingDuplicates() async -> Bool {
         let library = Library(root: root)
         guard !resolving else { return update(library.scan()) }
         resolving = true
         let open = await openPackages()
-        var scanned = library.scan()
-        let reassigned = await library.resolveDuplicateBookIDs(in: scanned, preferring: owners, open: open)
+        let scanned = library.scan()
+        let scannedAt = generation
+        let reassigned = await resolveDuplicates(library, scanned, owners, open)
         resolving = false
-        if !reassigned.isEmpty { scanned = library.scan() }
+        guard reassigned.isEmpty, generation == scannedAt else { return update(library.scan()) }
         return update(scanned)
     }
 

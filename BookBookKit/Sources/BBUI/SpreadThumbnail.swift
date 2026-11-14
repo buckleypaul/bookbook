@@ -118,6 +118,7 @@ struct PageThumbnailView: View {
     let label: String?
     let isSelected: Bool
     let isDropTarget: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let width = sideSize.width * CGFloat(sides)
@@ -148,7 +149,10 @@ struct PageThumbnailView: View {
                 if part != .single {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, Crayon.tomato)
+                        // The mark on the tomato triangle follows the `CrayonContrast` rule.
+                        .foregroundStyle(CrayonContrast.label(on: Crayon.tomato, preferring: .white,
+                                                              minimum: CrayonContrast.graphics, in: colorScheme),
+                                         Crayon.tomato)
                         .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
                         .padding(5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -174,7 +178,7 @@ struct PageThumbnailView: View {
         let text = label.map { label in
             Text(label)
                 .font(Crayon.font(.caption, weight: .bold))
-                .foregroundStyle(isSelected ? Crayon.tomato : Crayon.inkSoft)
+                .foregroundStyle(isSelected ? Crayon.danger : Crayon.inkSoft)
                 .lineLimit(1)
         }
         if let status {

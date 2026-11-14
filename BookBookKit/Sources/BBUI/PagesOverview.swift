@@ -236,22 +236,34 @@ struct PagesOverview: View {
 /// when on, in the Crayon type.
 private struct CrayonChipToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
-        let on = configuration.isOn
-        let capsule = Capsule(style: .continuous)
-        Button { configuration.isOn.toggle() } label: {
-            configuration.label
-                .font(Crayon.font(.caption, weight: .bold))
-                .foregroundStyle(on ? Color.white : Crayon.ink)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(capsule.fill(on ? Crayon.tomato : Crayon.card)
-                    .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2))
-                .overlay(capsule.strokeBorder(Crayon.ink.opacity(on ? 0 : 0.12), lineWidth: 1))
-                .contentShape(capsule)
+        Chip(configuration: configuration)
+    }
+
+    private struct Chip: View {
+        let configuration: Configuration
+        @Environment(\.colorScheme) private var colorScheme
+
+        var body: some View {
+            let on = configuration.isOn
+            let capsule = Capsule(style: .continuous)
+            Button { configuration.isOn.toggle() } label: {
+                configuration.label
+                    .font(Crayon.font(.caption, weight: .bold))
+                    // On the tomato fill, the `CrayonContrast` label rule (as crayon buttons).
+                    .foregroundStyle(on ? CrayonContrast.label(on: Crayon.tomato, preferring: .white,
+                                                               minimum: CrayonContrast.text, in: colorScheme)
+                                        : Crayon.ink)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(capsule.fill(on ? Crayon.tomato : Crayon.card)
+                        .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2))
+                    .overlay(capsule.strokeBorder(Crayon.ink.opacity(on ? 0 : 0.12), lineWidth: 1))
+                    .contentShape(capsule)
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(on ? "On" : "Off")
+            .accessibilityAddTraits(on ? .isSelected : [])
         }
-        .buttonStyle(.plain)
-        .accessibilityValue(on ? "On" : "Off")
-        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 

@@ -439,6 +439,7 @@ struct PageList: View {
     let pages: PagesController
     let thumbnails: PageThumbnailRenderer
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         @Bindable var pages = pages
@@ -478,7 +479,8 @@ struct PageList: View {
     }
 
     /// A page row as a white mini card on the sidebar card: a thumbnail of the page, its title
-    /// and layout name. The selected one is filled tomato and lifts on a deeper shadow.
+    /// and layout name. The selected one is filled tomato and lifts on a deeper shadow; its text
+    /// and thumbnail rim follow the `CrayonContrast` label rule (as crayon buttons do).
     private func row(_ title: String, page: PageID, status: PageStatus, flags: ImageFlags,
                      selected: Bool) -> some View {
         let tile = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
@@ -488,11 +490,11 @@ struct PageList: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .font(Crayon.font(.body, weight: .bold))
-                    .foregroundStyle(selected ? Color.white : Crayon.ink)
+                    .foregroundStyle(selected ? selectedLabel : Crayon.ink)
                 if let layoutName {
                     Text(layoutName)
                         .font(Crayon.font(.caption, weight: .semibold))
-                        .foregroundStyle(selected ? Color.white.opacity(0.85) : Crayon.inkSoft)
+                        .foregroundStyle(selected ? selectedLabel : Crayon.inkSoft)
                 }
             }
             .lineLimit(1)
@@ -511,6 +513,12 @@ struct PageList: View {
         )
     }
 
+    /// Text and rims on the selected row's tomato fill: white or `Crayon.onFill`, whichever
+    /// reaches 4.5:1 (`onFill` in both appearances today).
+    private var selectedLabel: Color {
+        CrayonContrast.label(on: Crayon.tomato, preferring: .white, minimum: CrayonContrast.text, in: colorScheme)
+    }
+
     /// The page's art, 30 pt high (a spread comes out wider), on a paper well until it renders.
     private func thumbnail(_ page: PageID, selected: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous)
@@ -524,7 +532,7 @@ struct PageList: View {
                     .frame(width: min(52, 30 * Double(image.width) / Double(max(1, image.height))), height: 30)
                     .clipShape(shape)
                     .overlay {
-                        shape.strokeBorder(selected ? Color.white : Crayon.ink.opacity(0.15),
+                        shape.strokeBorder(selected ? selectedLabel : Crayon.ink.opacity(0.15),
                                            lineWidth: selected ? 2 : 1)
                     }
             } else {
@@ -540,6 +548,7 @@ struct PageList: View {
 private struct SidebarTabPicker: View {
     @Binding var selection: SidebarTab
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let tile = RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous)
@@ -549,7 +558,11 @@ private struct SidebarTabPicker: View {
                 Button { selection = tab } label: {
                     Image(systemName: tab.symbol)
                         .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(selected ? Color.white : tab.crayonColor)
+                        // On its fill, the glyph follows the `CrayonContrast` rule for icons.
+                        .foregroundStyle(selected
+                                         ? CrayonContrast.label(on: tab.crayonColor, preferring: .white,
+                                                                minimum: CrayonContrast.graphics, in: colorScheme)
+                                         : tab.crayonColor)
                         .frame(maxWidth: .infinity, minHeight: 26)
                         .background {
                             if selected {
@@ -582,6 +595,7 @@ private struct SidebarTabPicker: View {
 private struct PagesModePicker: View {
     @Binding var selection: PagesController.Mode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let tile = RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous)
@@ -607,7 +621,10 @@ private struct PagesModePicker: View {
         return Button { selection = mode } label: {
             Label(title, systemImage: systemImage)
                 .font(Crayon.font(.caption, weight: .bold))
-                .foregroundStyle(selected ? Color.white : Crayon.ink)
+                .foregroundStyle(selected
+                                 ? CrayonContrast.label(on: Crayon.tomato, preferring: .white,
+                                                        minimum: CrayonContrast.text, in: colorScheme)
+                                 : Crayon.ink)
                 .frame(maxWidth: .infinity, minHeight: 22)
                 .background { if selected { tile.fill(Crayon.tomato) } }
                 .contentShape(tile)

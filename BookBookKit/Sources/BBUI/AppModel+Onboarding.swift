@@ -7,8 +7,11 @@ extension AppModel {
         return OnboardingState().shouldShowOnLaunch(hasKey: hasOpenAIKey)
     }
 
-    /// The effective-price-list costs for the guided setup, for the default image model.
+    /// The effective-price-list costs for the guided setup, for the user's preferred image model
+    /// when it's in the catalog, else the catalog's default.
     public func typicalCosts() -> TypicalCosts {
-        TypicalCosts(model: catalog.defaultImageModel(for: .openai), priceList: prices.current)
+        let model = catalog.resolve(provider: .openai, id: preferences.defaultImageModelID)
+            ?? catalog.defaultImageModel(for: .openai)
+        return TypicalCosts(model: model, priceList: prices.current)
     }
 }

@@ -32,7 +32,7 @@ struct NewBookWizardTests {
         let model = NewBookWizardModel(importStory: false, presets: [])
         model.title = "Changed"
         for _ in NewBookWizardModel.Step.allCases { model.skip() }
-        #expect(model.spec == NewBookSpec(title: "Untitled"))
+        #expect(model.spec == NewBookSpec(title: ""), "resolvedTitle supplies Untitled")
     }
 
     @Test func choicesBuildTheSpec() {
@@ -55,6 +55,39 @@ struct NewBookWizardTests {
         model.characterName = " "
         model.characterDescription = ""
         #expect(model.spec.mainCharacter == nil)
+    }
+
+    @Test func tenByEightComesOutLandscapeAndKeepsItsSize() {
+        let model = NewBookWizardModel(presets: [])
+        model.pageSize = .tenByEight
+        #expect(model.orientation == .landscape, "10 × 8 in is landscape by name")
+        let spec = model.spec
+        #expect(spec.pageSize == .tenByEight && spec.orientation == .landscape)
+        let setup = PageSetup.letterPortrait.applying(preset: .tenByEight, orientation: spec.orientation ?? .portrait)
+        #expect(setup.trimSize == PointSize(width: 720, height: 576))
+
+        model.pageSize = .eightByTen
+        #expect(model.orientation == .portrait)
+        model.pageSize = .usLetter
+        #expect(model.spec == NewBookSpec(title: ""), "Letter portrait is the default, sent as no choice")
+        model.pageSize = .a5
+        model.orientation = .landscape
+        model.pageSize = .a5
+        #expect(model.orientation == .landscape, "choosing the same size again keeps the orientation")
+    }
+
+    @Test func landscapeSurvivesAChangeToA4() {
+        let model = NewBookWizardModel(presets: [])
+        model.orientation = .landscape
+        model.pageSize = .a4
+        #expect(model.orientation == .landscape)
+        #expect(model.spec.orientation == .landscape)
+    }
+
+    @Test func titleStartsEmptyAndResolvesToUntitled() {
+        let model = NewBookWizardModel(presets: [])
+        #expect(model.title.isEmpty)
+        #expect(model.spec.resolvedTitle == "Untitled")
     }
 
     @Test func createBookFromSpecLandsInTheModelAndQueuesStoryImport() async throws {

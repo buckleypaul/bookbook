@@ -232,10 +232,10 @@ struct RegionEditTests {
         let rows = Dictionary(VersionDetailsContent.rows(for: version).map { ($0.label, $0.value) },
                               uniquingKeysWith: { first, _ in first })
         #expect(rows["Source"] == "Region edit")
-        #expect(rows["Mask sent"] == "64x48 mask (transparent = edit area)")
-        #expect(rows["Raw provider output"] == "1024x1536 image, before blending into the original")
+        #expect(rows["Mask sent"] == "64 × 48 mask (transparent = edit area)")
+        #expect(rows["Raw provider output"] == "1024 × 1536 image, before blending into the original")
         #expect(rows["Feather"] == "8 px")
-        #expect(rows["Parameter mask"] == "64x48 png")
+        #expect(rows["Parameters sent"]?.contains("mask: 64x48 png") == true)
 
         // A plain generated version has none of these.
         let plain = Version(image: Fixtures.ref, pixelSize: Self.size, source: .generated, createdAt: Fixtures.date,

@@ -161,7 +161,7 @@ public final class TextStyleModel {
         }
         guard let provider = app.textStyleProvider else {
             return fail(FailureAdvice(headline: "AI text styling isn't available",
-                                      explanation: "No provider is set up for text styling. Add your API key in Settings."))
+                                      explanation: "No provider is set up for text styling. " + UnavailableText.noKey))
         }
         guard let model = model(app) else {
             return fail(FailureAdvice(
@@ -243,8 +243,12 @@ public final class TextStyleModel {
             intent.refines = refines
             let message = Message(role: .user, text: intent.messageText, refines: refines, createdAt: app.now())
             do {
-                let placeholder = try await keptDecoration.asyncOr {
-                    try await self.document.store.storeImage(TextStylePlaceholder.png, contentType: UTType.png.identifier)
+                let placeholder: ImageRef
+                if let keptDecoration {
+                    placeholder = keptDecoration
+                } else {
+                    placeholder = try await document.store.storeImage(TextStylePlaceholder.png,
+                                                                      contentType: UTType.png.identifier)
                 }
                 let stamp = app.now()
                 guard document.performIrreversible({
@@ -376,12 +380,4 @@ enum TextStylePlaceholder {
         CGImageDestinationFinalize(destination)
         return data as Data
     }()
-}
-
-extension Optional where Wrapped: Sendable {
-    /// The wrapped value, else the result of `make`.
-    fileprivate func asyncOr(_ make: () async throws -> Wrapped) async rethrows -> Wrapped {
-        if let self { return self }
-        return try await make()
-    }
 }

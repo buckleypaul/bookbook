@@ -149,6 +149,8 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
         }
     }
 
+    /// Makes the text view first responder with the caret at the end (keyboard entry; a click
+    /// then places it with `handleClick`).
     func beginEditing(in window: NSWindow?) {
         textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
         window?.makeFirstResponder(textView)
@@ -160,6 +162,32 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
             Self.log.fault("The window's undo manager isn't the document's: ⌘Z won't undo typing")
         }
         #endif
+    }
+
+    /// Hands a mouse-down that the canvas received to the text view, so the click places the
+    /// caret (or, dragged, selects; with more clicks, selects the word or paragraph) as a click
+    /// on the text view itself would. `event`'s window location must be where the click lands
+    /// on the (upright) editor. Runs the text view's own tracking until the mouse is released.
+    func handleClick(_ event: NSEvent, in window: NSWindow) {
+        guard textView.window === window else { return }
+        if window.firstResponder !== textView { window.makeFirstResponder(textView) }
+        textView.mouseDown(with: event)
+    }
+
+    /// Selects at `point` (in `view`'s coordinates) without the text view's mouse tracking: the
+    /// caret at the nearest insertion point, or with 2 or 3 clicks the word or paragraph there.
+    /// For a rotated box, whose upright editor doesn't lie under the pointer (`handleClick` would
+    /// track the real, unmapped drag).
+    func select(at point: CGPoint, in view: NSView, clickCount: Int) {
+        if let window = textView.window, window.firstResponder !== textView { window.makeFirstResponder(textView) }
+        let length = (textView.string as NSString).length
+        let index = min(max(textView.characterIndexForInsertion(at: textView.convert(point, from: view)), 0), length)
+        var range = NSRange(location: index, length: 0)
+        if clickCount >= 2, length > 0 {
+            range = textView.selectionRange(forProposedRange: range,
+                                            granularity: clickCount == 2 ? .selectByWord : .selectByParagraph)
+        }
+        textView.setSelectedRange(range)
     }
 
     /// Safety net: an editor dropped without `tearDown()` still closes its colour burst, or the
@@ -514,7 +542,10 @@ enum RichTextFormatting {
         }
         return FormatState(bold: commonDrawn(\.bold), italic: commonDrawn(\.italic),
                            underline: common { $0.underline }, font: common { $0.fontFamily },
-                           size: common { $0.size }, color: common { $0.color }, alignment: nil)
+                           size: common { $0.size }, color: common { $0.color }, alignment: nil,
+                           resolvedSize: common { $0.size ?? typography.bodySize },
+                           resolvedColor: common { $0.color ?? typography.color },
+                           isFontMixed: Set(runs.map(\.fontFamily)).count > 1)
     }
 
     /// The run transform for a (non-alignment) action, given the runs it applies to.

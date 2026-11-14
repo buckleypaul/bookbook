@@ -5,12 +5,12 @@ import SwiftUI
 extension PageNumberPosition {
     var title: String {
         switch self {
-        case .bottomCenter: "Bottom centre"
-        case .bottomOuter: "Bottom outer corner"
-        case .bottomInner: "Bottom inner corner"
-        case .topCenter: "Top centre"
-        case .topOuter: "Top outer corner"
-        case .topInner: "Top inner corner"
+        case .bottomCenter: "Bottom Centre"
+        case .bottomOuter: "Bottom Outer Corner"
+        case .bottomInner: "Bottom Inner Corner"
+        case .topCenter: "Top Centre"
+        case .topOuter: "Top Outer Corner"
+        case .topInner: "Top Inner Corner"
         }
     }
 }
@@ -41,6 +41,10 @@ struct PageNumbersSheet: View {
     @State private var families: [String] = []
     /// Family chosen in the picker; nil is the body font. Stored as a PostScript name on Done.
     @State private var family: String?
+    /// What the size and start-number fields show. `TextField(value:format:)` only commits on
+    /// Return or focus loss, so a number typed just before clicking Done would be lost.
+    @State private var sizeText: String
+    @State private var startText: String
 
     /// The book when the sheet opened, for counting skipped pages (front matter needs each
     /// page's template role). Without it only individually skipped pages are counted.
@@ -58,6 +62,18 @@ struct PageNumbersSheet: View {
 
     static let sizeRange: ClosedRange<Double> = 6...72
 
+    static func formatSize(_ size: Double, locale: Locale = .current) -> String {
+        size.formatted(.number.precision(.fractionLength(0...1)).grouping(.never).locale(locale))
+    }
+
+    /// Reads what the field shows back, in the same locale (so "10,5" works where the decimal
+    /// separator is a comma). Nil while the text isn't a number yet, e.g. empty or mid-edit.
+    static func parseSize(_ text: String, locale: Locale = .current) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard let v = try? Double(trimmed, format: .number.grouping(.never).locale(locale)), v.isFinite else { return nil }
+        return v
+    }
+
     init(pages: PagesController, style: PageNumberStyle, content: BookContent? = nil) {
         self.pages = pages
         self.content = content
@@ -65,6 +81,8 @@ struct PageNumbersSheet: View {
         self.initialFamily = initialFamily
         _draft = State(initialValue: style)
         _family = State(initialValue: initialFamily)
+        _sizeText = State(initialValue: Self.formatSize(style.size))
+        _startText = State(initialValue: String(style.startNumber))
     }
 
     /// Pages without a number: individually skipped ones that still exist, plus front matter
@@ -80,7 +98,7 @@ struct PageNumbersSheet: View {
     var body: some View {
         let skipped = Self.skippedCount(style: draft, content: content, isStoryPage: { pages.isStoryPage($0) })
         VStack(alignment: .leading, spacing: 12) {
-            Text("Page Numbers").font(.headline)
+            CrayonHeader("Page Numbers", color: Crayon.sky)
             Form {
                 Toggle("Show page numbers", isOn: $draft.enabled)
                 Group {
@@ -94,18 +112,30 @@ struct PageNumbersSheet: View {
                     }
                     LabeledContent("Size") {
                         HStack {
-                            TextField("Size", value: $draft.size, format: .number.precision(.fractionLength(0...1)))
+                            TextField("Size", text: $sizeText)
                                 .frame(width: 60)
                                 .labelsHidden()
+                                .onChange(of: sizeText) { _, text in
+                                    if let v = Self.parseSize(text) { draft.size = v }
+                                }
+                                .onChange(of: draft.size) { _, size in
+                                    if Self.parseSize(sizeText) != size { sizeText = Self.formatSize(size) }
+                                }
                             Stepper("Size", value: $draft.size, in: Self.sizeRange, step: 1).labelsHidden()
-                            Text("pt").foregroundStyle(.secondary)
+                            Text("pt").foregroundStyle(Crayon.inkSoft)
                         }
                     }
                     LabeledContent("Start at") {
                         HStack {
-                            TextField("Start at", value: $draft.startNumber, format: .number)
+                            TextField("Start at", text: $startText)
                                 .frame(width: 60)
                                 .labelsHidden()
+                                .onChange(of: startText) { _, text in
+                                    if let v = Int(text.trimmingCharacters(in: .whitespaces)) { draft.startNumber = v }
+                                }
+                                .onChange(of: draft.startNumber) { _, n in
+                                    if Int(startText.trimmingCharacters(in: .whitespaces)) != n { startText = String(n) }
+                                }
                             Stepper("Start at", value: $draft.startNumber, in: 0...9999).labelsHidden()
                         }
                     }
@@ -116,38 +146,42 @@ struct PageNumbersSheet: View {
                 }
                 .disabled(!draft.enabled)
             }
+            .disabled(!pages.isEditable)
             Text("The cover is never numbered. Numbers follow the printed position: page 1 is the first right-hand page after the cover. To skip one page, right-click it and choose Skip Page Number.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Crayon.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                if !draft.skippedPages.isEmpty {
-                    Button("Number All Pages") { draft.skippedPages = [] }
-                        .disabled(!draft.enabled)
-                }
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Done") {
-                    var style = draft
-                    style.fontFamily = Self.resolvedFont(family: family, initialFamily: initialFamily,
-                                                         stored: draft.fontFamily)
-                    style.size = min(max(style.size, Self.sizeRange.lowerBound), Self.sizeRange.upperBound)
-                    style.startNumber = max(0, style.startNumber)
-                    pages.setPageNumberStyle(style)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!pages.isEditable)
+            if pages.isEditable {
+                CrayonSheetFooter("Done", color: Crayon.sky, action: done, leading: { numberAllButton })
+            } else {
+                CrayonSheetDoneFooter(color: Crayon.sky, leading: { numberAllButton })
             }
         }
-        .padding(20)
-        .frame(width: 460)
+        .crayonSheet(width: 460)
+        .onExitCommand { dismiss() }
         .onAppear {
             var list = FontFamilies.all
             // Keep a family the style names even if it isn't installed.
             if let family, !list.contains(family) { list.insert(family, at: 0) }
             families = list
         }
+    }
+
+    @ViewBuilder
+    private var numberAllButton: some View {
+        if !draft.skippedPages.isEmpty {
+            Button("Number All Pages") { draft.skippedPages = [] }
+                .disabled(!draft.enabled || !pages.isEditable)
+        }
+    }
+
+    private func done() {
+        var style = draft
+        style.fontFamily = Self.resolvedFont(family: family, initialFamily: initialFamily,
+                                             stored: draft.fontFamily)
+        style.size = min(max(style.size, Self.sizeRange.lowerBound), Self.sizeRange.upperBound)
+        style.startNumber = max(0, style.startNumber)
+        pages.setPageNumberStyle(style)
+        dismiss()
     }
 }

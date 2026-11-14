@@ -1,9 +1,10 @@
 import AppKit
 import BBLayout
 import BBModel
+import SwiftUI
 
-/// The page canvas mode (A §6.2): draws the selected page, its overflow badges (a red "+" at a
-/// text box's bottom-right when its text doesn't fit, screen only, A §8.3) and the selected
+/// The page canvas mode (A §6.2): draws the selected page, its overflow badges (a tomato "+" at
+/// a text box's bottom-right when its text doesn't fit, screen only, A §8.3) and the selected
 /// image box's outline, and handles clicks: select an image box, edit a text box in place
 /// (through `textEditing`), or open Book Settings for a bound title/author box.
 ///
@@ -27,6 +28,9 @@ final class PlacementController: CanvasController {
     private var imageSource: (any PageImageSource)?
     private var fontsRevision: Int?
 
+    /// False in a read-only book: the window blocks clicks on the canvas, but mouse-moved still
+    /// arrives, so text boxes don't show the I-beam.
+    var isEditable = true
     var onSelectBox: (BoxID?) -> Void = { _ in }
     /// Double-click on a title/author box (bound to the book, PD §8.7).
     var onOpenBookSettings: () -> Void = {}
@@ -171,16 +175,20 @@ final class PlacementController: CanvasController {
     // MARK: Drawing
 
     func drawOverlay(in ctx: CGContext, transform: CanvasTransform) {
-        for (box, rect) in overflowingTextBoxes() {
+        let overflowing = overflowingTextBoxes()
+        overflowBadgeCentres = overflowing.map { Self.overflowBadgeCentre(box: $0.box, rect: $0.rect) }
+        for (box, rect) in overflowing {
             drawOverflowBadge(box: box, rect: rect, scale: transform.scale, ctx: ctx)
         }
 
+        // Crayon colours, as the page thumbnails: sky for a drop target, tomato for the selection.
         if let dropTargetBox, let target = boxRects.first(where: { $0.box.id == dropTargetBox }) {
+            let sky = NSColor(Crayon.sky)
             ctx.saveGState()
             ctx.rotate(byDegrees: target.box.rotationDegrees, about: target.rect)
-            ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor)
+            ctx.setFillColor(sky.withAlphaComponent(0.15).cgColor)
             ctx.fill(target.rect)
-            ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
+            ctx.setStrokeColor(sky.cgColor)
             ctx.setLineWidth(3 / transform.scale)
             ctx.stroke(target.rect)
             ctx.restoreGState()
@@ -189,22 +197,46 @@ final class PlacementController: CanvasController {
         if let selectedImageBox, let selected = boxRects.first(where: { $0.box.id == selectedImageBox }) {
             ctx.saveGState()
             ctx.rotate(byDegrees: selected.box.rotationDegrees, about: selected.rect)
-            ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
+            ctx.setStrokeColor(NSColor(Crayon.tomato).cgColor)
             ctx.setLineWidth(2 / transform.scale)
             ctx.stroke(selected.rect.insetBy(dx: -1 / transform.scale, dy: -1 / transform.scale))
             ctx.restoreGState()
         }
     }
 
-    /// A red circle with a white "+" centred on the box's bottom-right corner (rotated with
-    /// the box), constant size on screen.
+    /// The overflow badges' centres (page points) as last drawn, for their tooltips.
+    private(set) var overflowBadgeCentres: [CGPoint] = []
+
+    /// What an overflow badge says (tooltip and accessibility).
+    static let overflowBadgeHelp = "This text doesn't fit in its box."
+
+    /// Tooltips for the overflow badges (A §8.3), at their size on screen plus a little slack.
+    func tips(transform: CanvasTransform) -> [CanvasTip] {
+        let side = Self.overflowBadgeDiameter + 4
+        return overflowBadgeCentres.map { centre in
+            let view = transform.toView(centre)
+            return CanvasTip(viewRect: CGRect(x: view.x - side / 2, y: view.y - side / 2, width: side, height: side),
+                             text: Self.overflowBadgeHelp)
+        }
+    }
+
+    /// Where an overflow badge sits: the box's bottom-right corner, rotated with the box.
+    static func overflowBadgeCentre(box: Box, rect: CGRect) -> CGPoint {
+        let corner = CGPoint(x: rect.maxX, y: rect.maxY)
+        guard box.rotationDegrees != 0, box.rotationDegrees.isFinite else { return corner }
+        // `unrotate` turns by minus the angle; minus that turns with the box, as it's drawn.
+        return BoxHitTesting.unrotate(corner, rect: rect, rotationDegrees: -box.rotationDegrees)
+    }
+
+    /// A danger-coloured (tomato) circle with a white "+" centred on the box's bottom-right
+    /// corner (rotated with the box), constant size on screen.
     private func drawOverflowBadge(box: Box, rect: CGRect, scale: CGFloat, ctx: CGContext) {
         ctx.saveGState()
         defer { ctx.restoreGState() }
         ctx.rotate(byDegrees: box.rotationDegrees, about: rect)
         let diameter = Self.overflowBadgeDiameter / scale
         let badge = CGRect(x: rect.maxX - diameter / 2, y: rect.maxY - diameter / 2, width: diameter, height: diameter)
-        ctx.setFillColor(NSColor.systemRed.cgColor)
+        ctx.setFillColor(NSColor(Crayon.danger).cgColor)
         ctx.fillEllipse(in: badge)
         ctx.setStrokeColor(NSColor.white.cgColor)
         ctx.setLineWidth(2 / scale)
@@ -236,6 +268,11 @@ final class PlacementController: CanvasController {
         case let .editText(id):
             if textEditing.editingBoxID != id { beginEditing(id) }
             onSelectBox(id)
+            // The click places the caret where it landed (a press in the box's padding goes to
+            // the nearest character), on the first click as on later ones.
+            if textEditing.editingBoxID == id, let (box, rect) = textBox(id) {
+                textEditing.handleClick(event, at: point, boxRect: rect, rotationDegrees: box.rotationDegrees)
+            }
         case .openBookSettings:
             textEditing.end()
             onOpenBookSettings()
@@ -263,12 +300,26 @@ final class PlacementController: CanvasController {
 
     func cursor(at point: CGPoint) -> NSCursor? {
         if pan?.began == true { return .closedHand }
-        let overCrop = cropTarget(at: point) != nil
-        defer { showingHand = overCrop }
-        // Leaving the crop puts the arrow back once; otherwise the cursor is left alone.
-        return overCrop ? .openHand : (showingHand ? .arrow : nil)
+        let shown: ShownCursor
+        if cropTarget(at: point) != nil {
+            shown = .openHand
+        } else if isEditable,
+                  case .editText = CanvasHitTest.click(on: CanvasHitTest.box(at: point, in: boxRects), clickCount: 1) {
+            // A text box whose words are edited on the canvas (not a title/author box).
+            shown = .iBeam
+        } else {
+            shown = .none
+        }
+        defer { shownCursor = shown }
+        switch shown {
+        case .openHand: return .openHand
+        case .iBeam: return .iBeam
+        // Leaving a hand or I-beam puts the arrow back once; otherwise the cursor is left alone.
+        case .none: return shownCursor == .none ? nil : .arrow
+        }
     }
-    private var showingHand = false
+    private enum ShownCursor { case none, openHand, iBeam }
+    private var shownCursor = ShownCursor.none
 
     /// Pans the open drag's crop so the image point under the press follows `point`.
     func panCrop(to point: CGPoint) {

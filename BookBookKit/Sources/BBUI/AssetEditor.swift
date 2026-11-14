@@ -15,10 +15,30 @@ enum AssetEditing {
     static func list(_ content: BookContent, type: AssetType?) -> [Asset] {
         content.assets.values.filter { type == nil || $0.type == type }
             .sorted {
-                let order = $0.name.localizedCaseInsensitiveCompare($1.name)
+                let order = $0.name.localizedStandardCompare($1.name)
                 return order == .orderedSame ? $0.id.rawValue.uuidString < $1.id.rawValue.uuidString
                     : order == .orderedAscending
             }
+    }
+
+    /// The empty sidebar's title: "No Assets", or "No Characters" etc. when a type filter is on.
+    static func emptyListTitle(filter: AssetType?) -> String {
+        switch filter {
+        case nil: "No Assets"
+        case .character: "No Characters"
+        case .place: "No Places"
+        case .object: "No Objects"
+        }
+    }
+
+    /// The empty sidebar's advice, matching `emptyListTitle`.
+    static func emptyListMessage(filter: AssetType?) -> String {
+        switch filter {
+        case nil: "Add characters, places and objects with +."
+        case .character: "Add a character with +, or choose All to see other assets."
+        case .place: "Add a place with +, or choose All to see other assets."
+        case .object: "Add an object with +, or choose All to see other assets."
+        }
     }
 
     /// The asset's image: its chosen version's picture (nil when nothing is chosen, or the
@@ -41,7 +61,7 @@ enum AssetEditing {
     /// What the description is for, under its header.
     static func descriptionHelp(for asset: Asset) -> String {
         "What \(asset.name) looks like. Generate draws \(asset.name) from this and the style guide, "
-            + "and pages that mention or tick \(asset.name) get this text along with the picture."
+            + "and pages that mention or check \(asset.name) get this text along with the picture."
     }
 
     // MARK: Delete
@@ -58,6 +78,8 @@ struct CommittedTextField: View {
     let title: String
     let value: String
     var multiline = false
+    /// A blank (whitespace-only) draft isn't committed: the field goes back to `value` instead.
+    var rejectsBlank = false
     let commit: (String) -> Void
     /// Called with the draft as it's typed (before it's committed).
     var onDraftChange: ((String) -> Void)?
@@ -69,15 +91,28 @@ struct CommittedTextField: View {
             if multiline {
                 TextEditor(text: $draft).crayonTextEditor(focused: focused, minHeight: 70)
             } else {
-                TextField(title, text: $draft).onSubmit {
-                    if let text = CommittedText.textToCommit(draft: draft, value: value) { commit(text) }
-                }
+                TextField(title, text: $draft).onSubmit { submit() }
             }
         }
         .focused($focused)
-        .committingDraft($draft, of: value, focused: focused, commit: commit)
+        .committingDraft($draft, of: value, focused: focused, commit: guardedCommit)
         .onChange(of: draft) { _, new in onDraftChange?(new) }
         .accessibilityLabel(title)
+    }
+
+    /// `commit`, except that a blank draft resets the field to `value` when `rejectsBlank` is set.
+    private var guardedCommit: (String) -> Void {
+        { text in
+            if rejectsBlank, text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                draft = value
+            } else {
+                commit(text)
+            }
+        }
+    }
+
+    private func submit() {
+        if let text = CommittedText.textToCommit(draft: draft, value: value) { guardedCommit(text) }
     }
 }
 
@@ -165,6 +200,7 @@ struct AssetEditor: View {
                     }
                     CommittedTextField(title: "Description", value: asset.description, multiline: true,
                                        commit: commitDescription, onDraftChange: { descriptionDraft = $0 })
+                        .disabled(!editable)
                     AssetImageControls(document: document, content: content, asset: asset, images: images,
                                        description: descriptionDraft ?? asset.description,
                                        commitDescription: { if let descriptionDraft { commitDescription(descriptionDraft) } })
@@ -172,7 +208,7 @@ struct AssetEditor: View {
                 .crayonCard(padding: 14)
                 imageDetails
                 VStack(alignment: .leading, spacing: 8) {
-                    CrayonHeader("Where Used", color: Crayon.grass)
+                    CrayonHeader("Where used", color: Crayon.grass)
                     WhereUsedList(sites: sites, content: content, onOpen: onOpenPage)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -186,8 +222,7 @@ struct AssetEditor: View {
             .frame(maxWidth: .infinity)
         }
         .crayonPaper()
-        .disabled(!editable)
-        .alert("Delete \(asset.name)?", isPresented: $confirmDelete) {
+        .alert("Delete “\(asset.name)”?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) {
                 if document.deleteAsset(asset.id) { model.didDelete(asset.id) }
             }
@@ -202,12 +237,13 @@ struct AssetEditor: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CommittedTextField(title: "Name", value: asset.name) { text in
+            CommittedTextField(title: "Name", value: asset.name, rejectsBlank: true) { text in
                 let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty else { return }
                 model.update(asset, in: document, actionName: "Rename Asset") { $0.name = name }
             }
             .font(Crayon.font(.title2, weight: .bold))
+            .disabled(!editable)
             AssetTypeChip(type: asset.type, color: color)
         }
     }

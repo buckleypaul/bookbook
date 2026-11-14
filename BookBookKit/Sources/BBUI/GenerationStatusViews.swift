@@ -9,18 +9,37 @@ struct MessageStatusLine: View {
     @Environment(AppModel.self) private var app
     let message: Message
     let session: Session
+    /// Whether the book can be changed: Try Again sends a paid request into it.
+    let isEditable: Bool
     /// Show "Version N" once the picture arrived (off in the asset editor, which shows only the newest).
     var showsProduced = true
 
     var body: some View {
-        switch app.status(of: message) {
+        switch app.status(of: message, in: session.owner) {
         case .none:
-            EmptyView()
+            if message.producedVersion == nil {
+                StatusPill(color: Crayon.inkSoft, systemImage: "xmark.circle") {
+                    // Cancelled, its picture deleted or cleaned up, or a page copied while the request
+                    // was running (it delivers to the original): the book doesn't record which.
+                    Text("No picture from this request.")
+                }
+            }
         case .waiting:
-            StatusPill(color: Crayon.sunflower) {
-                ProgressView().controlSize(.small)
-            } label: {
-                Text("Waiting in the queue…")
+            if let entry = liveEntry(for: message), case .retrying = entry.state {
+                // The queue is waiting to try again after a temporary error (as the Queue window says).
+                let state = entry.state
+                StatusPill(color: Crayon.sunflower, systemImage: "arrow.clockwise") {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(QueueRowModel.stateText(state, now: context.date, typical: nil, headline: nil))
+                            .monospacedDigit()
+                    }
+                }
+            } else {
+                StatusPill(color: Crayon.sunflower) {
+                    ProgressView().controlSize(.small)
+                } label: {
+                    Text("Waiting in the queue…")
+                }
             }
         case let .running(startedAt, typical):
             StatusPill(color: Crayon.sky) {
@@ -33,11 +52,28 @@ struct MessageStatusLine: View {
                 }
             }
         case let .failed(error):
-            if let advice = failedEntry(for: message).flatMap({ app.advice(for: $0) }) {
-                FailureAdviceView(advice: advice)
-            } else {
-                StatusPill(color: Crayon.tomato, systemImage: "exclamationmark.triangle.fill") {
-                    Text(ProviderErrorText.message(for: error))
+            let entry = failedEntry(for: message)
+            VStack(alignment: .leading, spacing: 6) {
+                if let advice = entry.flatMap({ app.advice(for: $0) }) {
+                    FailureAdviceView(advice: advice)
+                } else {
+                    StatusPill(color: Crayon.tomato, systemImage: "exclamationmark.triangle.fill") {
+                        Text(ProviderErrorText.message(for: error))
+                    }
+                }
+                if let entry {
+                    // The same actions as the Queue window's failed row.
+                    HStack {
+                        Button("Try Again") { app.retryQueueItem(entry.id) }
+                            .disabled(!isEditable || !app.isOnline || !app.hasOpenAIKey)
+                            .help(!isEditable ? UnavailableText.readOnly
+                                  : !app.isOnline ? UnavailableText.offline
+                                  : !app.hasOpenAIKey ? UnavailableText.noKey : "Send this request again.")
+                        Button("Dismiss") { app.removeQueueItem(entry.id) }
+                            .help("Remove this failed request from the queue.")
+                    }
+                    .controlSize(.small)
+                    .buttonBorderShape(.capsule)
                 }
             }
         case let .notSaved(text):
@@ -58,9 +94,12 @@ struct MessageStatusLine: View {
     }
 
     private func failedEntry(for message: Message) -> QueueEntry? {
-        let snapshot = app.queueSnapshot
-        if let id = message.queueItemID, let entry = snapshot.entry(for: id) { return entry }
-        return snapshot.entries.first { $0.item.messageID == message.id }
+        liveEntry(for: message)
+    }
+
+    /// The queue entry for the message's request, if the queue still has it.
+    private func liveEntry(for message: Message) -> QueueEntry? {
+        app.queueSnapshot.entry(answering: message, in: session.owner)
     }
 }
 
@@ -76,13 +115,24 @@ struct VersionDetailsGrid: View {
     @State private var designCost: CostRecord?
 
     var body: some View {
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 6) {
-            ForEach(VersionDetailsContent.rows(for: version, in: session, cost: cost, assets: assets, checkCost: checkCost, designCost: designCost), id: \.self) { row in
-                GridRow {
-                    Text(row.label).fontWeight(.semibold).foregroundStyle(Crayon.inkSoft).gridColumnAlignment(.trailing)
+        let catalog = app.catalog
+        let rows = VersionDetailsContent.rows(
+            for: version, in: session, cost: cost, assets: assets, checkCost: checkCost, designCost: designCost,
+            modelName: { provider, id in
+                catalog.imageModel(provider: provider, id: id)?.displayName
+                    ?? catalog.textModel(provider: provider, id: id)?.displayName
+            })
+        // Labels above values: the panel is narrow, and a label column as wide as the longest
+        // label ("Design system prompt") would squeeze every value.
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(rows, id: \.self) { row in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(row.label).fontWeight(.semibold).foregroundStyle(Crayon.inkSoft)
                     Text(row.value).foregroundStyle(Crayon.ink).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
             }
         }
         .font(.caption)
@@ -121,8 +171,8 @@ struct StatusPill<Icon: View, Content: View>: View {
         .font(Crayon.font(.caption, weight: .semibold))
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(color.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(color.opacity(0.4), lineWidth: 1))
+        .background(color.opacity(0.16), in: RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous).strokeBorder(color.opacity(0.4), lineWidth: 1))
     }
 }
 

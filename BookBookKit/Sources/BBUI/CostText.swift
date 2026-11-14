@@ -24,26 +24,33 @@ public enum CostText {
     public static func basisLabel(_ basis: CostBasis) -> String { basis == .actual ? "actual" : "estimate" }
 
     /// The alert text before one request, or nil when neither the threshold nor the budget applies.
-    /// Both can apply; the answer never blocks (A §7.10).
+    /// Both can apply; the answer never blocks (A §7.10). `question` names the action without its
+    /// question mark ("Check this picture"), so the alert asks about what the button does.
     public static func requestAlert(estimate: CostEstimate, decision: CostDecision, spent: Decimal,
-                                    budget: Decimal?) -> String? {
+                                    budget: Decimal?, question: String = "Generate") -> String? {
         var parts: [String] = []
         if decision.needsConfirmation { parts.append("This request is \(Self.estimate(estimate)).") }
         if decision.overBudget, let budget {
             parts.append("This book has spent \(amount(spent)) of its \(amount(budget)) budget.")
         }
         guard !parts.isEmpty else { return nil }
-        parts.append(decision.overBudget ? "Generate anyway?" : "Generate?")
+        parts.append(decision.overBudget ? "\(question) anyway?" : "\(question)?")
         return parts.joined(separator: " ")
     }
 
-    /// The Draft All Empty Boxes confirmation: always shown.
+    /// The Draft All Empty Boxes confirmation: always shown. `pageCount` is the number of
+    /// distinct story pages in the batch (a page can have several empty boxes); without it, every
+    /// picture but the cover's counts as a page. The confirmation-limit remark follows the
+    /// estimate it's about, then the budget.
     public static func batchAlert(count: Int, estimate: CostEstimate, decision: CostDecision, spent: Decimal,
-                                  budget: Decimal?, coverIncluded: Bool = false) -> String {
-        let noun = coverIncluded && count > 1
-            ? "\(count) pictures (cover + \(count - 1) \(count == 2 ? "page" : "pages"))"
-            : "\(count) \(count == 1 ? "request" : "requests")"
+                                  budget: Decimal?, coverIncluded: Bool = false, pageCount: Int? = nil) -> String {
+        let pictures = "\(count) \(count == 1 ? "picture" : "pictures")"
+        let pages = pageCount ?? (count - 1)
+        let noun = coverIncluded && pages > 0
+            ? "\(pictures) (cover + \(pages) \(pages == 1 ? "page" : "pages"))"
+            : pictures
         var text = "\(noun), \(Self.estimate(estimate))."
+        if decision.needsConfirmation { text += " That's above your confirmation limit." }
         if decision.overBudget, let budget {
             text += " This book has spent \(amount(spent)) of its \(amount(budget)) budget."
         }

@@ -13,9 +13,18 @@ final class NewBookWizardModel {
     }
 
     private(set) var step: Step = .title
-    var title = "Untitled"
+    /// Starts empty; the field's prompt says "Untitled" and `NewBookSpec.resolvedTitle` falls back to it.
+    var title = ""
     var author = ""
-    var pageSize: PageSizePreset?
+    /// Sizes named by their orientation (10 × 8 in is landscape by name) pick it, so the book
+    /// comes out as the size the menu said. Other sizes keep the current choice, like the Style tab.
+    var pageSize: PageSizePreset = .usLetter {
+        didSet {
+            if pageSize != oldValue, pageSize == .tenByEight || pageSize == .eightByTen {
+                orientation = Self.naturalOrientation(of: pageSize)
+            }
+        }
+    }
     var orientation: Orientation = .portrait
     var stylePresetID: String?
     var characterName = ""
@@ -36,7 +45,13 @@ final class NewBookWizardModel {
     static var pageSizes: [PageSizePreset] { PageSizePreset.allCases.filter { $0 != .custom } }
 
     /// Square sizes have no orientation choice.
-    var orientationApplies: Bool { pageSize.map { !$0.isSquarePreset } ?? false }
+    var orientationApplies: Bool { !pageSize.isSquarePreset }
+
+    /// The orientation a preset is named in: landscape when its base size is wider than tall.
+    static func naturalOrientation(of preset: PageSizePreset) -> Orientation {
+        guard let base = preset.baseSize else { return .portrait }
+        return base.width > base.height ? .landscape : .portrait
+    }
 
     func next() {
         if let after = Step(rawValue: step.rawValue + 1) { step = after }
@@ -49,8 +64,8 @@ final class NewBookWizardModel {
     /// Clears this step's choices and moves on (Create on the last step).
     func skip() {
         switch step {
-        case .title: title = "Untitled"; author = ""
-        case .pageSize: pageSize = nil; orientation = .portrait
+        case .title: title = ""; author = ""
+        case .pageSize: pageSize = .usLetter; orientation = .portrait
         case .style: stylePresetID = nil
         case .character: characterName = ""; characterDescription = ""
         case .story: importStory = false
@@ -63,8 +78,10 @@ final class NewBookWizardModel {
         let name = characterName.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = characterDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         let character = (name.isEmpty && text.isEmpty) ? nil : NewBookSpec.MainCharacter(name: name, description: text)
-        return NewBookSpec(title: title, author: author, pageSize: pageSize,
-                           orientation: pageSize == nil ? nil : (orientationApplies ? orientation : .portrait),
+        // Letter portrait is the book's default, so it's sent as "no choice".
+        let isDefaultSize = pageSize == .usLetter && orientation == .portrait
+        return NewBookSpec(title: title, author: author, pageSize: isDefaultSize ? nil : pageSize,
+                           orientation: isDefaultSize ? nil : (orientationApplies ? orientation : .portrait),
                            stylePresetID: stylePresetID, mainCharacter: character, importStoryAfter: importStory)
     }
 }
@@ -126,27 +143,37 @@ struct NewBookWizard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding([.horizontal, .top], 20)
-            content.padding(20).frame(maxWidth: .infinity, minHeight: 250, alignment: .topLeading)
+            // A fixed height that fits the tallest step (Style), so the sheet doesn't resize between
+            // steps. 290 rather than 320: the footer's step indicator row takes the other 30.
+            content.padding(20).frame(maxWidth: .infinity, minHeight: 290, maxHeight: 290, alignment: .topLeading)
             if let error {
-                Text(error).foregroundStyle(.red).font(Crayon.font(.callout, weight: .medium)).padding(.horizontal, 20)
+                CrayonInlineMessage(error, kind: .error, textStyle: .callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
             }
-            HStack {
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Spacer()
+            VStack(spacing: 10) {
+                // The indicator gets its own centred line above the buttons, so no button set
+                // (Back / Skip / Continue or Create) can reach it.
                 VStack(spacing: 4) {
                     StepDots(current: model.step.rawValue, count: NewBookWizardModel.Step.allCases.count)
                     Text("Step \(model.step.rawValue + 1) of \(NewBookWizardModel.Step.allCases.count)")
                         .font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.inkSoft)
                 }
-                Spacer()
-                Button("Back") { model.back() }.disabled(model.isFirst || creating)
-                Button("Skip") { skip() }.disabled(creating)
-                if model.isLast {
-                    Button("Create") { create() }.keyboardShortcut(.defaultAction).disabled(creating)
-                        .buttonStyle(.crayon(Crayon.grass))
-                } else {
-                    Button("Next") { model.next() }.keyboardShortcut(.defaultAction)
-                        .buttonStyle(.crayon)
+                .frame(maxWidth: .infinity)
+                HStack {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(creating)
+                    if creating { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Button("Back") { model.back() }.disabled(model.isFirst || creating)
+                    Button("Skip") { skip() }.disabled(creating)
+                    if model.isLast {
+                        Button("Create") { create() }.keyboardShortcut(.defaultAction).disabled(creating)
+                            .buttonStyle(.crayon(Crayon.grass))
+                    } else {
+                        Button("Continue") { model.next() }.keyboardShortcut(.defaultAction)
+                            .buttonStyle(.crayon)
+                    }
                 }
             }
             .padding(12)
@@ -187,25 +214,27 @@ struct NewBookWizard: View {
     private var content: some View {
         switch model.step {
         case .title:
-            Form {
-                TextField("Title", text: $model.title)
-                TextField("Author", text: $model.author)
+            VStack(alignment: .leading, spacing: 12) {
+                fieldRow("Title") { TextField("Title", text: $model.title, prompt: Text("Untitled")) }
+                fieldRow("Author") { TextField("Author", text: $model.author) }
             }
-            .formStyle(.columns)
         case .pageSize:
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Size", selection: $model.pageSize) {
-                    Text("Default (US Letter)").tag(PageSizePreset?.none)
-                    ForEach(NewBookWizardModel.pageSizes, id: \.self) { Text($0.displayName).tag(PageSizePreset?.some($0)) }
+                fieldRow("Size") {
+                    Picker("Size", selection: $model.pageSize) {
+                        ForEach(NewBookWizardModel.pageSizes, id: \.self) { Text($0.displayName).tag($0) }
+                    }
                 }
                 if model.orientationApplies {
-                    Picker("Orientation", selection: $model.orientation) {
-                        Text("Portrait").tag(Orientation.portrait)
-                        Text("Landscape").tag(Orientation.landscape)
+                    fieldRow("Orientation") {
+                        Picker("Orientation", selection: $model.orientation) {
+                            Text("Portrait").tag(Orientation.portrait)
+                            Text("Landscape").tag(Orientation.landscape)
+                        }
+                        .pickerStyle(.segmented)
                     }
-                    .pickerStyle(.segmented)
                 }
-                Text("You can change this later in the Style tab.").font(.caption).foregroundStyle(.secondary)
+                Text("You can change this later in the Style tab.").font(.caption).foregroundStyle(Crayon.inkSoft)
             }
         case .style:
             ScrollView {
@@ -217,22 +246,31 @@ struct NewBookWizard: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 6)
             }
-            .frame(maxHeight: 280)
         case .character:
-            Form {
-                TextField("Name", text: $model.characterName)
-                TextField("Description", text: $model.characterDescription, axis: .vertical)
-                    .lineLimit(3...6)
+            VStack(alignment: .leading, spacing: 12) {
+                fieldRow("Name") { TextField("Name", text: $model.characterName) }
+                fieldRow("Description") {
+                    TextField("Description", text: $model.characterDescription, axis: .vertical).lineLimit(3...6)
+                }
                 Text("Becomes a character in the Assets tab. Leave blank to add characters later.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(Crayon.inkSoft)
             }
-            .formStyle(.columns)
         case .story:
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Import story text after creating the book", isOn: $model.importStory)
                 Text("The book opens with the Import Story Text sheet, so you can paste your text and split it into pages.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(Crayon.inkSoft)
             }
+        }
+    }
+
+    /// A label in a fixed-width column beside its field, so every step's fields start at the same edge.
+    private func fieldRow<Field: View>(_ label: String, @ViewBuilder _ field: () -> Field) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .font(Crayon.font(.body, weight: .semibold)).foregroundStyle(Crayon.ink)
+                .frame(width: 96, alignment: .trailing)
+            field().labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -255,14 +293,15 @@ struct NewBookWizard: View {
                 if selected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.title3.weight(.bold))
-                        .foregroundStyle(Crayon.tomato)
+                        .foregroundStyle(Crayon.danger)
                 }
             }
             .padding(8)
-            .crayonCard(selected: selected, cornerRadius: 12)
+            .crayonCard(selected: selected, cornerRadius: Crayon.mediumCornerRadius)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .crayonHover(tilt: 0, scale: 1.01)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -287,6 +326,7 @@ struct NewBookWizard: View {
 struct StepDots: View {
     let current: Int
     let count: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 4) {
@@ -296,7 +336,7 @@ struct StepDots: View {
                     .frame(width: index == current ? 18 : 8, height: 6)
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: current)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7), value: current)
         .accessibilityHidden(true)
     }
 }

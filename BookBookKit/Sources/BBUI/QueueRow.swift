@@ -74,10 +74,10 @@ public struct QueueBannerModel: Equatable {
         case nil:
             return nil
         case let .restored(count):
-            text = count == 1 ? "Resume 1 queued request" : "Resume \(count) queued requests"
+            text = count == 1 ? "1 request from last time is paused." : "\(count) requests from last time are paused."
             offersResume = true
         case .offline:
-            text = "Offline — queued requests will run when the network returns"
+            text = "You're offline. Queued requests will run when the network returns."
             offersResume = false
         case .user:
             text = "The queue is paused"

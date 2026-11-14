@@ -61,7 +61,7 @@ struct LayoutsToolbar: View {
 
     var body: some View {
         let count = model.selectedBoxes.count
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             ControlGroup {
                 Button { model.addBox(.image) } label: { Label("Image Box", systemImage: "photo.badge.plus") }
                     .help("Add an image box")
@@ -74,15 +74,21 @@ struct LayoutsToolbar: View {
                 .disabled(count == 0)
                 .help("Align (one box aligns to its page's safe area) and distribute (three or more)")
             let orderMatters = model.layerOrderHasVisibleEffect
+            let orderHelp = { (action: String) -> String in
+                orderMatters || count == 0 ? action
+                    : "Layer order only matters between boxes of the same kind: text always draws above images."
+            }
             ControlGroup {
                 Button { model.moveSelection(.toFront) } label: { Label("Bring to Front", systemImage: "square.3.layers.3d.top.filled") }
+                    .help(orderHelp("Bring to front")).accessibilityLabel("Bring to Front")
                 Button { model.moveSelection(.forward) } label: { Label("Bring Forward", systemImage: "square.2.layers.3d.top.filled") }
+                    .help(orderHelp("Bring forward")).accessibilityLabel("Bring Forward")
                 Button { model.moveSelection(.backward) } label: { Label("Send Backward", systemImage: "square.2.layers.3d.bottom.filled") }
+                    .help(orderHelp("Send backward")).accessibilityLabel("Send Backward")
                 Button { model.moveSelection(.toBack) } label: { Label("Send to Back", systemImage: "square.3.layers.3d.bottom.filled") }
+                    .help(orderHelp("Send to back")).accessibilityLabel("Send to Back")
             }
             .disabled(count == 0 || !orderMatters)
-            .help(orderMatters ? "Change the layer order of the selected boxes"
-                  : "Layer order only matters between boxes of the same kind: text always draws above images")
             Button(role: .destructive) { model.deleteSelection() } label: { Label("Delete Box", systemImage: "trash") }
                 .disabled(count == 0)
                 .help("Delete the selected boxes")

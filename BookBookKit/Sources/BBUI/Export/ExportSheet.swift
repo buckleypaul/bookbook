@@ -15,28 +15,32 @@ struct ExportSheet: View {
     var body: some View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: 0) {
-            Text("Export").font(.title2.bold()).padding([.horizontal, .top], 20)
+            CrayonHeader("Export", color: Crayon.tomato).padding(.bottom, 12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    options(model)
+                    VStack(alignment: .leading, spacing: 16) {
+                        options(model)
+                    }
+                    .disabled(model.isExporting)
                     preflight(model)
                 }
-                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
             }
-            Divider()
+            Divider().padding(.vertical, 12)
             footer(model)
         }
-        .frame(width: 520, height: 600)
+        .crayonSheet(width: 520, height: 600)
         .task { await model.runPreflight() }
         .onAppear { model.chooseDestination = Self.runSavePanel }
         .interactiveDismissDisabled(model.isExporting)
         .alert("Couldn't export", isPresented: Binding(get: { model.errorMessage != nil },
                                                        set: { if !$0 { model.errorMessage = nil } })) {
-            Button("OK") { model.errorMessage = nil }
+            Button("OK", role: .cancel) { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
         .alert("Couldn't preview the image", isPresented: Binding(get: { previewError != nil },
                                                                   set: { if !$0 { previewError = nil } })) {
-            Button("OK") { previewError = nil }
+            Button("OK", role: .cancel) { previewError = nil }
         } message: { Text(previewError ?? "") }
         .sheet(item: $preview) { UpscalePreviewSheet(preview: $0) }
     }
@@ -50,7 +54,6 @@ struct ExportSheet: View {
             ForEach(ExportSheetModel.OutputType.allCases) { Text($0.title).tag($0) }
         }
         .pickerStyle(.segmented)
-        .disabled(model.isExporting)
         switch model.outputType {
         case .standard:
             note("Home printing: pages at trim size, no bleed.")
@@ -96,9 +99,9 @@ struct ExportSheet: View {
             HStack {
                 Stepper("From \(model.rangeFrom)", value: $model.rangeFrom, in: 1...max(1, total))
                 Stepper("to \(model.rangeTo)", value: $model.rangeTo, in: 1...max(1, total))
-                Text("of \(total)").foregroundStyle(.secondary)
+                Text("of \(total)").foregroundStyle(Crayon.inkSoft)
             }
-            if !model.isRangeValid { Text("The first page must come before the last.").foregroundStyle(.red) }
+            if !model.isRangeValid { CrayonInlineMessage("The first page must come before the last.", kind: .error, textStyle: .callout) }
         }
         if model.showsSpreadsOption, model.hasSpreads {
             Picker("Spreads", selection: $model.spreads) {
@@ -109,7 +112,7 @@ struct ExportSheet: View {
     }
 
     private func note(_ text: String) -> some View {
-        Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(.callout).foregroundStyle(Crayon.inkSoft).fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: Preflight
@@ -120,18 +123,19 @@ struct ExportSheet: View {
         if model.isCheckingPreflight {
             HStack { ProgressView().controlSize(.small); Text("Checking the book…") }
         } else if model.issues.isEmpty {
-            Label("No problems found.", systemImage: "checkmark.circle").foregroundStyle(.secondary)
+            Label("No problems found.", systemImage: "checkmark.circle").foregroundStyle(Crayon.inkSoft)
         } else {
             ForEach(model.issueGroups, id: \.kind) { group in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(group.kind.groupTitle).font(.headline)
+                    Text(group.kind.groupTitle).font(Crayon.font(.headline, weight: .heavy))
                     ForEach(group.issues) { issue in
                         HStack {
                             Button { onOpenPage(issue.page) } label: {
                                 Text("\(model.pageLabel(for: issue)): \(issue.detail)")
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .buttonStyle(.link)
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Crayon.danger)
                             .help("Go to this page")
                             if issue.kind == .softImage {
                                 Button("Preview Upscaled") { showPreview(issue) }
@@ -171,7 +175,7 @@ struct ExportSheet: View {
             } else if let result = model.result {
                 Label("Exported \(result.pageCount) \(result.pageCount == 1 ? "page" : "pages").",
                       systemImage: "checkmark.circle")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Crayon.inkSoft)
             }
             Spacer()
             Button("Done") { onClose() }
@@ -181,9 +185,9 @@ struct ExportSheet: View {
                 .disabled(!canExport)
             Button(model.primaryTitle) { model.startExport() }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.crayon)
                 .disabled(!canExport)
         }
-        .padding(16)
     }
 
     private static func runSavePanel(_ name: String) -> URL? {
@@ -210,22 +214,19 @@ struct UpscalePreviewSheet: View {
     @Environment(\.displayScale) private var scale
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(preview.title).font(.headline)
-                Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
-            }
-            .padding(12)
-            Divider()
+        VStack(alignment: .leading, spacing: 12) {
+            CrayonHeader(preview.title, color: Crayon.sky)
             ScrollView([.horizontal, .vertical]) {
                 Image(nsImage: preview.image)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: pixels.width / scale, height: pixels.height / scale)
             }
+            .crayonCard(cornerRadius: Crayon.smallCornerRadius)
+            CrayonSheetDoneFooter()
         }
-        .frame(minWidth: 560, minHeight: 440)
+        .crayonSheet(minWidth: 560, minHeight: 440)
+        .onExitCommand { dismiss() }
     }
 
     private var pixels: CGSize {

@@ -10,6 +10,7 @@ struct StyleReferencesView: View {
     @State private var isTargeted = false
     @State private var errorText: String?
     @State private var cache: ImageCache
+    @State private var preview: PreviewImage?
 
     init(document: BookDocument, model: StyleTabModel) {
         self.document = document
@@ -21,13 +22,13 @@ struct StyleReferencesView: View {
 
     var body: some View {
         let refs = model.visual.styleReferences
-        let shape = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous)
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Reference images").font(Crayon.font(.subheadline, weight: .bold)).foregroundStyle(Crayon.ink)
                 Spacer()
                 Button("Add…") { showImporter = true }
-                    .buttonStyle(.crayon(Crayon.sky))
+                    .buttonBorderShape(.capsule)
                     .controlSize(.small)
             }
             if refs.isEmpty {
@@ -43,7 +44,7 @@ struct StyleReferencesView: View {
             } else {
                 ScrollView(.horizontal) {
                     HStack(spacing: 10) {
-                        ForEach(refs, id: \.sha256) { thumbnail($0) }
+                        ForEach(Array(refs.enumerated()), id: \.element.sha256) { thumbnail($1, number: $0 + 1) }
                     }
                     .padding(.horizontal, 2)
                     .padding(.top, 4)
@@ -51,7 +52,7 @@ struct StyleReferencesView: View {
                 }
             }
             if let errorText {
-                Text(errorText).font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.tomato)
+                Text(errorText).font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.danger)
             }
         }
         .padding(8)
@@ -64,6 +65,9 @@ struct StyleReferencesView: View {
             add(files)
             return !files.isEmpty
         } isTargeted: { isTargeted = $0 }
+        .sheet(item: $preview) { item in
+            ImagePreviewSheet(title: "Style reference \(item.number)", image: item.image)
+        }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: Self.types, allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): add(urls)
@@ -72,7 +76,21 @@ struct StyleReferencesView: View {
         }
     }
 
-    private func thumbnail(_ ref: ImageRef) -> some View {
+    /// A reference image enlarged in `ImagePreviewSheet`.
+    private struct PreviewImage: Identifiable {
+        let id = UUID()
+        let number: Int
+        let image: CGImage
+    }
+
+    private func expand(_ ref: ImageRef, number: Int) {
+        // The row's cache is downsampled; the enlarged view reads the full-size image.
+        let full = ImageCache(store: document.store, maxPixelSize: nil)
+        guard let image = full.image(for: ref) ?? cache.image(for: ref) else { return }
+        preview = PreviewImage(number: number, image: image)
+    }
+
+    private func thumbnail(_ ref: ImageRef, number: Int) -> some View {
         ZStack(alignment: .topTrailing) {
             Group {
                 if let image = cache.image(for: ref) {
@@ -82,14 +100,24 @@ struct StyleReferencesView: View {
                 }
             }
             .frame(width: 72, height: 72)
-            .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous))
             .crayonCard(cornerRadius: Crayon.smallCornerRadius, padding: 3)
+            .onTapGesture(count: 2) { expand(ref, number: number) }
+            .contextMenu {
+                Button("View Larger", systemImage: "arrow.up.left.and.arrow.down.right") {
+                    expand(ref, number: number)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Style reference image \(number)")
+            .accessibilityAction(named: "View larger") { expand(ref, number: number) }
             Button { model.removeReference(ref) } label: {
                 Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette)
                     .foregroundStyle(.white, .black.opacity(0.6))
             }
             .buttonStyle(.plain)
             .help("Remove this reference image")
+            .accessibilityLabel("Remove reference image \(number)")
             .padding(2)
         }
     }

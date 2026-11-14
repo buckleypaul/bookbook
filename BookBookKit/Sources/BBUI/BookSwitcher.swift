@@ -36,7 +36,7 @@ struct BookSwitcher: View {
             }
             Button("Duplicate") { duplicate() }
                 .disabled(entry == nil)
-            Button("Move to Trash…") { actions.trashing = entry }
+            Button("Move to Trash…", role: .destructive) { actions.trashing = entry }
                 .disabled(entry == nil)
             Divider()
             Button("Book Settings…", action: onBookSettings)
@@ -68,7 +68,8 @@ struct BookSwitcher: View {
                 let copy = try await app.duplicate(entry)
                 openWindow(value: copy.id)
             } catch {
-                actions.error = "Couldn't duplicate “\(entry.title)”. \(StoreErrorText.message(for: error))"
+                actions.error = .init(title: "Couldn't duplicate the book",
+                                      message: "“\(entry.title)” wasn't duplicated. \(StoreErrorText.message(for: error))")
             }
         }
     }

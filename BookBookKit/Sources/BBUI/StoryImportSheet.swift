@@ -79,8 +79,8 @@ final class StoryImportModel {
 struct StoryImportSheet: View {
     let document: BookDocument
     let pages: PagesController
-    @Environment(\.dismiss) private var dismiss
     @State private var model: StoryImportModel
+    @FocusState private var editorFocused: Bool
 
     init(document: BookDocument, pages: PagesController) {
         self.document = document
@@ -105,22 +105,17 @@ struct StoryImportSheet: View {
                     HStack {
                         Text(model.fileName.map { "From “\($0)”" } ?? "Paste the story, or open a file.")
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Crayon.inkSoft)
                             .lineLimit(1)
                         Spacer()
                         Button("Open…", action: openFile)
                     }
                     TextEditor(text: $model.pastedText)
-                        .font(.body)
-                        .frame(minHeight: 200)
-                        .scrollContentBackground(.hidden)
-                        .padding(6)
-                        .crayonCard(cornerRadius: Crayon.smallCornerRadius)
+                        .focused($editorFocused)
+                        .crayonTextEditor(focused: editorFocused, minHeight: 200)
                         .accessibilityLabel("Story text")
                     if let error = model.readError {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.callout)
-                            .foregroundStyle(.orange)
+                        CrayonInlineMessage(error, kind: .warning, textStyle: .callout)
                     }
                     Form {
                         Picker("Split pages at", selection: $model.rule) {
@@ -141,7 +136,7 @@ struct StoryImportSheet: View {
                             Text("\(index + 1)")
                                 .font(Crayon.font(.callout, weight: .heavy))
                                 .monospacedDigit()
-                                .foregroundStyle(Crayon.tomato)
+                                .foregroundStyle(Crayon.danger)
                             Text(StoryImportModel.previewLine(page)).lineLimit(2)
                         }
                     }
@@ -154,24 +149,17 @@ struct StoryImportSheet: View {
             Text("Template").font(Crayon.font(.callout, weight: .bold))
             TemplatePicker(templates: Self.templates(content), trimSize: content.style.pageSetup.trimSize,
                            selection: $model.templateID)
-                .frame(height: 130)
-            HStack {
+                .frame(height: 180)
+            CrayonSheetFooter("Import", color: Crayon.sky, isDisabled: !model.canImport || !document.isEditable) {
+                importPages(preview)
+            } leading: {
                 Text(pages.isStoryPage(pages.selectedPage) || pages.isCover(pages.selectedPage)
                      ? "Pages are inserted after the selected page." : "Pages are added at the end.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Import") { importPages(preview) }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.crayon)
-                    .disabled(!model.canImport || !document.isEditable)
+                    .foregroundStyle(Crayon.inkSoft)
             }
         }
-        .padding(20)
-        .frame(minWidth: 700, minHeight: 560)
-        .crayonPaper()
+        .crayonSheet(minWidth: 700, minHeight: 560)
     }
 
     /// The file types the open panel offers: the importer's plain-text and rich-text

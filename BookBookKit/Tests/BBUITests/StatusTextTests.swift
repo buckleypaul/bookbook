@@ -13,8 +13,8 @@ struct ProviderErrorTextTests {
     }
 
     @Test func missingAndInvalidKey_pointToSettings() {
-        #expect(ProviderErrorText.message(for: .missingKey) == "Add your OpenAI key in Settings ▸ API Keys.")
-        #expect(ProviderErrorText.message(for: .invalidKey(nil)).contains("Add your OpenAI key in Settings ▸ API Keys."))
+        #expect(ProviderErrorText.message(for: .missingKey) == "Add your OpenAI API key in Settings ▸ API Keys.")
+        #expect(ProviderErrorText.message(for: .invalidKey(nil)).contains("OpenAI API key in Settings ▸ API Keys."))
     }
 
     @Test func refused() {
@@ -60,6 +60,8 @@ struct ElapsedTimeTextTests {
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: 14) == "0:07 of ~0:14")
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: nil) == "0:07")
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: 0) == "0:07")
+        #expect(ElapsedTimeText.progress(elapsed: 14, typical: 14) == "0:14 of ~0:14")
+        #expect(ElapsedTimeText.progress(elapsed: 130, typical: 70) == "2:10 (usually ~1:10)")
     }
 }
 
@@ -76,7 +78,7 @@ struct MessageStatusTests {
     private func resolve(_ message: Message, _ state: QueueItemState?, pending: Set<QueueItemID> = [],
                          failures: [MessageID: String] = [:]) -> MessageStatus {
         let snapshot = QueueSnapshot(entries: state.map { [QueueEntry(item: item, state: $0)] } ?? [])
-        return MessageStatus.resolve(message, snapshot: snapshot, pendingThisLaunch: pending,
+        return MessageStatus.resolve(message, in: item.target.owner, snapshot: snapshot, pendingThisLaunch: pending,
                                      deliveryFailures: failures) { _ in 14 }
     }
 
@@ -110,6 +112,37 @@ struct MessageStatusTests {
         #expect(resolve(message(queued: false, produced: version), nil) == .produced(version))
         #expect(resolve(message(queued: false), nil) == MessageStatus.none)
     }
+
+    /// Try Again puts a failed item back without restoring the link its delivery cleared: the
+    /// message still follows it while it waits and runs again.
+    @Test func afterTryAgain_theUnlinkedMessageFollowsItsRequest() {
+        let start = Fixtures.date
+        #expect(resolve(message(queued: false), .waiting) == .waiting)
+        #expect(resolve(message(queued: false), .retrying(attempt: 2, resumesAt: start, lastError: .transient(nil)))
+            == .waiting)
+        #expect(resolve(message(queued: false), .running(startedAt: start, progress: .sent, attempt: 1))
+            == .running(startedAt: start, typicalSeconds: 14))
+    }
+
+    /// The match by message ID takes only an image request for the message's own session.
+    @Test func unlinkedMatch_ignoresOtherSessionsAndConsistencyChecks() {
+        let running = QueueItemState.running(startedAt: Fixtures.date, progress: .sent, attempt: 1)
+        // A duplicated page's copy of the message (same ID, another session): the request delivers
+        // to the original only.
+        let copy = MessageStatus.resolve(message(queued: false), in: .pageBox(PageID(), BoxID()),
+                                         snapshot: QueueSnapshot(entries: [QueueEntry(item: item, state: running)]),
+                                         pendingThisLaunch: []) { _ in 14 }
+        #expect(copy == MessageStatus.none)
+        // A consistency check carries its version's message ID: the message still shows its version.
+        let version = VersionID()
+        var check = item
+        check.id = QueueItemID()
+        check.kind = .consistencyCheck(version)
+        let checked = MessageStatus.resolve(message(queued: false, produced: version), in: item.target.owner,
+                                            snapshot: QueueSnapshot(entries: [QueueEntry(item: check, state: running)]),
+                                            pendingThisLaunch: []) { _ in 14 }
+        #expect(checked == .produced(version))
+    }
 }
 
 struct VersionDetailsContentTests {
@@ -121,21 +154,29 @@ struct VersionDetailsContentTests {
         #expect(dict["Provider"] == "OpenAI")
         #expect(dict["Model"] == "gpt-image-2.5-sunburst")
         #expect(dict["Quality"] == "Standard")
-        #expect(dict["Output size"] == "1024x1536")
+        #expect(dict["Output size"] == "1024 × 1536")
+        // Equal to the output size, so not listed twice.
+        #expect(dict["Image size"] == nil)
         #expect(dict["Prompt sent"] == "THE EXACT PROMPT")
         #expect(dict["Your request"] == "a fox")
-        #expect(dict["Parameter n"] == "1")
-        #expect(dict["Parameter quality"] == "medium")
-        #expect(dict["Parameter size"] == "1024x1536")
+        // One row, a "key: value" line per parameter, in a stable (sorted) order.
+        #expect(dict["Parameters sent"] == "n: 1\nquality: medium\nsize: 1024x1536")
         #expect(dict["References sent"] == "None")
         #expect(dict["Story text included"] == "Yes")
-        #expect(dict["Usage"]?.contains("input text 120") == true)
-        #expect(dict["Usage"]?.contains("output image 4160") == true)
+        #expect(dict["Usage"]?.hasPrefix("Input: 120 text") == true)
+        #expect(dict["Usage"]?.contains("Output: ") == true)
+        #expect(dict["Usage"]?.contains("4160 image tokens") == true)
         #expect(dict["Date"] == "DATE")
         #expect(dict["Revised prompt"] == nil)
-        // Parameters are listed in a stable (sorted) order.
-        let params = rows.map(\.label).filter { $0.hasPrefix("Parameter ") }
-        #expect(params == ["Parameter n", "Parameter quality", "Parameter size"])
+        #expect(!rows.map(\.label).contains { $0.hasPrefix("Parameter ") })
+    }
+
+    @Test func modelShowsItsNameAndID() {
+        let version = Version(image: Fixtures.ref, pixelSize: PixelSize(width: 1024, height: 1536), source: .generated,
+                              createdAt: Fixtures.date, provenance: Fixtures.provenance())
+        let rows = VersionDetailsContent.rows(for: version, modelName: { _, _ in "GPT Image 2.5 Sunburst" })
+        #expect(rows.first { $0.label == "Model" }?.value == "GPT Image 2.5 Sunburst (gpt-image-2.5-sunburst)")
+        #expect(VersionDetailsContent.modelText("x-1", name: "x-1 (custom)") == "x-1 (custom)")
     }
 
     @Test func revisedPromptAndMissingUsage() {

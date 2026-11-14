@@ -50,6 +50,8 @@ struct LibraryLocationSettings: View {
     @State private var chosen: URL?
     @State private var confirmSwitch: URL?
     @State private var working = false
+    /// The pending "Move your books…" presentation after "Switch Anyway".
+    @State private var presentTask: Task<Void, Never>?
     @State private var error: String?
 
     var body: some View {
@@ -57,9 +59,10 @@ struct LibraryLocationSettings: View {
             LabeledContent("Location") {
                 Text(app.libraryRoot.path(percentEncoded: false))
                     .textSelection(.enabled)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Crayon.inkSoft)
+                    .help(app.libraryRoot.path(percentEncoded: false))
             }
             HStack {
                 if working { ProgressView().controlSize(.small) }
@@ -71,7 +74,7 @@ struct LibraryLocationSettings: View {
                     .disabled(working)
             }
             if let error {
-                Text(error).foregroundStyle(.red).font(.callout)
+                CrayonInlineMessage(error, kind: .error, textStyle: .callout)
             }
         } header: {
             Text("Library")
@@ -79,8 +82,17 @@ struct LibraryLocationSettings: View {
             Text("Each book is a self-contained file in this folder, so you can back it up by copying it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+        .onDisappear { presentTask?.cancel(); presentTask = nil }
         .alert("Switch library?", isPresented: $confirmSwitch.isPresent(), presenting: confirmSwitch) { url in
-            Button("Switch Anyway", role: .destructive) { chosen = url }
+            Button("Switch Anyway", role: .destructive) {
+                // Present the next alert once this one has gone, or it may never appear.
+                presentTask?.cancel()
+                presentTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard !Task.isCancelled else { return }
+                    chosen = url
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text(LibrarySwitchWarning.message(count: pendingCount) ?? "")
@@ -95,6 +107,8 @@ struct LibraryLocationSettings: View {
     }
 
     private func choose() {
+        presentTask?.cancel()
+        presentTask = nil
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false

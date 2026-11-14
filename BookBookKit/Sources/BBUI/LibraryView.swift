@@ -10,6 +10,12 @@ public struct LibraryView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var selection: BookID?
     @State private var actions = BookActionRequests()
+    /// The grid's width, to work out how many columns the arrow keys step over.
+    @State private var gridWidth: CGFloat = 0
+
+    private static let cellMinimum: CGFloat = 160
+    private static let cellSpacing: CGFloat = 22
+    private static let gridPadding: CGFloat = 24
 
     public init() {}
 
@@ -83,13 +89,20 @@ public struct LibraryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 LibraryHeader(count: app.libraryEntries.count)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 22)], spacing: 26) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: Self.cellMinimum, maximum: 220), spacing: Self.cellSpacing,
+                                                 alignment: .top)], spacing: 26) {
                     // Keyed by URL: two packages can carry the same book ID (a Finder copy).
                     ForEach(app.libraryEntries, id: \.url) { entry in
                         LibraryCell(entry: entry, isSelected: selection == entry.id)
                             .onTapGesture(count: 2) { openWindow(value: entry.id) }
                             .simultaneousGesture(TapGesture().onEnded { selection = entry.id })
-                            .contextMenu { menu(for: entry) }
+                            .contextMenu {
+                                menu(for: entry)
+                                    // Right-click selects the cell it opened the menu on.
+                                    .onAppear { selection = entry.id }
+                            }
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityAction(named: "Open") { openWindow(value: entry.id) }
                     }
                 }
             }
@@ -105,6 +118,33 @@ public struct LibraryView: View {
             return .handled
         }
         .onDeleteCommand { actions.trashing = selectedEntry }
+        .onMoveCommand { move($0) }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
+    }
+
+    private var columnCount: Int {
+        let available = gridWidth - Self.gridPadding * 2
+        return max(1, Int(((available + Self.cellSpacing) / (Self.cellMinimum + Self.cellSpacing)).rounded(.down)))
+    }
+
+    /// Arrow keys move the selection through the grid (left and right by one, up and down by a row).
+    private func move(_ direction: MoveCommandDirection) {
+        let entries = app.libraryEntries
+        guard !entries.isEmpty else { return }
+        let step: Int
+        switch direction {
+        case .left: step = -1
+        case .right: step = 1
+        case .up: step = -columnCount
+        case .down: step = columnCount
+        @unknown default: return
+        }
+        guard let current = entries.firstIndex(where: { $0.id == selection }) else {
+            selection = entries[step < 0 ? entries.count - 1 : 0].id
+            return
+        }
+        let target = current + step
+        if entries.indices.contains(target) { selection = entries[target].id }
     }
 
     @ViewBuilder
@@ -127,7 +167,8 @@ public struct LibraryView: View {
             do {
                 selection = try await app.duplicate(entry).id
             } catch {
-                actions.error = "Couldn't duplicate “\(entry.title)”. \(StoreErrorText.message(for: error))"
+                actions.error = .init(title: "Couldn't duplicate the book",
+                                      message: "“\(entry.title)” wasn't duplicated. \(StoreErrorText.message(for: error))")
             }
         }
     }

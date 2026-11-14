@@ -422,6 +422,8 @@ struct BookBookApp: App {
 | **Page canvas and template editor** | `CanvasView` (AppKit `NSView`, layer-backed) inside `NSViewRepresentable`. It draws with `PageRenderer` and handles hit-testing, selection handles, snapping guides, pan/zoom of placed images, and the in-place text editor. |
 | In-place text editing | One `NSTextView` (TextKit 2) placed over the active text box, configured from `TextBoxLayout`. Continuous spelling and grammar checking are on. `allowsUndo = false` (§6.3). |
 | Session panel | SwiftUI: chat thread, prompt field with `@mention` autocomplete, asset checklist, version strip, version details. |
+| Sidebar tab | `PagesController.sidebarTab` (2026-11-14). Opening a page or the overview from anywhere (Page menu, Export preflight links, Where used) selects the Pages tab, so `PagesController.open` and `showOverview()` are the only routes to a page. |
+| Shared chrome | `CrayonComponents.swift` (2026-11-14): `CrayonBanner` for in-window banners; `crayonSheet()` with `CrayonSheetFooter` / `CrayonSheetDoneFooter` for sheets; `CrayonInlineMessage` for inline error, warning and success lines; `crayonComposerField()` for prompt fields. Labels on crayon fills come from `CrayonContrast` (dark ink wherever white is under 4.5:1). Views use these, not hand-built copies; the Settings window stays a native form. |
 | Region editor | An AppKit overlay over a large view of the selected version, with brush and lasso tools. It produces an 8-bit mask at the version's pixel size. |
 
 The canvas draws downsampled images from the cache; export uses the full-resolution files.

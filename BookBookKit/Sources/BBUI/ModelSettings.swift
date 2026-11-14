@@ -27,7 +27,7 @@ struct ModelSettings: View {
                     HStack {
                         Text(model.displayName).font(.callout)
                         if model.copiesFrom != nil {
-                            Text("custom").font(.caption2).foregroundStyle(.secondary)
+                            Text("custom").font(.caption2).foregroundStyle(Crayon.inkSoft)
                         }
                         Spacer()
                         badge(for: model)
@@ -75,7 +75,8 @@ struct ModelSettings: View {
                             .controlSize(.small)
                     }
                 }
-                TextField("Model ID", text: $customID, prompt: Text("Model ID"))
+                TextField("Model ID", text: $customID, prompt: Text("e.g. \(models.first?.id ?? "gpt-image-1")"))
+                    .onSubmit { add(models) }
                 Picker("Copies", selection: $family) {
                     ForEach(models.filter { $0.copiesFrom == nil }, id: \.id) { Text($0.displayName).tag($0.id) }
                 }
@@ -84,7 +85,7 @@ struct ModelSettings: View {
                     Button("Add") { add(models) }
                         .disabled(customID.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                if let addError { Text(addError).font(.caption).foregroundStyle(.red) }
+                if let addError { CrayonInlineMessage(addError, kind: .error) }
             } header: {
                 Text("Custom model ID")
             } footer: {
@@ -119,24 +120,17 @@ struct ModelSettings: View {
     private func badge(for model: CatalogModel) -> some View {
         switch app.modelAvailability[model.id] ?? .unknown {
         case .available:
-            Label("Available", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green)
-        case let .unavailable(successor):
-            HStack(spacing: 6) {
-                Label("Unavailable", systemImage: "xmark.circle.fill").font(.caption).foregroundStyle(.orange)
-                if let successor {
-                    Button("Switch to \(name(of: successor))") { app.preferences.defaultImageModelID = successor }
-                        .controlSize(.small)
-                }
-            }
+            CrayonInlineMessage("Available", kind: .success)
+        case .unavailable:
+            CrayonInlineMessage("Unavailable", kind: .warning)
         case .unknown:
-            Text("Not checked").font(.caption).foregroundStyle(.secondary)
+            Text("Not checked").font(.caption).foregroundStyle(Crayon.inkSoft)
         }
     }
 
     private func switchPrompt(successor: String?) -> some View {
         HStack {
-            Label("Your default model isn't available to your account.", systemImage: "exclamationmark.triangle.fill")
-                .font(.caption).foregroundStyle(.orange)
+            CrayonInlineMessage("Your default model isn't available to your account.", kind: .warning)
             Spacer()
             if let successor {
                 Button("Switch to \(name(of: successor))") { app.preferences.defaultImageModelID = successor }
@@ -151,6 +145,7 @@ struct ModelSettings: View {
 
     private func add(_ models: [CatalogModel]) {
         let id = customID.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { return }
         let chosen = family.isEmpty ? (models.first { $0.copiesFrom == nil }?.id ?? "") : family
         if app.addCustomModel(id: id, copying: chosen, provider: provider) {
             customID = ""

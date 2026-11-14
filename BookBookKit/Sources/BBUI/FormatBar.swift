@@ -24,6 +24,25 @@ enum FontFamilies {
 /// first responder and the action applies to its selection.
 struct FormatBar: View {
     let formatting: TextFormatController
+    /// Whether the controls run past the bar's leading / trailing edge (it scrolls): a fade shows there.
+    @State private var clippedLeading = false
+    @State private var clippedTrailing = false
+
+    /// One alignment segment: its value, label, Format menu shortcut and symbol.
+    struct AlignmentChoice {
+        var value: BBModel.TextAlignment?
+        var title: String
+        var shortcut: String?
+        var symbol: String
+    }
+
+    static let alignments: [AlignmentChoice] = [
+        AlignmentChoice(value: nil, title: "Style Default", shortcut: nil, symbol: "paintpalette"),
+        AlignmentChoice(value: .leading, title: "Align Left", shortcut: "⌘{", symbol: "text.alignleft"),
+        AlignmentChoice(value: .center, title: "Centre", shortcut: "⌘|", symbol: "text.aligncenter"),
+        AlignmentChoice(value: .trailing, title: "Align Right", shortcut: "⌘}", symbol: "text.alignright"),
+        AlignmentChoice(value: .justified, title: "Justify", shortcut: nil, symbol: "text.justify"),
+    ]
 
     var body: some View {
         // The bar must not set the detail column's minimum width. Its controls are rigid, so a
@@ -37,34 +56,65 @@ struct FormatBar: View {
             controls
         }
         .scrollBounceBehavior(.basedOnSize)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentOffset.x > 1
+        } action: { _, clipped in
+            clippedLeading = clipped
+        }
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentSize.width - geometry.contentOffset.x - geometry.containerSize.width > 1
+        } action: { _, clipped in
+            clippedTrailing = clipped
+        }
+        // A fade over a clipped edge: there's more of the bar to scroll to.
+        .overlay(alignment: .leading) { if clippedLeading { edgeFade(.leading) } }
+        .overlay(alignment: .trailing) { if clippedTrailing { edgeFade(.trailing) } }
         .fixedSize(horizontal: false, vertical: true)
         .background(Crayon.paperDeep)
         .accessibilityIdentifier("format-bar")
+    }
+
+    private func edgeFade(_ edge: HorizontalEdge) -> some View {
+        LinearGradient(colors: [Crayon.paperDeep.opacity(0), Crayon.paperDeep],
+                       startPoint: edge == .trailing ? .leading : .trailing,
+                       endPoint: edge == .trailing ? .trailing : .leading)
+            .frame(width: 32)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     private var controls: some View {
         let state = formatting.state
         return HStack(spacing: 10) {
             HStack(spacing: 2) {
-                toggle("bold", "Bold", on: state?.bold, .toggleBold)
-                toggle("italic", "Italic", on: state?.italic, .toggleItalic)
-                toggle("underline", "Underline", on: state?.underline, .toggleUnderline)
+                toggle("bold", "Bold", shortcut: "⌘B", on: state?.bold, .toggleBold)
+                toggle("italic", "Italic", shortcut: "⌘I", on: state?.italic, .toggleItalic)
+                toggle("underline", "Underline", shortcut: "⌘U", on: state?.underline, .toggleUnderline)
             }
-            fontMenu(state?.font)
+            fontMenu(state)
             HStack(spacing: 4) {
-                Text(state?.size.map { String(format: "%g", $0) } ?? "–")
+                // The size the text is drawn at (its own or the style's); "–" only when mixed.
+                Text(Self.sizeLabel(state))
                     .monospacedDigit()
                     .frame(minWidth: 28)
-                Stepper("Size", onIncrement: { formatting.perform(.biggerText) },
+                Stepper("Text Size", onIncrement: { formatting.perform(.biggerText) },
                         onDecrement: { formatting.perform(.smallerText) })
                     .labelsHidden()
             }
-            .help("Text size")
-            ColorPicker("Colour", selection: colorBinding(state?.color), supportsOpacity: false)
+            .help("Text size (Bigger ⌘+, Smaller ⌘-)")
+            ColorPicker("Text Colour", selection: colorBinding(state?.resolvedColor), supportsOpacity: false)
                 .labelsHidden()
+                // A rim, so a dark swatch doesn't vanish into the night theme's bar.
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Crayon.ink.opacity(formatting.isEditing ? 0.35 : 0.15), lineWidth: 1)
+                        .padding(-2)
+                        .allowsHitTesting(false)
+                }
                 .help("Text colour")
-            Button { formatting.perform(.setColor(nil)) } label: { Image(systemName: "arrow.uturn.backward") }
+            Button { formatting.perform(.setColor(nil)) } label: { Image(systemName: "eraser") }
                 .help("Use the style's text colour")
+                .accessibilityLabel("Use Style Colour")
             alignmentPicker(state?.alignment)
         }
         .buttonStyle(.borderless)
@@ -74,21 +124,35 @@ struct FormatBar: View {
         .padding(.vertical, 5)
     }
 
-    private func toggle(_ symbol: String, _ title: String, on: Bool?, _ action: FormatAction) -> some View {
+    /// The size shown: what the text is drawn at (its override or the style's), "–" when the
+    /// selection mixes sizes or nothing is being edited.
+    static func sizeLabel(_ state: FormatState?) -> String {
+        state?.resolvedSize.map { String(format: "%g", $0) } ?? "–"
+    }
+
+    /// The font menu's label: the family, "Style Default" when the text follows the style,
+    /// "Mixed" for a mixed selection (or a font that isn't installed).
+    static func fontLabel(_ state: FormatState?) -> String {
+        let current = state?.font
+        if let family = current.flatMap({ FontFamilies.family(of: $0) }) { return family }
+        return state?.isFontMixed == true || current != nil ? "Mixed" : "Style Default"
+    }
+
+    private func toggle(_ symbol: String, _ title: String, shortcut: String, on: Bool?,
+                        _ action: FormatAction) -> some View {
         Button { formatting.perform(action) } label: {
             Image(systemName: symbol)
                 .fontWeight(.semibold)
                 .frame(width: 24, height: 22)
                 .background(on == true ? Crayon.tomato.opacity(0.2) : .clear, in: .rect(cornerRadius: 6))
         }
-        .help(title)
+        .help("\(title) (\(shortcut))")
         .accessibilityLabel(title)
     }
 
-    private func fontMenu(_ current: String?) -> some View {
-        let family = current.flatMap { FontFamilies.family(of: $0) }
-        return Menu {
-            Button("Style default") { formatting.perform(.setFont(nil)) }
+    private func fontMenu(_ state: FormatState?) -> some View {
+        Menu {
+            Button("Style Default") { formatting.perform(.setFont(nil)) }
             Divider()
             ForEach(FontFamilies.all, id: \.self) { family in
                 Button(family) {
@@ -96,7 +160,7 @@ struct FormatBar: View {
                 }
             }
         } label: {
-            Text(family ?? (current == nil ? "Style default" : "Mixed"))
+            Text(Self.fontLabel(state))
                 .frame(minWidth: 110, alignment: .leading)
         }
         .menuStyle(.borderlessButton)
@@ -108,19 +172,26 @@ struct FormatBar: View {
         Picker("Alignment", selection: Binding<BBModel.TextAlignment?>(
             get: { current },
             set: { formatting.perform(.setAlignment($0)) })) {
-            Text("Style").tag(BBModel.TextAlignment?.none)
-            Image(systemName: "text.alignleft").tag(BBModel.TextAlignment?.some(.leading))
-            Image(systemName: "text.aligncenter").tag(BBModel.TextAlignment?.some(.center))
-            Image(systemName: "text.alignright").tag(BBModel.TextAlignment?.some(.trailing))
-            Image(systemName: "text.justify").tag(BBModel.TextAlignment?.some(.justified))
+            ForEach(Self.alignments, id: \.title) { choice in
+                Image(systemName: choice.symbol)
+                    .accessibilityLabel(choice.title)
+                    .tag(choice.value)
+            }
         }
         .pickerStyle(.segmented)
         .labelsHidden()
         .fixedSize()
-        .help("Alignment (Style = follow the style)")
+        .help(Self.alignmentHelp)
+    }
+
+    /// The alignment control's tooltip: every segment in order, with its shortcut.
+    static var alignmentHelp: String {
+        let parts = alignments.map { choice in choice.shortcut.map { "\(choice.title) (\($0))" } ?? choice.title }
+        return "Alignment: " + parts.joined(separator: ", ")
     }
 
     private func colorBinding(_ color: RGBA?) -> Binding<Color> {
+        // `color` is what the text is drawn with; black stands in only for a mixed selection.
         Binding(get: { (color ?? .black).swiftUIColor },
                 set: { formatting.perform(.setColor(RGBA(color: $0))) })
     }

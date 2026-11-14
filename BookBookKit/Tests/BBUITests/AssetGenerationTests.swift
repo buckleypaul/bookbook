@@ -40,7 +40,7 @@ struct AssetGenerationTests {
         #expect(message.text == "Pip, front view")
         #expect(message.attachedReferences == [ref])
         #expect(message.queueItemID != nil)
-        #expect(s.app.isPending(message))
+        #expect(s.app.isPending(message, in: s.pip.owner))
         // Empty prompts and missing targets queue nothing.
         #expect(!s.app.generate(prompt: " ", quality: .draft, includeStoryText: false, refines: nil,
                                 attachedReferences: [], target: .asset(s.pip.id), in: s.document))

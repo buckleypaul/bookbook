@@ -253,7 +253,7 @@ public final class OpenBooks {
     private func deliverToClosedBook(_ delivery: GenerationDelivery, now: @Sendable () -> Date) async -> DeliveryResult {
         guard let url = await packageURL(for: delivery.item.bookID) else {
             Self.log.notice("Dropped a delivery: the book is no longer in the library")
-            report(delivery, "the book is no longer in the library.")
+            report(delivery, "The book is no longer in the library.")
             return .bookGone
         }
         let store = BookStore(packageURL: url)
@@ -359,6 +359,6 @@ public final class OpenBooks {
 
     private func report(_ delivery: GenerationDelivery, _ reason: String) {
         guard case .success = delivery.outcome else { return }
-        onDeliveryProblem(delivery.item.messageID, "Couldn't save the picture to the book: \(reason)")
+        onDeliveryProblem(delivery.item.messageID, "Couldn't save the picture to the book. \(reason)")
     }
 }

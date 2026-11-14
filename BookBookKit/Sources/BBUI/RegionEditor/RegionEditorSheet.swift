@@ -12,36 +12,46 @@ import SwiftUI
 public struct RegionEditorSheet: View {
     private let imageData: Data
     private let modelName: String
+    private let estimate: ((String) -> CostEstimate)?
     private let onCancel: () -> Void
     private let onSubmit: (RegionMaskDrawing, String) -> Void
 
     @State private var model: RegionEditorModel
     @State private var displayImage: CGImage?
+    /// `estimate` for the prompt as it is now (it runs when the prompt changes, not on every stroke).
+    @State private var pricedEstimate: CostEstimate?
 
+    /// `estimate` prices the edit for the prompt `onSubmit` would hand back (typed `@` mentions
+    /// send reference images, so the text matters), shown beside the button (PD §5, §8.9). The
+    /// caller builds it the way it builds the request, so it matches the cost confirmation; nil
+    /// shows no estimate.
     public init(imageData: Data, pixelSize: PixelSize, modelName: String,
+                estimate: ((String) -> CostEstimate)? = nil,
                 onCancel: @escaping () -> Void,
                 onSubmit: @escaping (RegionMaskDrawing, String) -> Void) {
         self.imageData = imageData
         self.modelName = modelName
+        self.estimate = estimate
         self.onCancel = onCancel
         self.onSubmit = onSubmit
         _model = State(initialValue: RegionEditorModel(pixelSize: pixelSize))
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
+            CrayonHeader("Edit Region", color: Crayon.bubblegum)
             toolbar
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-            Divider()
             RegionEditorCanvas(model: model, image: displayImage)
                 .frame(minWidth: 480, maxWidth: .infinity, minHeight: 360, maxHeight: .infinity)
-            Divider()
+                .clipShape(RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous))
             footer
-                .padding(16)
         }
-        .frame(minWidth: 720, idealWidth: 960, minHeight: 600, idealHeight: 760)
+        // A sheet opens at its minimum size, and the tool row needs about 900 pt for its labels.
+        .crayonSheet(minWidth: 920, minHeight: 700)
         .background(localUndoShortcuts)
+        .onChange(of: PricingKey(prompt: model.trimmedPrompt, isPriced: estimate != nil), initial: true) { _, key in
+            pricedEstimate = key.isPriced ? estimate?(key.prompt) : nil
+        }
         .task(id: imageData) {
             let data = imageData
             let maxSide = Self.displayMaxPixels(for: model.pixelSize)
@@ -77,7 +87,7 @@ public struct RegionEditorSheet: View {
             if model.tool == .brush {
                 HStack(spacing: 6) {
                     Text("Size")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Crayon.inkSoft)
                     Slider(value: $model.brushDiameter, in: RegionEditorModel.brushDiameterRange)
                         .frame(width: 140)
                         .accessibilityLabel("Brush size")
@@ -85,7 +95,7 @@ public struct RegionEditorSheet: View {
                         .accessibilityIdentifier("regionEditor.size")
                     Text("\(Int(model.brushDiameter.rounded())) px")
                         .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Crayon.inkSoft)
                         .frame(width: 52, alignment: .leading)
                 }
             }
@@ -102,9 +112,16 @@ public struct RegionEditorSheet: View {
             Button { model.undoLast() } label: {
                 Label("Undo", systemImage: "arrow.uturn.backward")
             }
-            .help("Undo the last stroke (⌘Z)")
+            .help("Undo (⌘Z)")
             .disabled(!model.canUndo)
             .accessibilityIdentifier("regionEditor.undo")
+
+            Button { model.redoLast() } label: {
+                Label("Redo", systemImage: "arrow.uturn.forward")
+            }
+            .help("Redo (⇧⌘Z)")
+            .disabled(!model.canRedo)
+            .accessibilityIdentifier("regionEditor.redo")
 
             Button(role: .destructive) { model.clear() } label: {
                 Label("Clear", systemImage: "trash")
@@ -136,25 +153,18 @@ public struct RegionEditorSheet: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextField("Describe the change", text: $model.prompt, prompt: Text("Describe the change"))
-                .textFieldStyle(.roundedBorder)
+            TextField("Describe the change (e.g. add a red kite in the sky)", text: $model.prompt, axis: .vertical)
+                .crayonComposerField()
                 .onSubmit(submit)
                 .accessibilityLabel("Describe the change")
                 .accessibilityIdentifier("regionEditor.prompt")
-            HStack {
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer()
-                Button("Cancel", role: .cancel, action: onCancel)
-                    .keyboardShortcut(.cancelAction)
-                    .accessibilityIdentifier("regionEditor.cancel")
-                Button("Edit Region", action: submit)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!model.canSubmit)
-                    .accessibilityIdentifier("regionEditor.submit")
-            }
+            Text(statusText)
+                .font(Crayon.font(.caption, weight: .medium))
+                .foregroundStyle(Crayon.inkSoft)
+                .lineLimit(1)
+            CrayonSheetFooter("Edit Region", color: Crayon.bubblegum, isDisabled: !model.canSubmit,
+                              onCancel: onCancel, action: submit,
+                              leading: { if let pricedEstimate { CostEstimatePill(estimate: pricedEstimate) } })
         }
     }
 
@@ -162,6 +172,11 @@ public struct RegionEditorSheet: View {
         let size = "\(model.pixelSize.width) × \(model.pixelSize.height)"
         let hint = model.drawing.isEmpty ? "Paint or lasso the area to change." : "Only the marked area will change."
         return "\(modelName) · \(size) · \(hint)"
+    }
+
+    private struct PricingKey: Equatable {
+        var prompt: String
+        var isPriced: Bool
     }
 
     private func submit() {

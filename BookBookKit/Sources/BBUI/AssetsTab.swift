@@ -70,11 +70,12 @@ struct AssetsList: View {
                 } label: {
                     Image(systemName: "plus")
                         .fontWeight(.heavy)
-                        .foregroundStyle(Crayon.tomato)
+                        .foregroundStyle(Crayon.danger)
                 }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                     .help("New asset")
+                    .accessibilityLabel("New asset")
                     .disabled(!document.isEditable)
             }
             .padding(.horizontal, 8)
@@ -85,7 +86,7 @@ struct AssetsList: View {
                     let color = Crayon.color(forKey: asset.id.rawValue.uuidString)
                     HStack(spacing: 10) {
                         AssetThumbnail(ref: AssetEditing.thumbnail(of: asset, in: content), images: images, size: 32,
-                                       ring: color)
+                                       ring: model.selectedAsset == asset.id ? color : Crayon.ink.opacity(0.18))
                         VStack(alignment: .leading, spacing: 1) {
                             Text(asset.name).font(Crayon.font(.body, weight: .semibold)).lineLimit(1)
                             HStack(spacing: 4) {
@@ -101,14 +102,16 @@ struct AssetsList: View {
             .scrollContentBackground(.hidden)
             .overlay {
                 if assets.isEmpty {
-                    CrayonEmptyState("No Assets", systemImage: "person.crop.square", color: Crayon.grape,
-                                     message: "Add characters, places and objects with +.")
+                    CrayonEmptyState(AssetEditing.emptyListTitle(filter: model.typeFilter),
+                                     systemImage: "person.crop.square", color: Crayon.grape,
+                                     message: AssetEditing.emptyListMessage(filter: model.typeFilter))
                 }
             }
         }
         .alert("New \(newType.map(AssetEditing.typeTitle) ?? "Asset")", isPresented: $newType.isPresent()) {
             TextField("Name", text: $newName)
             Button("Create") { if let type = newType { model.create(type, name: newName, in: document) } }
+                .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Button("Cancel", role: .cancel) {}
         }
     }

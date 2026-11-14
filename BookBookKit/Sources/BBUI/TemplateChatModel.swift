@@ -190,7 +190,7 @@ public final class TemplateChatModel {
         guard let provider = app.layoutProvider else {
             return fail(id, instruction: text, isRetry: isRetry, FailureAdvice(
                 headline: "AI layouts aren't available",
-                explanation: "No provider is set up for layout requests. Add your API key in Settings."))
+                explanation: UnavailableText.noKey))
         }
         guard let model = model(app) else {
             return fail(id, instruction: text, isRetry: isRetry, FailureAdvice(
@@ -314,7 +314,7 @@ public final class TemplateChatModel {
         let images = template.boxes.filter { if case .image = $0.content { true } else { false } }.count
         let texts = template.boxes.count - images
         var parts: [String] = []
-        if images > 0 { parts.append(images == 1 ? "1 picture box" : "\(images) picture boxes") }
+        if images > 0 { parts.append(images == 1 ? "1 image box" : "\(images) image boxes") }
         if texts > 0 { parts.append(texts == 1 ? "1 text box" : "\(texts) text boxes") }
         let boxes = parts.joined(separator: " and ")
         return designed ? "Made “\(template.name)” with \(boxes)." : "Updated the layout: \(boxes)."

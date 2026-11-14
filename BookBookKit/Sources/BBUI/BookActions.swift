@@ -7,7 +7,13 @@ import SwiftUI
 struct BookActionRequests {
     var renaming: LibraryEntry?
     var trashing: LibraryEntry?
-    var error: String?
+    var error: Failure?
+
+    /// An error alert's title (what failed) and message (why).
+    struct Failure: Sendable, Equatable {
+        var title: String
+        var message: String
+    }
 }
 
 extension View {
@@ -36,13 +42,13 @@ private struct BookActionsModifier: ViewModifier {
                 Text("The book goes to the Trash, and its window closes if it's open. You can put it back from the Trash in the Finder; this can't be undone in BookBook.")
             }
             .alert(
-                "Something Went Wrong",
+                requests.error?.title ?? "",
                 isPresented: $requests.error.isPresent(),
                 presenting: requests.error
             ) { _ in
-                Button("OK") {}
-            } message: { text in
-                Text(text)
+                Button("OK", role: .cancel) {}
+            } message: { failure in
+                Text(failure.message)
             }
     }
 
@@ -52,7 +58,8 @@ private struct BookActionsModifier: ViewModifier {
             do {
                 try await app.trash(entry)
             } catch {
-                requests.error = ("Couldn't move “\(entry.title)” to the Trash. \(StoreErrorText.message(for: error))")
+                requests.error = .init(title: "Couldn't move the book to the Trash",
+                                       message: "“\(entry.title)” is still in the library. \(StoreErrorText.message(for: error))")
             }
         }
     }
@@ -75,25 +82,14 @@ struct RenameBookSheet: View {
     private var trimmed: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        Form {
+        VStack(alignment: .leading, spacing: 12) {
+            CrayonHeader("Rename Book")
             TextField("Title", text: $title)
-                .onSubmit(rename)
-            if let error {
-                Text(error).foregroundStyle(.red).font(.callout)
-            }
+                .textFieldStyle(.roundedBorder)
+            if let error { CrayonInlineMessage(error, kind: .error) }
+            CrayonSheetFooter("Rename", isDisabled: working || trimmed.isEmpty, action: rename)
         }
-        .formStyle(.grouped)
-        .frame(width: 360)
-        .navigationTitle("Rename Book")
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Rename", action: rename)
-                    .disabled(working || trimmed.isEmpty)
-            }
-        }
+        .crayonSheet(width: 380)
     }
 
     private func rename() {

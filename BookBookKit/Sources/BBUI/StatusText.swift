@@ -4,6 +4,16 @@ import BBModel
 import BBStore
 import Foundation
 
+/// One wording per reason an AI or editing action is unavailable, so every panel says the same
+/// thing (the Generate note, Edit Region…, Check Consistency, provider and store errors).
+public enum UnavailableText {
+    public static let noKey = "Add your OpenAI API key in Settings ▸ API Keys."
+    public static let offline = "You're offline. AI requests need an internet connection."
+    /// Read-only books are usually locked by another copy of BookBook, but
+    /// not always, so this doesn't say why.
+    public static let readOnly = "This book is open read-only, so it can't be changed."
+}
+
 /// Plain-language lines for provider errors (A §7.11; the full `RefusalAdvisor` is Phase 9).
 /// Provider wording is never shown here.
 public enum ProviderErrorText {
@@ -12,9 +22,9 @@ public enum ProviderErrorText {
         case .offline:
             "Offline — check your internet connection, then try again."
         case .missingKey:
-            "Add your OpenAI key in Settings ▸ API Keys."
+            UnavailableText.noKey
         case .invalidKey:
-            "OpenAI didn't accept the key. Add your OpenAI key in Settings ▸ API Keys."
+            "OpenAI didn't accept the key. Check your OpenAI API key in Settings ▸ API Keys."
         case .refused:
             "The request was blocked by the provider's safety system. Try rephrasing."
         case .verificationRequired:
@@ -46,15 +56,6 @@ public enum ProviderErrorText {
     }
 }
 
-/// What the locked-book screen and alert say besides the owner (#99b).
-public enum LockAdviceText {
-    public static func message(offersOpenAnyway: Bool) -> String {
-        offersOpenAnyway
-            ? "Another copy of BookBook is using it. You can open it read-only to look at it. If that copy has quit or crashed, you can open it anyway."
-            : "Another copy of BookBook is using it. You can open it read-only to look at it, but you won't be able to change it."
-    }
-}
-
 /// Plain-language lines for storage errors.
 public enum StoreErrorText {
     public static func message(for error: StoreError) -> String {
@@ -65,7 +66,7 @@ public enum StoreErrorText {
         case .schemaTooNew: "This book was made with a newer version of BookBook."
         case .keychain: "The Keychain couldn't be updated."
         case .locked(let owner): "This book is open in BookBook on \(owner.host)."
-        case .readOnly: "This book is open read-only, so changes can't be saved."
+        case .readOnly: UnavailableText.readOnly
         }
     }
 
@@ -83,11 +84,14 @@ public enum ElapsedTimeText {
         return "\(total / 60):" + String(format: "%02d", total % 60)
     }
 
-    /// `0:42 of ~1:10`, or just `0:42` when the typical duration is unknown. Used by the
-    /// session thread, the Queue window and the sidebar badge.
+    /// `0:42 of ~1:10`; once past the typical duration `2:10 (usually ~1:10)`; just `0:42` when
+    /// the typical duration is unknown. Used by the session thread, the Queue window and the
+    /// sidebar badge.
     public static func progress(elapsed: TimeInterval, typical: Double?) -> String {
         guard let typical, typical > 0 else { return clock(elapsed) }
-        return "\(clock(elapsed)) of ~\(clock(typical))"
+        let shown = clock(elapsed)
+        if max(0, elapsed.rounded(.down)) > typical.rounded(.down) { return "\(shown) (usually ~\(clock(typical)))" }
+        return "\(shown) of ~\(clock(typical))"
     }
 }
 
@@ -105,29 +109,42 @@ public enum MessageStatus: Hashable, Sendable {
     case produced(VersionID)
 
     /// - Parameters:
+    ///   - owner: the owner of the session the message is in (see `QueueSnapshot.entry(answering:in:)`).
     ///   - pendingThisLaunch: queue items enqueued since launch (covers the moment before the
     ///     queue's first snapshot includes a new item).
     ///   - typical: typical seconds for a queue item (its model, and quality for pictures).
     ///   - deliveryFailures: pictures that couldn't be saved, by message.
-    public static func resolve(_ message: Message, snapshot: QueueSnapshot, pendingThisLaunch: Set<QueueItemID>,
-                               deliveryFailures: [MessageID: String] = [:],
+    public static func resolve(_ message: Message, in owner: SessionOwner, snapshot: QueueSnapshot,
+                               pendingThisLaunch: Set<QueueItemID>, deliveryFailures: [MessageID: String] = [:],
                                typical: (QueueItem) -> Double?) -> MessageStatus {
-        if let itemID = message.queueItemID {
-            if let entry = snapshot.entry(for: itemID) {
-                switch entry.state {
-                case .waiting, .retrying: return .waiting
-                case let .running(startedAt, _, _): return .running(startedAt: startedAt, typicalSeconds: typical(entry.item))
-                case let .failed(failure): return .failed(failure.error)
-                }
-            }
+        if let itemID = message.queueItemID, snapshot.entry(for: itemID) == nil {
             return pendingThisLaunch.contains(itemID) ? .waiting : .interrupted
         }
-        if message.producedVersion == nil, let text = deliveryFailures[message.id] { return .notSaved(text) }
-        if let entry = snapshot.entries.first(where: { $0.item.messageID == message.id }),
-           case let .failed(failure) = entry.state {
-            return .failed(failure.error)
+        if message.queueItemID == nil, message.producedVersion == nil, let text = deliveryFailures[message.id] {
+            return .notSaved(text)
+        }
+        if let entry = snapshot.entry(answering: message, in: owner) {
+            switch entry.state {
+            case .waiting, .retrying: return .waiting
+            case let .running(startedAt, _, _): return .running(startedAt: startedAt, typicalSeconds: typical(entry.item))
+            case let .failed(failure): return .failed(failure.error)
+            }
         }
         if let produced = message.producedVersion { return .produced(produced) }
         return .none
+    }
+}
+
+extension QueueSnapshot {
+    /// The queue entry for `message`'s request, in any state: by the message's queue link, else
+    /// by message ID, since a failed delivery clears the link and Try Again puts the item back
+    /// without restoring it. The message-ID match takes only an image request for the session
+    /// `owner` owns: a consistency check carries its version's message ID, and a duplicated page's
+    /// sessions keep their message IDs but not the requests (those deliver to the original only).
+    public func entry(answering message: Message, in owner: SessionOwner) -> QueueEntry? {
+        if let id = message.queueItemID, let entry = entry(for: id) { return entry }
+        return entries.first {
+            $0.item.messageID == message.id && $0.item.kind == .image && $0.item.target.owner == owner
+        }
     }
 }

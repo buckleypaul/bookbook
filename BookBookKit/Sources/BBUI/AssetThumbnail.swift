@@ -15,7 +15,7 @@ struct AssetThumbnail: View {
     @State private var expanded: ExpandedImage?
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: min(Crayon.smallCornerRadius + 2, size * 0.28), style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: min(Crayon.mediumCornerRadius, size * 0.28), style: .continuous)
         // A small decode for the thumbnail itself; the enlarged view uses `images`' full-size one.
         let cg = ref.flatMap { images.previews.image(for: $0) }
         let canExpand = expandTitle != nil && cg != nil
@@ -84,13 +84,10 @@ struct ImagePreviewSheet: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Text(title).font(Crayon.font(.title3, weight: .bold)).foregroundStyle(Crayon.ink).lineLimit(1)
+                CrayonHeader(title, color: Crayon.sky).lineLimit(1)
                 Spacer()
                 Text("\(image.width) × \(image.height)")
                     .font(.caption).monospacedDigit().foregroundStyle(Crayon.inkSoft)
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonBorderShape(.capsule)
             }
             Image(decorative: image, scale: 1)
                 .resizable()
@@ -98,10 +95,12 @@ struct ImagePreviewSheet: View {
                 .scaledToFit()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityLabel(title)
+            CrayonSheetDoneFooter()
         }
-        .padding(16)
-        .frame(minWidth: 480, idealWidth: 820, maxWidth: .infinity, minHeight: 480, idealHeight: 820, maxHeight: .infinity)
-        .crayonPaper()
+        // Sheets open at their minimum size (an ideal size does nothing), so the minimum is what
+        // makes this "larger" than the inline thumbnail.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .crayonSheet(minWidth: 720, minHeight: 720)
         .onExitCommand { dismiss() }
     }
 }

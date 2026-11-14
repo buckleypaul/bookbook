@@ -93,6 +93,43 @@ struct DraftAllTests {
         #expect(!plan.targets.contains { $0.page == page })
     }
 
+    /// Try Again on a failed request leaves its message unlinked (the failed delivery cleared the
+    /// link): the box still counts as pending while the retry waits, so Draft All doesn't queue a
+    /// second paid request for it.
+    @Test func plan_skipsABoxWhoseRetryIsInFlight() async throws {
+        let h = try Phase9Harness()
+        defer { h.tearDown() }
+        var content = Fixtures.book(pages: 1)
+        let page = content.book.pageOrder[0]
+        let boxID = box(of: page, in: content)
+        let message = Message(role: .user, text: "a fox", createdAt: Fixtures.date)
+        #expect(!BookMutations.appendPendingMessage(message, target: .pageBox(page, boxID), to: &content).isEmpty)
+        let url = h.dir.appending(path: "Retry.bookbook", directoryHint: .isDirectory)
+        try BookStore.create(content, at: url)
+        let document = BookDocument(content: content, store: BookStore(packageURL: url))
+        let item = QueueItem(bookID: document.id, target: .pageBox(page, boxID), messageID: message.id,
+                             intent: GenerationIntent(messageText: "a fox", provider: .openai,
+                                                      model: "gpt-image-2.5-sunburst", quality: .draft))
+        let failure = QueueFailure(error: .transient(nil), report: nil, attempts: 1, failedAt: Fixtures.date)
+        await QueueFileStore(files: h.appSupport).save(PersistedQueue(entries: [.init(item: item, failure: failure)]))
+        let app = h.makeApp()
+        app.pauseQueue()
+        await app.queueOperationsSettled()
+        await until("restored") { app.queueSnapshot.entries.count == 1 }
+        let session = try #require(document.content.session(containing: message.id))
+        let stored = try #require(session.messages.first)
+        #expect(stored.queueItemID == nil)
+        #expect(app.status(of: stored, in: session.owner) == .failed(.transient(nil)))
+        #expect(app.draftAllPlan(in: document).targets.contains { $0.page == page }, "a failed box can be drafted")
+
+        app.retryQueueItem(item.id)
+        await app.queueOperationsSettled()
+        await until("waiting again") { app.queueSnapshot.entries.first?.state == .waiting }
+        #expect(app.status(of: stored, in: session.owner) == .waiting)
+        #expect(app.isPending(stored, in: session.owner))
+        #expect(!app.draftAllPlan(in: document).targets.contains { $0.page == page })
+    }
+
     @Test func plan_emptyBook_isEmptyWithZeroTotal() throws {
         let s = try setup(pages: 0) { content in
             self.place(content.book.coverPageID, in: &content)
@@ -135,7 +172,7 @@ struct DraftAllTests {
             #expect(message.id == item.messageID)
             #expect(message.queueItemID == item.id)
             #expect(message.text == DraftAllPlanner.messageText)
-            #expect(s.app.status(of: message) == .waiting)
+            #expect(s.app.status(of: message, in: session.owner) == .waiting)
         }
 
         // Enqueueing the same plan again does nothing; a new plan finds no empty boxes.

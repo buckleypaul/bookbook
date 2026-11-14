@@ -98,7 +98,7 @@ struct AssetImageControls: View {
 
     var body: some View {
         let latest = AssetGeneration.latestRequest(in: session)
-        let busy = latest.map { AssetGeneration.isBusy(app.status(of: $0)) } ?? false
+        let busy = latest.map { AssetGeneration.isBusy(app.status(of: $0, in: asset.owner)) } ?? false
         VStack(alignment: .leading, spacing: 8) {
             referencePhotoRow
             HStack(spacing: 8) {
@@ -126,7 +126,7 @@ struct AssetImageControls: View {
                 .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey || prompt.isEmpty || busy)
             }
             if let latest, let session {
-                MessageStatusLine(message: latest, session: session, showsProduced: false)
+                MessageStatusLine(message: latest, session: session, isEditable: document.isEditable, showsProduced: false)
             }
             GenerationSetupNotes()
         }
@@ -188,9 +188,7 @@ struct AssetImageControls: View {
                 .accessibilityLabel("\(asset.name)'s reference photo")
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("Reference Photo")
-                    .font(Crayon.font(.subheadline, weight: .bold))
-                    .foregroundStyle(Crayon.ink)
+                CrayonHeader("Reference photo", color: Crayon.bubblegum)
                 Text(AssetGeneration.referencePhotoHelp(name: asset.name, hasPhoto: photo != nil))
                     .font(Crayon.font(.caption, weight: .medium))
                     .foregroundStyle(Crayon.inkSoft)
@@ -247,7 +245,8 @@ struct AssetImageControls: View {
         GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
                               notice: { app.realPersonNoticeNeeded(intent: $0, target: target, in: document) },
                               estimate: { app.estimate(for: $0, target: target, in: document) },
-                              perform: { enqueue($0) })
+                              perform: { enqueue($0) },
+                              question: { _ in CostConfirmKind.generate.question })
     }
 
     private func enqueue(_ intent: GenerationIntent) {

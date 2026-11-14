@@ -79,10 +79,10 @@ struct BoxInspector: View {
         let boxes = model.selectedBoxes
         Group {
             if model.template == nil {
-                ContentUnavailableView("No Layout Open", systemImage: "rectangle.3.group")
+                CrayonEmptyState("No Layout Selected", systemImage: "rectangle.3.group", color: Crayon.sky)
             } else if boxes.isEmpty {
-                ContentUnavailableView("No Box Selected", systemImage: "square.dashed",
-                                       description: Text("Click a box on the canvas, or add one from the toolbar."))
+                CrayonEmptyState("No Box Selected", systemImage: "square.dashed", color: Crayon.sky,
+                                 message: "Click a box on the canvas, or add one from the toolbar.")
             } else if boxes.count > 1 {
                 multi(count: boxes.count)
             } else if let box = boxes.first, let geometry = model.geometry {
@@ -93,19 +93,32 @@ struct BoxInspector: View {
     }
 
     private func multi(count: Int) -> some View {
-        Form {
-            Section("\(count) Boxes Selected") {
+        let orderMatters = model.layerOrderHasVisibleEffect
+        return Form {
+            Section {
                 ArrangeMenuItems(model: model, count: count, grouping: .submenus)
-                HStack {
-                    Button("Front") { model.moveSelection(.toFront) }
-                    Button("Forward") { model.moveSelection(.forward) }
-                    Button("Backward") { model.moveSelection(.backward) }
-                    Button("Back") { model.moveSelection(.toBack) }
+                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                    GridRow {
+                        Button("Bring to Front") { model.moveSelection(.toFront) }
+                        Button("Bring Forward") { model.moveSelection(.forward) }
+                    }
+                    GridRow {
+                        Button("Send Backward") { model.moveSelection(.backward) }
+                        Button("Send to Back") { model.moveSelection(.toBack) }
+                    }
                 }
+                .buttonBorderShape(.capsule)
                 .controlSize(.small)
+                .disabled(!orderMatters)
+                .help(orderMatters ? "Change the layer order of the selected boxes"
+                      : "Layer order only matters between boxes of the same kind: text always draws above images")
+            } header: {
+                CrayonHeader("\(count) Boxes Selected", color: Crayon.sky)
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .crayonPaper()
     }
 
     private func single(_ box: Box, geometry: PageGeometry) -> some View {
@@ -125,43 +138,64 @@ struct BoxInspector: View {
             }
         }
         return Form {
-            Section("Frame (pt)") {
-                LabeledContent("X") { CommitField(title: "X", value: rect.minX) { v in setRect("Move Box") { $0.origin.x = v } } }
-                LabeledContent("Y") { CommitField(title: "Y", value: rect.minY) { v in setRect("Move Box") { $0.origin.y = v } } }
+            Section {
+                // The same field width and unit column as the Shape sliders, so the fields line up.
+                LabeledContent("X") {
+                    unitField(CommitField(title: "X", value: rect.minX) { v in setRect("Move Box") { $0.origin.x = v } }, unit: "pt")
+                }
+                LabeledContent("Y") {
+                    unitField(CommitField(title: "Y", value: rect.minY) { v in setRect("Move Box") { $0.origin.y = v } }, unit: "pt")
+                }
                 LabeledContent("Width") {
-                    CommitField(title: "Width", value: rect.width) { v in setRect("Resize Box") { $0.size.width = max(1, v) } }
+                    unitField(CommitField(title: "Width", value: rect.width) { v in
+                        setRect("Resize Box") { $0.size.width = max(1, v) }
+                    }, unit: "pt")
                 }
                 LabeledContent("Height") {
-                    CommitField(title: "Height", value: rect.height) { v in setRect("Resize Box") { $0.size.height = max(1, v) } }
+                    unitField(CommitField(title: "Height", value: rect.height) { v in
+                        setRect("Resize Box") { $0.size.height = max(1, v) }
+                    }, unit: "pt")
                 }
+            } header: {
+                CrayonHeader("Frame", color: Crayon.sky)
             }
-            Section("Shape") {
+            Section {
                 slider("Rotation", value: box.rotationDegrees, range: -180...180, unit: "°", action: "Rotate Box") { b, v in
                     b.rotationDegrees = v
                 } edit: { name, body in edit(name, body) }
-                slider("Corner Radius", value: box.cornerRadius, range: 0...120, unit: "pt", action: "Change Corner Radius") { b, v in
+                slider("Corner radius", value: box.cornerRadius, range: 0...120, unit: "pt", action: "Change Corner Radius") { b, v in
                     b.cornerRadius = max(0, v)
                 } edit: { name, body in edit(name, body) }
+            } header: {
+                CrayonHeader("Shape", color: Crayon.grape)
             }
-            Section("Full Bleed") {
+            Section {
                 let all = box.bleedEdges == .all
                 Toggle("All", isOn: Binding(get: { all }, set: { on in
                     edit("Change Full Bleed") { $0.bleedEdges = on ? .all : [] }
                 }))
-                HStack {
-                    edgeToggle("Top", .top, box, edit)
-                    edgeToggle("Leading", .leading, box, edit)
-                    edgeToggle("Bottom", .bottom, box, edit)
-                    edgeToggle("Trailing", .trailing, box, edit)
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                    GridRow {
+                        edgeToggle("Top", .top, box, edit)
+                        edgeToggle("Left", .leading, box, edit)
+                    }
+                    GridRow {
+                        edgeToggle("Bottom", .bottom, box, edit)
+                        edgeToggle("Right", .trailing, box, edit)
+                    }
                 }
                 .toggleStyle(.checkbox)
                 .controlSize(.small)
+            } header: {
+                CrayonHeader("Full bleed", color: Crayon.grass)
             }
             if case let .text(style) = box.content {
                 textSection(style, edit: edit)
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .crayonPaper()
     }
 
     private func edgeToggle(_ title: String, _ edge: EdgeSet, _ box: Box,
@@ -175,12 +209,11 @@ struct BoxInspector: View {
                         apply: @escaping (inout Box, Double) -> Void,
                         edit: @escaping (String, @escaping (inout Box) -> Void) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
+            // Baseline-aligned, so the unit ("°" or "pt") sits on the same line as the number.
+            HStack(alignment: .firstTextBaseline) {
                 Text(title).lineLimit(1).fixedSize(horizontal: true, vertical: false).layoutPriority(1)
                 Spacer(minLength: 4)
-                CommitField(title: title, value: value) { v in edit(action) { apply(&$0, v) } }
-                    .frame(minWidth: 44, idealWidth: 64, maxWidth: 64)
-                Text(unit).foregroundStyle(.secondary).fixedSize()
+                unitField(CommitField(title: title, value: value) { v in edit(action) { apply(&$0, v) } }, unit: unit)
             }
             Slider(value: Binding(get: { min(max(value, range.lowerBound), range.upperBound) },
                                   set: { v in
@@ -200,6 +233,16 @@ struct BoxInspector: View {
         }
     }
 
+    /// A number field and its unit: the field 44 to 64 pt wide, then the unit in a 24 pt
+    /// column, baseline-aligned. The Frame, Shape and Padding rows all use it, so they line up.
+    private func unitField(_ field: some View, unit: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            field.frame(minWidth: 44, idealWidth: 64, maxWidth: 64)
+            Text(unit).foregroundStyle(Crayon.inkSoft)
+                .frame(width: 24, alignment: .leading)
+        }
+    }
+
     private func textSection(_ style: TextBoxStyle,
                              edit: @escaping (String, Bool, @escaping (inout Box) -> Void) -> Void) -> some View {
         func setStyle(_ name: String, continuous: Bool = false, _ change: @escaping (inout TextBoxStyle) -> Void) {
@@ -207,8 +250,8 @@ struct BoxInspector: View {
                 if case var .text(s) = b.content { change(&s); b.content = .text(s) }
             }
         }
-        return Section("Text") {
-            Toggle("Override Font Size", isOn: Binding(get: { style.fontSize != nil }, set: { on in
+        return Section {
+            Toggle("Override font size", isOn: Binding(get: { style.fontSize != nil }, set: { on in
                 setStyle("Change Font Size") { $0.fontSize = on ? ($0.fontSize ?? 18) : nil }
             }))
             if let size = style.fontSize {
@@ -220,34 +263,46 @@ struct BoxInspector: View {
             Picker("Alignment", selection: Binding(get: { style.alignment }, set: { a in
                 setStyle("Change Alignment") { $0.alignment = a }
             })) {
-                Text("Style").tag(Align?.none)
-                Text("Leading").tag(Align?.some(.leading))
+                Text("Style Default").tag(Align?.none)
+                Text("Left").tag(Align?.some(.leading))
                 Text("Centre").tag(Align?.some(.center))
-                Text("Trailing").tag(Align?.some(.trailing))
+                Text("Right").tag(Align?.some(.trailing))
                 Text("Justified").tag(Align?.some(.justified))
             }
-            colourRow("Text Colour", color: style.color, noneLabel: "Style", initial: RGBA(red: 0, green: 0, blue: 0)) { c in
+            colourRow("Text colour", color: style.color, noneLabel: "Style Default", initial: RGBA(red: 0, green: 0, blue: 0)) { c in
                 setStyle("Change Text Colour", continuous: true) { $0.color = c }
             }
-            colourRow("Background Panel", color: style.background, noneLabel: "None", initial: RGBA(red: 1, green: 0.96, blue: 0.86)) { c in
+            colourRow("Background panel", color: style.background, noneLabel: "None", initial: RGBA(red: 1, green: 0.96, blue: 0.86)) { c in
                 setStyle("Change Background", continuous: true) { $0.background = c }
             }
-            Stepper(value: Binding(get: { style.padding }, set: { v in
-                setStyle("Change Padding", continuous: true) { $0.padding = max(0, v) }
-            }), in: 0...100, step: 1) {
-                Text("Padding \(style.padding.formatted(.number.precision(.fractionLength(0...1)))) pt")
+            // The value in the trailing column (as the other number rows), the stepper after it.
+            LabeledContent("Padding") {
+                HStack(spacing: 6) {
+                    Text(style.padding.formatted(.number.precision(.fractionLength(0...1))))
+                        .monospacedDigit()
+                    Text("pt").foregroundStyle(Crayon.inkSoft)
+                    Stepper("Padding", value: Binding(get: { style.padding }, set: { v in
+                        setStyle("Change Padding", continuous: true) { $0.padding = max(0, v) }
+                    }), in: 0...100, step: 1)
+                    .labelsHidden()
+                }
             }
+        } header: {
+            CrayonHeader("Text", color: Crayon.tomato)
         }
     }
 
     /// An optional colour: a checkbox to turn the override on, and a colour well.
     private func colourRow(_ title: String, color: RGBA?, noneLabel: String, initial: RGBA,
                            set: @escaping (RGBA?) -> Void) -> some View {
-        HStack {
-            Toggle(title, isOn: Binding(get: { color != nil }, set: { on in
-                set(on ? initial : nil)
-            }))
-            Spacer()
+        // Tighter than the default spacing, and the title stays on one line (shrinking a little
+        // rather than wrapping) at the narrowest inspector width with the colour well showing.
+        HStack(spacing: 6) {
+            Text(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .layoutPriority(1)
+            Spacer(minLength: 0)
             if let color {
                 ColorPicker(title, selection: Binding(get: { color.swiftUIColor },
                                                       set: { new in
@@ -260,8 +315,12 @@ struct BoxInspector: View {
                 }), supportsOpacity: true)
                     .labelsHidden()
             } else {
-                Text(noneLabel).foregroundStyle(.secondary)
+                Text(noneLabel).foregroundStyle(Crayon.inkSoft)
             }
+            Toggle(title, isOn: Binding(get: { color != nil }, set: { on in
+                set(on ? initial : nil)
+            }))
+            .labelsHidden()
         }
     }
 }
@@ -282,12 +341,14 @@ struct ImageFlagsRow: View {
                         .help(entry.help)
                 }
                 Button("Mark as OK", action: markOK)
+                    .controlSize(.small)
+                    .buttonBorderShape(.capsule)
                     .disabled(!editable)
                     .help("Accept this image as it is and clear its flags")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
-            .background(.bar)
+            .background(Crayon.paperDeep)
             Divider()
         }
     }

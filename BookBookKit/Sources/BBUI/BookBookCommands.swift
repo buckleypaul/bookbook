@@ -46,7 +46,12 @@ public struct BookBookCommands: Commands {
                 openWindow(id: SceneID.library)
             }
             Button("Open Sample Book") {
-                Task { await app.openSampleBook { openWindow(value: $0) } }
+                Task {
+                    await app.openSampleBook { openWindow(value: $0) }
+                    // The error alert lives on the Library window: bring it forward so the
+                    // failure shows even when only a book window is open.
+                    if app.sampleBookError != nil { openWindow(id: SceneID.library) }
+                }
             }
             Button("Library") { openWindow(id: SceneID.library) }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
@@ -66,8 +71,9 @@ public struct BookBookCommands: Commands {
             Button("Smaller") { format(.smallerText) }.keyboardShortcut("-").disabled(!editing)
             Divider()
             Button("Align Left") { format(.setAlignment(.leading)) }.keyboardShortcut("{").disabled(!editing)
-            Button("Center") { format(.setAlignment(.center)) }.keyboardShortcut("|").disabled(!editing)
+            Button("Align Centre") { format(.setAlignment(.center)) }.keyboardShortcut("|").disabled(!editing)
             Button("Align Right") { format(.setAlignment(.trailing)) }.keyboardShortcut("}").disabled(!editing)
+            Button("Justify") { format(.setAlignment(.justified)) }.disabled(!editing)
             Button("Style Default Alignment") { format(.setAlignment(nil)) }.disabled(!editing)
             Divider()
             Button("Typography…") { showTypography?.wrappedValue = true }
@@ -107,12 +113,13 @@ public struct BookBookCommands: Commands {
         let editable = pages?.isEditable == true
         let selected = pages?.selectedPage
         let story = pages?.isStoryPage(selected) == true
-        Button("Show Overview") { pages?.mode = .overview }
+        // Both switch to the Pages tab when another tab is showing.
+        Button("Show Overview") { pages?.showOverview() }
             .keyboardShortcut("1", modifiers: [.command, .option])
-            .disabled(pages == nil || pages?.mode == .overview)
+            .disabled(pages == nil || pages?.isShowingOverview == true)
         Button("Open in Editor") { if let selected { pages?.open(selected) } }
             .keyboardShortcut("2", modifiers: [.command, .option])
-            .disabled(selected == nil || pages?.mode == .editor)
+            .disabled(selected == nil || pages?.isShowingEditor == true)
         Divider()
         Button("Add Page…") {
             if let pages { pages.sheet = .addPage(index: pages.insertionIndex) }
@@ -129,6 +136,8 @@ public struct BookBookCommands: Commands {
             if let selected { pages?.toggleDone(selected) }
         }
         .disabled(!editable || selected == nil)
+        Button("Mark as OK") { if let selected { pages?.markFlagsOK(selected) } }
+            .disabled(!editable || selected.map { pages?.hasImageFlags($0) == true } != true)
         Button("Change Layout…") { if let selected { pages?.sheet = .changeLayout(selected) } }
             .disabled(!editable || selected == nil)
         Button(selected.map { pages?.isNumberSkipped($0) == true } == true ? "Show Page Number" : "Skip Page Number") {

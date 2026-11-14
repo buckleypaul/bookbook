@@ -63,7 +63,7 @@ struct WhereUsedList: View {
                                 .font(Crayon.font(.body, weight: .semibold)).foregroundStyle(Crayon.ink)
                             Text(WhereUsedText.reasons(site.reasons)).foregroundStyle(Crayon.inkSoft)
                             Spacer()
-                            Image(systemName: "chevron.right").fontWeight(.bold).foregroundStyle(Crayon.tomato)
+                            Image(systemName: "chevron.right").fontWeight(.bold).foregroundStyle(Crayon.danger)
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)

@@ -226,7 +226,7 @@ struct Phase9WiringTests {
         await app.queueOperationsSettled()
         await until("snapshot") { app.queueSnapshot.entries.count == 1 }
         let message = Message(id: item.messageID, role: .user, text: "x", createdAt: Fixtures.date)
-        #expect(app.status(of: message) == .failed(.billing(nil)))
+        #expect(app.status(of: message, in: item.target.owner) == .failed(.billing(nil)))
         let entry = try #require(app.queueSnapshot.entries.first)
         #expect(app.advice(for: entry) == RefusalAdvisor.advise(.billing(nil), context: AdviceContext(provider: .openai,
                                                                                                     report: nil)))

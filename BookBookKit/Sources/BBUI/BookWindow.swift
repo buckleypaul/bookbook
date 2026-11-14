@@ -14,7 +14,6 @@ public struct BookWindow: View {
     @State private var document: BookDocument?
     @State private var loadError: String?
     @State private var lockOwner: LockOwner?
-    @State private var showLockAlert = false
     @State private var confirmTakeOver = false
 
     public init(bookID: BookID) {
@@ -32,16 +31,22 @@ public struct BookWindow: View {
                 BookEditor(document: document)
             } else if let loadError {
                 CrayonEmptyState("Couldn't Open the Book", systemImage: "exclamationmark.triangle",
-                                 color: Crayon.tomato, message: loadError)
+                                 color: Crayon.tomato, message: loadError) {
+                    Button("Try Again") { Task { await retry() } }
+                        .buttonStyle(.crayon)
+                    closeButton
+                }
             } else if let lockOwner {
+                let offersOpenAnyway = LockTakeOver.offersOpenAnyway(lockOwner)
                 CrayonEmptyState("Book in Use", systemImage: "lock", color: Crayon.grape,
-                                 message: "\(StoreErrorText.message(for: .locked(lockOwner))) \(LockAdviceText.message(offersOpenAnyway: LockTakeOver.offersOpenAnyway(lockOwner)))") {
+                                 message: LockTakeOver.message(for: lockOwner, offersOpenAnyway: offersOpenAnyway)) {
                     Button("Open Read-Only") { Task { await load(readOnly: true) } }
                         .buttonStyle(.crayon)
-                    if LockTakeOver.offersOpenAnyway(lockOwner) {
+                    if offersOpenAnyway {
                         Button("Open Anyway…") { confirmTakeOver = true }
                             .buttonStyle(.crayon(Crayon.sky))
                     }
+                    closeButton
                 }
             } else {
                 VStack(spacing: 18) {
@@ -56,18 +61,6 @@ public struct BookWindow: View {
         .frame(minWidth: Self.minimumWidth, minHeight: 520)
         .task(id: bookID) { await load(readOnly: false) }
         .task { await app.reopenBooks { openWindow(value: $0) } }
-        .alert(
-            lockOwner.map { StoreErrorText.message(for: .locked($0)) } ?? "",
-            isPresented: $showLockAlert
-        ) {
-            Button("Open Read-Only") { Task { await load(readOnly: true) } }
-            if LockTakeOver.offersOpenAnyway(lockOwner) {
-                Button("Open Anyway…") { confirmTakeOver = true }
-            }
-            Button("Close", role: .cancel) { dismiss() }
-        } message: {
-            Text(LockAdviceText.message(offersOpenAnyway: LockTakeOver.offersOpenAnyway(lockOwner)))
-        }
         .alert("Open this book anyway?", isPresented: $confirmTakeOver) {
             Button("Open Anyway", role: .destructive) { Task { await openAnyway() } }
             Button("Cancel", role: .cancel) {}
@@ -85,6 +78,20 @@ public struct BookWindow: View {
         }
     }
 
+    /// Closes the window (the book couldn't be opened, or the user won't open a locked one).
+    private var closeButton: some View {
+        Button("Close") { dismiss() }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+    }
+
+    /// "Try Again" after a failed open: back to the opening state, then a fresh editable open.
+    private func retry() async {
+        loadError = nil
+        lockOwner = nil
+        await load(readOnly: false)
+    }
+
     /// "Open Anyway" (#99b): takes the lock over from `lockOwner`, then opens the book editable.
     private func openAnyway() async {
         guard let owner = lockOwner, let url = app.entry(for: bookID)?.url else {
@@ -98,9 +105,9 @@ public struct BookWindow: View {
             await load(readOnly: false)
             await store.releaseLock()
         case let .changed(newOwner):
-            // The lock changed hands while the warning was up: ask again about the new holder.
+            // The lock changed hands while the warning was up: the locked screen now names the
+            // new holder, so the user decides again.
             lockOwner = newOwner
-            showLockAlert = true
         case let .failed(message):
             lockOwner = nil
             loadError = message
@@ -113,7 +120,6 @@ public struct BookWindow: View {
             lockOwner = nil
         } catch StoreError.locked(let owner) {
             lockOwner = owner
-            showLockAlert = true
         } catch {
             // A book that left the library while BookBook was closed (a window SwiftUI restored):
             // close quietly (A §6.1, PD §8.1).
@@ -140,13 +146,14 @@ struct BookEditor: View {
     @State private var textStyles: TextStyleModel
     @State private var styleModel: StyleTabModel
     @State private var assetsModel = AssetsModel()
-    @State private var sidebarTab: SidebarTab = .pages
     @State private var styleSection: StyleSection = .visual
+    @State private var styleScrollRequest = 0
     @State private var selectedBox: BoxID?
     @State private var canvasImportError: String?
     @State private var showTypography = false
     @State private var showExport = false
-    @State private var showNumbers = true
+    /// The overview's Page Labels toggle, kept with the window across launches.
+    @SceneStorage("pagesOverview.showsPageLabels") private var showPageLabels = true
     @State private var draftAllRequested = false
     @State private var images: ImageCache
     @State private var thumbnails: PageThumbnailRenderer
@@ -165,6 +172,10 @@ struct BookEditor: View {
         _styleModel = State(initialValue: StyleTabModel(document: document))
     }
 
+    /// The sidebar tab lives on `pages`, so opening a page or the overview from anywhere also
+    /// brings the Pages tab forward.
+    private var sidebarTab: SidebarTab { pages.sidebarTab }
+
     var body: some View {
         @Bindable var pages = pages
         let content = document.content
@@ -174,7 +185,7 @@ struct BookEditor: View {
                 .scrollContentBackground(.hidden)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     VStack(spacing: 6) {
-                        SidebarTabPicker(selection: $sidebarTab)
+                        SidebarTabPicker(selection: $pages.sidebarTab)
                         // The Overview / Editor switch belongs to the Pages tab, so it sits on
                         // the sidebar card rather than in the title bar (which then looks the
                         // same on every tab).
@@ -190,9 +201,9 @@ struct BookEditor: View {
                     }
                     .padding(8)
                     .background(Crayon.paperDeep,
-                                in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
+                                in: RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+                        RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous)
                             .strokeBorder(Crayon.ink.opacity(0.08), lineWidth: 1)
                     }
                     .padding(8)
@@ -259,7 +270,7 @@ struct BookEditor: View {
     private func sidebar(_ content: BookContent) -> some View {
         switch sidebarTab {
         case .pages: PageList(document: document, content: content, pages: pages, thumbnails: thumbnails)
-        case .style: StyleSectionList(selection: $styleSection)
+        case .style: StyleSectionList(selection: $styleSection, scrollRequest: $styleScrollRequest)
         case .assets: AssetsList(document: document, content: content, model: assetsModel, images: images)
         case .layouts: TemplateList(document: document, content: content, model: layouts, chat: layoutChat)
         }
@@ -267,8 +278,7 @@ struct BookEditor: View {
 
     /// Where-used link: the page editor on that page, with the box selected when there is one.
     private func openFromWhereUsed(_ page: PageID, _ box: BoxID?) {
-        sidebarTab = .pages
-        pages.open(page)
+        pages.open(page)  // switches to the Pages tab
         // `selectedPage` changing clears the box selection, so set it after that has run.
         Task { @MainActor in selectedBox = box }
     }
@@ -304,7 +314,8 @@ struct BookEditor: View {
                                                              presets: presets)
             TemplatePickerSheet(title: pages.isCover(page) ? "Change Cover Layout" : "Change Layout",
                                 confirmTitle: "Change", templates: choices, trimSize: trim,
-                                initialSelection: content.pages[page]?.templateID) { [pages] id in
+                                initialSelection: content.pages[page]?.templateID,
+                                currentTemplateID: content.pages[page]?.templateID) { [pages] id in
                 pages.dismissSheet { pages.changeLayout(page, to: id) }
             }
         case .importStory:
@@ -322,26 +333,25 @@ struct BookEditor: View {
     private func detail(_ content: BookContent) -> some View {
         VStack(spacing: 0) {
             if document.isReadOnly {
-                Label("Read-only: this book is open in BookBook somewhere else, so changes can't be made here.",
-                      systemImage: "lock.fill")
-                    .font(Crayon.font(.callout, weight: .semibold))
-                    .foregroundStyle(Crayon.ink)
-                    .padding(8)
-                    .frame(maxWidth: .infinity)
-                    .background(Crayon.grape.opacity(0.18))
+                CrayonBanner("Read-only: this book is open in BookBook somewhere else, so changes can't be made here.",
+                             systemImage: "lock.fill", color: Crayon.grape)
             }
-            if !document.missingFonts.isEmpty { MissingFontsBanner(fonts: document.missingFonts) }
+            if !document.missingFonts.isEmpty {
+                MissingFontsBanner(fonts: document.missingFonts,
+                                   onShowTypography: document.isEditable ? { showTypography = true } : nil)
+            }
             if sidebarTab == .pages && pages.mode == .editor {
                 FormatBar(formatting: document.formatting)
                 Divider()
             }
             if let error = document.lastSaveError {
-                Label("Couldn't save changes: \(StoreErrorText.message(for: error))", systemImage: "exclamationmark.triangle.fill")
-                    .font(Crayon.font(.callout, weight: .semibold))
-                    .foregroundStyle(Crayon.ink)
-                    .padding(8)
-                    .frame(maxWidth: .infinity)
-                    .background(Crayon.sunflower.opacity(0.35))
+                CrayonBanner("Couldn't save changes. \(StoreErrorText.message(for: error))",
+                             systemImage: "exclamationmark.triangle.fill", color: Crayon.sunflower,
+                             glyphColor: Crayon.onSunflower) {
+                    // The failed save stays pending in the store, so a flush writes it again.
+                    Button("Try Again") { Task { await document.flush() } }
+                        .buttonStyle(.crayon(Crayon.sunflower))
+                }
             }
             if sidebarTab == .assets {
                 AssetsDetail(document: document, content: content, model: assetsModel, images: images,
@@ -349,12 +359,12 @@ struct BookEditor: View {
             } else if sidebarTab == .layouts {
                 LayoutsDetail(document: document, model: layouts, images: images)
             } else if sidebarTab == .style {
-                StyleTab(document: document, model: styleModel, section: styleSection,
+                StyleTab(document: document, model: styleModel, section: styleSection, scrollRequest: styleScrollRequest,
                          onEditPageNumbers: { [pages] in pages.sheet = .pageNumbers })
             } else {
             switch pages.mode {
             case .overview:
-                PagesOverview(document: document, pages: pages, thumbnails: thumbnails, showNumbers: $showNumbers)
+                PagesOverview(document: document, pages: pages, thumbnails: thumbnails, showLabels: $showPageLabels)
             case .editor:
                 if let page = pages.selectedPage, content.pages[page] != nil {
                     PageCanvas(document: document, content: content, pageID: page, imageSource: images,
@@ -363,7 +373,7 @@ struct BookEditor: View {
                                onDropImageFiles: { page, box, urls in importDroppedImages(urls, page: page, box: box) })
                         // Read-only: no text editing or box selection (the canvas is AppKit).
                         .allowsHitTesting(document.isEditable)
-                        .alert("Couldn't Use That Image", isPresented: $canvasImportError.isPresent()) {
+                        .alert("Couldn't use that image", isPresented: $canvasImportError.isPresent()) {
                             Button("OK", role: .cancel) {}
                         } message: { Text(canvasImportError ?? "") }
                 } else {
@@ -429,6 +439,7 @@ struct PageList: View {
     let pages: PagesController
     let thumbnails: PageThumbnailRenderer
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         @Bindable var pages = pages
@@ -444,7 +455,7 @@ struct PageList: View {
             }
             Button { pages.sheet = .addPage(index: pages.insertionIndex) } label: {
                 Image(systemName: "plus")
-                    .font(.system(.body, design: .rounded, weight: .bold))
+                    .font(Crayon.font(.body, weight: .bold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
@@ -457,10 +468,7 @@ struct PageList: View {
         }
         .contextMenu(forSelectionType: PageID.self) { ids in
             if let page = ids.first {
-                PageContextMenu(pages: pages, page: page,
-                                flags: content.pages[page].map { content.imageFlags(of: $0) } ?? []) {
-                    _ = document.perform(.markFlagsOK(page: page, box: nil))
-                }
+                PageContextMenu(pages: pages, page: page)
             }
         } primaryAction: { ids in
             if let page = ids.first { pages.open(page) }
@@ -471,7 +479,8 @@ struct PageList: View {
     }
 
     /// A page row as a white mini card on the sidebar card: a thumbnail of the page, its title
-    /// and layout name. The selected one is filled tomato and lifts on a deeper shadow.
+    /// and layout name. The selected one is filled tomato and lifts on a deeper shadow; its text
+    /// and thumbnail rim follow the `CrayonContrast` label rule (as crayon buttons do).
     private func row(_ title: String, page: PageID, status: PageStatus, flags: ImageFlags,
                      selected: Bool) -> some View {
         let tile = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
@@ -481,11 +490,11 @@ struct PageList: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .font(Crayon.font(.body, weight: .bold))
-                    .foregroundStyle(selected ? Color.white : Crayon.ink)
+                    .foregroundStyle(selected ? selectedLabel : Crayon.ink)
                 if let layoutName {
                     Text(layoutName)
                         .font(Crayon.font(.caption, weight: .semibold))
-                        .foregroundStyle(selected ? Color.white.opacity(0.85) : Crayon.inkSoft)
+                        .foregroundStyle(selected ? selectedLabel : Crayon.inkSoft)
                 }
             }
             .lineLimit(1)
@@ -504,9 +513,15 @@ struct PageList: View {
         )
     }
 
+    /// Text and rims on the selected row's tomato fill: white or `Crayon.onFill`, whichever
+    /// reaches 4.5:1 (`onFill` in both appearances today).
+    private var selectedLabel: Color {
+        CrayonContrast.label(on: Crayon.tomato, preferring: .white, minimum: CrayonContrast.text, in: colorScheme)
+    }
+
     /// The page's art, 30 pt high (a spread comes out wider), on a paper well until it renders.
     private func thumbnail(_ page: PageID, selected: Bool) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous)
         let image = thumbnails.image(for: page, in: content, marks: [],
                                      pixelHeight: Int(30 * max(1, displayScale)),
                                      fontsRevision: document.fontsRevision)
@@ -517,7 +532,7 @@ struct PageList: View {
                     .frame(width: min(52, 30 * Double(image.width) / Double(max(1, image.height))), height: 30)
                     .clipShape(shape)
                     .overlay {
-                        shape.strokeBorder(selected ? Color.white : Crayon.ink.opacity(0.15),
+                        shape.strokeBorder(selected ? selectedLabel : Crayon.ink.opacity(0.15),
                                            lineWidth: selected ? 2 : 1)
                     }
             } else {
@@ -533,16 +548,21 @@ struct PageList: View {
 private struct SidebarTabPicker: View {
     @Binding var selection: SidebarTab
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let tile = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2, style: .continuous)
+        let tile = RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous)
         HStack(spacing: 3) {
             ForEach(SidebarTab.allCases) { tab in
                 let selected = selection == tab
                 Button { selection = tab } label: {
                     Image(systemName: tab.symbol)
                         .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(selected ? Color.white : tab.crayonColor)
+                        // On its fill, the glyph follows the `CrayonContrast` rule for icons.
+                        .foregroundStyle(selected
+                                         ? CrayonContrast.label(on: tab.crayonColor, preferring: .white,
+                                                                minimum: CrayonContrast.graphics, in: colorScheme)
+                                         : tab.crayonColor)
                         .frame(maxWidth: .infinity, minHeight: 26)
                         .background {
                             if selected {
@@ -560,7 +580,7 @@ private struct SidebarTabPicker: View {
         }
         .padding(4)
         .background {
-            RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+            RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous)
                 .fill(Crayon.card)
                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2)
         }
@@ -575,9 +595,10 @@ private struct SidebarTabPicker: View {
 private struct PagesModePicker: View {
     @Binding var selection: PagesController.Mode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let tile = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2, style: .continuous)
+        let tile = RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous)
         HStack(spacing: 3) {
             segment("Overview", systemImage: "square.grid.2x2", mode: .overview, tile: tile)
             segment("Editor", systemImage: "doc.richtext", mode: .editor, tile: tile)
@@ -600,7 +621,10 @@ private struct PagesModePicker: View {
         return Button { selection = mode } label: {
             Label(title, systemImage: systemImage)
                 .font(Crayon.font(.caption, weight: .bold))
-                .foregroundStyle(selected ? Color.white : Crayon.ink)
+                .foregroundStyle(selected
+                                 ? CrayonContrast.label(on: Crayon.tomato, preferring: .white,
+                                                        minimum: CrayonContrast.text, in: colorScheme)
+                                 : Crayon.ink)
                 .frame(maxWidth: .infinity, minHeight: 22)
                 .background { if selected { tile.fill(Crayon.tomato) } }
                 .contentShape(tile)
@@ -620,7 +644,7 @@ private struct OfflineBadge: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .crayonCard(cornerRadius: Crayon.smallCornerRadius + 2)
+            .crayonCard(cornerRadius: Crayon.mediumCornerRadius)
             .help("Offline: queued requests will run when the network returns")
     }
 }
@@ -647,6 +671,14 @@ enum LockTakeOver {
     }
 
     static let warning = "If another Mac is still editing this book, its changes and yours can overwrite each other and work can be lost. Only continue if you know the other copy of BookBook is closed, for example after a crash."
+
+    /// The locked screen's message: who holds the book (named once), then what can be done.
+    static func message(for owner: LockOwner, offersOpenAnyway: Bool) -> String {
+        let advice = offersOpenAnyway
+            ? "You can open it read-only to look at it. If BookBook on that Mac has quit or crashed, you can open it anyway."
+            : "You can open it read-only to look at it, but you won't be able to change it."
+        return "\(StoreErrorText.message(for: .locked(owner))) \(advice)"
+    }
 
     /// Whether the locked screen offers "Open Anyway": the lock names a different Mac than
     /// `thisMachine` (by host UUID when both sides have one, else by host name). Tests pass a

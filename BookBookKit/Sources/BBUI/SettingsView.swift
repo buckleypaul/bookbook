@@ -13,19 +13,26 @@ public struct SettingsView: View {
                 LibraryLocationSettings()
             }
             .formStyle(.grouped)
+            .frame(width: Self.paneWidth, height: 270)
             .tabItem { Label("General", systemImage: "gearshape") }
 
             APIKeysSettings()
+                .frame(width: Self.paneWidth, height: 360)
                 .tabItem { Label("API Keys", systemImage: "key") }
 
             ModelSettings()
+                .frame(width: Self.paneWidth, height: 560)
                 .tabItem { Label("Models", systemImage: "cpu") }
 
             CostSettings()
+                .frame(width: Self.paneWidth, height: 560)
                 .tabItem { Label("Cost", systemImage: "dollarsign.circle") }
         }
-        .frame(width: 580, height: 480)
     }
+
+    /// Each pane sizes the Settings window itself: short panes fit their content, the tall ones
+    /// (Models, Cost) scroll inside a fixed height.
+    private static let paneWidth: CGFloat = 580
 }
 
 /// The OpenAI key goes only to the Keychain: the field is plain view state (never
@@ -36,6 +43,7 @@ struct APIKeysSettings: View {
     @State private var error: String?
     @State private var testing = false
     @State private var testResult: ConnectionTestResult?
+    @State private var confirmRemove = false
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -47,22 +55,22 @@ struct APIKeysSettings: View {
                 HStack {
                     if app.hasOpenAIKey {
                         Label("Saved in your Keychain", systemImage: "checkmark.seal.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Crayon.success)
                     } else {
-                        Label("No key saved", systemImage: "key.slash").foregroundStyle(.secondary)
+                        Label("No key saved", systemImage: "key.slash").foregroundStyle(Crayon.inkSoft)
                     }
                     Spacer()
-                    Button("Remove", role: .destructive, action: remove)
+                    Button("Remove", role: .destructive) { confirmRemove = true }
                         .disabled(!app.hasOpenAIKey)
                     Button("Save", action: save)
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .keyboardShortcut(.defaultAction)
                 }
                 if let error {
-                    Text(error).foregroundStyle(.red).font(.callout)
+                    CrayonInlineMessage(error, kind: .error, textStyle: .callout)
                 }
                 connectionTest
-                Button("Show Guided Setup…") { openWindow(id: OnboardingScene.id) }
+                Button("Guided Setup…") { openWindow(id: OnboardingScene.id) }
             } header: {
                 Text("OpenAI")
             } footer: {
@@ -71,6 +79,12 @@ struct APIKeysSettings: View {
             }
         }
         .formStyle(.grouped)
+        .alert("Remove your OpenAI API key?", isPresented: $confirmRemove) {
+            Button("Remove", role: .destructive, action: remove)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("BookBook can't make pictures until you add a key again.")
+        }
         .onAppear { app.refreshKeyStatus() }
         .onDisappear { draft = ""; testResult = nil }
     }
@@ -85,8 +99,7 @@ struct APIKeysSettings: View {
         }
         switch testResult {
         case let .success(count):
-            Label("Connected — \(count) models available", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green).font(.callout)
+            CrayonInlineMessage("Connected — \(count) models available", kind: .success, textStyle: .callout)
         case let .failure(advice):
             FailureAdviceView(advice: advice)
         case nil:
@@ -104,6 +117,9 @@ struct APIKeysSettings: View {
     }
 
     private func save() {
+        // Return in the field and the default Save button can both fire; the first clears the draft.
+        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        testResult = nil
         do {
             if try app.saveOpenAIKey(draft) { error = nil }
             draft = ""
@@ -114,6 +130,7 @@ struct APIKeysSettings: View {
     }
 
     private func remove() {
+        testResult = nil
         do {
             try app.removeOpenAIKey()
             error = nil

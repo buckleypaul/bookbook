@@ -32,6 +32,11 @@ enum LayoutsListing {
         }
     }
 
+    /// "Cover, Page 1, Page 2" for a few entries, "12 pages" for more.
+    static func usageSummary(_ used: [String]) -> String {
+        used.count <= 3 ? used.joined(separator: ", ") : "\(used.count) pages"
+    }
+
     /// Where a template is used: "Cover", then "Page N" in reading order.
     static func usage(of id: TemplateID, in content: BookContent) -> [String] {
         let numbers = Dictionary(uniqueKeysWithValues: PageListing.items(content).map { ($0.id, $0.title) })
@@ -70,8 +75,9 @@ struct TemplateList: View {
         .safeAreaInset(edge: .top, spacing: 0) { header }
         .confirmationDialog("Delete this layout?", isPresented: Binding(get: { confirmDelete != nil },
                                                                          set: { if !$0 { confirmDelete = nil } }),
-                            presenting: confirmDelete) { id in
+                            titleVisibility: .visible, presenting: confirmDelete) { id in
             Button("Delete", role: .destructive) { model.delete(id) }
+            Button("Cancel", role: .cancel) {}
         } message: { id in
             Text("“\(content.templates[id]?.name ?? "")” will be removed from the book. You can undo this.")
         }
@@ -99,7 +105,7 @@ struct TemplateList: View {
             Spacer(minLength: 0)
             if inBook {
                 let n = content.pages(using: template.id).count
-                if n > 0 { CrayonSticker("\(n)", color: Crayon.sky).help("Used on \(n) page(s)") }
+                if n > 0 { CrayonSticker("\(n)", color: Crayon.sky).help("Used on \(n) \(n == 1 ? "page" : "pages")") }
             }
         }
     }
@@ -111,10 +117,19 @@ struct TemplateList: View {
         Divider()
         Button("Delete…", role: .destructive) { requestDelete(id) }
             .disabled(!canDelete(id))
+            .help(deleteHelp(id))
     }
 
     private func canDelete(_ id: TemplateID) -> Bool {
         document.isEditable && content.templates[id] != nil && content.pages(using: id).isEmpty
+    }
+
+    /// Why Delete is unavailable, when it is because pages still use the layout.
+    private func deleteHelp(_ id: TemplateID) -> String {
+        guard content.templates[id] != nil else { return "" }
+        let used = LayoutsListing.usage(of: id, in: content)
+        guard !used.isEmpty else { return "" }
+        return "Used on \(LayoutsListing.usageSummary(used)). Change those pages' layout before deleting."
     }
 
     private func requestDelete(_ id: TemplateID) {
@@ -153,7 +168,7 @@ struct TemplateList: View {
                     Label("New", systemImage: "plus")
                         .labelStyle(.titleAndIcon)
                         .font(Crayon.font(.body, weight: .bold))
-                        .foregroundStyle(Crayon.tomato)
+                        .foregroundStyle(Crayon.danger)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -164,22 +179,16 @@ struct TemplateList: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .fontWeight(.bold)
-                        .foregroundStyle(Crayon.tomato)
+                        .foregroundStyle(Crayon.danger)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("Rename, duplicate or delete the selected layout")
+                .help("Rename, duplicate or delete the selected layout.")
+                .accessibilityLabel("Layout actions")
                 .disabled(model.templateID == nil)
             }
             .disabled(!document.isEditable)
-            if let id = model.templateID, content.templates[id] != nil {
-                let used = LayoutsListing.usage(of: id, in: content)
-                if !used.isEmpty {
-                    Text("Used on: \(used.joined(separator: ", ")). Change those pages' layout before deleting.")
-                        .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
-                }
-            }
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 6)

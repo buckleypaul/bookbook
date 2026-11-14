@@ -75,7 +75,7 @@ struct InlineTextEditorFormatTests {
 
         let state = editor.formatState
         #expect(state == FormatState(bold: true, italic: false, underline: true, font: "Georgia", size: 48,
-                                     color: red, alignment: nil))
+                                     color: red, alignment: nil, resolvedSize: 48, resolvedColor: red))
 
         // nil clears the override: back to the style.
         editor.apply(.setFont(nil))

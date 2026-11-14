@@ -24,7 +24,7 @@ public extension View {
     func opensOnboardingOnFirstLaunch(_ app: AppModel) -> some View { modifier(OnboardingLauncher(app: app)) }
 }
 
-/// PD §8.13 guided setup. Every step can be skipped; "Skip setup" closes it.
+/// PD §8.13 guided setup. Every step can be skipped; "Skip Setup" closes it.
 public struct OnboardingView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -43,19 +43,34 @@ public struct OnboardingView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                CrayonSticker("Guided Setup", systemImage: "sparkles", color: Crayon.grape)
                 Spacer()
                 StepDots(current: model.step.rawValue, count: OnboardingModel.Step.allCases.count)
             }
-            content
-            Spacer(minLength: 0)
+            // Long content (a failure's advice, say) scrolls; the buttons below stay put.
+            ScrollView {
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            }
+            .scrollBounceBehavior(.basedOnSize)
             HStack {
-                Button("Skip setup") { model.skipSetup(); close() }
+                Button("Skip Setup") { model.skipSetup(); close() }
+                    .opacity(model.isLast ? 0 : 1)
+                    .disabled(model.isLast)
+                    .accessibilityHidden(model.isLast)
                 Spacer()
-                if !model.isFirst { Button("Back") { model.back() } }
+                Button("Back") { model.back() }.disabled(model.isFirst)
                 if !model.isLast {
-                    Button("Skip this step") { model.skipStep() }
-                    Button("Continue") { model.next() }.keyboardShortcut(.defaultAction)
+                    // "Skip" only where there's something to skip; the row keeps its shape elsewhere.
+                    let hasSomethingToSkip = model.step == .pasteKey
+                    Button("Skip") { model.skipStep() }
+                        .opacity(hasSomethingToSkip ? 1 : 0)
+                        .disabled(!hasSomethingToSkip)
+                        .accessibilityHidden(!hasSomethingToSkip)
+                    // On the paste-key step Return saves and tests the key (the field's `onSubmit`),
+                    // so Return isn't also Continue there.
+                    Button("Continue") { model.next() }
+                        .keyboardShortcut(model.step == .pasteKey ? nil : .defaultAction)
                         .buttonStyle(.crayon)
                 } else {
                     Button("Done") { model.finish(); close() }.keyboardShortcut(.defaultAction)
@@ -90,9 +105,9 @@ public struct OnboardingView: View {
                     Text("3. Open the API keys page and choose Create new secret key.")
                     Text("4. Copy the key. OpenAI shows it only once.")
                 }
-                HStack {
-                    Link("Open Billing", destination: Self.billingURL)
-                    Link("Open API Keys", destination: Self.keysURL)
+                HStack(spacing: 16) {
+                    linkButton("Open Billing", Self.billingURL)
+                    linkButton("Open API Keys", Self.keysURL)
                 }
             }
         case .pasteKey:
@@ -105,14 +120,14 @@ public struct OnboardingView: View {
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || testing)
                     if testing { ProgressView().controlSize(.small) }
                     if app.hasOpenAIKey {
-                        Label("Saved in your Keychain", systemImage: "checkmark.seal.fill").foregroundStyle(Crayon.grass)
+                        Label("Saved in your Keychain", systemImage: "checkmark.seal.fill").foregroundStyle(Crayon.success)
                     }
                 }
-                if let error { Text(error).foregroundStyle(.red).font(.callout) }
+                if let error { CrayonInlineMessage(error, kind: .error, textStyle: .callout) }
                 switch testResult {
                 case let .success(count):
                     Label("Connected — \(count) models available", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Crayon.grass)
+                        .foregroundStyle(Crayon.success)
                 case let .failure(advice): FailureAdviceView(advice: advice)
                 case nil: EmptyView()
                 }
@@ -122,24 +137,42 @@ public struct OnboardingView: View {
         case .verifyOrganization:
             page("One more thing") {
                 Text("OpenAI may ask you to verify your organization before its image models can be used. If generating fails with a message about access, verify your organization in OpenAI's settings; it can take a little while to take effect.")
-                Link("Open organization settings", destination: Self.organizationURL)
+                linkButton("Open Organization Settings", Self.organizationURL)
             }
         }
+    }
+
+    /// A link that reads as one: crayon blue, underlined, with an arrow.
+    private func linkButton(_ title: String, _ url: URL) -> some View {
+        Link(destination: url) {
+            Label(title, systemImage: "arrow.up.right.square")
+                .font(Crayon.font(.body, weight: .semibold))
+                .underline()
+        }
+        .foregroundStyle(Crayon.sky)
+    }
+
+    private func costText(_ amount: Decimal?) -> String {
+        amount == nil ? "Not available" : TypicalCosts.format(amount)
     }
 
     private var costsPage: some View {
         let costs = app.typicalCosts()
         return page("What it costs") {
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                GridRow { Text("One image, Draft quality"); Text(TypicalCosts.format(costs.draftPerImage)) }
-                GridRow { Text("One image, Standard quality"); Text(TypicalCosts.format(costs.standardPerImage)) }
+                GridRow { Text("One image, Draft quality"); Text(costText(costs.draftPerImage)) }
+                GridRow { Text("One image, Standard quality"); Text(costText(costs.standardPerImage)) }
                 GridRow {
                     Text("A \(TypicalCosts.bookPages)-page book at Standard")
-                    Text(TypicalCosts.format(costs.bookAtStandard))
+                    Text(costText(costs.bookAtStandard))
                 }
             }
-            Text("Estimates for \(costs.modelName) at \(TypicalCosts.imageSize.width)×\(TypicalCosts.imageSize.height). Each refinement adds roughly the cost of another image. BookBook shows an estimate before you generate and asks first if it is high.")
+            Text("Estimates for \(costs.modelName) at \(String(TypicalCosts.imageSize.width)) × \(String(TypicalCosts.imageSize.height)). Each refinement adds roughly the cost of another image. BookBook shows an estimate before you generate and asks first if it's high.")
                 .font(.callout).foregroundStyle(Crayon.inkSoft)
+            if let asOf = costs.priceListAsOf, !asOf.isEmpty {
+                Text("Prices as of \(asOf).")
+                    .font(.callout).foregroundStyle(Crayon.inkSoft)
+            }
         }
     }
 

@@ -54,6 +54,15 @@ protocol CanvasController: AnyObject {
     func scrollWheel(with event: NSEvent, at point: CGPoint) -> Bool
     /// The view's size changed (re-place subviews).
     func canvasDidResize()
+    /// Tooltips (also read out by accessibility) for what the overlay drew, in view points.
+    /// Asked after each draw.
+    func tips(transform: CanvasTransform) -> [CanvasTip]
+}
+
+/// A tooltip over part of the canvas (an overflow badge), in view points.
+struct CanvasTip: Equatable {
+    var viewRect: CGRect
+    var text: String
 }
 
 extension CanvasController {
@@ -69,6 +78,7 @@ extension CanvasController {
     func magnify(with event: NSEvent, at point: CGPoint) -> Bool { false }
     func scrollWheel(with event: NSEvent, at point: CGPoint) -> Bool { false }
     func canvasDidResize() {}
+    func tips(transform: CanvasTransform) -> [CanvasTip] { [] }
 }
 
 /// The canvas (A §6.2): a layer-backed, flipped `NSView` that draws its controller's scene with
@@ -79,7 +89,7 @@ extension CanvasController {
 ///
 /// HOT SPOT (plan §2.5): one lane at a time.
 @MainActor
-final class CanvasView: NSView {
+final class CanvasView: NSView, NSViewToolTipOwner {
     /// The active mode.
     var controller: (any CanvasController)? {
         didSet {
@@ -135,12 +145,25 @@ final class CanvasView: NSView {
 
     // MARK: Drawing
 
+    /// The crayon colours resolve per appearance at draw time.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+
+    /// How far the page's hard crayon shadow drops, in view points (as a raised card's).
+    static let pageShadowDrop: CGFloat = 3
+
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        ctx.setFillColor(NSColor.underPageBackgroundColor.cgColor)
+        // The app's paper, as the overview behind its thumbnails.
+        ctx.setFillColor(NSColor(Crayon.paper).cgColor)
         ctx.fill(bounds)
         controller?.willDraw()
-        guard let controller, let scene = controller.scene else { return }
+        guard let controller, let scene = controller.scene else {
+            updateTips([])
+            return
+        }
         let geometry = scene.geometry
         let sheet = scene.sheetRect
         let transform = CanvasTransform(viewSize: bounds.size, fitting: sheet)
@@ -149,11 +172,13 @@ final class CanvasView: NSView {
         ctx.translateBy(x: transform.origin.x, y: transform.origin.y)
         ctx.scaleBy(x: transform.scale, y: transform.scale)
 
-        ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: 1), blur: 6, color: NSColor.black.withAlphaComponent(0.3).cgColor)
+        // The sheet as the app draws pages: a hard crayon shadow straight below (no blur) and a
+        // hairline edge, so a white page stands out on cream paper as well as on the night theme.
+        let shadowColor = NSColor(Crayon.shadow).cgColor
+        ctx.setFillColor(shadowColor)
+        ctx.fill(sheet.offsetBy(dx: 0, dy: Self.pageShadowDrop / transform.scale))
         ctx.setFillColor(NSColor.white.cgColor)
         ctx.fill(sheet)
-        ctx.restoreGState()
 
         ctx.saveGState()
         ctx.clip(to: sheet)
@@ -174,8 +199,49 @@ final class CanvasView: NSView {
             ctx.restoreGState()
         }
 
+        // The page's hairline edge, just outside the sheet (drawn after the art, never over it).
+        ctx.setStrokeColor(shadowColor)
+        ctx.setLineWidth(1 / transform.scale)
+        ctx.stroke(sheet.insetBy(dx: -0.5 / transform.scale, dy: -0.5 / transform.scale))
+
         controller.drawOverlay(in: ctx, transform: transform)
         ctx.restoreGState()
+        updateTips(controller.tips(transform: transform))
+    }
+
+    // MARK: Tooltips and accessibility
+
+    /// The tooltips now installed (see `CanvasController.tips`).
+    private(set) var tips: [CanvasTip] = []
+
+    /// Each installed tooltip's text, by tag: the view is the tooltips' owner (`addToolTip`
+    /// doesn't retain its owner, so a string passed as the owner could be freed).
+    private(set) var tipTexts: [NSView.ToolTipTag: String] = [:]
+
+    private func updateTips(_ new: [CanvasTip]) {
+        guard new != tips else { return }
+        tips = new
+        removeAllToolTips()
+        tipTexts = [:]
+        for tip in new { tipTexts[addToolTip(tip.viewRect, owner: self, userData: nil)] = tip.text }
+    }
+
+    func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint,
+              userData data: UnsafeMutableRawPointer?) -> String {
+        tipTexts[tag] ?? ""
+    }
+
+    /// The tooltips' areas are also accessibility elements (VoiceOver reads the overflow badges).
+    override func accessibilityChildren() -> [Any]? {
+        let elements: [Any] = tips.map { tip in
+            let element = NSAccessibilityElement()
+            element.setAccessibilityRole(.image)
+            element.setAccessibilityLabel(tip.text)
+            element.setAccessibilityParent(self)
+            element.setAccessibilityFrameInParentSpace(tip.viewRect)
+            return element
+        }
+        return (super.accessibilityChildren() ?? []) + elements
     }
 
     // MARK: Input
@@ -335,6 +401,7 @@ struct PageCanvas: NSViewRepresentable {
         let document = document, selection = $selectedImageBox
         let undoManager = context.environment.undoManager
         let placement = view.placement
+        placement.isEditable = document.isEditable
         placement.onSelectBox = { selection.wrappedValue = $0 }
         placement.textEditing.onTextChange = { page, box, text, coalescing in
             document.perform(.setRichText(page: page, box: box, text: text, coalescing: coalescing))

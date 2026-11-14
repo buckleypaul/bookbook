@@ -125,8 +125,10 @@ struct PagesOverview: View {
                     .joined(separator: "–")
                 pageCell(spread, part: .single, sides: 2, label: label, ctx)
             } else {
-                slotView(row.left, ctx)
-                slotView(row.right, ctx)
+                // The selected (or drop-target) side draws on top, so its ring, which reaches
+                // past the page edge, isn't hidden under the facing page.
+                slotView(row.left, ctx).zIndex(isHighlighted(row.left) ? 1 : 0)
+                slotView(row.right, ctx).zIndex(isHighlighted(row.right) ? 1 : 0)
             }
         }
         // Each opening is a card on the paper; the page art inside is untouched.
@@ -134,6 +136,12 @@ struct PagesOverview: View {
         .crayonHover(tilt: -1, scale: 1.02)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(row.isCover ? "Cover" : "Opening \(row.id)")
+    }
+
+    /// Whether the slot's page shows the selection or drop-target ring.
+    private func isHighlighted(_ slot: OverviewSlot) -> Bool {
+        guard let page = slot.pageID else { return false }
+        return pages.selectedPage == page || dropTarget == page
     }
 
     @ViewBuilder

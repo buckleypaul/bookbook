@@ -67,4 +67,32 @@ final class TextEditingController {
         guard let editor, let transform = canvas?.transform else { return }
         editor.place(viewRect: transform.toView(textRect), pageSize: textRect.size)
     }
+
+    /// Passes a canvas mouse-down at `point` (page points) on the edited box to the editor, so
+    /// the click places the caret where it landed instead of leaving it at the end. `boxRect`
+    /// and `rotationDegrees` are the box's render rect and rotation: a rotated box is edited
+    /// upright, so the point is first mapped into the upright box. Needs a window (does nothing
+    /// otherwise, e.g. in tests); returns once the mouse is released.
+    func handleClick(_ event: NSEvent, at point: CGPoint, boxRect: CGRect, rotationDegrees: Double) {
+        guard let editor, let canvas, let window = canvas.window, let transform = canvas.transform else { return }
+        // Redraw the page without the box's text now: the text view tracks the mouse until it's
+        // released, and the rendered text would show under the editor's until then.
+        canvas.displayIfNeeded()
+        var forwarded = event
+        if rotationDegrees != 0 {
+            let upright = Self.uprightPoint(point, boxRect: boxRect, rotationDegrees: rotationDegrees)
+            let location = canvas.convert(transform.toView(upright), to: nil)
+            forwarded = NSEvent.mouseEvent(
+                with: event.type, location: location, modifierFlags: event.modifierFlags,
+                timestamp: event.timestamp, windowNumber: event.windowNumber, context: nil,
+                eventNumber: event.eventNumber, clickCount: event.clickCount, pressure: event.pressure) ?? event
+        }
+        editor.handleClick(forwarded, in: window)
+    }
+
+    /// `point` (page points) on a box drawn rotated by `rotationDegrees` about `boxRect`'s
+    /// centre, mapped to where it falls on the upright box (where the editor lies).
+    static func uprightPoint(_ point: CGPoint, boxRect: CGRect, rotationDegrees: Double) -> CGPoint {
+        rotationDegrees == 0 ? point : CropMath.unrotated(point, about: boxRect, degrees: rotationDegrees)
+    }
 }

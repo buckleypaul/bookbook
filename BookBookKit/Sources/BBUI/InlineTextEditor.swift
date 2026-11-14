@@ -149,6 +149,8 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
         }
     }
 
+    /// Makes the text view first responder with the caret at the end (keyboard entry; a click
+    /// then places it with `handleClick`).
     func beginEditing(in window: NSWindow?) {
         textView.setSelectedRange(NSRange(location: (textView.string as NSString).length, length: 0))
         window?.makeFirstResponder(textView)
@@ -160,6 +162,16 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
             Self.log.fault("The window's undo manager isn't the document's: ⌘Z won't undo typing")
         }
         #endif
+    }
+
+    /// Hands a mouse-down that the canvas received to the text view, so the click places the
+    /// caret (or, dragged, selects; with more clicks, selects the word or paragraph) as a click
+    /// on the text view itself would. `event`'s window location must be where the click lands
+    /// on the (upright) editor. Runs the text view's own tracking until the mouse is released.
+    func handleClick(_ event: NSEvent, in window: NSWindow) {
+        guard textView.window === window else { return }
+        if window.firstResponder !== textView { window.makeFirstResponder(textView) }
+        textView.mouseDown(with: event)
     }
 
     /// Safety net: an editor dropped without `tearDown()` still closes its colour burst, or the
@@ -514,7 +526,10 @@ enum RichTextFormatting {
         }
         return FormatState(bold: commonDrawn(\.bold), italic: commonDrawn(\.italic),
                            underline: common { $0.underline }, font: common { $0.fontFamily },
-                           size: common { $0.size }, color: common { $0.color }, alignment: nil)
+                           size: common { $0.size }, color: common { $0.color }, alignment: nil,
+                           resolvedSize: common { $0.size ?? typography.bodySize },
+                           resolvedColor: common { $0.color ?? typography.color },
+                           isFontMixed: Set(runs.map(\.fontFamily)).count > 1)
     }
 
     /// The run transform for a (non-alignment) action, given the runs it applies to.

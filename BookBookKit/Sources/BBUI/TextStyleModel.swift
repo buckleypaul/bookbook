@@ -207,7 +207,23 @@ public final class TextStyleModel {
         let call = TextStyleCall(provider: provider.id, model: model.id, system: request.system, user: request.user,
                                  parametersSent: result.parametersSent, usage: result.usage, cost: costID)
         let normalized = backend.normalize(result.draft, fonts, current)
-        let styleIntent = TextStyleIntent(styling: normalized.styling, decorationPrompt: normalized.decorationPrompt,
+        // A restyle starts from the refined version: "keep" (null) fields keep its values, not the
+        // layout's, and a null decoration keeps its painted decoration ("none" removes it).
+        let base = refines.flatMap { id in
+            document.content.pages[key.page]?.textStyles[key.box].flatMap { document.content.sessions[$0.sessionID] }?
+                .version(id)
+        }
+        var styling = normalized.styling
+        var decorationPrompt = normalized.decorationPrompt
+        var keptDecoration: ImageRef?
+        if let baseStyle = base?.textStyle {
+            styling = Self.merged(styling, over: baseStyle.styling)
+            if result.draft.decoration == nil, let kept = baseStyle.decorationPrompt, let image = base?.image {
+                decorationPrompt = kept
+                keptDecoration = image
+            }
+        }
+        let styleIntent = TextStyleIntent(styling: styling, decorationPrompt: decorationPrompt,
                                           summary: normalized.summary, call: call)
         var intent = decorationIntent(instruction, quality: quality, refines: nil, app: app)
         intent.textStyle = styleIntent
@@ -221,12 +237,15 @@ public final class TextStyleModel {
                                       explanation: "This text box is no longer on the page."), sent: call)
         }
 
-        if styleIntent.decorationPrompt == nil {
-            // Typography only: no image request, so the version is made now.
+        if styleIntent.decorationPrompt == nil || keptDecoration != nil {
+            // Typography only, or the refined version's decoration kept as it is: no image
+            // request, so the version is made now.
             intent.refines = refines
             let message = Message(role: .user, text: intent.messageText, refines: refines, createdAt: app.now())
             do {
-                let placeholder = try await document.store.storeImage(TextStylePlaceholder.png, contentType: UTType.png.identifier)
+                let placeholder = try await keptDecoration.asyncOr {
+                    try await self.document.store.storeImage(TextStylePlaceholder.png, contentType: UTType.png.identifier)
+                }
                 let stamp = app.now()
                 guard document.performIrreversible({
                     BookMutations.appendTypographyOnlyStyle(message: message, intent: intent, placeholder: placeholder,
@@ -254,6 +273,16 @@ public final class TextStyleModel {
                                explanation: "The book changed before the decoration could be queued. Try again."),
                  sent: call)
         }
+    }
+
+    /// `styling` with each "keep" (nil) field taken from `base`.
+    static func merged(_ styling: TextStyling, over base: TextStyling) -> TextStyling {
+        var result = styling
+        result.font = styling.font ?? base.font
+        result.fontSize = styling.fontSize ?? base.fontSize
+        result.color = styling.color ?? base.color
+        result.alignment = styling.alignment ?? base.alignment
+        return result
     }
 
     // MARK: Private
@@ -347,4 +376,12 @@ enum TextStylePlaceholder {
         CGImageDestinationFinalize(destination)
         return data as Data
     }()
+}
+
+extension Optional where Wrapped: Sendable {
+    /// The wrapped value, else the result of `make`.
+    fileprivate func asyncOr(_ make: () async throws -> Wrapped) async rethrows -> Wrapped {
+        if let self { return self }
+        return try await make()
+    }
 }

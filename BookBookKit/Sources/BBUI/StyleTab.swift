@@ -203,14 +203,12 @@ enum StyleSection: String, CaseIterable, Identifiable {
     }
 }
 
-extension Notification.Name {
-    /// Posted (object: the `StyleSection`) each time a Style sidebar row is clicked.
-    static let styleSectionChosen = Notification.Name("BookBook.styleSectionChosen")
-}
-
 /// The Style tab's sidebar: one row per form section.
 struct StyleSectionList: View {
     @Binding var selection: StyleSection
+    /// Bumped on every row click, so the Style tab in this window scrolls even when the section
+    /// was already selected.
+    @Binding var scrollRequest: Int
 
     var body: some View {
         List(selection: Binding(get: { selection }, set: { if let s = $0 { selection = s } })) {
@@ -227,7 +225,7 @@ struct StyleSectionList: View {
                 // tell the form to scroll there anyway.
                 .onTapGesture {
                     selection = section
-                    NotificationCenter.default.post(name: .styleSectionChosen, object: section)
+                    scrollRequest &+= 1
                 }
             }
         }
@@ -240,6 +238,8 @@ struct StyleTab: View {
     let document: BookDocument
     let model: StyleTabModel
     var section: StyleSection = .visual
+    /// Changes each time the sidebar asks for a scroll, even to the same section.
+    var scrollRequest = 0
     let onEditPageNumbers: () -> Void
     @State private var showTypography = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -248,9 +248,7 @@ struct StyleTab: View {
         ScrollViewReader { proxy in
             form
                 .onChange(of: section) { _, target in scroll(proxy, to: target) }
-                .onReceive(NotificationCenter.default.publisher(for: .styleSectionChosen)) { note in
-                    if let target = note.object as? StyleSection { scroll(proxy, to: target) }
-                }
+                .onChange(of: scrollRequest) { _, _ in scroll(proxy, to: section) }
         }
     }
 

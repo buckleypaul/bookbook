@@ -10,6 +10,8 @@ struct TemplatePicker: View {
     @Binding var selection: TemplateID?
     /// Double-click (or return) picks a template straight away.
     var onConfirm: ((TemplateID) -> Void)?
+    /// The page's layout now (Change Layout), marked "Current" under its name.
+    var currentTemplateID: TemplateID?
 
     private let height: CGFloat = 80
 
@@ -29,18 +31,22 @@ struct TemplatePicker: View {
         let aspect = trimSize.height > 0 ? trimSize.width / trimSize.height : 0.75
         let width = height * aspect * (template.kind == .spread ? 2 : 1)
         let selected = selection == template.id
+        let isCurrent = currentTemplateID == template.id
         return VStack(spacing: 6) {
             TemplateDiagram(template: template)
                 .frame(width: min(width, 200), height: height)
                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
                 .padding(8)
-                .crayonCard(selected: selected, cornerRadius: Crayon.smallCornerRadius + 2)
+                .crayonCard(selected: selected, cornerRadius: Crayon.mediumCornerRadius)
                 .crayonHover()
             Text(template.name)
                 .font(Crayon.font(.caption, weight: selected ? .bold : .semibold))
                 .foregroundStyle(selected ? Crayon.tomato : Crayon.ink)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
+            if isCurrent {
+                CrayonSticker("Current", systemImage: "checkmark", color: Crayon.grass)
+            }
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
@@ -50,6 +56,7 @@ struct TemplatePicker: View {
         }
         .simultaneousGesture(TapGesture().onEnded { selection = template.id })
         .accessibilityElement(children: .combine)
+        .accessibilityValue(isCurrent ? "Current layout" : "")
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { selection = template.id }
     }
@@ -96,31 +103,25 @@ struct TemplatePickerSheet: View {
     let templates: [Template]
     let trimSize: PointSize
     let initialSelection: TemplateID?
+    /// The page's layout now (Change Layout): marked in the grid, and choosing it again is
+    /// disabled because it would change nothing.
+    var currentTemplateID: TemplateID? = nil
     let onChoose: (TemplateID) -> Void
-    @Environment(\.dismiss) private var dismiss
     @State private var selection: TemplateID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             CrayonHeader(title)
-            TemplatePicker(templates: templates, trimSize: trimSize, selection: $selection) { choose($0) }
+            TemplatePicker(templates: templates, trimSize: trimSize, selection: $selection,
+                           onConfirm: { if $0 != currentTemplateID { choose($0) } },
+                           currentTemplateID: currentTemplateID)
                 .frame(minHeight: 260)
                 .background(Crayon.paperDeep, in: .rect(cornerRadius: Crayon.cornerRadius, style: .continuous))
-            HStack {
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                    .buttonStyle(.bordered)
-                    .buttonBorderShape(.capsule)
-                Button(confirmTitle) { if let selection { choose(selection) } }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.crayon)
-                    .disabled(selection == nil)
+            CrayonSheetFooter(confirmTitle, isDisabled: selection == nil || selection == currentTemplateID) {
+                if let selection { choose(selection) }
             }
         }
-        .padding(20)
-        .frame(width: 560, height: 420)
-        .crayonPaper()
+        .crayonSheet(width: 560, height: 420)
         .onAppear { if selection == nil { selection = initialSelection ?? templates.first?.id } }
     }
 

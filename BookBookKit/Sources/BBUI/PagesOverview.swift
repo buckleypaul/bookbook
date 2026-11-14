@@ -4,21 +4,29 @@ import BBStore
 import SwiftUI
 
 /// The Pages tab's spread overview (PD §8.5): the cover alone, then page 1 on the right, then
-/// facing pairs, each page with a status badge. Click selects, double-click opens the page
-/// editor, drag-and-drop reorders (with the spread-split warning), right-click for page
-/// commands.
+/// facing pairs, each page with a status badge. Click selects, double-click (or Return) opens
+/// the page editor, the arrow keys move the selection, drag-and-drop reorders (with the
+/// spread-split warning), right-click for page commands.
 struct PagesOverview: View {
     let document: BookDocument
     let pages: PagesController
     let thumbnails: PageThumbnailRenderer
-    @Binding var showNumbers: Bool
+    /// The Page Labels toggle: the position captions ("Cover", "1", "2"…) under the pages. The
+    /// page numbers printed on the pages stay in the art either way.
+    @Binding var showLabels: Bool
     @Environment(\.displayScale) private var displayScale
     @State private var dropTarget: PageID?
     @State private var endIsTargeted = false
+    @FocusState private var isFocused: Bool
 
-    static let pageHeight: CGFloat = 160
+    /// Small enough that two portrait spreads sit side by side at the default window width
+    /// (1200 pt leaves the detail card about 630 pt).
+    static let pageHeight: CGFloat = 144
     /// Room inside each opening's card around its pages.
     private static let cardPadding: CGFloat = 12
+    private static let gridSpacing: CGFloat = 28
+    /// The label row under each page (status and position), with the gap above it.
+    private static let labelRow = PageThumbnailView.labelSpacing + PageThumbnailView.labelRowHeight
 
     var body: some View {
         let content = document.content
@@ -30,31 +38,67 @@ struct PagesOverview: View {
         let side = sideSize(content)
         let context = RowContext(content: content, layout: layout, numbers: numbers, side: side,
                                  startNumber: style.startNumber)
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: side.width * 2 + 8 + Self.cardPadding * 2), spacing: 28)],
-                      alignment: .leading, spacing: 28) {
-                ForEach(rows) { row in
-                    rowView(row, context)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: side.width * 2 + 8 + Self.cardPadding * 2),
+                                             spacing: Self.gridSpacing)],
+                          alignment: .leading, spacing: Self.gridSpacing) {
+                    ForEach(rows) { row in
+                        rowView(row, context).id(row.id)
+                    }
+                    endDropZone(side)
                 }
-                endDropZone(side)
+                .padding(24)
             }
-            .padding(24)
+            // The toggle sits on its own strip under the grid, so it never covers a card.
+            .safeAreaInset(edge: .bottom, spacing: 0) { labelsBar }
+            // No rigid minimum: at the window minimum the detail card gets only
+            // `EditorPanelMetrics.detailMin`; narrower content clips.
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            .clipped()
+            .background(Crayon.paper)
+            // Keyboard: arrows move the selection through the pages, Return opens it, Delete
+            // deletes it. The selection ring shows where focus is, so no focus ring.
+            .focusable()
+            .focused($isFocused)
+            .focusEffectDisabled()
+            .onMoveCommand { direction in moveSelection(direction, rows: rows, proxy: proxy) }
+            .onKeyPress(.return) {
+                guard let page = pages.selectedPage else { return .ignored }
+                pages.open(page)
+                return .handled
+            }
+            .onDeleteCommand {
+                if let page = pages.selectedPage { pages.delete(page) }
+            }
         }
-        // No rigid minimum: at the window minimum the detail card gets only
-        // `EditorPanelMetrics.detailMin`; narrower content clips.
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-        .clipped()
+    }
+
+    private var labelsBar: some View {
+        HStack {
+            Spacer()
+            Toggle(isOn: $showLabels) { Label("Page Labels", systemImage: "number") }
+                .toggleStyle(CrayonChipToggleStyle())
+                .help(showLabels ? "Hide page labels" : "Show page labels")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .background(Crayon.paper)
-        .overlay(alignment: .bottomTrailing) {
-            Toggle(isOn: $showNumbers) { Label("Page Numbers", systemImage: "number") }
-                .toggleStyle(.button)
-                .labelStyle(.iconOnly)
-                .buttonStyle(.glass)
-                .help(showNumbers ? "Hide page numbers" : "Show page numbers")
-                .padding(12)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Crayon.ink.opacity(0.08)).frame(height: 1)
         }
-        .onDeleteCommand {
-            if let page = pages.selectedPage { pages.delete(page) }
+    }
+
+    /// Left / up: the previous page in reading order; right / down: the next. Scrolls the
+    /// page's opening into view.
+    private func moveSelection(_ direction: MoveCommandDirection, rows: [OverviewRow], proxy: ScrollViewProxy) {
+        let step = direction == .left || direction == .up ? -1 : (direction == .right || direction == .down ? 1 : 0)
+        guard step != 0,
+              let page = PagesOverviewModel.page(step, from: pages.selectedPage, in: document.content)
+        else { return }
+        pages.selectedPage = page
+        if let row = rows.first(where: { $0.left.pageID == page || $0.right.pageID == page }) {
+            proxy.scrollTo(row.id)
         }
     }
 
@@ -102,7 +146,7 @@ struct PagesOverview: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Crayon.paperDeep)
                 .frame(width: ctx.side.width, height: ctx.side.height)
-                .padding(.bottom, 18)
+                .padding(.bottom, Self.labelRow)
         }
     }
 
@@ -119,38 +163,43 @@ struct PagesOverview: View {
         return PageThumbnailView(image: image, part: part, sideSize: ctx.side, sides: sides,
                                  status: page.map { content.status(of: $0) },
                                  flags: page.map { content.imageFlags(of: $0) } ?? [],
-                                 label: showNumbers || label == "Cover" ? label : nil,
+                                 label: showLabels || label == "Cover" ? label : nil,
                                  isSelected: pages.selectedPage == pageID,
                                  isDropTarget: dropTarget == pageID)
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { pages.open(pageID) }
-            .simultaneousGesture(TapGesture().onEnded { pages.selectedPage = pageID })
+            .simultaneousGesture(TapGesture().onEnded {
+                pages.selectedPage = pageID
+                isFocused = true
+            })
             .contextMenu {
-                PageContextMenu(pages: pages, page: pageID,
-                                flags: page.map { content.imageFlags(of: $0) } ?? []) {
-                    _ = document.perform(.markFlagsOK(page: pageID, box: nil))
-                }
+                PageContextMenu(pages: pages, page: pageID)
             }
             .modifier(PageDragDrop(pageID: pageID, canDrag: canDrag, canDrop: isStory && document.isEditable,
                                    dropTarget: $dropTarget) { moving in
                 pages.move(moving, onto: pageID)
             })
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel(pageID, label: label, content))
+            .accessibilityLabel(Self.accessibilityLabel(pageID, part: part, label: label, content))
             .accessibilityAddTraits(pages.selectedPage == pageID ? [.isSelected, .isButton] : .isButton)
             .accessibilityAction { pages.selectedPage = pageID }
             .accessibilityAction(named: "Open in Editor") { pages.open(pageID) }
     }
 
-    private func accessibilityLabel(_ pageID: PageID, label: String?, _ content: BookContent) -> String {
+    /// A page's VoiceOver label: its name, status, any out-of-date flags, and whether it's half
+    /// of a spread split across sheets ("Page 3, in progress, Style changed, split across sheets").
+    static func accessibilityLabel(_ pageID: PageID, part: OverviewPart, label: String?,
+                                   _ content: BookContent) -> String {
         guard let page = content.pages[pageID] else { return "" }
-        let name = pageID == content.book.coverPageID ? "Cover" : "Page \(label ?? "")"
+        let name = pageID == content.book.coverPageID ? "Cover" : label.map { "Page \($0)" } ?? "Page"
         let status = switch content.status(of: page) {
         case .empty: "empty"
         case .inProgress: "in progress"
         case .done: "done"
         }
-        return "\(name), \(status)"
+        var parts = [name, status] + FlagText.entries(content.imageFlags(of: page)).map(\.title)
+        if part != .single { parts.append("split across sheets") }
+        return parts.joined(separator: ", ")
     }
 
     /// Dropping here moves a page to the end of the book.
@@ -166,13 +215,13 @@ struct PagesOverview: View {
                 Button {
                     pages.sheet = .addPage(index: document.content.book.pageOrder.count)
                 } label: {
-                    Label("Add Page", systemImage: "plus")
+                    Label("Add Page…", systemImage: "plus")
                 }
                 .buttonStyle(.crayon)
                 .disabled(!document.isEditable)
             }
             // The same size as a one-page opening's card, so the grid stays even.
-            .frame(width: side.width + Self.cardPadding * 2, height: side.height + 22 + Self.cardPadding * 2)
+            .frame(width: side.width + Self.cardPadding * 2, height: side.height + Self.labelRow + Self.cardPadding * 2)
             .crayonHover()
             .dropDestination(for: String.self) { items, _ in
                 guard document.isEditable, let moving = items.first.flatMap(PageDragDrop.pageID(from:)) else { return false }
@@ -180,6 +229,29 @@ struct PagesOverview: View {
                 return true
             } isTargeted: { endIsTargeted = $0 }
             .help("Add a page at the end, or drop a page here to move it to the end")
+    }
+}
+
+/// An on/off chip for the overview's labels toggle: a pill on a card when off, filled tomato
+/// when on, in the Crayon type.
+private struct CrayonChipToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        let on = configuration.isOn
+        let capsule = Capsule(style: .continuous)
+        Button { configuration.isOn.toggle() } label: {
+            configuration.label
+                .font(Crayon.font(.caption, weight: .bold))
+                .foregroundStyle(on ? Color.white : Crayon.ink)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(capsule.fill(on ? Crayon.tomato : Crayon.card)
+                    .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2))
+                .overlay(capsule.strokeBorder(Crayon.ink.opacity(on ? 0 : 0.12), lineWidth: 1))
+                .contentShape(capsule)
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(on ? "On" : "Off")
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -219,13 +291,11 @@ struct PageDragDrop: ViewModifier {
     }
 }
 
-/// The page commands, for the overview's and the page list's context menus.
+/// The page commands, for the overview's and the page list's context menus. Named as in the
+/// Page menu.
 struct PageContextMenu: View {
     let pages: PagesController
     let page: PageID
-    /// The page's image flags; "Mark as OK" is enabled only when there are some.
-    var flags: ImageFlags = []
-    var markFlagsOK: () -> Void = {}
 
     var body: some View {
         let story = pages.isStoryPage(page)
@@ -237,15 +307,16 @@ struct PageContextMenu: View {
             pages.sheet = .addPage(index: pages.insertionIndex)
         }
         .disabled(!editable)
-        Button("Duplicate") { pages.duplicate(page) }
+        Button("Duplicate Page") { pages.duplicate(page) }
             .disabled(!editable || !story)
-        Button("Delete") { pages.delete(page) }
+        Button("Delete Page", role: .destructive) { pages.delete(page) }
             .disabled(!editable || !story)
         Divider()
         Button(pages.isDone(page) ? "Mark as Not Done" : "Mark as Done") { pages.toggleDone(page) }
             .disabled(!editable)
-        Button("Mark Images as OK", action: markFlagsOK)
-            .disabled(!editable || flags.isEmpty)
+        // Enabled only when one of the page's images has an out-of-date flag.
+        Button("Mark as OK") { pages.markFlagsOK(page) }
+            .disabled(!editable || !pages.hasImageFlags(page))
         Button("Change Layout…") {
             pages.selectedPage = page
             pages.sheet = .changeLayout(page)

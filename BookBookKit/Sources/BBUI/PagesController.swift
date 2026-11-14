@@ -138,6 +138,17 @@ public enum PagesOverviewModel {
         guard let position else { return nil }
         return position == 0 ? "Cover" : String(startNumber + position - 1)
     }
+
+    /// The overview's keyboard selection: the page `step` places before (negative) or after
+    /// `selection` in reading order (the cover, then the story pages), stopping at either end.
+    /// With no (or an unknown) selection, the first page. Nil for a book with no pages.
+    public static func page(_ step: Int, from selection: PageID?, in content: BookContent) -> PageID? {
+        var order = content.book.pageOrder
+        if content.pages[content.book.coverPageID] != nil { order.insert(content.book.coverPageID, at: 0) }
+        guard !order.isEmpty else { return nil }
+        guard let selection, let index = order.firstIndex(of: selection) else { return order.first }
+        return order[min(max(index + step, 0), order.count - 1)]
+    }
 }
 
 // MARK: - Controller
@@ -167,6 +178,10 @@ public final class PagesController {
     public enum SplitChoice: Sendable { case insertBlankPage, moveAnyway, cancel }
 
     public var mode: Mode = .overview
+    /// The book window's sidebar tab. Kept here rather than in the view so that every route to
+    /// a page or the overview (the Page menu, the export sheet's preflight links, where-used
+    /// links) brings the Pages tab forward: see `open(_:)` and `showOverview()`.
+    var sidebarTab: SidebarTab = .pages
     public var selectedPage: PageID?
     public var sheet: Sheet?
     /// A structural command waiting on the spread-split warning (sent with `fixSplits: false`).
@@ -227,14 +242,36 @@ public final class PagesController {
         content().style.pageNumbers.skippedPages.contains(page)
     }
 
+    /// Whether any of the page's images carries an out-of-date flag (A §4.4), so Mark as OK has
+    /// something to clear.
+    public func hasImageFlags(_ page: PageID) -> Bool {
+        let c = content()
+        guard let p = c.pages[page] else { return false }
+        return !c.imageFlags(of: p).isEmpty
+    }
+
+    /// The overview is on screen: the Pages tab in overview mode.
+    public var isShowingOverview: Bool { sidebarTab == .pages && mode == .overview }
+
+    /// The page editor is on screen: the Pages tab in editor mode.
+    public var isShowingEditor: Bool { sidebarTab == .pages && mode == .editor }
+
     /// Where a new page goes: after the selection (first after the cover), else at the end.
     public var insertionIndex: Int { PagesOverviewModel.insertionIndex(after: selectedPage, in: content()) }
 
     // MARK: Navigation
 
+    /// Opens `page` in the page editor, switching to the Pages tab from any other tab.
     public func open(_ page: PageID) {
         selectedPage = page
+        sidebarTab = .pages
         mode = .editor
+    }
+
+    /// Shows the spread overview, switching to the Pages tab from any other tab.
+    public func showOverview() {
+        sidebarTab = .pages
+        mode = .overview
     }
 
     /// Keeps the selection valid after an undo or redo changed the pages.
@@ -300,6 +337,12 @@ public final class PagesController {
         var style = content().style.pageNumbers
         if style.skippedPages.contains(page) { style.skippedPages.remove(page) } else { style.skippedPages.insert(page) }
         run(.setPageNumberStyle(style))
+    }
+
+    /// Mark as OK over all of the page's images (one undoable step).
+    public func markFlagsOK(_ page: PageID) {
+        guard isEditable, hasImageFlags(page) else { return }
+        run(.markFlagsOK(page: page, box: nil))
     }
 
     public func setPageNumberStyle(_ style: PageNumberStyle) {

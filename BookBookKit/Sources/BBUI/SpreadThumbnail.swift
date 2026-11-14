@@ -99,9 +99,14 @@ final class PageThumbnailRenderer {
     }
 }
 
-/// One page (or half a split spread) in the overview: the thumbnail, a status badge, a label,
+/// One page (or half a split spread) in the overview: the thumbnail, then a row under it with
+/// the position label and the status sticker (kept off the page so it hides none of the art),
 /// and selection / drop highlighting.
 struct PageThumbnailView: View {
+    /// The label row's height and the gap above it; the overview sizes empty slots to match.
+    static let labelRowHeight: CGFloat = 20
+    static let labelSpacing: CGFloat = 4
+
     let image: CGImage?
     let part: OverviewPart
     /// Size of one page side, in points.
@@ -115,10 +120,11 @@ struct PageThumbnailView: View {
     let isDropTarget: Bool
 
     var body: some View {
-        VStack(spacing: 4) {
+        let width = sideSize.width * CGFloat(sides)
+        VStack(spacing: Self.labelSpacing) {
             ZStack(alignment: .topTrailing) {
                 pageImage
-                    .frame(width: sideSize.width * CGFloat(sides), height: sideSize.height)
+                    .frame(width: width, height: sideSize.height)
                     .clipped()
                     .background(.white)
                     .overlay(alignment: .center) {
@@ -127,8 +133,9 @@ struct PageThumbnailView: View {
                             Rectangle().fill(.black.opacity(0.15)).frame(width: 1)
                         }
                     }
+                    // A hairline edge, so a white page still reads on a white card (light mode).
+                    .overlay { Rectangle().strokeBorder(.black.opacity(0.12), lineWidth: 1) }
                     .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2)
-                if let status { StatusBadge(status: status).padding(5) }
                 if !flags.isEmpty {
                     ImageFlagIcons(flags: flags)
                         .padding(.horizontal, 4)
@@ -145,7 +152,8 @@ struct PageThumbnailView: View {
                         .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
                         .padding(5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                        .help("This spread is split across two sheets")
+                        .help("This spread is split across two sheets.")
+                        .accessibilityLabel("Split across two sheets")
                 }
             }
             .overlay {
@@ -155,9 +163,27 @@ struct PageThumbnailView: View {
                                   lineWidth: isDropTarget ? 4 : 3)
                     .padding(-5)
             }
-            Text(label ?? " ")
+            labelRow.frame(width: width, height: Self.labelRowHeight)
+        }
+    }
+
+    /// The position label and the status sticker; the sticker shrinks to its symbol when both
+    /// don't fit under the page (a long label on a narrow page).
+    @ViewBuilder
+    private var labelRow: some View {
+        let text = label.map { label in
+            Text(label)
                 .font(Crayon.font(.caption, weight: .bold))
                 .foregroundStyle(isSelected ? Crayon.tomato : Crayon.inkSoft)
+                .lineLimit(1)
+        }
+        if let status {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) { text; StatusBadge(status: status) }
+                HStack(spacing: 6) { text; StatusBadge(status: status, compact: true) }
+            }
+        } else {
+            text
         }
     }
 

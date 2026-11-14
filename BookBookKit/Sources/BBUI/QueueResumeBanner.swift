@@ -12,8 +12,8 @@ struct QueueResumeBanner: View {
             let color = pause == .offline ? Crayon.grape : Crayon.sky
             CrayonBanner(model.text, systemImage: pause == .offline ? "wifi.slash" : "pause.fill", color: color) {
                 if model.offersResume {
+                    // No Return shortcut: the banner isn't modal, and Resume starts paid requests.
                     Button("Resume") { app.resumeQueue() }
-                        .keyboardShortcut(.defaultAction)
                         .buttonStyle(.crayon(color))
                 }
             }

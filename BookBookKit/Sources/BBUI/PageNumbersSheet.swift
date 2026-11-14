@@ -62,8 +62,16 @@ struct PageNumbersSheet: View {
 
     static let sizeRange: ClosedRange<Double> = 6...72
 
-    static func formatSize(_ size: Double) -> String {
-        size.formatted(.number.precision(.fractionLength(0...1)).grouping(.never))
+    static func formatSize(_ size: Double, locale: Locale = .current) -> String {
+        size.formatted(.number.precision(.fractionLength(0...1)).grouping(.never).locale(locale))
+    }
+
+    /// Reads what the field shows back, in the same locale (so "10,5" works where the decimal
+    /// separator is a comma). Nil while the text isn't a number yet, e.g. empty or mid-edit.
+    static func parseSize(_ text: String, locale: Locale = .current) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard let v = try? Double(trimmed, format: .number.grouping(.never).locale(locale)), v.isFinite else { return nil }
+        return v
     }
 
     init(pages: PagesController, style: PageNumberStyle, content: BookContent? = nil) {
@@ -108,10 +116,10 @@ struct PageNumbersSheet: View {
                                 .frame(width: 60)
                                 .labelsHidden()
                                 .onChange(of: sizeText) { _, text in
-                                    if let v = Double(text.trimmingCharacters(in: .whitespaces)), v.isFinite { draft.size = v }
+                                    if let v = Self.parseSize(text) { draft.size = v }
                                 }
                                 .onChange(of: draft.size) { _, size in
-                                    if Double(sizeText.trimmingCharacters(in: .whitespaces)) != size { sizeText = Self.formatSize(size) }
+                                    if Self.parseSize(sizeText) != size { sizeText = Self.formatSize(size) }
                                 }
                             Stepper("Size", value: $draft.size, in: Self.sizeRange, step: 1).labelsHidden()
                             Text("pt").foregroundStyle(Crayon.inkSoft)

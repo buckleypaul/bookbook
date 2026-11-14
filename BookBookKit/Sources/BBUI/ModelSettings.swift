@@ -145,6 +145,7 @@ struct ModelSettings: View {
 
     private func add(_ models: [CatalogModel]) {
         let id = customID.trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { return }
         let chosen = family.isEmpty ? (models.first { $0.copiesFrom == nil }?.id ?? "") : family
         if app.addCustomModel(id: id, copying: chosen, provider: provider) {
             customID = ""

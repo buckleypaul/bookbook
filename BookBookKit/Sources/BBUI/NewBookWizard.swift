@@ -16,10 +16,14 @@ final class NewBookWizardModel {
     /// Starts empty; the field's prompt says "Untitled" and `NewBookSpec.resolvedTitle` falls back to it.
     var title = ""
     var author = ""
-    /// Choosing a size also picks that size's natural orientation (10 × 8 in is landscape by
-    /// name), so the book comes out as the size the menu said.
+    /// Sizes named by their orientation (10 × 8 in is landscape by name) pick it, so the book
+    /// comes out as the size the menu said. Other sizes keep the current choice, like the Style tab.
     var pageSize: PageSizePreset = .usLetter {
-        didSet { if pageSize != oldValue { orientation = Self.naturalOrientation(of: pageSize) } }
+        didSet {
+            if pageSize != oldValue, pageSize == .tenByEight || pageSize == .eightByTen {
+                orientation = Self.naturalOrientation(of: pageSize)
+            }
+        }
     }
     var orientation: Orientation = .portrait
     var stylePresetID: String?

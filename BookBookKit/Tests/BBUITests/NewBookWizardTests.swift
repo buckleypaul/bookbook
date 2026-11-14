@@ -76,6 +76,14 @@ struct NewBookWizardTests {
         #expect(model.orientation == .landscape, "choosing the same size again keeps the orientation")
     }
 
+    @Test func landscapeSurvivesAChangeToA4() {
+        let model = NewBookWizardModel(presets: [])
+        model.orientation = .landscape
+        model.pageSize = .a4
+        #expect(model.orientation == .landscape)
+        #expect(model.spec.orientation == .landscape)
+    }
+
     @Test func titleStartsEmptyAndResolvesToUntitled() {
         let model = NewBookWizardModel(presets: [])
         #expect(model.title.isEmpty)

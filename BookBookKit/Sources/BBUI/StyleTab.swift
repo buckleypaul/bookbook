@@ -93,7 +93,11 @@ final class StyleTabModel {
             // Keep the current size as the starting point for the custom fields.
             commit(setup.applying(preset: .custom, orientation: setup.orientation, customSize: setup.trimSize))
         } else {
-            let orientation: Orientation = setup.orientation == .square ? .portrait : setup.orientation
+            // A preset named by its orientation ("10 × 8 in") keeps it; others keep the current one.
+            let natural = preset.baseSize.map { $0.width > $0.height ? Orientation.landscape : .portrait }
+            let orientation: Orientation = preset == .tenByEight || preset == .eightByTen
+                ? (natural ?? .portrait)
+                : (setup.orientation == .square ? .portrait : setup.orientation)
             commit(setup.applying(preset: preset, orientation: orientation))
         }
     }
@@ -161,19 +165,19 @@ enum FlagText {
     static func entries(_ flags: ImageFlags) -> [Entry] {
         var out: [Entry] = []
         if flags.contains(.styleChanged) {
-            out.append(Entry(symbol: "paintpalette.fill", color: .purple, title: "Style changed",
+            out.append(Entry(symbol: "paintpalette.fill", color: Crayon.grape, title: "Style changed",
                              help: "The book's visual style changed after this image was made."))
         }
         if flags.contains(.assetChanged) {
-            out.append(Entry(symbol: "person.crop.square.fill", color: .teal, title: "Asset changed",
+            out.append(Entry(symbol: "person.crop.square.fill", color: Crayon.bubblegum, title: "Asset changed",
                              help: "A character, prop or place used for this image was edited after it was made."))
         }
         if flags.contains(.layoutChanged) {
-            out.append(Entry(symbol: "rectangle.dashed", color: .orange, title: "Layout changed",
+            out.append(Entry(symbol: "rectangle.dashed", color: Crayon.sunflower, title: "Layout changed",
                              help: "This box's shape changed since the image was placed."))
         }
         if flags.contains(.consistencyWarning) {
-            out.append(Entry(symbol: "person.2.slash.fill", color: .red, title: "Consistency warning",
+            out.append(Entry(symbol: "person.2.slash.fill", color: Crayon.tomato, title: "Consistency warning",
                              help: "A consistency check found this picture differs from the references. Open the session to fix or dismiss it."))
         }
         return out
@@ -199,6 +203,11 @@ enum StyleSection: String, CaseIterable, Identifiable {
     }
 }
 
+extension Notification.Name {
+    /// Posted (object: the `StyleSection`) each time a Style sidebar row is clicked.
+    static let styleSectionChosen = Notification.Name("BookBook.styleSectionChosen")
+}
+
 /// The Style tab's sidebar: one row per form section.
 struct StyleSectionList: View {
     @Binding var selection: StyleSection
@@ -212,6 +221,14 @@ struct StyleSectionList: View {
                     Image(systemName: section.symbol).foregroundStyle(section.color)
                 }
                 .tag(section)
+                .listRowSeparator(.hidden)
+                .contentShape(Rectangle())
+                // Choosing the section that's already selected doesn't change the selection, so
+                // tell the form to scroll there anyway.
+                .onTapGesture {
+                    selection = section
+                    NotificationCenter.default.post(name: .styleSectionChosen, object: section)
+                }
             }
         }
     }
@@ -225,13 +242,24 @@ struct StyleTab: View {
     var section: StyleSection = .visual
     let onEditPageNumbers: () -> Void
     @State private var showTypography = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollViewReader { proxy in
             form
-                .onChange(of: section) { _, target in
-                    withAnimation { proxy.scrollTo(target, anchor: .top) }
+                .onChange(of: section) { _, target in scroll(proxy, to: target) }
+                .onReceive(NotificationCenter.default.publisher(for: .styleSectionChosen)) { note in
+                    if let target = note.object as? StyleSection { scroll(proxy, to: target) }
                 }
+        }
+    }
+
+    /// Scrolls to `target`, without animation when Reduce Motion is on.
+    private func scroll(_ proxy: ScrollViewProxy, to target: StyleSection) {
+        if reduceMotion {
+            proxy.scrollTo(target, anchor: .top)
+        } else {
+            withAnimation { proxy.scrollTo(target, anchor: .top) }
         }
     }
 
@@ -242,7 +270,7 @@ struct StyleTab: View {
                 VStack(alignment: .leading, spacing: 4) {
                     StyleFieldTitle("Description")
                     CommitTextEditor(text: model.visual.visualDescription, minHeight: 90) { model.setDescription($0) }
-                    Text("Describes the look of every image. Placed images are flagged \"Style changed\" when this, the references or the negative guidance change.")
+                    Text("Describes the look of every image. Placed images are flagged “Style changed” when this, the references or the negative guidance change.")
                         .font(.caption).foregroundStyle(Crayon.inkSoft)
                 }
                 StyleReferencesView(document: document, model: model)
@@ -253,6 +281,7 @@ struct StyleTab: View {
             } header: {
                 CrayonHeader(StyleSection.visual.title, color: StyleSection.visual.color)
             }
+            .disabled(!document.isEditable)
             .id(StyleSection.visual)
             Section {
                 HStack(spacing: 8) {
@@ -266,13 +295,12 @@ struct StyleTab: View {
                 CrayonHeader(StyleSection.typography.title, color: StyleSection.typography.color)
             }
             .id(StyleSection.typography)
-            PageSetupForm(model: model)
+            PageSetupForm(model: model, isEditable: document.isEditable)
                 .id(StyleSection.pageSetup)
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .crayonPaper()
-        .disabled(!document.isEditable)
         .sheet(isPresented: $showTypography) { TypographyForm(document: document) }
     }
 

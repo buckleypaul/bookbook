@@ -50,11 +50,8 @@ struct ReferencePickerView: View {
     var body: some View {
         let sources = ReferenceSources.list(in: content, excluding: excluding)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Circle().fill(Crayon.sky).frame(width: 10, height: 10).accessibilityHidden(true)
-                Text("Reference Another Image").font(Crayon.font(.title3, weight: .heavy)).foregroundStyle(Crayon.ink)
-            }
-            .padding()
+            CrayonHeader("Reference Another Image", color: Crayon.sky)
+                .padding()
             Text("Only the image you pick is sent with your next request: no conversation or other context comes with it.")
                 .font(.caption).foregroundStyle(Crayon.inkSoft).padding(.horizontal)
                 .padding(.bottom, 6)
@@ -76,12 +73,12 @@ struct ReferencePickerView: View {
                                         VStack(spacing: 3) {
                                             VersionThumbnail(ref: version.image, url: store.imageURL(for: version.image))
                                                 .frame(width: 64, height: 64)
-                                                .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2,
+                                                .clipShape(RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius,
                                                                             style: .continuous))
                                             Text("v\(index + 1)").font(Crayon.font(.caption2, weight: .heavy))
                                                 .foregroundStyle(Crayon.inkSoft)
                                         }
-                                        .crayonCard(cornerRadius: Crayon.smallCornerRadius + 2, padding: 4)
+                                        .crayonCard(cornerRadius: Crayon.mediumCornerRadius, padding: 4)
                                         .crayonHover(tilt: index.isMultiple(of: 2) ? -2 : 2)
                                     }
                                     .buttonStyle(.plain)

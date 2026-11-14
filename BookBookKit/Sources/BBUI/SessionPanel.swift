@@ -173,8 +173,10 @@ struct SessionPanel: View {
             Spacer()
             Menu {
                 Button("Choose Image…") { showImporter = true }
+                    .disabled(!document.isEditable)
                 Divider()
                 Button("Reset Session…", role: .destructive) { confirmReset = true }
+                    .disabled(!document.isEditable)
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .foregroundStyle(Crayon.inkSoft)
@@ -250,6 +252,7 @@ struct SessionPanel: View {
                          onEditRegion: { startRegionEdit($0) },
                          regionEditReason: { regionEditReason(for: $0) },
                          onDelete: { pendingDelete = $0.id },
+                         isEditable: document.isEditable,
                          isChecking: { app.isConsistencyCheckPending(versionID: $0.id) })
             if let base, let version = session.version(base) {
                 consistencySection(version, session: session)
@@ -260,6 +263,7 @@ struct SessionPanel: View {
                         .disabled(reason != nil)
                         .help(reason ?? "Select an area of this picture and describe the change.")
                     Button("Delete…", role: .destructive) { pendingDelete = version.id }
+                        .disabled(!document.isEditable)
                 }
                 .controlSize(.small)
                 .buttonBorderShape(.capsule)
@@ -431,7 +435,7 @@ struct SessionPanel: View {
                     }
                     .controlSize(.small)
                     .buttonBorderShape(.capsule)
-                    .disabled(!app.hasOpenAIKey || !app.isOnline)
+                    .disabled(!document.isEditable || !app.hasOpenAIKey || !app.isOnline)
                     .padding(.top, 6)
                 }
             } label: {
@@ -516,7 +520,7 @@ struct SessionPanel: View {
                 }
                     .buttonStyle(.crayon)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!app.isOnline || !app.hasOpenAIKey
+                    .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey
                               || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             GenerationSetupNotes()
@@ -533,6 +537,7 @@ struct SessionPanel: View {
             }
             .controlSize(.small)
             .buttonBorderShape(.capsule)
+            .disabled(!document.isEditable)
             ForEach(liveAttached, id: \.self) { ref in
                 HStack(spacing: 3) {
                     Text(ReferenceSources.chipLabel(ref, in: content) ?? "Image").lineLimit(1)
@@ -564,7 +569,7 @@ struct SessionPanel: View {
     }
 
     private func generate(refining base: VersionID?) {
-        guard app.hasOpenAIKey, app.isOnline,
+        guard document.isEditable, app.hasOpenAIKey, app.isOnline,
               !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let intent = app.generationIntent(prompt: storedPrompt, quality: quality ?? app.defaults.quality,
                                           includeStoryText: storyText, refines: base,
@@ -574,7 +579,7 @@ struct SessionPanel: View {
 
     /// "Regenerate with Same Settings" goes through the same checks as Generate.
     private func regenerate(_ version: Version) {
-        guard app.hasOpenAIKey, app.isOnline, version.provenance != nil else { return }
+        guard document.isEditable, app.hasOpenAIKey, app.isOnline, version.provenance != nil else { return }
         checkThenPerform(.regenerate(version))
     }
 

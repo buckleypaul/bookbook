@@ -19,6 +19,8 @@ struct VersionStrip: View {
     let onEditRegion: (Version) -> Void
     let regionEditReason: (Version) -> String?
     let onDelete: (Version) -> Void
+    /// False for a read-only book: starring and deleting are unavailable.
+    var isEditable: Bool = true
     /// Whether a consistency check of the version is waiting or running.
     var isChecking: (Version) -> Bool = { _ in false }
 
@@ -93,11 +95,13 @@ struct VersionStrip: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button(version.starred ? "Remove Star" : "Star") { onToggleStar(version) }
+                .disabled(!isEditable)
             Button("Export Image…") { onExport(version) }
             Button("Edit Region…") { onEditRegion(version) }
                 .disabled(regionEditReason(version) != nil)
             Divider()
             Button("Delete Version…", role: .destructive) { onDelete(version) }
+                .disabled(!isEditable)
         }
         .help(placed ? "Version \(number) (on the page)" : "Put version \(number) on the page")
         .accessibilityLabel("Version \(number)\(placed ? ", on the page" : "")\(version.starred ? ", starred" : "")\(version.consistency?.showsWarning == true ? ", consistency warning" : "")")
@@ -130,6 +134,7 @@ struct VersionStrip: View {
                 .padding(3)
         }
         .buttonStyle(.plain)
+        .disabled(!isEditable)
         .help(version.starred ? "Remove star" : "Star this version")
         .accessibilityLabel(version.starred ? "Remove star" : "Star")
     }

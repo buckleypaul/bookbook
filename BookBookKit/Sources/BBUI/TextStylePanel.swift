@@ -106,7 +106,7 @@ struct TextStylePanel: View {
                     .disabled(shownID == nil || !document.isEditable)
                 Divider()
                 Button("Reset Session…", role: .destructive) { confirmReset = true }
-                    .disabled(session == nil)
+                    .disabled(session == nil || !document.isEditable)
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .foregroundStyle(Crayon.inkSoft)
@@ -236,7 +236,8 @@ struct TextStylePanel: View {
                          onExport: { _ in },
                          onEditRegion: { _ in },
                          regionEditReason: { _ in "Region editing isn't available for text styles." },
-                         onDelete: { pendingDelete = $0.id })
+                         onDelete: { pendingDelete = $0.id },
+                         isEditable: document.isEditable)
             HStack {
                 if shownID != nil {
                     Button("Remove Style") { removeStyle() }
@@ -245,6 +246,7 @@ struct TextStylePanel: View {
                 }
                 if let base {
                     Button("Delete…", role: .destructive) { pendingDelete = base }
+                        .disabled(!document.isEditable)
                 }
             }
             .controlSize(.small)
@@ -333,7 +335,7 @@ struct TextStylePanel: View {
 
     private func style() {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard app.hasOpenAIKey, app.isOnline, !text.isEmpty, !model.isDesigning(key) else { return }
+        guard document.isEditable, app.hasOpenAIKey, app.isOnline, !text.isEmpty, !model.isDesigning(key) else { return }
         confirmFlow.start(.style(text, quality: quality ?? app.defaults.quality, refines: baseID(session)))
     }
 

@@ -514,7 +514,10 @@ enum RichTextFormatting {
         }
         return FormatState(bold: commonDrawn(\.bold), italic: commonDrawn(\.italic),
                            underline: common { $0.underline }, font: common { $0.fontFamily },
-                           size: common { $0.size }, color: common { $0.color }, alignment: nil)
+                           size: common { $0.size }, color: common { $0.color }, alignment: nil,
+                           resolvedSize: common { $0.size ?? typography.bodySize },
+                           resolvedColor: common { $0.color ?? typography.color },
+                           isFontMixed: Set(runs.map(\.fontFamily)).count > 1)
     }
 
     /// The run transform for a (non-alignment) action, given the runs it applies to.

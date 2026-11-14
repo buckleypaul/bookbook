@@ -9,7 +9,7 @@ import Foundation
 public enum UnavailableText {
     public static let noKey = "Add your OpenAI API key in Settings ▸ API Keys."
     public static let offline = "You're offline. AI requests need an internet connection."
-    /// Read-only books are usually locked by another copy of BookBook (`LockAdviceText`), but
+    /// Read-only books are usually locked by another copy of BookBook, but
     /// not always, so this doesn't say why.
     public static let readOnly = "This book is open read-only, so it can't be changed."
 }
@@ -53,15 +53,6 @@ public enum ProviderErrorText {
         case .unknown:
             "Something went wrong with the request. Try again."
         }
-    }
-}
-
-/// What the locked-book screen and alert say besides the owner (#99b).
-public enum LockAdviceText {
-    public static func message(offersOpenAnyway: Bool) -> String {
-        offersOpenAnyway
-            ? "Another copy of BookBook is using it. You can open it read-only to look at it. If that copy has quit or crashed, you can open it anyway."
-            : "Another copy of BookBook is using it. You can open it read-only to look at it, but you won't be able to change it."
     }
 }
 

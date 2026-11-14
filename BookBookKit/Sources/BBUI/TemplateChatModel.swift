@@ -190,7 +190,7 @@ public final class TemplateChatModel {
         guard let provider = app.layoutProvider else {
             return fail(id, instruction: text, isRetry: isRetry, FailureAdvice(
                 headline: "AI layouts aren't available",
-                explanation: "No provider is set up for layout requests. Add your API key in Settings."))
+                explanation: UnavailableText.noKey))
         }
         guard let model = model(app) else {
             return fail(id, instruction: text, isRetry: isRetry, FailureAdvice(

@@ -39,7 +39,7 @@ struct QueueBadge: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .crayonCard(cornerRadius: Crayon.smallCornerRadius + 2)
+                .crayonCard(cornerRadius: Crayon.mediumCornerRadius)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

@@ -17,7 +17,7 @@ public struct QueueView: View {
             QueueResumeBanner(pause: snapshot.pause)
             if snapshot.entries.isEmpty {
                 CrayonEmptyState("Queue Is Empty", systemImage: "tray", color: Crayon.sky,
-                                 message: "Image generation jobs will appear here.")
+                                 message: "Requests will appear here.")
             } else {
                 List {
                     ForEach(snapshot.entries) { entry in
@@ -134,8 +134,7 @@ struct QueueRowView: View {
         HStack {
             if model.actions.contains(.retry) {
                 Button("Retry") { app.retryQueueItem(entry.id) }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Crayon.grass)
+                    .buttonStyle(.crayon(Crayon.grass))
             }
             if model.actions.contains(.cancel) {
                 Button("Cancel", action: onCancel)

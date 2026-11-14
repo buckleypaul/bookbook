@@ -125,7 +125,7 @@ struct QueueRowView: View {
         case .waiting:
             Text("Waiting").font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.ink)
         case .failed:
-            if advice == nil { Text("Failed").font(Crayon.font(.caption, weight: .bold)).foregroundStyle(Crayon.tomato) }
+            if advice == nil { Text("Failed").font(Crayon.font(.caption, weight: .bold)).foregroundStyle(Crayon.danger) }
         }
     }
 

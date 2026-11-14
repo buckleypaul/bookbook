@@ -136,7 +136,7 @@ struct StoryImportSheet: View {
                             Text("\(index + 1)")
                                 .font(Crayon.font(.callout, weight: .heavy))
                                 .monospacedDigit()
-                                .foregroundStyle(Crayon.tomato)
+                                .foregroundStyle(Crayon.danger)
                             Text(StoryImportModel.previewLine(page)).lineLimit(2)
                         }
                     }

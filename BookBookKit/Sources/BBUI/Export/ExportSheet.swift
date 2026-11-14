@@ -135,7 +135,7 @@ struct ExportSheet: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .buttonStyle(.plain)
-                            .foregroundStyle(Crayon.tomato)
+                            .foregroundStyle(Crayon.danger)
                             .help("Go to this page")
                             if issue.kind == .softImage {
                                 Button("Preview Upscaled") { showPreview(issue) }

@@ -52,7 +52,7 @@ struct StyleReferencesView: View {
                 }
             }
             if let errorText {
-                Text(errorText).font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.tomato)
+                Text(errorText).font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.danger)
             }
         }
         .padding(8)

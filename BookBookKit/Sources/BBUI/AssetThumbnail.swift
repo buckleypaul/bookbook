@@ -97,8 +97,10 @@ struct ImagePreviewSheet: View {
                 .accessibilityLabel(title)
             CrayonSheetDoneFooter()
         }
-        .frame(idealWidth: 780, maxWidth: .infinity, idealHeight: 780, maxHeight: .infinity)
-        .crayonSheet(minWidth: 480, minHeight: 480)
+        // Sheets open at their minimum size (an ideal size does nothing), so the minimum is what
+        // makes this "larger" than the inline thumbnail.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .crayonSheet(minWidth: 720, minHeight: 720)
         .onExitCommand { dismiss() }
     }
 }

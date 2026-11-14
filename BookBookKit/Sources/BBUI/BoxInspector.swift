@@ -139,19 +139,28 @@ struct BoxInspector: View {
         }
         return Form {
             Section {
-                LabeledContent("X") { CommitField(title: "X", value: rect.minX) { v in setRect("Move Box") { $0.origin.x = v } } }
-                LabeledContent("Y") { CommitField(title: "Y", value: rect.minY) { v in setRect("Move Box") { $0.origin.y = v } } }
+                // The same field width and unit column as the Shape sliders, so the fields line up.
+                LabeledContent("X") {
+                    unitField(CommitField(title: "X", value: rect.minX) { v in setRect("Move Box") { $0.origin.x = v } }, unit: "pt")
+                }
+                LabeledContent("Y") {
+                    unitField(CommitField(title: "Y", value: rect.minY) { v in setRect("Move Box") { $0.origin.y = v } }, unit: "pt")
+                }
                 LabeledContent("Width") {
-                    CommitField(title: "Width", value: rect.width) { v in setRect("Resize Box") { $0.size.width = max(1, v) } }
+                    unitField(CommitField(title: "Width", value: rect.width) { v in
+                        setRect("Resize Box") { $0.size.width = max(1, v) }
+                    }, unit: "pt")
                 }
                 LabeledContent("Height") {
-                    CommitField(title: "Height", value: rect.height) { v in setRect("Resize Box") { $0.size.height = max(1, v) } }
+                    unitField(CommitField(title: "Height", value: rect.height) { v in
+                        setRect("Resize Box") { $0.size.height = max(1, v) }
+                    }, unit: "pt")
                 }
             } header: {
-                CrayonHeader("Frame (pt)", color: Crayon.sky)
+                CrayonHeader("Frame", color: Crayon.sky)
             }
             Section {
-                slider("Rotation", value: box.rotationDegrees, range: -180...180, unit: "deg", action: "Rotate Box") { b, v in
+                slider("Rotation", value: box.rotationDegrees, range: -180...180, unit: "°", action: "Rotate Box") { b, v in
                     b.rotationDegrees = v
                 } edit: { name, body in edit(name, body) }
                 slider("Corner radius", value: box.cornerRadius, range: 0...120, unit: "pt", action: "Change Corner Radius") { b, v in
@@ -200,13 +209,11 @@ struct BoxInspector: View {
                         apply: @escaping (inout Box, Double) -> Void,
                         edit: @escaping (String, @escaping (inout Box) -> Void) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
+            // Baseline-aligned, so the unit ("°" or "pt") sits on the same line as the number.
+            HStack(alignment: .firstTextBaseline) {
                 Text(title).lineLimit(1).fixedSize(horizontal: true, vertical: false).layoutPriority(1)
                 Spacer(minLength: 4)
-                CommitField(title: title, value: value) { v in edit(action) { apply(&$0, v) } }
-                    .frame(minWidth: 44, idealWidth: 64, maxWidth: 64)
-                Text(unit).foregroundStyle(Crayon.inkSoft)
-                    .frame(width: 24, alignment: .leading)
+                unitField(CommitField(title: title, value: value) { v in edit(action) { apply(&$0, v) } }, unit: unit)
             }
             Slider(value: Binding(get: { min(max(value, range.lowerBound), range.upperBound) },
                                   set: { v in
@@ -223,6 +230,16 @@ struct BoxInspector: View {
                     sliderInteraction = nil
                 }
             }
+        }
+    }
+
+    /// A number field and its unit: the field 44 to 64 pt wide, then the unit in a 24 pt
+    /// column, baseline-aligned. The Frame, Shape and Padding rows all use it, so they line up.
+    private func unitField(_ field: some View, unit: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            field.frame(minWidth: 44, idealWidth: 64, maxWidth: 64)
+            Text(unit).foregroundStyle(Crayon.inkSoft)
+                .frame(width: 24, alignment: .leading)
         }
     }
 
@@ -258,10 +275,17 @@ struct BoxInspector: View {
             colourRow("Background panel", color: style.background, noneLabel: "None", initial: RGBA(red: 1, green: 0.96, blue: 0.86)) { c in
                 setStyle("Change Background", continuous: true) { $0.background = c }
             }
-            Stepper(value: Binding(get: { style.padding }, set: { v in
-                setStyle("Change Padding", continuous: true) { $0.padding = max(0, v) }
-            }), in: 0...100, step: 1) {
-                Text("Padding \(style.padding.formatted(.number.precision(.fractionLength(0...1)))) pt")
+            // The value in the trailing column (as the other number rows), the stepper after it.
+            LabeledContent("Padding") {
+                HStack(spacing: 6) {
+                    Text(style.padding.formatted(.number.precision(.fractionLength(0...1))))
+                        .monospacedDigit()
+                    Text("pt").foregroundStyle(Crayon.inkSoft)
+                    Stepper("Padding", value: Binding(get: { style.padding }, set: { v in
+                        setStyle("Change Padding", continuous: true) { $0.padding = max(0, v) }
+                    }), in: 0...100, step: 1)
+                    .labelsHidden()
+                }
             }
         } header: {
             CrayonHeader("Text", color: Crayon.tomato)
@@ -271,9 +295,14 @@ struct BoxInspector: View {
     /// An optional colour: a checkbox to turn the override on, and a colour well.
     private func colourRow(_ title: String, color: RGBA?, noneLabel: String, initial: RGBA,
                            set: @escaping (RGBA?) -> Void) -> some View {
-        HStack {
+        // Tighter than the default spacing, and the title stays on one line (shrinking a little
+        // rather than wrapping) at the narrowest inspector width with the colour well showing.
+        HStack(spacing: 6) {
             Text(title)
-            Spacer()
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .layoutPriority(1)
+            Spacer(minLength: 0)
             if let color {
                 ColorPicker(title, selection: Binding(get: { color.swiftUIColor },
                                                       set: { new in

@@ -89,7 +89,7 @@ struct VersionStrip: View {
                     }
                 Text("v\(number)")
                     .font(Crayon.font(.caption2, weight: .heavy)).monospacedDigit()
-                    .foregroundStyle(selected ? Crayon.tomato : Crayon.inkSoft)
+                    .foregroundStyle(selected ? Crayon.danger : Crayon.inkSoft)
             }
             .crayonCard(selected: selected, tint: Crayon.tomato, cornerRadius: Crayon.mediumCornerRadius, padding: 4)
             .crayonHover(tilt: number.isMultiple(of: 2) ? 2 : -2)

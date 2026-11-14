@@ -17,7 +17,9 @@ struct TemplatePicker: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 14)], spacing: 16) {
+            // Top-aligned, so cards share a top edge whatever the height of the name and sticker
+            // under them.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 14, alignment: .top)], spacing: 16) {
                 ForEach(templates) { template in
                     cell(template)
                 }
@@ -41,7 +43,7 @@ struct TemplatePicker: View {
                 .crayonHover()
             Text(template.name)
                 .font(Crayon.font(.caption, weight: selected ? .bold : .semibold))
-                .foregroundStyle(selected ? Crayon.tomato : Crayon.ink)
+                .foregroundStyle(selected ? Crayon.danger : Crayon.ink)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
             if isCurrent {

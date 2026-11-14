@@ -50,6 +50,8 @@ struct LibraryLocationSettings: View {
     @State private var chosen: URL?
     @State private var confirmSwitch: URL?
     @State private var working = false
+    /// The pending "Move your books…" presentation after "Switch Anyway".
+    @State private var presentTask: Task<Void, Never>?
     @State private var error: String?
 
     var body: some View {
@@ -80,11 +82,14 @@ struct LibraryLocationSettings: View {
             Text("Each book is a self-contained file in this folder, so you can back it up by copying it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+        .onDisappear { presentTask?.cancel(); presentTask = nil }
         .alert("Switch library?", isPresented: $confirmSwitch.isPresent(), presenting: confirmSwitch) { url in
             Button("Switch Anyway", role: .destructive) {
                 // Present the next alert once this one has gone, or it may never appear.
-                Task { @MainActor in
+                presentTask?.cancel()
+                presentTask = Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(300))
+                    guard !Task.isCancelled else { return }
                     chosen = url
                 }
             }
@@ -102,6 +107,8 @@ struct LibraryLocationSettings: View {
     }
 
     private func choose() {
+        presentTask?.cancel()
+        presentTask = nil
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false

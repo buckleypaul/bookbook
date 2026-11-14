@@ -57,9 +57,10 @@ struct LibraryLocationSettings: View {
             LabeledContent("Location") {
                 Text(app.libraryRoot.path(percentEncoded: false))
                     .textSelection(.enabled)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Crayon.inkSoft)
+                    .help(app.libraryRoot.path(percentEncoded: false))
             }
             HStack {
                 if working { ProgressView().controlSize(.small) }
@@ -71,7 +72,7 @@ struct LibraryLocationSettings: View {
                     .disabled(working)
             }
             if let error {
-                Text(error).foregroundStyle(.red).font(.callout)
+                CrayonInlineMessage(error, kind: .error, textStyle: .callout)
             }
         } header: {
             Text("Library")
@@ -80,7 +81,13 @@ struct LibraryLocationSettings: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .alert("Switch library?", isPresented: $confirmSwitch.isPresent(), presenting: confirmSwitch) { url in
-            Button("Switch Anyway", role: .destructive) { chosen = url }
+            Button("Switch Anyway", role: .destructive) {
+                // Present the next alert once this one has gone, or it may never appear.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    chosen = url
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text(LibrarySwitchWarning.message(count: pendingCount) ?? "")

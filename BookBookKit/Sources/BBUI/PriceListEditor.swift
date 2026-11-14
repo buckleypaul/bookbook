@@ -22,12 +22,14 @@ struct PriceListEditor: View {
                 Text("Price list").font(.headline)
                 Spacer()
                 Text(app.prices.isUserCopy ? "Your copy, as of \(edited.asOf)" : "Built-in, as of \(edited.asOf)")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(Crayon.inkSoft)
             }
+            Text("Prices are in US dollars per million tokens. Estimates and each book's cost total use these rates.")
+                .font(.caption).foregroundStyle(Crayon.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
             if let message = app.prices.userCopyError {
-                Label("Your price list couldn't be used, so the built-in one is in effect. \(message)",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption).foregroundStyle(.orange)
+                CrayonInlineMessage("Your price list couldn't be used, so the built-in one is in effect. \(message)",
+                                    kind: .warning)
             }
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(edited.entries.indices, id: \.self) { index in
@@ -35,9 +37,7 @@ struct PriceListEditor: View {
                     Divider()
                 }
             }
-            Text("Dollars per million tokens. Estimates and each book's cost total use these rates.")
-                .font(.caption).foregroundStyle(.secondary)
-            if let error { Text(error).font(.caption).foregroundStyle(.red) }
+            if let error { CrayonInlineMessage(error, kind: .error) }
             HStack {
                 Button("Reset to Built-in…") { confirmReset = true }
                     .disabled(!app.prices.isUserCopy && !isDirty)
@@ -51,7 +51,7 @@ struct PriceListEditor: View {
             Button("Reset to Built-in", role: .destructive) { reset() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your edited prices will be discarded.")
+            Text("Your edited prices will be discarded. This can't be undone.")
         }
     }
 
@@ -61,12 +61,15 @@ struct PriceListEditor: View {
             + entry.perMillionTokens.keys.filter { !Self.rateOrder.contains($0) }.sorted()
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(entry.model).font(.callout.weight(.semibold))
-                Text(VersionDetailsContent.providerName(entry.provider)).font(.caption).foregroundStyle(.secondary)
+                Text(displayName(of: entry)).font(.callout.weight(.semibold))
+                    .help(entry.model)
+                Text(VersionDetailsContent.providerName(entry.provider)).font(.caption).foregroundStyle(Crayon.inkSoft)
                 Spacer()
-                Text("as of \(entry.asOf)").font(.caption).foregroundStyle(.secondary)
+                if entry.asOf != edited.asOf {
+                    Text("as of \(entry.asOf)").font(.caption).foregroundStyle(Crayon.inkSoft)
+                }
                 if entry.placeholder == true {
-                    Text("unchecked").font(.caption2).foregroundStyle(.orange)
+                    Text("unchecked").font(.caption2).foregroundStyle(Crayon.warning)
                 }
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 4) {
@@ -83,6 +86,13 @@ struct PriceListEditor: View {
                 }
             }
         }
+    }
+
+    /// The catalog's display name, as the Models pane shows it; the raw ID when the catalog doesn't list it.
+    private func displayName(of entry: PriceEntry) -> String {
+        app.catalog.imageModel(provider: entry.provider, id: entry.model)?.displayName
+            ?? app.catalog.textModel(provider: entry.provider, id: entry.model)?.displayName
+            ?? entry.model
     }
 
     private func rate(_ index: Int, _ key: String) -> Binding<Decimal> {

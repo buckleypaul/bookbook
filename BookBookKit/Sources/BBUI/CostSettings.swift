@@ -14,13 +14,14 @@ struct CostSettings: View {
                     Text("Ask before spending more than $")
                     TextField("Amount", text: $thresholdText, prompt: Text("0.50"))
                         .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                         .multilineTextAlignment(.trailing)
                         .focused($focused)
                         .onSubmit(commit)
                 }
                 if invalid {
-                    Text("Enter an amount such as 0.50.").font(.caption).foregroundStyle(.red)
+                    CrayonInlineMessage("Enter an amount such as 0.50.", kind: .error)
                 }
             } header: {
                 Text("Confirmation")
@@ -31,7 +32,7 @@ struct CostSettings: View {
             Section { PriceListEditor() }
         }
         .formStyle(.grouped)
-        .onAppear { thresholdText = CostText.field(app.preferences.confirmThreshold) }
+        .onAppear { thresholdText = Self.money(app.preferences.confirmThreshold) }
         .onChange(of: focused) { _, now in if !now { commit() } }
         .onDisappear { commit() }
     }
@@ -41,7 +42,16 @@ struct CostSettings: View {
     private func commit() {
         switch CostText.parse(thresholdText) {
         case let .value(v): app.preferences.confirmThreshold = v
-        case .empty, .invalid: thresholdText = CostText.field(app.preferences.confirmThreshold)
+        case .empty, .invalid: thresholdText = Self.money(app.preferences.confirmThreshold)
         }
+        if case .value = CostText.parse(thresholdText) { thresholdText = Self.money(app.preferences.confirmThreshold) }
+    }
+
+    /// The editable amount with at least two decimal places ("0.50"), keeping any extra precision.
+    static func money(_ value: Decimal) -> String {
+        let plain = CostText.field(value)
+        let places = plain.split(separator: ".", omittingEmptySubsequences: false).dropFirst().first?.count ?? 0
+        if places >= 2 { return plain }
+        return plain + (places == 0 ? "." : "") + String(repeating: "0", count: 2 - places)
     }
 }

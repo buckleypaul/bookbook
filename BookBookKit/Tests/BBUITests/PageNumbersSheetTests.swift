@@ -36,4 +36,15 @@ struct PageNumbersSheetTests {
         style.skippedPages = [live, PageID()]
         #expect(PageNumbersSheet.skippedCount(style: style, content: nil, isStoryPage: { $0 == live }) == 1)
     }
+
+    @Test func sizeParsesWhatItShows_inACommaDecimalLocale() {
+        let de = Locale(identifier: "de_DE")
+        #expect(PageNumbersSheet.formatSize(10.5, locale: de) == "10,5")
+        #expect(PageNumbersSheet.parseSize("10,5", locale: de) == 10.5)
+        #expect(PageNumbersSheet.parseSize(PageNumbersSheet.formatSize(12, locale: de), locale: de) == 12)
+        let us = Locale(identifier: "en_US")
+        #expect(PageNumbersSheet.parseSize("10.5", locale: us) == 10.5)
+        #expect(PageNumbersSheet.parseSize("", locale: us) == nil)
+        #expect(PageNumbersSheet.parseSize("abc", locale: us) == nil)
+    }
 }

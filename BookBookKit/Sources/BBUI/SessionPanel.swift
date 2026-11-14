@@ -133,7 +133,7 @@ struct SessionPanel: View {
                                   submitRegionEdit(subject.version, drawing: drawing, prompt: text)
                               })
         }
-        .confirmationDialog("Delete this version?", isPresented: $pendingDelete.isPresent(), titleVisibility: .visible) {
+        .confirmationDialog(deleteTitle, isPresented: $pendingDelete.isPresent(), titleVisibility: .visible) {
             Button("Delete Version", role: .destructive) {
                 if let id = pendingDelete { delete(id) }
                 pendingDelete = nil
@@ -153,23 +153,21 @@ struct SessionPanel: View {
         .problemAlert($problem)
     }
 
+    /// "Delete version 2?"
+    private var deleteTitle: String {
+        let number = pendingDelete.flatMap { id in session?.versionNumber(id) }
+        return number.map { "Delete version \($0)?" } ?? "Delete this version?"
+    }
+
     private var deleteMessage: String {
         let placed = pendingDelete != nil && pendingDelete == placedID
-        let note = "It is on the page, so the box will be empty. "
+        let note = "It's on the page, so the box will be empty. "
         return (placed ? note : "") + "This can't be undone."
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(Crayon.sky)
-                .frame(width: 10, height: 10)
-                .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
-                .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
-                .accessibilityHidden(true)
-            Text("Session")
-                .font(Crayon.font(.headline, weight: .heavy))
-                .foregroundStyle(Crayon.ink)
+            CrayonHeader(Self.headerTitle(page: pageID, box: boxID, in: content), color: Crayon.sky)
             Spacer()
             Menu {
                 Button("Choose Image…") { showImporter = true }
@@ -183,6 +181,7 @@ struct SessionPanel: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .help("Session actions")
             .accessibilityLabel("Session actions")
         }
         .padding(.horizontal)
@@ -215,7 +214,7 @@ struct SessionPanel: View {
         ForEach(messages) { message in
             VStack(alignment: .leading, spacing: 5) {
                 if let refines = message.refines, let number = session.versionNumber(refines) {
-                    Label("refined version \(number)", systemImage: "arrow.triangle.branch")
+                    Label("Refined version \(number)", systemImage: "arrow.triangle.branch")
                         .font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.grape)
                 }
                 Text(MentionText.displayText(message.text, assets: content.assets,
@@ -408,7 +407,9 @@ struct SessionPanel: View {
 
     private func submitRegionEdit(_ version: Version, drawing: RegionMaskDrawing, prompt text: String) {
         let request = RegionEditRequest(version: version, drawing: drawing,
-                                        intent: app.generationIntent(prompt: text, quality: quality ?? app.defaults.quality,
+                                        intent: app.generationIntent(prompt: MentionText.tokenizing(
+                                                                         text, assets: Array(content.assets.values)),
+                                                                     quality: quality ?? app.defaults.quality,
                                                                      includeStoryText: storyText, refines: version.id,
                                                                      attachedReferences: liveAttached))
         checkThenPerform(.regionEdit(request))
@@ -504,15 +505,7 @@ struct SessionPanel: View {
             TextField(number.map { "Describe the change to version \($0)" }
                       ?? "Describe the picture (type @ to mention an asset)",
                       text: $prompt, axis: .vertical)
-                .lineLimit(2...6)
-                .textFieldStyle(.plain)
-                .font(Crayon.font(.body, weight: .regular))
-                .foregroundStyle(Crayon.ink)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Crayon.paper, in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
-                    .strokeBorder(Crayon.ink.opacity(0.12), lineWidth: 1.5))
+                .crayonComposerField()
                 .onSubmit {
                     if let query, let first = suggestions.first {
                         prompt = MentionCompletion.insert(first, replacing: query, in: prompt)
@@ -587,6 +580,7 @@ struct SessionPanel: View {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(Crayon.sky)
                     }
                     .buttonStyle(.plain)
+                    .help("Remove reference")
                     .accessibilityLabel("Remove reference")
                 }
                 .font(Crayon.font(.caption, weight: .semibold))
@@ -772,6 +766,17 @@ enum CostConfirmKind: Equatable {
         case .textStyle: "Style this text"
         case .repaint: "Repaint this decoration"
         }
+    }
+}
+
+extension SessionPanel {
+    /// The panel's title: the box it's for, as the Queue window names it ("Image", "Image 2",
+    /// "Cover Image"). The number is left out when the page has one image box.
+    static func headerTitle(page pageID: PageID, box boxID: BoxID, in content: BookContent) -> String {
+        let display = DraftAllPlanner.display(page: pageID, box: boxID, in: content)
+        let count = content.pages[pageID].flatMap { content.template(for: $0) }?.imageBoxes.count ?? 0
+        let box = count > 1 ? display.boxLabel : "Image"
+        return pageID == content.book.coverPageID ? "Cover \(box)" : box
     }
 }
 

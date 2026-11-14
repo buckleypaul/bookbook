@@ -47,14 +47,16 @@ public enum MentionCompletion {
     }
 }
 
-/// The suggestions list shown under the prompt field while an `@` query is active.
+/// The suggestions list shown under the prompt field while an `@` query is active. The first
+/// row is highlighted: Return in the prompt field picks it.
 struct MentionSuggestions: View {
     let suggestions: [Asset]
     let onPick: (Asset) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(suggestions) { asset in
+            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, asset in
+                let isFirst = index == 0
                 Button {
                     onPick(asset)
                 } label: {
@@ -62,16 +64,27 @@ struct MentionSuggestions: View {
                         Image(systemName: AssetTypeText.symbol(asset.type))
                             .foregroundStyle(Crayon.color(forKey: asset.id.rawValue.uuidString))
                             .fontWeight(.semibold)
-                        Text(asset.name).foregroundStyle(Crayon.ink)
-                        Spacer()
+                        Text(asset.name).foregroundStyle(Crayon.ink).lineLimit(1)
+                        Spacer(minLength: 4)
+                        if isFirst {
+                            Image(systemName: "return")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Crayon.inkSoft)
+                                .accessibilityHidden(true)
+                        }
                         Text(AssetTypeText.name(asset.type)).font(.caption).foregroundStyle(Crayon.inkSoft)
                     }
-                    .contentShape(Rectangle())
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
+                    .background(isFirst ? Crayon.sky.opacity(0.18) : .clear,
+                                in: RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous))
+                    .padding(.horizontal, 4)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help(isFirst ? "Press Return to mention \(asset.name)" : "Mention \(asset.name)")
                 .accessibilityLabel("Mention \(asset.name)")
+                .accessibilityHint(isFirst ? "Return picks this one" : "")
             }
         }
         .padding(.vertical, 4)

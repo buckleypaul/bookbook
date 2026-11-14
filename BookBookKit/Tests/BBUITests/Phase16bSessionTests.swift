@@ -37,6 +37,15 @@ struct Phase16bSessionTests {
         #expect(CostConfirmKind.regionEdit.buttonTitle == "Edit Region")
     }
 
+    @Test func sessionHeaderNamesTheBox() {
+        let content = Fixtures.book()
+        let page = Fixtures.firstPage(content)
+        #expect(SessionPanel.headerTitle(page: page, box: Fixtures.imageBox.id, in: content) == "Image")
+        let cover = content.book.coverPageID
+        #expect(SessionPanel.headerTitle(page: cover, box: Fixtures.coverTemplate.boxes[0].id, in: content)
+                == "Cover Image")
+    }
+
     @Test func batchAlertNamesTheCover() {
         let est = CostEstimate(amount: Decimal(string: "0.5")!)
         let decision = CostDecision(needsConfirmation: false, overBudget: false)

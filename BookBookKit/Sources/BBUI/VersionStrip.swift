@@ -15,9 +15,11 @@ struct VersionStrip: View {
     let store: BookStore
     let onChoose: (Version) -> Void
     let onToggleStar: (Version) -> Void
-    let onExport: (Version) -> Void
-    let onEditRegion: (Version) -> Void
-    let regionEditReason: (Version) -> String?
+    /// Nil leaves "Export Image…" out of the context menu.
+    var onExport: ((Version) -> Void)?
+    /// Nil leaves "Edit Region…" out of the context menu (text styles).
+    var onEditRegion: ((Version) -> Void)?
+    var regionEditReason: (Version) -> String? = { _ in nil }
     let onDelete: (Version) -> Void
     /// False for a read-only book: starring and deleting are unavailable.
     var isEditable: Bool = true
@@ -72,7 +74,7 @@ struct VersionStrip: View {
             VStack(spacing: 4) {
                 thumbnail(version)
                     .frame(width: 64, height: 64)
-                    .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius - 2, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous))
                     .overlay(alignment: .topTrailing) { starButton(version) }
                     .overlay(alignment: .bottomTrailing) { consistencyBadge(version) }
                     .overlay(alignment: .bottomLeading) {
@@ -89,16 +91,20 @@ struct VersionStrip: View {
                     .font(Crayon.font(.caption2, weight: .heavy)).monospacedDigit()
                     .foregroundStyle(selected ? Crayon.tomato : Crayon.inkSoft)
             }
-            .crayonCard(selected: selected, tint: Crayon.tomato, cornerRadius: Crayon.smallCornerRadius + 2, padding: 4)
+            .crayonCard(selected: selected, tint: Crayon.tomato, cornerRadius: Crayon.mediumCornerRadius, padding: 4)
             .crayonHover(tilt: number.isMultiple(of: 2) ? 2 : -2)
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button(version.starred ? "Remove Star" : "Star") { onToggleStar(version) }
+            Button(version.starred ? "Remove Star" : "Star Version") { onToggleStar(version) }
                 .disabled(!isEditable)
-            Button("Export Image…") { onExport(version) }
-            Button("Edit Region…") { onEditRegion(version) }
-                .disabled(regionEditReason(version) != nil)
+            if let onExport {
+                Button("Export Image…") { onExport(version) }
+            }
+            if let onEditRegion {
+                Button("Edit Region…") { onEditRegion(version) }
+                    .disabled(regionEditReason(version) != nil)
+            }
             Divider()
             Button("Delete Version…", role: .destructive) { onDelete(version) }
                 .disabled(!isEditable)
@@ -115,10 +121,10 @@ struct VersionStrip: View {
                 .accessibilityLabel("Checking consistency")
         } else if version.consistency?.showsWarning == true {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.black, Crayon.sunflower)
+                .foregroundStyle(Crayon.onSunflower, Crayon.sunflower)
                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
                 .padding(3)
-                .help("This picture differs from the references. Open Version details to fix or dismiss.")
+                .help("This picture differs from the references. Select this version to see the differences and fix or dismiss them.")
                 .accessibilityLabel("Consistency warning")
         }
     }
@@ -135,8 +141,8 @@ struct VersionStrip: View {
         }
         .buttonStyle(.plain)
         .disabled(!isEditable)
-        .help(version.starred ? "Remove star" : "Star this version")
-        .accessibilityLabel(version.starred ? "Remove star" : "Star")
+        .help(version.starred ? "Remove star" : "Star version")
+        .accessibilityLabel(version.starred ? "Remove star" : "Star version")
     }
 }
 

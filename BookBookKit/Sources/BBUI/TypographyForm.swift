@@ -38,26 +38,48 @@ struct TypographyForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             CrayonHeader("Typography", color: Crayon.grape)
-            Form {
-                fontPicker("Body font", selection: $draft.bodyFont)
-                fontPicker("Title font", selection: $draft.titleFont)
-                TextField("Default size (pt)", text: $sizeText)
-                    .focused($sizeFocused)
-                    .onSubmit(commitSize)
-                    .onChange(of: sizeFocused) { _, focused in if !focused { commitSize() } }
-                ColorPicker("Colour", selection: Binding(
-                    get: { draft.color.swiftUIColor },
-                    set: { draft.color = RGBA(color: $0); scheduleColorCommit() }),
-                    supportsOpacity: false)
-                LabeledContent("Line spacing") {
+            // A two-column grid rather than a `Form`: the form's own insets made it wider than the
+            // sheet, and its rows didn't share a label column. Labels are trailing-aligned and
+            // vertically centred on their controls.
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+                GridRow {
+                    rowLabel("Body font")
+                    fontPicker("Body font", selection: $draft.bodyFont)
+                }
+                GridRow {
+                    rowLabel("Title font")
+                    fontPicker("Title font", selection: $draft.titleFont)
+                }
+                GridRow {
+                    rowLabel("Default size (pt)")
+                    TextField("Default size (pt)", text: $sizeText)
+                        .labelsHidden()
+                        .frame(width: 80)
+                        .focused($sizeFocused)
+                        .onSubmit(commitSize)
+                        .onChange(of: sizeFocused) { _, focused in if !focused { commitSize() } }
+                }
+                GridRow {
+                    rowLabel("Colour")
+                    ColorPicker("Colour", selection: Binding(
+                        get: { draft.color.swiftUIColor },
+                        set: { draft.color = RGBA(color: $0); scheduleColorCommit() }),
+                        supportsOpacity: false)
+                        .labelsHidden()
+                }
+                GridRow {
+                    rowLabel("Line spacing")
                     HStack {
                         Slider(value: $draft.lineSpacing, in: 0.8...2.5, onEditingChanged: { editing in
                             if !editing { commit() }
                         })
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
                         Text(String(format: "%.2f", draft.lineSpacing)).monospacedDigit().frame(width: 40)
                     }
                 }
-                LabeledContent("Alignment") {
+                GridRow {
+                    rowLabel("Alignment")
                     Picker("Alignment", selection: $draft.alignment) {
                         Text("Left").tag(BBModel.TextAlignment.leading)
                         Text("Centre").tag(BBModel.TextAlignment.center)
@@ -66,6 +88,7 @@ struct TypographyForm: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                    .frame(maxWidth: .infinity)
                 }
             }
             .disabled(!document.isEditable)
@@ -78,7 +101,7 @@ struct TypographyForm: View {
                     .disabled(!document.isEditable)
             })
         }
-        .crayonSheet(width: 420)
+        .crayonSheet(width: 480)
         .onExitCommand { finish() }
         .onChange(of: current) { _, new in
             draft = new
@@ -106,6 +129,14 @@ struct TypographyForm: View {
     static let fontTypes: [UTType] =
         [.font] + ["ttf", "otf", "ttc"].compactMap { UTType(filenameExtension: $0) }
 
+    /// The grid's label column: trailing-aligned, one line.
+    private func rowLabel(_ text: String) -> some View {
+        Text(text)
+            .lineLimit(1)
+            .fixedSize()
+            .gridColumnAlignment(.trailing)
+    }
+
     private func fontPicker(_ title: String, selection: Binding<FontRef>) -> some View {
         _ = fontsEpoch
         let name = selection.wrappedValue.postScriptName
@@ -120,6 +151,8 @@ struct TypographyForm: View {
             if family == nil { Text("\(name) (missing)").tag(name) }
             ForEach(FontFamilies.all, id: \.self) { Text($0).tag($0) }
         }
+        .labelsHidden()
+        .frame(width: 240, alignment: .leading)
     }
 
     private func commitSize() {

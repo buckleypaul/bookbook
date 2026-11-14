@@ -61,7 +61,7 @@ struct LayoutsToolbar: View {
 
     var body: some View {
         let count = model.selectedBoxes.count
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             ControlGroup {
                 Button { model.addBox(.image) } label: { Label("Image Box", systemImage: "photo.badge.plus") }
                     .help("Add an image box")
@@ -76,13 +76,15 @@ struct LayoutsToolbar: View {
             let orderMatters = model.layerOrderHasVisibleEffect
             ControlGroup {
                 Button { model.moveSelection(.toFront) } label: { Label("Bring to Front", systemImage: "square.3.layers.3d.top.filled") }
+                    .help("Bring to front").accessibilityLabel("Bring to Front")
                 Button { model.moveSelection(.forward) } label: { Label("Bring Forward", systemImage: "square.2.layers.3d.top.filled") }
+                    .help("Bring forward").accessibilityLabel("Bring Forward")
                 Button { model.moveSelection(.backward) } label: { Label("Send Backward", systemImage: "square.2.layers.3d.bottom.filled") }
+                    .help("Send backward").accessibilityLabel("Send Backward")
                 Button { model.moveSelection(.toBack) } label: { Label("Send to Back", systemImage: "square.3.layers.3d.bottom.filled") }
+                    .help("Send to back").accessibilityLabel("Send to Back")
             }
             .disabled(count == 0 || !orderMatters)
-            .help(orderMatters ? "Change the layer order of the selected boxes"
-                  : "Layer order only matters between boxes of the same kind: text always draws above images")
             Button(role: .destructive) { model.deleteSelection() } label: { Label("Delete Box", systemImage: "trash") }
                 .disabled(count == 0)
                 .help("Delete the selected boxes")

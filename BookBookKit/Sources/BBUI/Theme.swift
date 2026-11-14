@@ -31,6 +31,19 @@ public enum Crayon {
     /// The chunky shadow under cards and buttons.
     public static let shadow = adaptive(light: 0x2B2340, dark: 0x000000, lightAlpha: 0.14, darkAlpha: 0.45)
 
+    // MARK: Semantic colours
+
+    /// Errors and failures (text, icons, rims). The same tomato as the accent.
+    public static let danger = tomato
+    /// Warnings: a deep amber in light mode (sunflower itself is unreadable as text on paper),
+    /// sunflower in dark mode. Use for warning text and icons; use `sunflower` for warning fills.
+    public static let warning = adaptive(light: 0xA35F00, dark: 0xFFD45E)
+    /// Success and "done" confirmations. The same grass as the palette.
+    public static let success = grass
+    /// Glyphs and text drawn on a `sunflower` fill: a dark ink in both appearances (`ink` turns
+    /// cream in Dark Mode, and white has no contrast on sunflower).
+    public static let onSunflower = adaptive(light: 0x2B2340, dark: 0x2B2340)
+
     /// The fun colours in a fixed order, for decorating things by index (book covers, tabs).
     public static let rainbow: [Color] = [tomato, sunflower, sky, grass, grape, bubblegum]
 
@@ -48,6 +61,12 @@ public enum Crayon {
 
     public static let cornerRadius: CGFloat = 16
     public static let smallCornerRadius: CGFloat = 10
+    /// Between small and full: tiles, wells and thumbnail frames that sit inside a card
+    /// (replaces `smallCornerRadius + 2`).
+    public static let mediumCornerRadius: CGFloat = smallCornerRadius + 2
+    /// Small thumbnails, swatches and images nested inside a small-radius frame
+    /// (replaces `smallCornerRadius - 2`).
+    public static let thumbCornerRadius: CGFloat = smallCornerRadius - 2
 
     /// Rounded system type for display text.
     public static func font(_ style: Font.TextStyle, weight: Font.Weight = .semibold) -> Font {
@@ -147,7 +166,7 @@ struct CrayonHoverModifier: ViewModifier {
 // MARK: - Components
 
 /// A chunky, pill-shaped button: solid colour, a darker "pressed into the page" edge, and a squish
-/// when pressed. For a view's main action.
+/// when pressed (not animated with Reduce Motion). For a view's main action.
 public struct CrayonButtonStyle: ButtonStyle {
     var color: Color
 
@@ -161,6 +180,7 @@ public struct CrayonButtonStyle: ButtonStyle {
         let configuration: Configuration
         let color: Color
         @Environment(\.isEnabled) private var isEnabled
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
         var body: some View {
             let pressed = configuration.isPressed
@@ -177,7 +197,7 @@ public struct CrayonButtonStyle: ButtonStyle {
                 .offset(y: pressed ? 2 : 0)
                 .scaleEffect(pressed ? 0.97 : 1)
                 .opacity(isEnabled ? 1 : 0.45)
-                .animation(.spring(response: 0.2, dampingFraction: 0.6), value: pressed)
+                .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.6), value: pressed)
                 .contentShape(Capsule())
         }
     }

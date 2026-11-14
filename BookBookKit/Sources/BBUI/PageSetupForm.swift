@@ -5,15 +5,17 @@ import SwiftUI
 /// Lengths are in inches. Each edit is one `.setPageSetup`.
 struct PageSetupForm: View {
     let model: StyleTabModel
+    /// False for a read-only book: the controls show the settings but can't change them.
+    var isEditable = true
 
     var body: some View {
         let setup = model.pageSetup
-        Section("Page setup") {
+        Section {
             Picker("Size", selection: Binding(get: { setup.sizePreset }, set: { model.setSizePreset($0) })) {
                 ForEach(PageSizePreset.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }
             if setup.sizePreset.isBookletSize {
-                Text("Prints as a booklet on Letter/A4.").font(.caption).foregroundStyle(.secondary)
+                Text("Prints as a booklet on Letter/A4.").font(.caption).foregroundStyle(Crayon.inkSoft)
             }
             if setup.sizePreset == .custom {
                 LabeledContent("Width (in)") {
@@ -48,6 +50,9 @@ struct PageSetupForm: View {
                     }.frame(width: 80)
                 }
             }
+        } header: {
+            CrayonHeader(StyleSection.pageSetup.title, color: StyleSection.pageSetup.color)
         }
+        .disabled(!isEditable)
     }
 }

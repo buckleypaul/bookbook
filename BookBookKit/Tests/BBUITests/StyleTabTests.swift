@@ -111,6 +111,25 @@ struct StyleTabTests {
     }
 
 
+    @Test(.enabled(if: styleModelReady)) func namedOrientationPresetsKeepTheirOrientation() {
+        let (model, sink) = make()
+        model.setSizePreset(.tenByEight)
+        guard case let .setPageSetup(wide)? = sink.commands.last else { Issue.record("no command"); return }
+        #expect(wide.orientation == .landscape)
+        #expect(wide.trimSize == PointSize(width: 720, height: 576))
+        sink.content.style.pageSetup = wide
+        model.setSizePreset(.eightByTen)
+        guard case let .setPageSetup(tall)? = sink.commands.last else { Issue.record("no command"); return }
+        #expect(tall.orientation == .portrait)
+        #expect(tall.trimSize == PointSize(width: 576, height: 720))
+    }
+
+    @Test func emptyAssetListTitlesFollowTheFilter() {
+        #expect(AssetEditing.emptyListTitle(filter: nil) == "No Assets")
+        #expect(AssetEditing.emptyListTitle(filter: .character) == "No Characters")
+        #expect(AssetEditing.emptyListTitle(filter: .place) == "No Places")
+    }
+
     @Test(.enabled(if: styleModelReady)) func sizePresetAndOrientation() {
         let (model, sink) = make()
         model.setSizePreset(.square8)

@@ -188,9 +188,7 @@ struct AssetImageControls: View {
                 .accessibilityLabel("\(asset.name)'s reference photo")
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("Reference Photo")
-                    .font(Crayon.font(.subheadline, weight: .bold))
-                    .foregroundStyle(Crayon.ink)
+                CrayonHeader("Reference photo", color: Crayon.bubblegum)
                 Text(AssetGeneration.referencePhotoHelp(name: asset.name, hasPhoto: photo != nil))
                     .font(Crayon.font(.caption, weight: .medium))
                     .foregroundStyle(Crayon.inkSoft)

@@ -174,6 +174,22 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
         textView.mouseDown(with: event)
     }
 
+    /// Selects at `point` (in `view`'s coordinates) without the text view's mouse tracking: the
+    /// caret at the nearest insertion point, or with 2 or 3 clicks the word or paragraph there.
+    /// For a rotated box, whose upright editor doesn't lie under the pointer (`handleClick` would
+    /// track the real, unmapped drag).
+    func select(at point: CGPoint, in view: NSView, clickCount: Int) {
+        if let window = textView.window, window.firstResponder !== textView { window.makeFirstResponder(textView) }
+        let length = (textView.string as NSString).length
+        let index = min(max(textView.characterIndexForInsertion(at: textView.convert(point, from: view)), 0), length)
+        var range = NSRange(location: index, length: 0)
+        if clickCount >= 2, length > 0 {
+            range = textView.selectionRange(forProposedRange: range,
+                                            granularity: clickCount == 2 ? .selectByWord : .selectByParagraph)
+        }
+        textView.setSelectedRange(range)
+    }
+
     /// Safety net: an editor dropped without `tearDown()` still closes its colour burst, or the
     /// document's undo group would stay open and merge every later edit into one step.
     isolated deinit {

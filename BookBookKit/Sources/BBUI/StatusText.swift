@@ -109,29 +109,42 @@ public enum MessageStatus: Hashable, Sendable {
     case produced(VersionID)
 
     /// - Parameters:
+    ///   - owner: the owner of the session the message is in (see `QueueSnapshot.entry(answering:in:)`).
     ///   - pendingThisLaunch: queue items enqueued since launch (covers the moment before the
     ///     queue's first snapshot includes a new item).
     ///   - typical: typical seconds for a queue item (its model, and quality for pictures).
     ///   - deliveryFailures: pictures that couldn't be saved, by message.
-    public static func resolve(_ message: Message, snapshot: QueueSnapshot, pendingThisLaunch: Set<QueueItemID>,
-                               deliveryFailures: [MessageID: String] = [:],
+    public static func resolve(_ message: Message, in owner: SessionOwner, snapshot: QueueSnapshot,
+                               pendingThisLaunch: Set<QueueItemID>, deliveryFailures: [MessageID: String] = [:],
                                typical: (QueueItem) -> Double?) -> MessageStatus {
-        if let itemID = message.queueItemID {
-            if let entry = snapshot.entry(for: itemID) {
-                switch entry.state {
-                case .waiting, .retrying: return .waiting
-                case let .running(startedAt, _, _): return .running(startedAt: startedAt, typicalSeconds: typical(entry.item))
-                case let .failed(failure): return .failed(failure.error)
-                }
-            }
+        if let itemID = message.queueItemID, snapshot.entry(for: itemID) == nil {
             return pendingThisLaunch.contains(itemID) ? .waiting : .interrupted
         }
-        if message.producedVersion == nil, let text = deliveryFailures[message.id] { return .notSaved(text) }
-        if let entry = snapshot.entries.first(where: { $0.item.messageID == message.id }),
-           case let .failed(failure) = entry.state {
-            return .failed(failure.error)
+        if message.queueItemID == nil, message.producedVersion == nil, let text = deliveryFailures[message.id] {
+            return .notSaved(text)
+        }
+        if let entry = snapshot.entry(answering: message, in: owner) {
+            switch entry.state {
+            case .waiting, .retrying: return .waiting
+            case let .running(startedAt, _, _): return .running(startedAt: startedAt, typicalSeconds: typical(entry.item))
+            case let .failed(failure): return .failed(failure.error)
+            }
         }
         if let produced = message.producedVersion { return .produced(produced) }
         return .none
+    }
+}
+
+extension QueueSnapshot {
+    /// The queue entry for `message`'s request, in any state: by the message's queue link, else
+    /// by message ID, since a failed delivery clears the link and Try Again puts the item back
+    /// without restoring it. The message-ID match takes only an image request for the session
+    /// `owner` owns: a consistency check carries its version's message ID, and a duplicated page's
+    /// sessions keep their message IDs but not the requests (those deliver to the original only).
+    public func entry(answering message: Message, in owner: SessionOwner) -> QueueEntry? {
+        if let id = message.queueItemID, let entry = entry(for: id) { return entry }
+        return entries.first {
+            $0.item.messageID == message.id && $0.item.kind == .image && $0.item.target.owner == owner
+        }
     }
 }

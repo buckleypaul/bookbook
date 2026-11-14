@@ -28,6 +28,9 @@ final class PlacementController: CanvasController {
     private var imageSource: (any PageImageSource)?
     private var fontsRevision: Int?
 
+    /// False in a read-only book: the window blocks clicks on the canvas, but mouse-moved still
+    /// arrives, so text boxes don't show the I-beam.
+    var isEditable = true
     var onSelectBox: (BoxID?) -> Void = { _ in }
     /// Double-click on a title/author box (bound to the book, PD §8.7).
     var onOpenBookSettings: () -> Void = {}
@@ -300,7 +303,8 @@ final class PlacementController: CanvasController {
         let shown: ShownCursor
         if cropTarget(at: point) != nil {
             shown = .openHand
-        } else if case .editText = CanvasHitTest.click(on: CanvasHitTest.box(at: point, in: boxRects), clickCount: 1) {
+        } else if isEditable,
+                  case .editText = CanvasHitTest.click(on: CanvasHitTest.box(at: point, in: boxRects), clickCount: 1) {
             // A text box whose words are edited on the canvas (not a title/author box).
             shown = .iBeam
         } else {

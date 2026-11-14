@@ -161,14 +161,13 @@ struct TextStylePanel: View {
                             .font(.callout)
                             .foregroundStyle(Crayon.ink)
                             .fixedSize(horizontal: false, vertical: true)
-                    } else if message.producedVersion == nil, message.queueItemID != nil,
-                              let summary = pendingSummary(message) {
+                    } else if message.producedVersion == nil, let summary = pendingSummary(message, in: session) {
                         Text(summary)
                             .font(.callout)
                             .foregroundStyle(Crayon.inkSoft)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    MessageStatusLine(message: message, session: session)
+                    MessageStatusLine(message: message, session: session, isEditable: document.isEditable)
                 }
             }
         }
@@ -185,9 +184,10 @@ struct TextStylePanel: View {
             .overlay(ThreadBubble.shape.strokeBorder(Crayon.grape.opacity(0.35), lineWidth: 1))
     }
 
-    /// The design summary of a message whose decoration is still queued.
-    private func pendingSummary(_ message: Message) -> String? {
-        guard let id = message.queueItemID, let entry = app.queueSnapshot.entry(for: id) else { return nil }
+    /// The design summary of a message whose decoration is still queued (Try Again included).
+    private func pendingSummary(_ message: Message, in session: Session) -> String? {
+        guard let entry = app.queueSnapshot.entry(answering: message, in: session.owner) else { return nil }
+        if message.queueItemID == nil, case .failed = entry.state { return nil }
         return entry.item.intent.textStyle?.summary
     }
 

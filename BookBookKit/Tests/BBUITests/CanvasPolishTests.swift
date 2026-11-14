@@ -45,6 +45,36 @@ struct CanvasPolishTests {
         #expect(abs(back.x - 50) < 1e-9 && abs(back.y - 40) < 1e-9)
     }
 
+    /// A click on a rotated box isn't forwarded to the text view (its tracking would follow the
+    /// real, unrotated drag): the caret goes where the click lands on the upright box, and a
+    /// double-click selects the word there.
+    @Test func clickOnARotatedBox_placesTheCaretWithoutForwarding() throws {
+        var content = Fixtures.book()
+        let page = Fixtures.firstPage(content)
+        let templateID = try #require(content.pages[page]?.templateID)
+        let turned = Box(id: Fixtures.textBox.id, frame: Fixtures.textBox.frame, rotationDegrees: 90,
+                         content: .text(TextBoxStyle(padding: 4, alignment: .leading)))
+        content.templates[templateID]?.boxes = [Fixtures.imageBox, turned]
+        content.pages[page]?.text[turned.id] = RichText(plain: "Once upon a time")
+        let view = canvas(content)
+        let rect = try #require(view.boxRects.first { $0.box.id == turned.id }?.rect)
+        // Just inside the start of the first line on the upright box, turned to where it's drawn.
+        let start = CGPoint(x: rect.minX + 6, y: rect.minY + 8)
+        let click = BoxHitTesting.unrotate(start, rect: rect, rotationDegrees: -90)
+
+        view.placement.mouseDown(with: mouseDown(), at: click)
+        let editor = try #require(view.placement.textEditing.editor)
+        #expect(editor.boxID == turned.id)
+        // Not the end (the no-window fallback): the click's own spot, with no window needed.
+        #expect(editor.textView.selectedRange() == NSRange(location: 0, length: 0))
+
+        let doubleClick = NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                             windowNumber: 0, context: nil, eventNumber: 0, clickCount: 2, pressure: 1)!
+        view.placement.mouseDown(with: doubleClick, at: click)
+        #expect(editor.textView.selectedRange() == NSRange(location: 0, length: 4), "the word \"Once\"")
+        view.endEditing()
+    }
+
     @Test func clickWithoutAWindow_startsEditingWithTheCaretAtTheEnd() throws {
         var content = Fixtures.book()
         let page = Fixtures.firstPage(content)
@@ -69,6 +99,17 @@ struct CanvasPolishTests {
         #expect(placement.cursor(at: text) == .iBeam)
         #expect(placement.cursor(at: image) == .arrow, "leaving the text puts the arrow back")
         #expect(placement.cursor(at: image) == nil, "then the cursor is left alone")
+    }
+
+    /// A read-only book's canvas takes no clicks, so its text boxes don't promise editing.
+    @Test func cursor_isNoIBeamInAReadOnlyBook() throws {
+        let view = canvas(Fixtures.book())
+        let placement = view.placement
+        let text = try centre(of: Fixtures.textBox.id, in: view)
+        #expect(placement.cursor(at: text) == .iBeam)
+        placement.isEditable = false
+        #expect(placement.cursor(at: text) == .arrow, "the I-beam already shown goes back to the arrow")
+        #expect(placement.cursor(at: text) == nil)
     }
 
     // MARK: Overflow badge
@@ -96,6 +137,9 @@ struct CanvasPolishTests {
         let corner = transform.toView(CGPoint(x: rect.maxX, y: rect.maxY))
         #expect(tip.viewRect.contains(corner))
         #expect(tip.viewRect.width >= PlacementController.overflowBadgeDiameter)
+        // The view owns the tooltip and answers with its text.
+        let tag = try #require(view.tipTexts.first { $0.value == tip.text }?.key)
+        #expect(view.view(view, stringForToolTip: tag, point: corner, userData: nil) == tip.text)
         let elements = view.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement } ?? []
         #expect(elements.contains { $0.accessibilityLabel() == tip.text })
     }

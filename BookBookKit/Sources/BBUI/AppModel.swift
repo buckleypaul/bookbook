@@ -566,14 +566,13 @@ public final class AppModel {
         return CostEstimator.estimate(input, priceList: prices.current)
     }
 
-    /// Whether a session message still has a live request (waiting, running or retrying).
-    func isPending(_ message: Message) -> Bool {
-        guard let id = message.queueItemID else { return false }
-        if let entry = queueSnapshot.entry(for: id) {
-            if case .failed = entry.state { return false }
-            return true
-        }
-        return pendingThisLaunch.contains(id)
+    /// Whether a message in the session `owner` owns still has a live request (waiting, running
+    /// or retrying), including one put back by Try Again (`QueueSnapshot.entry(answering:in:)`).
+    func isPending(_ message: Message, in owner: SessionOwner) -> Bool {
+        if let id = message.queueItemID, queueSnapshot.entry(for: id) == nil { return pendingThisLaunch.contains(id) }
+        guard let entry = queueSnapshot.entry(answering: message, in: owner) else { return false }
+        if case .failed = entry.state { return false }
+        return true
     }
 
     func notePending(_ ids: some Sequence<QueueItemID>) {
@@ -595,8 +594,9 @@ public final class AppModel {
         return true
     }
 
-    public func status(of message: Message) -> MessageStatus {
-        MessageStatus.resolve(message, snapshot: queueSnapshot, pendingThisLaunch: pendingThisLaunch,
+    /// `owner` owns the session the message is in.
+    public func status(of message: Message, in owner: SessionOwner) -> MessageStatus {
+        MessageStatus.resolve(message, in: owner, snapshot: queueSnapshot, pendingThisLaunch: pendingThisLaunch,
                               deliveryFailures: deliveryFailures) { typicalDuration(for: $0) }
     }
 

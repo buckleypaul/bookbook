@@ -127,7 +127,7 @@ struct SessionPanel: View {
         .sheet(item: $regionEditing) { subject in
             RegionEditorSheet(imageData: subject.imageData, pixelSize: subject.version.pixelSize,
                               modelName: app.defaultModelName,
-                              estimate: app.isOnline ? regionEditEstimate(for: subject.version) : nil,
+                              estimate: app.isOnline ? { regionEditEstimate(for: subject.version, prompt: $0) } : nil,
                               onCancel: { regionEditing = nil },
                               onSubmit: { drawing, text in
                                   regionEditing = nil
@@ -233,7 +233,7 @@ struct SessionPanel: View {
                             .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
                     }
                 }
-                MessageStatusLine(message: message, session: session)
+                MessageStatusLine(message: message, session: session, isEditable: document.isEditable)
             }
         }
     }
@@ -406,23 +406,22 @@ struct SessionPanel: View {
         regionEditing = RegionEditSubject(version: version, imageData: data)
     }
 
-    /// The estimate shown in the region editor before the edit is sent: the same one the cost
-    /// confirmation uses (`costEstimate(for:)`), made on the intent without the typed text.
-    private func regionEditEstimate(for version: Version) -> CostEstimate {
-        let intent = app.generationIntent(prompt: MentionText.tokenizing("", assets: Array(content.assets.values)),
-                                          quality: quality ?? app.defaults.quality,
-                                          includeStoryText: storyText, refines: version.id,
-                                          attachedReferences: liveAttached)
-        return app.estimate(for: intent, target: target, in: document)
+    /// The region edit's intent for the typed text (its `@` mentions tokenised): what
+    /// `submitRegionEdit` sends and the region editor's estimate prices.
+    private func regionEditIntent(_ version: Version, prompt text: String) -> GenerationIntent {
+        app.generationIntent(prompt: MentionText.tokenizing(text, assets: Array(content.assets.values)),
+                             quality: quality ?? app.defaults.quality, includeStoryText: storyText,
+                             refines: version.id, attachedReferences: liveAttached)
+    }
+
+    /// The estimate shown in the region editor for the prompt typed so far: the same one the cost
+    /// confirmation uses (`costEstimate(for:)`), on the same intent.
+    private func regionEditEstimate(for version: Version, prompt text: String) -> CostEstimate {
+        app.estimate(for: regionEditIntent(version, prompt: text), target: target, in: document)
     }
 
     private func submitRegionEdit(_ version: Version, drawing: RegionMaskDrawing, prompt text: String) {
-        let request = RegionEditRequest(version: version, drawing: drawing,
-                                        intent: app.generationIntent(prompt: MentionText.tokenizing(
-                                                                         text, assets: Array(content.assets.values)),
-                                                                     quality: quality ?? app.defaults.quality,
-                                                                     includeStoryText: storyText, refines: version.id,
-                                                                     attachedReferences: liveAttached))
+        let request = RegionEditRequest(version: version, drawing: drawing, intent: regionEditIntent(version, prompt: text))
         checkThenPerform(.regionEdit(request))
     }
 

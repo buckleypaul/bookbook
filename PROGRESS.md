@@ -27,6 +27,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 15 | Release pipeline (M4) | deferred | | | | Deferred by you on 2026-11-08: finish the product work first, then do the tap. Phase 16 runs before it. Not picked as "next" until you un-defer it; Phase 17 still needs it. |
 | 16 | Import, book settings, onboarding, sample | done (hand checks deferred) | `phase-16-import-onboarding` | — | $0.00 | No live checks listed. Sample book and preset samples are placeholders until you make them. [Log](progress/phase-16-import-onboarding.md) |
 | 16b | Bug fixes and edge cases | done (hand checks deferred) | `phase-16b-bug-fixes` | — | $0.00 | Merged 2026-11-09. 181 follow-ups triaged; 92 fixed. No live checks. [Log](progress/phase-16b-bug-fixes.md) |
+| — | UI polish pass | done (hand checks deferred) | `ui-polish` | — | $0.00 | 2026-11-14. Six audits (five of the code, one of the running app), ten fix lanes, two code reviews and an on-screen check. No live checks. [Log](progress/ui-polish.md) |
 | 17 | Hardening and v1.0 (M5) | not started | | | | |
 
 ## Standing decisions
@@ -46,6 +47,7 @@ Facts later phases depend on. Detail is in the logs under `progress/`.
 - Sidebar cards (decided 2026-11-11): the book window's sidebar, canvas and inspector are rounded cards on a darker desk (no split view). The panels are never hidden: the Session panel's toolbar toggle is removed, and it's always shown on Pages. Sidebar and inspector widths are resizable by dragging the gaps and are remembered. Page rows are white mini cards with a page thumbnail and the layout name, with the selected one filled tomato; the desk is a cooler taupe with a faint grain, and the sidebar tab icons show their own crayon colours (A §6.2).
 - No title-bar items (decided 2026-11-11): the Pages tab's Overview / Editor switch is a two-segment control on the sidebar card under the tab picker, and the Offline indicator sits above the queue badge at the foot of the sidebar, so the title bar is the same height on every tab.
 - Phase 16b product calls (decided 2026-11-09): an imported style guide keeps the target's page-number style; switching library folders with queued requests asks first; a lock from another Mac offers "Open Anyway", and Macs are identified by hardware UUID; undeliverable pictures are saved to disk, listed in `queue.json` and redelivered at launch; Draft All keeps counting the cover's box and says "cover + N pages"; after Reset Session → Keep Versions the next prompt makes a new picture until a version is clicked (PD §8.6); choosing a different version clears the old "style changed" acknowledgement (undo restores it; A §4.4); landscape booklets stay top-bound for v1.0 with "binds at the top" in the caption (left-bound layout is v1.x); imported RTF drops font family and size but keeps bold/italic/underline/alignment; cancelling story import keeps the new empty book; asset delete stays irreversible as PD §8.10 says.
+- UI conventions (decided 2026-11-14, UI polish pass): Title Case for buttons, menu items and pop-up items; sentence case for alert and dialog titles, section headings and form labels; British spelling (Centre, Colour); "…" on anything that opens a dialog first; "image box", "requests" (queue), "Style Default", "OpenAI API key" and "Settings ▸ API Keys" as the fixed wording. Sheets use the shared scaffold (`CrayonHeader`, `crayonSheet`, `CrayonSheetFooter` / `CrayonSheetDoneFooter`); banners use `CrayonBanner`; inline status lines use `CrayonInlineMessage` with `Crayon.danger` / `warning` / `success`; empty states use `CrayonEmptyState`. Labels on crayon fills are chosen by contrast (`CrayonContrast`), which makes them dark ink (`Crayon.onFill`) in both appearances; `CrayonContrastTests` holds the rule. The Settings window stays a native grouped form. A text-style session's versions are called "versions", as picture sessions are. Stop in the text-style panel and the Layouts chat shows the PD §5 cancel notice first ([log](progress/ui-polish.md)).
 
 ## Deferred hand checks
 
@@ -70,7 +72,6 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Consistency switch off: the estimate drops (sub-cent, hidden by rounding to whole cents) and no follow-up is queued after a generation.
 - "Big picture across the top two-thirds, two lines of text at the bottom in a rounded cream box": a sensible template opens in the editor, snapped to the margins (needs a template call).
 - Layouts chat (2026-11-11): New Layout with AI → describe it → the blank layout fills in; then "make the picture full-bleed" changes only that box, pages using the layout keep their text and picture, Undo and Restore This work, and the panel switches to Box when a box is clicked (needs template calls).
-- Confirm-cost alert wording for a check or fix (Session A noted it says "Generate").
 - Real-person photo: Check Consistency shows the notice first, then the cost step.
 
 ### Phase 14 — Export and print
@@ -101,7 +102,6 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Guided Setup closed with the close button doesn't reappear on the next launch (#4a). The app pass saw `onboardingCompleted` set, but `-BookBookLibraryRoot` suppresses Guided Setup, so relaunch with the default library.
 - Draft All's cost text says "cover + N pages" (needs a key; the menu item is disabled without one).
 - Open Anyway: the app pass saw the lock prompt and the book open editable, but not the extra confirm alert; check it shows.
-- New Book wizard: choosing 10 × 8 in gave a portrait book in the app pass (possibly a synthetic-input miss); check that it comes out landscape.
 
 ### Sidebar cards (2026-11-11)
 - Dark mode in the real app (an offscreen render looked right).
@@ -119,11 +119,61 @@ Hand checks are deferred to the end of the build (decided 2026-11-08). Each phas
 - Export PDF and booklet: decorations print behind real text at full resolution; the text stays selectable.
 - Duplicate a styled page: the copy keeps the style and has its own session. Change the page's layout: a style on a box the new layout lacks disappears and comes back on Undo.
 
+### UI polish (2026-11-14)
+An agent ran the app after the fixes and saw the composer, box inspector, overview, canvas caret placement, wizard (a 10 × 8 in book came out landscape), Settings and every sheet. These it couldn't reach or produce:
+- Session composer with several attached references: the chips wrap onto further lines and nothing truncates at the narrowest inspector.
+- A failed request in the thread shows Try Again and Dismiss; after Try Again the bubble shows waiting, then running (not "No picture from this request."), and Draft All skips that box. A request that's retrying shows "Retrying in N s (attempt 2 of 4)" (needs a failing request).
+- Fix, Check Consistency and Regenerate with Same Settings show their estimate before they run; the cost alert's question matches the action ("Check this picture?").
+- Read-only book: Generate, Regenerate, Reference Another Image…, Choose Image…, Reset Session…, Delete Version… and Try Again are disabled; Edit Typography… and Edit Page Numbers… open with their controls disabled and close normally; the asset editor's Where used links, View Larger and Image details still work; no I-beam over text boxes.
+- Region editor on a real picture: the sheet is themed and titled, the cost pill follows the prompt as @mentions are typed, Redo is next to Undo, and the crosshair shows for the lasso only.
+- Stop in the text-style panel and in the Layouts chat asks first, with the "may still be charged" notice.
+- Text box rotated a few degrees: the first click places the caret at the click.
+- Missing-fonts banner shows a "Typography…" button; a save error shows the banner with Try Again (needs a missing font, and a write failure).
+- Library: right-clicking a book selects it; arrow keys move the selection. Settings ▸ Library ▸ Switch Anyway (with queued requests) shows the "Move your books…" alert after the first closes.
+- Guided Setup's paste-key step: Return saves and tests the key and stays on the step (needs typing a key).
+- Page Numbers with a decimal-comma region: typing "10,5" for the size saves 10.5.
+- An enabled sunflower or bubblegum button (e.g. the save-error Try Again) has readable dark text; Settings ▸ API Keys and Models in Dark Mode.
+- Opening a book that another copy of BookBook has locked shows one message with Open Read-Only, Open Anyway… and Close, and Open Anyway… shows its confirmation.
+
 ## Open follow-ups
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
 ### Phase 17
+- UI polish 2026-11-14, left for a product call (the pass fixed only unambiguous polish; detail in the [log](progress/ui-polish.md)):
+  - A read-only book's canvas ignores clicks, so boxes can't be selected to look at their versions or Version details.
+  - The sidebar numbers story pages by position ("Page 4") while the overview and the canvas show printed numbers; after a spread or with Start at ≠ 1 they disagree.
+  - The page canvas has no context menu and no Reset Crop.
+  - Rotated text boxes are edited upright on the page canvas too (already listed for the template editor), and drag-selecting inside one uses unrotated coordinates.
+  - The queue badge hides when only failed requests are left, so failures are easy to miss (the badge is the only in-window way into the Queue).
+  - Page-menu edits (Duplicate, Delete, Mark as Done, Skip Page Number, Export Page as Image…) stay enabled on the Assets, Style and Layouts tabs and act on a page that isn't showing.
+  - Book Settings ▸ Clean Up deletes at once although the sheet has Cancel and Save.
+  - The Pages, Assets and Layouts lists add, delete and draw their rows three different ways (page rows are tomato cards; the others are system rows).
+  - "Template" still appears where everything else says "Layout": Import from Book, Import Story Text, Settings ▸ Models ("Templates"), Book Settings' cost line.
+  - The Layouts chat confirms cost inline (Back / Send) where everything else uses the "Confirm cost" alert.
+  - The reference picker lists every earlier version of an asset, though earlier asset versions aren't shown anywhere else.
+  - Same job, different words: "Retry" (Queue) vs "Try Again"; "Choose Image…" (session) vs "Import Image…" (asset); "Done" applies in Page Numbers, only closes in Typography, and cancels in Export.
+  - Export shows no "Show in Finder" afterwards, and Export Cover Separately… shows no progress or result.
+  - Style reference images can be dragged in and accept four formats; asset images and reference photos can't be dragged in and accept any image.
+  - The asset editor shows the reference photo below the description; PD §8.3 lists it first.
+  - Unchecked checkboxes almost disappear on the dark paper, and single-line fields are near-black beside the card-tinted editors: both need Crayon toggle and field styles applied app-wide.
+  - Disabled pickers are nearly invisible in the dark Page Numbers sheet.
+  - The Library and Queue windows have a grey system toolbar strip; book windows are themed edge to edge.
+  - Sheet primary buttons are tomato, grass, sky or grape depending on the sheet.
+  - Light-mode contrast just under 4.5:1: `Crayon.inkSoft` on paper (4.45) and `Crayon.warning` on paperDeep (4.41). Blob-icon glyphs stay white on the fills.
+  - A new book's window opens screen-sized; the sample book's opens at 1200 × 780.
+  - The wizard's Skip discards what was typed on that step.
+  - A layout preset the book hasn't copied yet shows greyed, like a disabled row.
+  - The canvas exposes no accessibility elements for its boxes; @mention suggestions can't be moved through with the arrow keys.
+  - `PixelSize.description` (BBModel) prints "1024x1536"; BBUI now writes "1024 × 1536".
+  - At the minimum window height, list content shows in the margin under the book-switcher card.
+  - Settings ▸ General and API Keys have about 100 pt spare at the bottom (pane heights were estimated).
+  - Tomato-tinted system segmented pickers (Chat / Box, Portrait / Landscape, Export's Output, Typography's Alignment, Edit Region's Brush / Lasso) keep white labels, beside the dark-ink labels everywhere else, and are low-contrast in Dark Mode; a Crayon segmented control would fix it.
+  - The Edit Region sheet opens at 920 × 700 so its tool labels fit, which is larger than a book window at its 840 × 552 minimum (it was 720 × 600 minimum before, also taller than that window); icon-only tools would let it shrink.
+  - "New" and "…" in the Layouts list and the "+" in Assets still draw in the light tomato fill colour, not the readable accent; in the box inspector Padding's "pt" sits left of the other unit labels, and "Background panel" shrinks at the narrowest width.
+  - Accent text (selected names, "New", "+", chevrons) uses `Crayon.danger` for its readable light-mode tomato; it wants its own token name.
+  - In a read-only book the open-hand cursor still shows over a placed, selected image box.
+  - The compact page-status badges in the page rows keep white glyphs on sky, grass and grape; the box inspector's "Override font size" stepper shows its value beside the label, unlike Padding.
 - AI text styling (2026-11-11): changing a page's layout doesn't carry a text box's style over to the matching box of the new layout (it stays keyed by the old box); the font list is a curated set plus the book's fonts, so a family the user installed but didn't use isn't offered; `TextStyleFonts.allowed` scans the installed families on every estimate (cache it with the font-registration revision); confirm `background: transparent` support for the catalog's gpt-image models (live) and turn off the local white key where it works.
 - Layouts chat: replies are only a summary line plus a diagram, since the shared `TemplateDraft` schema has no message field; consider adding a short `reply` field (changes the wire schema for every adapter). Threads aren't saved (decided 2026-11-11) (from the Layouts chat change).
 - Simplify leftovers (from the 2026-11-09 whole-codebase simplify pass): cache `FontFamilies.all` with an app-wide font-registration revision; add `PageStatus.title` shared by `StatusBadge`, `PagesOverview` and `BookWindow`.

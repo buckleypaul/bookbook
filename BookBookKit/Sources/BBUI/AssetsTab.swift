@@ -70,7 +70,7 @@ struct AssetsList: View {
                 } label: {
                     Image(systemName: "plus")
                         .fontWeight(.heavy)
-                        .foregroundStyle(Crayon.tomato)
+                        .foregroundStyle(Crayon.danger)
                 }
                     .menuStyle(.borderlessButton)
                     .fixedSize()

@@ -6,6 +6,7 @@ import SwiftUI
 struct FailureAdviceView: View {
     let advice: FailureAdvice
     @State private var showDetails = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous)
@@ -15,7 +16,9 @@ struct FailureAdviceView: View {
             } icon: {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, Crayon.tomato)
+                    .foregroundStyle(CrayonContrast.label(on: Crayon.danger, preferring: .white,
+                                                          minimum: CrayonContrast.graphics, in: colorScheme),
+                                     Crayon.danger)
             }
             .font(Crayon.font(.callout, weight: .bold))
             if !advice.explanation.isEmpty {

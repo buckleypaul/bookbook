@@ -168,7 +168,7 @@ struct TemplateList: View {
                     Label("New", systemImage: "plus")
                         .labelStyle(.titleAndIcon)
                         .font(Crayon.font(.body, weight: .bold))
-                        .foregroundStyle(Crayon.tomato)
+                        .foregroundStyle(Crayon.danger)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -179,7 +179,7 @@ struct TemplateList: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .fontWeight(.bold)
-                        .foregroundStyle(Crayon.tomato)
+                        .foregroundStyle(Crayon.danger)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)

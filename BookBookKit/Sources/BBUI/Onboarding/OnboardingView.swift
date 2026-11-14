@@ -120,14 +120,14 @@ public struct OnboardingView: View {
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || testing)
                     if testing { ProgressView().controlSize(.small) }
                     if app.hasOpenAIKey {
-                        Label("Saved in your Keychain", systemImage: "checkmark.seal.fill").foregroundStyle(Crayon.grass)
+                        Label("Saved in your Keychain", systemImage: "checkmark.seal.fill").foregroundStyle(Crayon.success)
                     }
                 }
                 if let error { CrayonInlineMessage(error, kind: .error, textStyle: .callout) }
                 switch testResult {
                 case let .success(count):
                     Label("Connected — \(count) models available", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Crayon.grass)
+                        .foregroundStyle(Crayon.success)
                 case let .failure(advice): FailureAdviceView(advice: advice)
                 case nil: EmptyView()
                 }

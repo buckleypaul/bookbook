@@ -293,7 +293,7 @@ struct NewBookWizard: View {
                 if selected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.title3.weight(.bold))
-                        .foregroundStyle(Crayon.tomato)
+                        .foregroundStyle(Crayon.danger)
                 }
             }
             .padding(8)

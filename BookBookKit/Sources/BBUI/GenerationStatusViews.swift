@@ -9,15 +9,19 @@ struct MessageStatusLine: View {
     @Environment(AppModel.self) private var app
     let message: Message
     let session: Session
+    /// Whether the book can be changed: Try Again sends a paid request into it.
+    let isEditable: Bool
     /// Show "Version N" once the picture arrived (off in the asset editor, which shows only the newest).
     var showsProduced = true
 
     var body: some View {
-        switch app.status(of: message) {
+        switch app.status(of: message, in: session.owner) {
         case .none:
             if message.producedVersion == nil {
                 StatusPill(color: Crayon.inkSoft, systemImage: "xmark.circle") {
-                    Text("No picture: the request was cancelled or removed.")
+                    // Cancelled, its picture deleted or cleaned up, or a page copied while the request
+                    // was running (it delivers to the original): the book doesn't record which.
+                    Text("No picture from this request.")
                 }
             }
         case .waiting:
@@ -61,8 +65,9 @@ struct MessageStatusLine: View {
                     // The same actions as the Queue window's failed row.
                     HStack {
                         Button("Try Again") { app.retryQueueItem(entry.id) }
-                            .disabled(!app.isOnline || !app.hasOpenAIKey)
-                            .help(!app.isOnline ? UnavailableText.offline
+                            .disabled(!isEditable || !app.isOnline || !app.hasOpenAIKey)
+                            .help(!isEditable ? UnavailableText.readOnly
+                                  : !app.isOnline ? UnavailableText.offline
                                   : !app.hasOpenAIKey ? UnavailableText.noKey : "Send this request again.")
                         Button("Dismiss") { app.removeQueueItem(entry.id) }
                             .help("Remove this failed request from the queue.")
@@ -94,9 +99,7 @@ struct MessageStatusLine: View {
 
     /// The queue entry for the message's request, if the queue still has it.
     private func liveEntry(for message: Message) -> QueueEntry? {
-        let snapshot = app.queueSnapshot
-        if let id = message.queueItemID, let entry = snapshot.entry(for: id) { return entry }
-        return snapshot.entries.first { $0.item.messageID == message.id }
+        app.queueSnapshot.entry(answering: message, in: session.owner)
     }
 }
 

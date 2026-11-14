@@ -233,7 +233,7 @@ struct SessionPanel: View {
                             .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
                     }
                 }
-                MessageStatusLine(message: message, session: session)
+                MessageStatusLine(message: message, session: session, isEditable: document.isEditable)
             }
         }
     }

@@ -30,7 +30,7 @@ extension AppModel {
     public func draftAllPlan(in document: BookDocument) -> DraftAllPlan {
         let content = document.content
         let settings = defaults
-        let targets = DraftAllPlanner.emptyTargets(in: content) { isPending($0) }
+        let targets = DraftAllPlanner.emptyTargets(in: content) { isPending($0, in: $1) }
         let items = targets.map { target in
             let intent = GenerationIntent(messageText: DraftAllPlanner.messageText, provider: settings.provider,
                                           model: settings.model, quality: .draft, includeStoryText: true)

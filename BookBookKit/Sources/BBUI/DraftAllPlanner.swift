@@ -11,14 +11,14 @@ public enum DraftAllPlanner {
     /// the cover (if its template has image boxes), then story pages; boxes in template order.
     /// `isPending` says whether a session message still has a live queue item.
     public static func emptyTargets(in content: BookContent,
-                                    isPending: (Message) -> Bool) -> [(page: PageID, box: BoxID)] {
+                                    isPending: (Message, SessionOwner) -> Bool) -> [(page: PageID, box: BoxID)] {
         var out: [(page: PageID, box: BoxID)] = []
         for pageID in content.pageIDsCoverFirst {
             guard let page = content.pages[pageID], let template = content.template(for: page) else { continue }
             for box in template.imageBoxes {
                 guard let slot = page.images[box.id], slot.placement == nil,
                       let session = content.sessions[slot.sessionID],
-                      !session.messages.contains(where: isPending) else { continue }
+                      !session.messages.contains(where: { isPending($0, session.owner) }) else { continue }
                 out.append((pageID, box.id))
             }
         }

@@ -98,7 +98,7 @@ struct AssetImageControls: View {
 
     var body: some View {
         let latest = AssetGeneration.latestRequest(in: session)
-        let busy = latest.map { AssetGeneration.isBusy(app.status(of: $0)) } ?? false
+        let busy = latest.map { AssetGeneration.isBusy(app.status(of: $0, in: asset.owner)) } ?? false
         VStack(alignment: .leading, spacing: 8) {
             referencePhotoRow
             HStack(spacing: 8) {
@@ -126,7 +126,7 @@ struct AssetImageControls: View {
                 .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey || prompt.isEmpty || busy)
             }
             if let latest, let session {
-                MessageStatusLine(message: latest, session: session, showsProduced: false)
+                MessageStatusLine(message: latest, session: session, isEditable: document.isEditable, showsProduced: false)
             }
             GenerationSetupNotes()
         }

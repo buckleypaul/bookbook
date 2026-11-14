@@ -78,7 +78,7 @@ struct MessageStatusTests {
     private func resolve(_ message: Message, _ state: QueueItemState?, pending: Set<QueueItemID> = [],
                          failures: [MessageID: String] = [:]) -> MessageStatus {
         let snapshot = QueueSnapshot(entries: state.map { [QueueEntry(item: item, state: $0)] } ?? [])
-        return MessageStatus.resolve(message, snapshot: snapshot, pendingThisLaunch: pending,
+        return MessageStatus.resolve(message, in: item.target.owner, snapshot: snapshot, pendingThisLaunch: pending,
                                      deliveryFailures: failures) { _ in 14 }
     }
 
@@ -111,6 +111,37 @@ struct MessageStatusTests {
         let version = VersionID()
         #expect(resolve(message(queued: false, produced: version), nil) == .produced(version))
         #expect(resolve(message(queued: false), nil) == MessageStatus.none)
+    }
+
+    /// Try Again puts a failed item back without restoring the link its delivery cleared: the
+    /// message still follows it while it waits and runs again.
+    @Test func afterTryAgain_theUnlinkedMessageFollowsItsRequest() {
+        let start = Fixtures.date
+        #expect(resolve(message(queued: false), .waiting) == .waiting)
+        #expect(resolve(message(queued: false), .retrying(attempt: 2, resumesAt: start, lastError: .transient(nil)))
+            == .waiting)
+        #expect(resolve(message(queued: false), .running(startedAt: start, progress: .sent, attempt: 1))
+            == .running(startedAt: start, typicalSeconds: 14))
+    }
+
+    /// The match by message ID takes only an image request for the message's own session.
+    @Test func unlinkedMatch_ignoresOtherSessionsAndConsistencyChecks() {
+        let running = QueueItemState.running(startedAt: Fixtures.date, progress: .sent, attempt: 1)
+        // A duplicated page's copy of the message (same ID, another session): the request delivers
+        // to the original only.
+        let copy = MessageStatus.resolve(message(queued: false), in: .pageBox(PageID(), BoxID()),
+                                         snapshot: QueueSnapshot(entries: [QueueEntry(item: item, state: running)]),
+                                         pendingThisLaunch: []) { _ in 14 }
+        #expect(copy == MessageStatus.none)
+        // A consistency check carries its version's message ID: the message still shows its version.
+        let version = VersionID()
+        var check = item
+        check.id = QueueItemID()
+        check.kind = .consistencyCheck(version)
+        let checked = MessageStatus.resolve(message(queued: false, produced: version), in: item.target.owner,
+                                            snapshot: QueueSnapshot(entries: [QueueEntry(item: check, state: running)]),
+                                            pendingThisLaunch: []) { _ in 14 }
+        #expect(checked == .produced(version))
     }
 }
 

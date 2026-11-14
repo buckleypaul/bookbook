@@ -143,36 +143,38 @@ struct NewBookWizard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding([.horizontal, .top], 20)
-            // A fixed height that fits the tallest step (Style), so the sheet doesn't resize between steps.
-            content.padding(20).frame(maxWidth: .infinity, minHeight: 320, maxHeight: 320, alignment: .topLeading)
+            // A fixed height that fits the tallest step (Style), so the sheet doesn't resize between
+            // steps. 290 rather than 320: the footer's step indicator row takes the other 30.
+            content.padding(20).frame(maxWidth: .infinity, minHeight: 290, maxHeight: 290, alignment: .topLeading)
             if let error {
                 CrayonInlineMessage(error, kind: .error, textStyle: .callout)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 8)
             }
-            HStack {
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(creating)
-                if creating { ProgressView().controlSize(.small) }
-                Spacer()
-                Button("Back") { model.back() }.disabled(model.isFirst || creating)
-                Button("Skip") { skip() }.disabled(creating)
-                if model.isLast {
-                    Button("Create") { create() }.keyboardShortcut(.defaultAction).disabled(creating)
-                        .buttonStyle(.crayon(Crayon.grass))
-                } else {
-                    Button("Continue") { model.next() }.keyboardShortcut(.defaultAction)
-                        .buttonStyle(.crayon)
-                }
-            }
-            // The indicator is centred on the sheet, whatever the buttons' widths.
-            .overlay {
+            VStack(spacing: 10) {
+                // The indicator gets its own centred line above the buttons, so no button set
+                // (Back / Skip / Continue or Create) can reach it.
                 VStack(spacing: 4) {
                     StepDots(current: model.step.rawValue, count: NewBookWizardModel.Step.allCases.count)
                     Text("Step \(model.step.rawValue + 1) of \(NewBookWizardModel.Step.allCases.count)")
                         .font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.inkSoft)
                 }
-                .allowsHitTesting(false)
+                .frame(maxWidth: .infinity)
+                HStack {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(creating)
+                    if creating { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Button("Back") { model.back() }.disabled(model.isFirst || creating)
+                    Button("Skip") { skip() }.disabled(creating)
+                    if model.isLast {
+                        Button("Create") { create() }.keyboardShortcut(.defaultAction).disabled(creating)
+                            .buttonStyle(.crayon(Crayon.grass))
+                    } else {
+                        Button("Continue") { model.next() }.keyboardShortcut(.defaultAction)
+                            .buttonStyle(.crayon)
+                    }
+                }
             }
             .padding(12)
             .background(Crayon.paperDeep)

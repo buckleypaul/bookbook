@@ -14,9 +14,12 @@ public struct CrayonBanner<Trailing: View>: View {
     let color: Color
     let glyphColor: Color
     let trailing: Trailing
+    @Environment(\.colorScheme) private var colorScheme
 
     /// `glyphColor` is the symbol's colour on the `color` circle; pass `Crayon.onSunflower` for a
-    /// sunflower banner. `trailing` sits at the end, e.g. a `.crayon(color)` button.
+    /// sunflower banner. Where it doesn't reach 3:1 on the circle, the symbol switches to white
+    /// or `Crayon.onFill`, whichever reads better. `trailing` sits at the end, e.g. a
+    /// `.crayon(color)` button.
     public init(_ text: String, systemImage: String, color: Color, glyphColor: Color = .white,
                 @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
         self.text = text
@@ -30,7 +33,8 @@ public struct CrayonBanner<Trailing: View>: View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .heavy, design: .rounded))
-                .foregroundStyle(glyphColor)
+                .foregroundStyle(CrayonContrast.label(on: color, preferring: glyphColor,
+                                                      minimum: CrayonContrast.graphics, in: colorScheme))
                 .frame(width: 28, height: 28)
                 .background(Circle().fill(color))
                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2)
@@ -129,7 +133,8 @@ public struct CrayonSheetFooter<Leading: View, Secondary: View>: View {
 
 /// The bottom row of a sheet with nothing to cancel: optional leading content, a spacer, then
 /// one crayon "Done" button (Return). Use for informational or apply-as-you-go sheets. Done
-/// dismisses the sheet unless `action` is given.
+/// dismisses the sheet unless `action` is given. Escape does the same as Done (a hidden
+/// `.cancelAction` button), so callers don't need `.onExitCommand`.
 public struct CrayonSheetDoneFooter<Leading: View>: View {
     let title: String
     let color: Color
@@ -152,12 +157,25 @@ public struct CrayonSheetDoneFooter<Leading: View>: View {
         HStack {
             leading
             Spacer()
-            Button(title) { if let action { action() } else { dismiss() } }
+            Button(title, action: done)
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.crayon(color))
                 .disabled(isDisabled)
         }
+        // Escape: a zero-size, invisible twin of Done. `.hidden()` would drop the shortcut, so
+        // it's transparent instead, and kept out of the accessibility tree.
+        .background {
+            Button("", action: done)
+                .keyboardShortcut(.cancelAction)
+                .disabled(isDisabled)
+                .buttonStyle(.plain)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
     }
+
+    private func done() { if let action { action() } else { dismiss() } }
 }
 
 // MARK: - Inline status messages

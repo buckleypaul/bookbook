@@ -14,9 +14,12 @@ public struct CrayonBanner<Trailing: View>: View {
     let color: Color
     let glyphColor: Color
     let trailing: Trailing
+    @Environment(\.colorScheme) private var colorScheme
 
     /// `glyphColor` is the symbol's colour on the `color` circle; pass `Crayon.onSunflower` for a
-    /// sunflower banner. `trailing` sits at the end, e.g. a `.crayon(color)` button.
+    /// sunflower banner. Where it doesn't reach 3:1 on the circle, the symbol switches to white
+    /// or `Crayon.onFill`, whichever reads better. `trailing` sits at the end, e.g. a
+    /// `.crayon(color)` button.
     public init(_ text: String, systemImage: String, color: Color, glyphColor: Color = .white,
                 @ViewBuilder trailing: () -> Trailing = { EmptyView() }) {
         self.text = text
@@ -30,7 +33,8 @@ public struct CrayonBanner<Trailing: View>: View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .heavy, design: .rounded))
-                .foregroundStyle(glyphColor)
+                .foregroundStyle(CrayonContrast.label(on: color, preferring: glyphColor,
+                                                      minimum: CrayonContrast.graphics, in: colorScheme))
                 .frame(width: 28, height: 28)
                 .background(Circle().fill(color))
                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 2)

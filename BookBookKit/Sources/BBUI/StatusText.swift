@@ -93,11 +93,14 @@ public enum ElapsedTimeText {
         return "\(total / 60):" + String(format: "%02d", total % 60)
     }
 
-    /// `0:42 of ~1:10`, or just `0:42` when the typical duration is unknown. Used by the
-    /// session thread, the Queue window and the sidebar badge.
+    /// `0:42 of ~1:10`; once past the typical duration `2:10 (usually ~1:10)`; just `0:42` when
+    /// the typical duration is unknown. Used by the session thread, the Queue window and the
+    /// sidebar badge.
     public static func progress(elapsed: TimeInterval, typical: Double?) -> String {
         guard let typical, typical > 0 else { return clock(elapsed) }
-        return "\(clock(elapsed)) of ~\(clock(typical))"
+        let shown = clock(elapsed)
+        if max(0, elapsed.rounded(.down)) > typical.rounded(.down) { return "\(shown) (usually ~\(clock(typical)))" }
+        return "\(shown) of ~\(clock(typical))"
     }
 }
 

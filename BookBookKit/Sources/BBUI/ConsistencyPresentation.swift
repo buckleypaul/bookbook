@@ -55,8 +55,9 @@ public enum ConsistencyPresentation {
         }
         rows.append(DetailRow(label: "Check prompt sent", value: report.sent.promptSent))
         rows.append(DetailRow(label: "Check images sent", value: VersionDetailsContent.references(report.sent.imagesSent)))
-        for key in report.sent.parametersSent.keys.sorted() {
-            rows.append(DetailRow(label: "Check parameter \(key)", value: report.sent.parametersSent[key] ?? ""))
+        if !report.sent.parametersSent.isEmpty {
+            rows.append(DetailRow(label: "Check parameters sent",
+                                  value: VersionDetailsContent.parametersText(report.sent.parametersSent)))
         }
         rows.append(DetailRow(label: "Check cost", value: cost.map(CostText.record) ?? "—"))
         if let usage = report.usage {

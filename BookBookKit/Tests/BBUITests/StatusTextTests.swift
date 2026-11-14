@@ -60,6 +60,8 @@ struct ElapsedTimeTextTests {
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: 14) == "0:07 of ~0:14")
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: nil) == "0:07")
         #expect(ElapsedTimeText.progress(elapsed: 7, typical: 0) == "0:07")
+        #expect(ElapsedTimeText.progress(elapsed: 14, typical: 14) == "0:14 of ~0:14")
+        #expect(ElapsedTimeText.progress(elapsed: 130, typical: 70) == "2:10 (usually ~1:10)")
     }
 }
 
@@ -121,21 +123,29 @@ struct VersionDetailsContentTests {
         #expect(dict["Provider"] == "OpenAI")
         #expect(dict["Model"] == "gpt-image-2.5-sunburst")
         #expect(dict["Quality"] == "Standard")
-        #expect(dict["Output size"] == "1024x1536")
+        #expect(dict["Output size"] == "1024 × 1536")
+        // Equal to the output size, so not listed twice.
+        #expect(dict["Image size"] == nil)
         #expect(dict["Prompt sent"] == "THE EXACT PROMPT")
         #expect(dict["Your request"] == "a fox")
-        #expect(dict["Parameter n"] == "1")
-        #expect(dict["Parameter quality"] == "medium")
-        #expect(dict["Parameter size"] == "1024x1536")
+        // One row, a "key: value" line per parameter, in a stable (sorted) order.
+        #expect(dict["Parameters sent"] == "n: 1\nquality: medium\nsize: 1024x1536")
         #expect(dict["References sent"] == "None")
         #expect(dict["Story text included"] == "Yes")
-        #expect(dict["Usage"]?.contains("input text 120") == true)
-        #expect(dict["Usage"]?.contains("output image 4160") == true)
+        #expect(dict["Usage"]?.hasPrefix("Input: 120 text") == true)
+        #expect(dict["Usage"]?.contains("Output: ") == true)
+        #expect(dict["Usage"]?.contains("4160 image tokens") == true)
         #expect(dict["Date"] == "DATE")
         #expect(dict["Revised prompt"] == nil)
-        // Parameters are listed in a stable (sorted) order.
-        let params = rows.map(\.label).filter { $0.hasPrefix("Parameter ") }
-        #expect(params == ["Parameter n", "Parameter quality", "Parameter size"])
+        #expect(!rows.map(\.label).contains { $0.hasPrefix("Parameter ") })
+    }
+
+    @Test func modelShowsItsNameAndID() {
+        let version = Version(image: Fixtures.ref, pixelSize: PixelSize(width: 1024, height: 1536), source: .generated,
+                              createdAt: Fixtures.date, provenance: Fixtures.provenance())
+        let rows = VersionDetailsContent.rows(for: version, modelName: { _, _ in "GPT Image 2.5 Sunburst" })
+        #expect(rows.first { $0.label == "Model" }?.value == "GPT Image 2.5 Sunburst (gpt-image-2.5-sunburst)")
+        #expect(VersionDetailsContent.modelText("x-1", name: "x-1 (custom)") == "x-1 (custom)")
     }
 
     @Test func revisedPromptAndMissingUsage() {

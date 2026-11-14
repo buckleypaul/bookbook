@@ -221,6 +221,9 @@ struct GenerationConfirmFlow<Action: Sendable> {
     /// The estimate the cost decision is made on.
     let estimate: @MainActor (Action) -> CostEstimate
     let perform: @MainActor (Action) -> Void
+    /// The cost alert's question without its "?" ("Check this picture"), so it matches the
+    /// button (`CostConfirmKind.question`).
+    var question: @MainActor (Action) -> String = { _ in "Generate" }
 
     /// The notice first when one is needed, then the cost decision.
     func start(_ action: Action) {
@@ -258,9 +261,12 @@ struct GenerationConfirmFlow<Action: Sendable> {
 
     private func confirmCostThenPerform(_ action: Action) {
         let current = estimate(action)
+        let asking = question(action)
         let flow = self
         Task {
-            if let text = await flow.app.costAlertText(for: current, in: flow.document) {
+            let (decision, spent) = await flow.app.costDecisionAndSpent(for: current, in: flow.document)
+            if let text = CostText.requestAlert(estimate: current, decision: decision, spent: spent,
+                                                budget: flow.document.content.book.budget, question: asking) {
                 flow.pending.wrappedValue = PendingConfirmation(action: action, step: .cost(text))
             } else {
                 // No alert: the cost is settled, but the book may have changed during the read.
@@ -287,7 +293,7 @@ private struct GenerationConfirmModifier<Action: Sendable>: ViewModifier {
                                           onCancel: { pending.wrappedValue = nil })
                 }
             }
-            .alert("Confirm Cost",
+            .alert("Confirm cost",
                    isPresented: Binding(get: { pending.wrappedValue?.costMessage != nil },
                                         set: { if !$0, pending.wrappedValue?.costMessage != nil {
                                             pending.wrappedValue = nil
@@ -303,15 +309,15 @@ private struct GenerationConfirmModifier<Action: Sendable>: ViewModifier {
 }
 
 extension View {
-    /// The real-person notice sheet and the "Confirm Cost" alert for `flow`.
+    /// The real-person notice sheet and the "Confirm cost" alert for `flow`.
     func generationConfirmation<Action: Sendable>(_ flow: GenerationConfirmFlow<Action>,
                                                   buttonTitle: @escaping (Action) -> String) -> some View {
         modifier(GenerationConfirmModifier(flow: flow, buttonTitle: buttonTitle))
     }
 
-    /// "Couldn't Complete That" with `problem` as the message.
+    /// "Couldn't complete that" with `problem` as the message.
     func problemAlert(_ problem: Binding<String?>) -> some View {
-        alert("Couldn't Complete That", isPresented: problem.isPresent()) {
+        alert("Couldn't complete that", isPresented: problem.isPresent()) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(problem.wrappedValue ?? "")

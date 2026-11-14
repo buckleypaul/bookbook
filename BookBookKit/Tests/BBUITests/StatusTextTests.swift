@@ -13,8 +13,8 @@ struct ProviderErrorTextTests {
     }
 
     @Test func missingAndInvalidKey_pointToSettings() {
-        #expect(ProviderErrorText.message(for: .missingKey) == "Add your OpenAI key in Settings ▸ API Keys.")
-        #expect(ProviderErrorText.message(for: .invalidKey(nil)).contains("Add your OpenAI key in Settings ▸ API Keys."))
+        #expect(ProviderErrorText.message(for: .missingKey) == "Add your OpenAI API key in Settings ▸ API Keys.")
+        #expect(ProviderErrorText.message(for: .invalidKey(nil)).contains("OpenAI API key in Settings ▸ API Keys."))
     }
 
     @Test func refused() {

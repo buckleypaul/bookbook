@@ -34,7 +34,7 @@ struct Phase16bSessionTests {
         #expect(CostConfirmKind.generate.buttonTitle == "Generate")
         #expect(CostConfirmKind.checkConsistency.buttonTitle == "Check")
         #expect(CostConfirmKind.fixConsistency.buttonTitle == "Fix")
-        #expect(CostConfirmKind.regionEdit.buttonTitle == "Edit")
+        #expect(CostConfirmKind.regionEdit.buttonTitle == "Edit Region")
     }
 
     @Test func batchAlertNamesTheCover() {

@@ -24,16 +24,17 @@ public enum CostText {
     public static func basisLabel(_ basis: CostBasis) -> String { basis == .actual ? "actual" : "estimate" }
 
     /// The alert text before one request, or nil when neither the threshold nor the budget applies.
-    /// Both can apply; the answer never blocks (A §7.10).
+    /// Both can apply; the answer never blocks (A §7.10). `question` names the action without its
+    /// question mark ("Check this picture"), so the alert asks about what the button does.
     public static func requestAlert(estimate: CostEstimate, decision: CostDecision, spent: Decimal,
-                                    budget: Decimal?) -> String? {
+                                    budget: Decimal?, question: String = "Generate") -> String? {
         var parts: [String] = []
         if decision.needsConfirmation { parts.append("This request is \(Self.estimate(estimate)).") }
         if decision.overBudget, let budget {
             parts.append("This book has spent \(amount(spent)) of its \(amount(budget)) budget.")
         }
         guard !parts.isEmpty else { return nil }
-        parts.append(decision.overBudget ? "Generate anyway?" : "Generate?")
+        parts.append(decision.overBudget ? "\(question) anyway?" : "\(question)?")
         return parts.joined(separator: " ")
     }
 

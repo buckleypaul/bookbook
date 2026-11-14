@@ -22,9 +22,9 @@ public enum ProviderErrorText {
         case .offline:
             "Offline — check your internet connection, then try again."
         case .missingKey:
-            "Add your OpenAI key in Settings ▸ API Keys."
+            UnavailableText.noKey
         case .invalidKey:
-            "OpenAI didn't accept the key. Add your OpenAI key in Settings ▸ API Keys."
+            "OpenAI didn't accept the key. Check your OpenAI API key in Settings ▸ API Keys."
         case .refused:
             "The request was blocked by the provider's safety system. Try rephrasing."
         case .verificationRequired:
@@ -75,7 +75,7 @@ public enum StoreErrorText {
         case .schemaTooNew: "This book was made with a newer version of BookBook."
         case .keychain: "The Keychain couldn't be updated."
         case .locked(let owner): "This book is open in BookBook on \(owner.host)."
-        case .readOnly: "This book is open read-only, so changes can't be saved."
+        case .readOnly: UnavailableText.readOnly
         }
     }
 

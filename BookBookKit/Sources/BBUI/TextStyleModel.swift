@@ -161,7 +161,7 @@ public final class TextStyleModel {
         }
         guard let provider = app.textStyleProvider else {
             return fail(FailureAdvice(headline: "AI text styling isn't available",
-                                      explanation: "No provider is set up for text styling. Add your API key in Settings."))
+                                      explanation: "No provider is set up for text styling. " + UnavailableText.noKey))
         }
         guard let model = model(app) else {
             return fail(FailureAdvice(

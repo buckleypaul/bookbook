@@ -257,19 +257,22 @@ struct SessionPanel: View {
             if let base, let version = session.version(base) {
                 consistencySection(version, session: session)
                 let reason = regionEditReason(for: version)
-                HStack {
+                WrappingRow(spacing: 8, lineSpacing: 6) {
                     Button("Export Image…") { export(version, in: session) }
                     Button("Edit Region…") { startRegionEdit(version) }
                         .disabled(reason != nil)
                         .help(reason ?? "Select an area of this picture and describe the change.")
-                    Button("Delete…", role: .destructive) { pendingDelete = version.id }
+                    Button("Delete Version…", role: .destructive) { pendingDelete = version.id }
                         .disabled(!document.isEditable)
                 }
                 .controlSize(.small)
                 .buttonBorderShape(.capsule)
-                if let reason {
+                if let reason, reason != panelBlocker {
                     Text(reason).font(.caption).foregroundStyle(Crayon.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if let panelBlocker {
+                    CrayonInlineMessage(panelBlocker, kind: .info)
                 }
             }
         }
@@ -297,7 +300,7 @@ struct SessionPanel: View {
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .symbolRenderingMode(.palette)
-                            .foregroundStyle(Crayon.ink, Crayon.sunflower)
+                            .foregroundStyle(Crayon.onSunflower, Crayon.sunflower)
                     }
                     .font(Crayon.font(.caption, weight: .heavy))
                     ForEach(Array(ConsistencyPresentation.lines(report).enumerated()), id: \.offset) { _, line in
@@ -309,23 +312,34 @@ struct SessionPanel: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Crayon.sunflower.opacity(0.18),
-                            in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous)
                     .strokeBorder(Crayon.sunflower.opacity(0.7), lineWidth: 1.5))
             } else if let report = version.consistency {
-                StatusPill(color: Crayon.grass, systemImage: "checkmark.seal") {
-                    Text(ConsistencyPresentation.resultText(report))
+                if report.differences.isEmpty {
+                    StatusPill(color: Crayon.grass, systemImage: "checkmark.seal") {
+                        Text(ConsistencyPresentation.resultText(report))
+                    }
+                } else {
+                    // Differences the user dismissed (or that didn't warn): not a green "all clear".
+                    StatusPill(color: Crayon.inkSoft, systemImage: "info.circle") {
+                        Text(ConsistencyPresentation.resultText(report))
+                    }
                 }
             }
             if !checking, let entry = app.consistencyCheckEntry(versionID: version.id),
                case .failed = entry.state, let advice = app.advice(for: entry) {
                 FailureAdviceView(advice: advice)
             }
-            HStack {
+            WrappingRow(spacing: 8, lineSpacing: 6) {
                 if let report = version.consistency, report.showsWarning {
+                    let fixEstimate = app.consistencyFixIntent(bookID: document.id, sessionID: session.id,
+                                                               versionID: version.id)
+                        .map { app.estimate(for: $0, target: target, in: document) }
                     Button("Fix") { startConsistencyFix(version, sessionID: session.id) }
-                        .disabled(!document.isEditable || !app.hasOpenAIKey || !app.isOnline)
-                        .help("Refine this picture to match the references.")
+                        .disabled(panelBlocker != nil)
+                        .help(panelBlocker ?? Self.withEstimate("Refine this picture to match the references.",
+                                                                fixEstimate))
                     Button("Dismiss") {
                         _ = app.setConsistencyWarningDismissed(true, sessionID: session.id, versionID: version.id,
                                                                in: document)
@@ -342,14 +356,32 @@ struct SessionPanel: View {
                     checkThenPerform(.checkConsistency(session: session.id, version: version.id))
                 }
                 .disabled(reason != nil)
-                .help(reason ?? "Compare this picture with the images of the assets in it.")
+                .help(reason ?? Self.withEstimate(
+                    "Compare this picture with the images of the assets in it.",
+                    app.consistencyCheckEstimate(bookID: document.id, sessionID: session.id, versionID: version.id)))
             }
             .controlSize(.small)
             .buttonBorderShape(.capsule)
-            if let reason, !checking {
+            // Read-only, offline and no key are said once for the panel (`panelBlocker`).
+            if let reason, !checking, reason != panelBlocker {
                 Text(reason).font(.caption).foregroundStyle(Crayon.inkSoft).fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// What stops every AI and editing action on this panel (read-only, offline, no key), said once
+    /// under the version actions instead of under each one; nil when nothing does.
+    private var panelBlocker: String? {
+        if !document.isEditable { return UnavailableText.readOnly }
+        if !app.isOnline { return UnavailableText.offline }
+        if !app.hasOpenAIKey { return UnavailableText.noKey }
+        return nil
+    }
+
+    /// A paid action's tooltip with its estimate (PD §5: the estimate is shown before sending).
+    static func withEstimate(_ help: String, _ estimate: CostEstimate?) -> String {
+        guard let estimate else { return help }
+        return help + " Estimated cost: \(CostText.estimate(estimate))."
     }
 
     private func startConsistencyFix(_ version: Version, sessionID: SessionID) {
@@ -430,12 +462,18 @@ struct SessionPanel: View {
             DisclosureGroup(isExpanded: $detailsExpanded) {
                 VersionDetailsGrid(version: version, session: session, bookID: document.id, assets: content.assets)
                 if version.provenance != nil {
-                    Button("Regenerate with Same Settings") {
-                        regenerate(version)
+                    WrappingRow(spacing: 8, lineSpacing: 6) {
+                        Button("Regenerate with Same Settings") {
+                            regenerate(version)
+                        }
+                        .controlSize(.small)
+                        .buttonBorderShape(.capsule)
+                        .disabled(panelBlocker != nil)
+                        .help(panelBlocker ?? "Make a new picture from the same prompt, references and settings.")
+                        if app.isOnline, let estimate = app.regenerateEstimate(version, target: target, in: document) {
+                            CostEstimatePill(estimate: estimate)
+                        }
                     }
-                    .controlSize(.small)
-                    .buttonBorderShape(.capsule)
-                    .disabled(!document.isEditable || !app.hasOpenAIKey || !app.isOnline)
                     .padding(.top, 6)
                 }
             } label: {
@@ -445,7 +483,7 @@ struct SessionPanel: View {
             }
             .padding(12)
             .background(Crayon.paperDeep,
-                        in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous))
         }
     }
 
@@ -592,7 +630,8 @@ struct SessionPanel: View {
     private var confirmFlow: GenerationConfirmFlow<PendingGeneration> {
         GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
                               notice: { noticeProvider(for: $0) },
-                              estimate: { costEstimate(for: $0) }, perform: { perform($0) })
+                              estimate: { costEstimate(for: $0) }, perform: { perform($0) },
+                              question: { $0.kind.question })
     }
 
     /// The provider whose real-person notice `action` needs first; nil = none.
@@ -702,22 +741,36 @@ enum RegionEditEntry {
                                    refusal: RegionEditRefusal?) -> String? {
         if !isEditable { return RegionEditRefusal.readOnly.message }
         if let refusal { return refusal.message }
-        if !isOnline { return "Region editing needs an internet connection." }
-        if !hasKey { return "Add your OpenAI API key in Settings to edit a region." }
+        if !isOnline { return UnavailableText.offline }
+        if !hasKey { return UnavailableText.noKey }
         return nil
     }
 }
 
 /// Which request a cost confirmation guards, so its button names the action (not always "Generate").
 enum CostConfirmKind: Equatable {
-    case generate, regionEdit, fixConsistency, checkConsistency
+    case generate, regionEdit, fixConsistency, checkConsistency, textStyle, repaint
 
     var buttonTitle: String {
         switch self {
         case .generate: "Generate"
-        case .regionEdit: "Edit"
+        case .regionEdit: "Edit Region"
         case .fixConsistency: "Fix"
         case .checkConsistency: "Check"
+        case .textStyle: "Style"
+        case .repaint: "Repaint"
+        }
+    }
+
+    /// The cost alert's closing question, without its "?" (`CostText.requestAlert`).
+    var question: String {
+        switch self {
+        case .generate: "Generate this picture"
+        case .regionEdit: "Edit this region"
+        case .fixConsistency: "Fix this picture"
+        case .checkConsistency: "Check this picture"
+        case .textStyle: "Style this text"
+        case .repaint: "Repaint this decoration"
         }
     }
 }

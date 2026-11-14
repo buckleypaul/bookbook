@@ -34,11 +34,11 @@ public enum ConsistencyPresentation {
     /// Why Check Consistency is unavailable, or nil.
     public static func checkUnavailableReason(canCheck: Bool, isEditable: Bool, isOnline: Bool, hasKey: Bool,
                                               isPending: Bool) -> String? {
-        if !isEditable { return "This book is read-only." }
+        if !isEditable { return UnavailableText.readOnly }
         if isPending { return "A check of this picture is already queued." }
         if !canCheck { return "No vision model is available. Choose one in Settings ▸ Models." }
-        if !isOnline { return "Checking needs an internet connection." }
-        if !hasKey { return "Add your OpenAI API key in Settings to check consistency." }
+        if !isOnline { return UnavailableText.offline }
+        if !hasKey { return UnavailableText.noKey }
         return nil
     }
 

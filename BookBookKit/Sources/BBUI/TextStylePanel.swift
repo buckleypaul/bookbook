@@ -85,7 +85,7 @@ struct TextStylePanel: View {
         } message: {
             Text("The chat clears. Discarding versions also removes this box's style. This can't be undone.")
         }
-        .generationConfirmation(confirmFlow) { _ in "Style" }
+        .generationConfirmation(confirmFlow) { $0.kind.buttonTitle }
         .problemAlert($problem)
     }
 
@@ -341,7 +341,8 @@ struct TextStylePanel: View {
 
     private var confirmFlow: GenerationConfirmFlow<PendingStyle> {
         GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
-                              notice: { notice(for: $0) }, estimate: { cost(of: $0) }, perform: { perform($0) })
+                              notice: { notice(for: $0) }, estimate: { cost(of: $0) }, perform: { perform($0) },
+                              question: { $0.kind.question })
     }
 
     private func notice(for action: PendingStyle) -> ProviderID? {
@@ -397,6 +398,13 @@ struct TextStylePanel: View {
     }
 
     private enum PendingStyle: Sendable {
+        var kind: CostConfirmKind {
+            switch self {
+            case .style: .textStyle
+            case .repaint: .repaint
+            }
+        }
+
         case style(String, quality: QualityLevel, refines: VersionID?)
         /// Paint the decoration again with the version's stored design.
         case repaint(Version)

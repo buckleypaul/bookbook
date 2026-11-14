@@ -31,7 +31,7 @@ public enum RegionEditRefusal: Error, Hashable, Sendable {
         case let .maskUnsupported(model):
             "\(model) can't edit part of a picture. Choose a model that supports region editing in Settings."
         case .baseVersionGone: "The picture you were editing is no longer there."
-        case .readOnly: "This book is open in another BookBook window, so it can't be changed here."
+        case .readOnly: UnavailableText.readOnly
         case .realPersonNoticeNeeded:
             "This request now includes a photo of a real person. Try again to review the notice before it's sent."
         case let .store(text): "The selected area couldn't be saved: \(text)"

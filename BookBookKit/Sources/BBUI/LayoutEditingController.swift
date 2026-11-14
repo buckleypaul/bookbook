@@ -123,7 +123,7 @@ final class LayoutEditingController: CanvasController {
         // The trim line, the bleed and each page's safe area are `PageRenderer`'s screen guides
         // (the same as the page canvas); this overlay adds selection, handles and snap guides.
         let boxes = editableBoxes(template, geometry)
-        let accent = NSColor.controlAccentColor.cgColor
+        let accent = NSColor(Crayon.tomato).cgColor
         for box in boxes where model.selection.contains(box.id) {
             ctx.saveGState()
             ctx.rotate(byDegrees: box.rotationDegrees, about: box.rect)
@@ -162,7 +162,7 @@ final class LayoutEditingController: CanvasController {
 
         // Live snap guides.
         if !model.activeGuides.isEmpty {
-            ctx.setStrokeColor(NSColor.systemPink.cgColor)
+            ctx.setStrokeColor(NSColor(Crayon.grape).cgColor)
             ctx.setLineWidth(1 / s)
             for guide in model.activeGuides {
                 switch guide.axis {

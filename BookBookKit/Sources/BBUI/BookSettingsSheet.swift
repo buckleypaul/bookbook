@@ -34,7 +34,7 @@ struct BookSettingsSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Book Settings").font(.headline)
+            CrayonHeader("Book Settings", color: Crayon.sunflower)
             Form {
                 TextField("Title", text: $title)
                 TextField("Author", text: $author)
@@ -42,28 +42,18 @@ struct BookSettingsSheet: View {
             .disabled(!document.isEditable)
             Text("The title and author appear on the cover and the title page.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Crayon.inkSoft)
             Divider()
             costSection
             Divider()
             storageSection
             if let error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
+                CrayonInlineMessage(error, kind: .error, textStyle: .callout)
             }
-            HStack {
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save", action: save)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!document.isEditable || trimmedTitle.isEmpty || saving
-                              || CostText.parse(budgetText) == .invalid)
-            }
+            CrayonSheetFooter("Save", isDisabled: !document.isEditable || trimmedTitle.isEmpty || saving
+                              || CostText.parse(budgetText) == .invalid, action: save)
         }
-        .padding(20)
-        .frame(width: 460)
+        .crayonSheet(width: 460)
         .task { summary = await app.ledgerSummary(for: document.id) }
         .task { await storage.refresh(document, protecting: protectedVersions) }
     }
@@ -73,7 +63,7 @@ struct BookSettingsSheet: View {
     @ViewBuilder
     private var storageSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Storage").font(.headline)
+            Text("Storage").font(Crayon.font(.headline, weight: .heavy))
             HStack {
                 Text("Size on disk")
                 Spacer()
@@ -83,16 +73,16 @@ struct BookSettingsSheet: View {
                 Button("Clean Up…") { confirmCleanUp = true }
                     .disabled(!document.isEditable || storage.plan.isEmpty || storage.isWorking)
                 if storage.plan.isEmpty {
-                    Text("Nothing to clean up").font(.caption).foregroundStyle(.secondary)
+                    Text("Nothing to clean up.").font(.caption).foregroundStyle(Crayon.inkSoft)
                 } else {
                     Text("\(storage.plan.versionIDs.count) unused \(storage.plan.versionIDs.count == 1 ? "version" : "versions"), frees \(StorageModel.bytes(storage.plan.bytesFreed))")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(Crayon.inkSoft)
                 }
             }
             Text("Clean Up deletes versions that aren't starred and aren't used on a page or as an asset's picture.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(Crayon.inkSoft)
         }
-        .alert("Delete \(storage.plan.versionIDs.count) unused versions?", isPresented: $confirmCleanUp) {
+        .alert("Delete \(storage.plan.versionIDs.count) unused \(storage.plan.versionIDs.count == 1 ? "version" : "versions")?", isPresented: $confirmCleanUp) {
             Button("Delete", role: .destructive) {
                 Task {
                     if let message = await storage.cleanUp(document, protecting: protectedVersions) { error = message }
@@ -109,7 +99,7 @@ struct BookSettingsSheet: View {
     @ViewBuilder
     private var costSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Cost").font(.headline)
+            Text("Cost").font(Crayon.font(.headline, weight: .heavy))
             HStack {
                 Text("Spent so far")
                 Spacer()
@@ -118,7 +108,7 @@ struct BookSettingsSheet: View {
             ForEach(CostKind.allCases, id: \.self) { kind in
                 if let amount = summary.byKind[kind], amount != 0 {
                     HStack {
-                        Text(Self.costLabel(kind)).foregroundStyle(.secondary)
+                        Text(Self.costLabel(kind)).foregroundStyle(Crayon.inkSoft)
                         Spacer()
                         Text(CostText.amount(amount)).monospacedDigit()
                     }
@@ -127,11 +117,11 @@ struct BookSettingsSheet: View {
             }
             if summary.includesEstimates {
                 Text(Self.estimatesCaption)
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(Crayon.inkSoft)
             }
             if summary.skippedLines > 0 {
                 Text(Self.skippedLinesText(summary.skippedLines))
-                    .font(.caption).foregroundStyle(.orange)
+                    .font(.caption).foregroundStyle(Crayon.warning)
             }
             HStack {
                 Text("Budget  $")
@@ -140,10 +130,10 @@ struct BookSettingsSheet: View {
                     .frame(width: 80)
                     .multilineTextAlignment(.trailing)
                     .disabled(!document.isEditable)
-                Text("Leave empty for no budget.").font(.caption).foregroundStyle(.secondary)
+                Text("Leave empty for no budget.").font(.caption).foregroundStyle(Crayon.inkSoft)
             }
             if CostText.parse(budgetText) == .invalid {
-                Text("Enter an amount such as 25, or leave it empty.").font(.caption).foregroundStyle(.red)
+                CrayonInlineMessage("Enter an amount such as 25, or leave it empty.", kind: .error)
             }
             if !summary.recent.isEmpty {
                 DisclosureGroup("Recent Requests") {
@@ -152,12 +142,12 @@ struct BookSettingsSheet: View {
                             ForEach(summary.recent) { record in
                                 HStack(alignment: .firstTextBaseline) {
                                     Text(record.at.formatted(date: .abbreviated, time: .shortened))
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(Crayon.inkSoft)
                                     Text(CostText.kindName(record.kind))
                                     Text(record.model + (record.quality.map { " · " + VersionDetailsContent.qualityName($0) } ?? ""))
-                                        .foregroundStyle(.secondary).lineLimit(1)
+                                        .foregroundStyle(Crayon.inkSoft).lineLimit(1)
                                     Spacer()
-                                    Text(CostText.statusName(record.status)).foregroundStyle(.secondary)
+                                    Text(CostText.statusName(record.status)).foregroundStyle(Crayon.inkSoft)
                                     Text(CostText.record(record)).monospacedDigit()
                                 }
                                 .font(.caption)

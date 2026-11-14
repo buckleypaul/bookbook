@@ -191,32 +191,21 @@ struct ImportFromBookSheet: View {
             case .rename: renameStep(clashes: clashes)
             }
             if let error = model.error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
+                CrayonInlineMessage(error, kind: .warning, textStyle: .callout)
             }
-            HStack {
+            CrayonSheetFooter(model.step == .rename || clashes.isEmpty ? "Import" : "Continue", color: Crayon.grape,
+                              isDisabled: model.step == .rename ? !model.canImport(clashes: clashes) : !model.canContinue) {
+                Task {
+                    await model.advance()
+                    if model.isDone { dismiss() }
+                }
+            } leading: {
                 if model.isWorking { ProgressView().controlSize(.small) }
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                if model.step == .rename {
-                    Button("Back") { model.back() }
-                }
-                Button(model.step == .rename || clashes.isEmpty ? "Import" : "Continue") {
-                    Task {
-                        await model.advance()
-                        if model.isDone { dismiss() }
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.crayon(Crayon.grape))
-                .disabled(model.step == .rename ? !model.canImport(clashes: clashes) : !model.canContinue)
+            } secondary: {
+                if model.step == .rename { Button("Back") { model.back() } }
             }
         }
-        .padding(20)
-        .frame(width: 480)
-        .crayonPaper()
+        .crayonSheet(width: 480)
     }
 
     // MARK: Choose
@@ -225,7 +214,7 @@ struct ImportFromBookSheet: View {
     private var chooseStep: some View {
         if otherBooks.isEmpty {
             Text("There are no other books in your library to import from.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Crayon.inkSoft)
         } else {
             Picker("Source book", selection: $chosenBook) {
                 Text("Choose a book").tag(BookID?.none)
@@ -240,7 +229,7 @@ struct ImportFromBookSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                     if model.sourceAssets.isEmpty && model.sourceTemplates.isEmpty {
-                        Text("This book has no assets or templates.").foregroundStyle(.secondary)
+                        Text("This book has no assets or templates.").foregroundStyle(Crayon.inkSoft)
                     }
                     if !model.sourceAssets.isEmpty {
                         Text("Assets").font(Crayon.font(.subheadline, weight: .heavy))
@@ -248,7 +237,7 @@ struct ImportFromBookSheet: View {
                             Toggle(isOn: binding(asset: asset.id)) {
                                 HStack {
                                     Text(asset.name.isEmpty ? "Untitled" : asset.name)
-                                    Text(AssetTypeText.name(asset.type)).foregroundStyle(.secondary)
+                                    Text(AssetTypeText.name(asset.type)).foregroundStyle(Crayon.inkSoft)
                                 }
                             }
                         }
@@ -265,11 +254,11 @@ struct ImportFromBookSheet: View {
                         set: { model.selection.styleGuide = $0 }))
                     ForEach(model.demotedTemplates) { template in
                         Text("\(template.name) will be kept as a regular template: this book already has a page with that role.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(Crayon.inkSoft)
                     }
                     if model.selection.styleGuide {
                         Text("Replaces this book's style guide (page size is kept). You can undo it.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(Crayon.inkSoft)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -278,7 +267,7 @@ struct ImportFromBookSheet: View {
             .frame(height: 240)
             .crayonCard(cornerRadius: Crayon.smallCornerRadius)
             Text("Imports are independent copies: editing one doesn't change the other.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(Crayon.inkSoft)
         }
     }
 
@@ -297,19 +286,19 @@ struct ImportFromBookSheet: View {
     @ViewBuilder
     private func renameStep(clashes: [BookImportClash]) -> some View {
         Text("These names are already used in this book. Give each copy a new name.")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Crayon.inkSoft)
         let stillClashing = Set(clashes.map(\.item))
         ForEach(model.renameItems) { clash in
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(model.kindLabel(of: clash.item)).foregroundStyle(.secondary)
+                    Text(model.kindLabel(of: clash.item)).foregroundStyle(Crayon.inkSoft)
                         .frame(width: 80, alignment: .leading)
                     TextField(model.name(of: clash.item), text: Binding(
                         get: { model.renames[clash.item] ?? "" },
                         set: { model.renames[clash.item] = $0 }))
                 }
                 if stillClashing.contains(clash.item) {
-                    Text("That name is already used.").font(.caption).foregroundStyle(.red)
+                    CrayonInlineMessage("That name is already used.", kind: .error)
                 }
             }
         }

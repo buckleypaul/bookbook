@@ -314,7 +314,7 @@ public final class TemplateChatModel {
         let images = template.boxes.filter { if case .image = $0.content { true } else { false } }.count
         let texts = template.boxes.count - images
         var parts: [String] = []
-        if images > 0 { parts.append(images == 1 ? "1 picture box" : "\(images) picture boxes") }
+        if images > 0 { parts.append(images == 1 ? "1 image box" : "\(images) image boxes") }
         if texts > 0 { parts.append(texts == 1 ? "1 text box" : "\(texts) text boxes") }
         let boxes = parts.joined(separator: " and ")
         return designed ? "Made “\(template.name)” with \(boxes)." : "Updated the layout: \(boxes)."

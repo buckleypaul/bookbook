@@ -50,8 +50,12 @@ struct TemplateChatPanel: View {
             TemplateChatThread(document: document, chat: chat, template: template)
                 .id(template.id)
         } else {
-            CrayonEmptyState("No Layout Open", systemImage: "rectangle.3.group", color: Crayon.sky,
-                             message: "Choose a layout, or use New › New Layout with AI.")
+            Text("No layout selected. Choose one, or use New › New Layout with AI.")
+                .font(Crayon.font(.callout, weight: .medium))
+                .foregroundStyle(Crayon.inkSoft)
+                .multilineTextAlignment(.center)
+                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -63,6 +67,8 @@ private struct TemplateChatThread: View {
     let template: Template
     @State private var estimate: CostEstimate?
     @FocusState private var composerFocused: Bool
+    @State private var confirmStop = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var id: TemplateID { template.id }
 
@@ -83,14 +89,16 @@ private struct TemplateChatThread: View {
                             row(message).id(message.id)
                         }
                         if chat.isRunning(id) {
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
-                                Text(template.boxes.isEmpty ? "Designing the layout…" : "Changing the layout…")
-                                    .font(Crayon.font(.callout, weight: .medium))
-                                    .foregroundStyle(Crayon.inkSoft)
+                            HStack {
+                                StatusPill(color: Crayon.sky) {
+                                    ProgressView().controlSize(.small)
+                                } label: {
+                                    Text(template.boxes.isEmpty ? "Designing the layout…" : "Changing the layout…")
+                                }
                                 Spacer()
-                                Button("Stop") { chat.cancel(id) }
+                                Button("Stop") { confirmStop = true }
                                     .controlSize(.small)
+                                    .buttonBorderShape(.capsule)
                             }
                             .id("running")
                         }
@@ -99,10 +107,10 @@ private struct TemplateChatThread: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .onChange(of: messages.count) {
-                    withAnimation { proxy.scrollTo(messages.last?.id, anchor: .bottom) }
+                    withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo(messages.last?.id, anchor: .bottom) }
                 }
                 .onChange(of: chat.isRunning(id)) { _, running in
-                    if running { withAnimation { proxy.scrollTo("running", anchor: .bottom) } }
+                    if running { withAnimation(reduceMotion ? nil : .default) { proxy.scrollTo("running", anchor: .bottom) } }
                 }
             }
             Divider()
@@ -223,19 +231,17 @@ private struct TemplateChatThread: View {
             }
         }
         .disabled(!document.isEditable)
+        .confirmationDialog("Stop this request?", isPresented: $confirmStop, titleVisibility: .visible) {
+            Button("Stop Request", role: .destructive) { chat.cancel(id) }
+            Button("Keep Running", role: .cancel) {}
+        } message: {
+            Text(QueueView.cancelNotice)
+        }
     }
 
     private var field: some View {
         TextField(template.boxes.isEmpty ? "Describe the layout" : "Describe a change", text: text, axis: .vertical)
-            .lineLimit(2...6)
-            .textFieldStyle(.plain)
-            .font(Crayon.font(.body, weight: .regular))
-            .foregroundStyle(Crayon.ink)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(Crayon.paper, in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
-                .strokeBorder(Crayon.ink.opacity(0.12), lineWidth: 1.5))
+            .crayonComposerField()
             .focused($composerFocused)
             .onSubmit(send)
             .onChange(of: EstimateKey(text: trimmed, boxes: template.boxes, messages: chat.messages(for: id).count),
@@ -245,6 +251,7 @@ private struct TemplateChatThread: View {
     }
 
     private var footer: some View {
+        VStack(alignment: .leading, spacing: 6) {
         HStack {
             Text(chat.model(app)?.displayName ?? "No layout model is set. Choose one in Settings.")
                 .font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
@@ -257,7 +264,9 @@ private struct TemplateChatThread: View {
             Button(!app.isOnline ? "Offline" : "Send", action: send)
                 .buttonStyle(.crayon)
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(trimmed.isEmpty || chat.isRunning(id) || chat.model(app) == nil || !app.isOnline)
+                .disabled(trimmed.isEmpty || chat.isRunning(id) || chat.model(app) == nil || !app.isOnline || !app.hasOpenAIKey)
+        }
+        GenerationSetupNotes()
         }
     }
 
@@ -270,7 +279,7 @@ private struct TemplateChatThread: View {
                 .foregroundStyle(Crayon.ink)
             if overBudget {
                 Text("This book is already over its budget.")
-                    .font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(.orange)
+                    .font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.warning)
             }
             HStack {
                 Spacer()
@@ -289,7 +298,7 @@ private struct TemplateChatThread: View {
     }
 
     private func send() {
-        guard !trimmed.isEmpty, !chat.isRunning(id), app.isOnline else { return }
+        guard !trimmed.isEmpty, !chat.isRunning(id), app.isOnline, app.hasOpenAIKey else { return }
         chat.submit(trimmed, to: id, app: app)
     }
 

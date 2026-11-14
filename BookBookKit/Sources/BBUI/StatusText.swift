@@ -4,6 +4,16 @@ import BBModel
 import BBStore
 import Foundation
 
+/// One wording per reason an AI or editing action is unavailable, so every panel says the same
+/// thing (the Generate note, Edit Region…, Check Consistency, provider and store errors).
+public enum UnavailableText {
+    public static let noKey = "Add your OpenAI API key in Settings ▸ API Keys."
+    public static let offline = "You're offline. AI requests need an internet connection."
+    /// Read-only books are usually locked by another copy of BookBook (`LockAdviceText`), but
+    /// not always, so this doesn't say why.
+    public static let readOnly = "This book is open read-only, so it can't be changed."
+}
+
 /// Plain-language lines for provider errors (A §7.11; the full `RefusalAdvisor` is Phase 9).
 /// Provider wording is never shown here.
 public enum ProviderErrorText {

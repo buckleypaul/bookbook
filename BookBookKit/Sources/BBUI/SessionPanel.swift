@@ -495,33 +495,34 @@ struct SessionPanel: View {
                 }
             }
             attachments
-            HStack {
-                QualityPicker(selection: Binding(get: { quality ?? app.defaults.quality }, set: { quality = $0 }))
+            // The inspector is narrow (about 260 pt) and doesn't widen with the window: one control
+            // per row wherever a label could otherwise wrap.
+            HStack(spacing: 8) {
+                QualityPicker(selection: Binding(get: { quality ?? app.defaults.quality }, set: { quality = $0 }),
+                              showsLabel: false)
                 Button {
                     showImporter = true
                 } label: {
-                    Label("Choose Image…", systemImage: "photo.badge.plus")
+                    Image(systemName: "photo.badge.plus")
                 }
                 .buttonBorderShape(.capsule)
-                .help("Use an image file from your Mac as a version for this box")
+                .help("Choose an image file from your Mac as a version for this box.")
+                .accessibilityLabel("Choose Image…")
                 .disabled(!document.isEditable)
-                Spacer()
-                Toggle("Include story text", isOn: Binding(get: { includeStoryText ?? app.defaults.includeStoryText },
-                                                           set: { includeStoryText = $0 }))
-                    .toggleStyle(.checkbox)
-                    .font(.caption)
+                Spacer(minLength: 0)
             }
-            HStack {
-                Text(app.defaultModelName).font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
-                Spacer()
-                if app.isOnline { CostEstimatePill(estimate: estimate) }
+            Toggle("Include story text", isOn: Binding(get: { includeStoryText ?? app.defaults.includeStoryText },
+                                                       set: { includeStoryText = $0 }))
+                .toggleStyle(.checkbox)
+                .font(.caption)
+            ComposerSendRow(modelName: app.defaultModelName, estimate: app.isOnline ? estimate : nil) {
                 Button(!app.isOnline ? "Offline" : (number.map { "Refine Version \($0)" } ?? "Generate")) {
                     generate(refining: base)
                 }
-                    .buttonStyle(.crayon)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey
-                              || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .buttonStyle(.crayon)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey
+                          || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             GenerationSetupNotes()
         }
@@ -529,7 +530,7 @@ struct SessionPanel: View {
 
     /// "Reference another image…" and the chips of what's attached to the next request.
     private var attachments: some View {
-        HStack(spacing: 6) {
+        WrappingRow(spacing: 6, lineSpacing: 6) {
             Button {
                 showReferencePicker = true
             } label: {

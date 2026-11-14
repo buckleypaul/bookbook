@@ -127,6 +127,7 @@ struct SessionPanel: View {
         .sheet(item: $regionEditing) { subject in
             RegionEditorSheet(imageData: subject.imageData, pixelSize: subject.version.pixelSize,
                               modelName: app.defaultModelName,
+                              estimate: app.isOnline ? regionEditEstimate(for: subject.version) : nil,
                               onCancel: { regionEditing = nil },
                               onSubmit: { drawing, text in
                                   regionEditing = nil
@@ -403,6 +404,16 @@ struct SessionPanel: View {
             return
         }
         regionEditing = RegionEditSubject(version: version, imageData: data)
+    }
+
+    /// The estimate shown in the region editor before the edit is sent: the same one the cost
+    /// confirmation uses (`costEstimate(for:)`), made on the intent without the typed text.
+    private func regionEditEstimate(for version: Version) -> CostEstimate {
+        let intent = app.generationIntent(prompt: MentionText.tokenizing("", assets: Array(content.assets.values)),
+                                          quality: quality ?? app.defaults.quality,
+                                          includeStoryText: storyText, refines: version.id,
+                                          attachedReferences: liveAttached)
+        return app.estimate(for: intent, target: target, in: document)
     }
 
     private func submitRegionEdit(_ version: Version, drawing: RegionMaskDrawing, prompt text: String) {

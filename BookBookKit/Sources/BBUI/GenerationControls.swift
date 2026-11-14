@@ -183,7 +183,7 @@ struct PendingConfirmation<Action: Sendable>: Identifiable, Sendable {
     enum Step: Sendable {
         /// The real-person notice for this provider (once per provider and book, A §11).
         case notice(ProviderID)
-        /// The "Confirm Cost" alert with this text (A §7.10).
+        /// The "Confirm cost" alert with this text (A §7.10).
         case cost(String)
     }
 
@@ -230,7 +230,7 @@ struct GenerationConfirmFlow<Action: Sendable> {
         proceed(action, costConfirmed: false)
     }
 
-    /// The "Confirm Cost" button: performs `confirmation`'s action unless the notice became
+    /// The "Confirm cost" button: performs `confirmation`'s action unless the notice became
     /// needed meanwhile, in which case the notice is shown instead.
     func confirmCost(_ confirmation: PendingConfirmation<Action>) {
         if pending.wrappedValue?.id == confirmation.id { pending.wrappedValue = nil }

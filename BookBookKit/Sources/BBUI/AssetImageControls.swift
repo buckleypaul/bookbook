@@ -245,7 +245,8 @@ struct AssetImageControls: View {
         GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
                               notice: { app.realPersonNoticeNeeded(intent: $0, target: target, in: document) },
                               estimate: { app.estimate(for: $0, target: target, in: document) },
-                              perform: { enqueue($0) })
+                              perform: { enqueue($0) },
+                              question: { _ in CostConfirmKind.generate.question })
     }
 
     private func enqueue(_ intent: GenerationIntent) {

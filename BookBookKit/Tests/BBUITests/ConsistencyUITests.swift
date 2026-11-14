@@ -50,7 +50,7 @@ import Testing
         let rows = VersionDetailsContent.rows(for: version, dateFormatter: { _ in "D" })
         let labels = rows.map(\.label)
         for expected in ["Check model", "Checked", "Check result", "Differences", "Check prompt sent",
-                         "Check images sent", "Check parameter detail", "Check parameter store", "Check cost"] {
+                         "Check images sent", "Check parameters sent", "Check cost"] {
             #expect(labels.contains(expected), "missing \(expected)")
         }
         #expect(rows.first { $0.label == "Check images sent" }?.value == "Checked image (checked)")

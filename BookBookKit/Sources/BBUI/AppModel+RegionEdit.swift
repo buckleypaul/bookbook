@@ -27,11 +27,11 @@ public enum RegionEditRefusal: Error, Hashable, Sendable {
         case .emptyPrompt: "Describe the change you want in the selected area."
         case .emptyMask: "Select an area of the picture to change first."
         case let .sizeMismatch(expected, actual):
-            "The selection (\(actual.width)x\(actual.height)) doesn't match the picture (\(expected.width)x\(expected.height)). Select the area again."
+            "The selection (\(actual.width) × \(actual.height)) doesn't match the picture (\(expected.width) × \(expected.height)). Select the area again."
         case let .maskUnsupported(model):
             "\(model) can't edit part of a picture. Choose a model that supports region editing in Settings."
         case .baseVersionGone: "The picture you were editing is no longer there."
-        case .readOnly: "This book is open in another BookBook window, so it can't be changed here."
+        case .readOnly: UnavailableText.readOnly
         case .realPersonNoticeNeeded:
             "This request now includes a photo of a real person. Try again to review the notice before it's sent."
         case let .store(text): "The selected area couldn't be saved: \(text)"

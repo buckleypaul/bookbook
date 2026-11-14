@@ -34,11 +34,11 @@ public enum ConsistencyPresentation {
     /// Why Check Consistency is unavailable, or nil.
     public static func checkUnavailableReason(canCheck: Bool, isEditable: Bool, isOnline: Bool, hasKey: Bool,
                                               isPending: Bool) -> String? {
-        if !isEditable { return "This book is read-only." }
+        if !isEditable { return UnavailableText.readOnly }
         if isPending { return "A check of this picture is already queued." }
         if !canCheck { return "No vision model is available. Choose one in Settings ▸ Models." }
-        if !isOnline { return "Checking needs an internet connection." }
-        if !hasKey { return "Add your OpenAI API key in Settings to check consistency." }
+        if !isOnline { return UnavailableText.offline }
+        if !hasKey { return UnavailableText.noKey }
         return nil
     }
 
@@ -55,8 +55,9 @@ public enum ConsistencyPresentation {
         }
         rows.append(DetailRow(label: "Check prompt sent", value: report.sent.promptSent))
         rows.append(DetailRow(label: "Check images sent", value: VersionDetailsContent.references(report.sent.imagesSent)))
-        for key in report.sent.parametersSent.keys.sorted() {
-            rows.append(DetailRow(label: "Check parameter \(key)", value: report.sent.parametersSent[key] ?? ""))
+        if !report.sent.parametersSent.isEmpty {
+            rows.append(DetailRow(label: "Check parameters sent",
+                                  value: VersionDetailsContent.parametersText(report.sent.parametersSent)))
         }
         rows.append(DetailRow(label: "Check cost", value: cost.map(CostText.record) ?? "—"))
         if let usage = report.usage {

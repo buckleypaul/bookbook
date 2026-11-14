@@ -4,6 +4,16 @@ import BBModel
 import BBStore
 import Foundation
 
+/// One wording per reason an AI or editing action is unavailable, so every panel says the same
+/// thing (the Generate note, Edit Region…, Check Consistency, provider and store errors).
+public enum UnavailableText {
+    public static let noKey = "Add your OpenAI API key in Settings ▸ API Keys."
+    public static let offline = "You're offline. AI requests need an internet connection."
+    /// Read-only books are usually locked by another copy of BookBook (`LockAdviceText`), but
+    /// not always, so this doesn't say why.
+    public static let readOnly = "This book is open read-only, so it can't be changed."
+}
+
 /// Plain-language lines for provider errors (A §7.11; the full `RefusalAdvisor` is Phase 9).
 /// Provider wording is never shown here.
 public enum ProviderErrorText {
@@ -12,9 +22,9 @@ public enum ProviderErrorText {
         case .offline:
             "Offline — check your internet connection, then try again."
         case .missingKey:
-            "Add your OpenAI key in Settings ▸ API Keys."
+            UnavailableText.noKey
         case .invalidKey:
-            "OpenAI didn't accept the key. Add your OpenAI key in Settings ▸ API Keys."
+            "OpenAI didn't accept the key. Check your OpenAI API key in Settings ▸ API Keys."
         case .refused:
             "The request was blocked by the provider's safety system. Try rephrasing."
         case .verificationRequired:
@@ -65,7 +75,7 @@ public enum StoreErrorText {
         case .schemaTooNew: "This book was made with a newer version of BookBook."
         case .keychain: "The Keychain couldn't be updated."
         case .locked(let owner): "This book is open in BookBook on \(owner.host)."
-        case .readOnly: "This book is open read-only, so changes can't be saved."
+        case .readOnly: UnavailableText.readOnly
         }
     }
 
@@ -83,11 +93,14 @@ public enum ElapsedTimeText {
         return "\(total / 60):" + String(format: "%02d", total % 60)
     }
 
-    /// `0:42 of ~1:10`, or just `0:42` when the typical duration is unknown. Used by the
-    /// session thread, the Queue window and the sidebar badge.
+    /// `0:42 of ~1:10`; once past the typical duration `2:10 (usually ~1:10)`; just `0:42` when
+    /// the typical duration is unknown. Used by the session thread, the Queue window and the
+    /// sidebar badge.
     public static func progress(elapsed: TimeInterval, typical: Double?) -> String {
         guard let typical, typical > 0 else { return clock(elapsed) }
-        return "\(clock(elapsed)) of ~\(clock(typical))"
+        let shown = clock(elapsed)
+        if max(0, elapsed.rounded(.down)) > typical.rounded(.down) { return "\(shown) (usually ~\(clock(typical)))" }
+        return "\(shown) of ~\(clock(typical))"
     }
 }
 

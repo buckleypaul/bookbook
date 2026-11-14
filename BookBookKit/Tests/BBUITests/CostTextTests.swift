@@ -47,14 +47,20 @@ import Testing
         #expect(CostText.requestAlert(estimate: est, decision: .init(needsConfirmation: true, overBudget: true),
                                       spent: 5, budget: 4)
                 == "This request is about $0.21. This book has spent $5.00 of its $4.00 budget. Generate anyway?")
+        #expect(CostText.requestAlert(estimate: est, decision: .init(needsConfirmation: true, overBudget: false),
+                                      spent: 1, budget: nil, question: CostConfirmKind.checkConsistency.question)
+                == "This request is about $0.21. Check this picture?")
+        #expect(CostText.requestAlert(estimate: est, decision: .init(needsConfirmation: false, overBudget: true),
+                                      spent: 5, budget: 4, question: CostConfirmKind.regionEdit.question)
+                == "This book has spent $5.00 of its $4.00 budget. Edit this region anyway?")
     }
 
     @Test func batchAlertAlwaysStatesCountAndCost() {
         let est = CostEstimate(amount: Decimal(string: "0.30")!)
         #expect(CostText.batchAlert(count: 5, estimate: est, decision: .init(needsConfirmation: false, overBudget: false),
-                                    spent: 0, budget: nil) == "5 requests, about $0.30.")
+                                    spent: 0, budget: nil) == "5 pictures, about $0.30.")
         #expect(CostText.batchAlert(count: 1, estimate: .unknown, decision: .init(needsConfirmation: false, overBudget: false),
-                                    spent: 0, budget: nil) == "1 request, cost unknown.")
+                                    spent: 0, budget: nil) == "1 picture, cost unknown.")
     }
 
     @Test func parsesMoneyFields() {

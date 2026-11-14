@@ -8,7 +8,7 @@ struct FailureAdviceView: View {
     @State private var showDetails = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous)
         VStack(alignment: .leading, spacing: 5) {
             Label {
                 Text(advice.headline).foregroundStyle(Crayon.ink)

@@ -18,10 +18,13 @@ public enum VersionDetailsContent {
     public static func rows(for version: Version, in session: Session? = nil,
                             cost: CostRecord? = nil, assets: [AssetID: Asset] = [:],
                             checkCost: CostRecord? = nil, designCost: CostRecord? = nil,
-                            dateFormatter: (Date) -> String = defaultDate) -> [DetailRow] {
-        var rows = baseRows(for: version, in: session, cost: cost, assets: assets, dateFormatter: dateFormatter)
+                            dateFormatter: (Date) -> String = defaultDate,
+                            modelName: (ProviderID, String) -> String? = { _, _ in nil }) -> [DetailRow] {
+        var rows = baseRows(for: version, in: session, cost: cost, assets: assets, modelName: modelName,
+                            dateFormatter: dateFormatter)
         if let style = version.textStyle {
-            rows += textStyleRows(style, cost: designCost, isVersionCost: style.call.cost == version.provenance?.cost)
+            rows += textStyleRows(style, cost: designCost, isVersionCost: style.call.cost == version.provenance?.cost,
+                                  modelName: modelName)
         }
         if let report = version.consistency {
             rows += ConsistencyPresentation.detailRows(report, cost: checkCost, dateFormatter: dateFormatter)
@@ -30,7 +33,8 @@ public enum VersionDetailsContent {
     }
 
     private static func baseRows(for version: Version, in session: Session?, cost: CostRecord?,
-                                 assets: [AssetID: Asset], dateFormatter: (Date) -> String) -> [DetailRow] {
+                                 assets: [AssetID: Asset], modelName: (ProviderID, String) -> String?,
+                                 dateFormatter: (Date) -> String) -> [DetailRow] {
         var rows: [DetailRow] = []
         if let session, let number = session.versionNumber(version.id) {
             rows.append(DetailRow(label: "Version", value: "v\(number)"))
@@ -44,7 +48,7 @@ public enum VersionDetailsContent {
             if let real = version.depictsRealPerson {
                 rows.append(DetailRow(label: "Real person photo", value: real ? "Yes" : "No"))
             }
-            rows.append(DetailRow(label: "Size", value: version.pixelSize.description))
+            rows.append(DetailRow(label: "Size", value: sizeText(version.pixelSize)))
             rows.append(DetailRow(label: "Date", value: dateFormatter(version.createdAt)))
             return rows
         }
@@ -52,15 +56,15 @@ public enum VersionDetailsContent {
             rows.append(DetailRow(label: "Source", value: sourceName(version.source)))
         }
         rows.append(DetailRow(label: "Provider", value: providerName(p.provider)))
-        rows.append(DetailRow(label: "Model", value: p.model))
+        rows.append(DetailRow(label: "Model", value: modelText(p.model, name: modelName(p.provider, p.model))))
         rows.append(DetailRow(label: "Quality", value: qualityName(p.quality)))
-        rows.append(DetailRow(label: "Output size", value: p.outputSize.description))
+        rows.append(DetailRow(label: "Output size", value: sizeText(p.outputSize)))
         rows.append(DetailRow(label: "Your request",
                               value: MentionText.displayText(p.intent.messageText, assets: assets,
                                                              fallback: deletedAssetName)))
         rows.append(DetailRow(label: "Prompt sent", value: p.promptSent))
-        for key in p.parametersSent.keys.sorted() {
-            rows.append(DetailRow(label: "Parameter \(key)", value: p.parametersSent[key] ?? ""))
+        if !p.parametersSent.isEmpty {
+            rows.append(DetailRow(label: "Parameters sent", value: parametersText(p.parametersSent)))
         }
         if !p.assetRevisions.isEmpty {
             rows.append(DetailRow(label: "Assets", value: assetList(p.assetRevisions, assets: assets)))
@@ -72,13 +76,13 @@ public enum VersionDetailsContent {
         if p.maskSent != nil || p.intent.regionMask != nil {
             // Region edit (A §7.6): the mask went with the base image; the version is the local composite.
             rows.append(DetailRow(label: "Mask sent",
-                                  value: "\(version.pixelSize.width)x\(version.pixelSize.height) mask (transparent = edit area)"))
+                                  value: "\(sizeText(version.pixelSize)) mask (transparent = edit area)"))
         }
         if p.rawOutput != nil {
             let step = p.parametersSent[GenerationQueue.localWhiteKeyParameter] == "true"
                 ? "before its white background was made transparent" : "before blending into the original"
             rows.append(DetailRow(label: "Raw provider output",
-                                  value: "\(p.outputSize.width)x\(p.outputSize.height) image, \(step)"))
+                                  value: "\(sizeText(p.outputSize)) image, \(step)"))
         }
         if let feather = p.featherPixels {
             rows.append(DetailRow(label: "Feather", value: "\(featherText(feather)) px"))
@@ -90,14 +94,17 @@ public enum VersionDetailsContent {
         if let revised = p.revisedPrompt, !revised.isEmpty {
             rows.append(DetailRow(label: "Revised prompt", value: revised))
         }
-        rows.append(DetailRow(label: "Image size", value: version.pixelSize.description))
+        if version.pixelSize != p.outputSize {
+            rows.append(DetailRow(label: "Image size", value: sizeText(version.pixelSize)))
+        }
         rows.append(DetailRow(label: "Date", value: dateFormatter(version.createdAt)))
         return rows
     }
 
     /// AI text styling (A §7.13): the design the text model chose and everything sent to it.
     /// For a typography-only version the rows above describe this same request.
-    static func textStyleRows(_ style: TextStyleIntent, cost: CostRecord?, isVersionCost: Bool) -> [DetailRow] {
+    static func textStyleRows(_ style: TextStyleIntent, cost: CostRecord?, isVersionCost: Bool,
+                              modelName: (ProviderID, String) -> String? = { _, _ in nil }) -> [DetailRow] {
         var rows: [DetailRow] = [DetailRow(label: "Design", value: style.summary)]
         let s = style.styling
         rows.append(DetailRow(label: "Font", value: s.font?.postScriptName ?? "Unchanged"))
@@ -107,14 +114,16 @@ public enum VersionDetailsContent {
         rows.append(DetailRow(label: "Text inset", value: "\(Int((s.insetFraction * 100).rounded()))% of the box"))
         rows.append(DetailRow(label: "Panel", value: s.background.map(hex) ?? "None"))
         rows.append(DetailRow(label: "Decoration", value: style.decorationPrompt ?? "None (typography only)"))
-        rows.append(DetailRow(label: "Design model", value: "\(providerName(style.call.provider)) \(style.call.model)"))
+        rows.append(DetailRow(label: "Design model",
+                              value: "\(providerName(style.call.provider)) "
+                                  + modelText(style.call.model, name: modelName(style.call.provider, style.call.model))))
         rows.append(DetailRow(label: "Design system prompt", value: style.call.system))
         rows.append(DetailRow(label: "Design prompt", value: style.call.user))
-        for key in style.call.parametersSent.keys.sorted() {
-            rows.append(DetailRow(label: "Design parameter \(key)", value: style.call.parametersSent[key] ?? ""))
+        if !style.call.parametersSent.isEmpty {
+            rows.append(DetailRow(label: "Design parameters sent", value: parametersText(style.call.parametersSent)))
         }
         rows.append(DetailRow(label: "Design usage", value: style.call.usage.map(usageText) ?? "Not reported"))
-        rows.append(DetailRow(label: "Design cost", value: isVersionCost ? "The Cost above" : cost.map(CostText.record) ?? "—"))
+        rows.append(DetailRow(label: "Design cost", value: isVersionCost ? "Included in Cost" : cost.map(CostText.record) ?? "—"))
         return rows
     }
 
@@ -175,8 +184,24 @@ public enum VersionDetailsContent {
         return (known + (gone > 0 ? ["\(gone) deleted asset\(gone == 1 ? "" : "s")"] : [])).joined(separator: ", ")
     }
 
+    /// Two lines: "Input: 120 text, 56 image tokens (0 cached)" and "Output: 0 text, 4160 image tokens".
     static func usageText(_ u: TokenUsage) -> String {
-        "input text \(u.inputTextTokens), input image \(u.inputImageTokens), cached \(u.cachedInputTokens), "
-            + "output text \(u.outputTextTokens), output image \(u.outputImageTokens) tokens"
+        "Input: \(u.inputTextTokens) text, \(u.inputImageTokens) image tokens (\(u.cachedInputTokens) cached)\n"
+            + "Output: \(u.outputTextTokens) text, \(u.outputImageTokens) image tokens"
+    }
+
+    /// The parameters sent, one "key: value" line each, by key.
+    static func parametersText(_ parameters: [String: String]) -> String {
+        parameters.keys.sorted().map { "\($0): \(parameters[$0] ?? "")" }.joined(separator: "\n")
+    }
+
+    /// "1024 × 1536".
+    static func sizeText(_ size: PixelSize) -> String { "\(size.width) × \(size.height)" }
+
+    /// "GPT Image 2.5 Sunburst (gpt-image-2.5-sunburst)"; the bare ID when the catalog doesn't
+    /// know the model any more; the name alone when it already includes the ID (custom models).
+    static func modelText(_ id: String, name: String?) -> String {
+        guard let name else { return id }
+        return name.contains(id) ? name : "\(name) (\(id))"
     }
 }

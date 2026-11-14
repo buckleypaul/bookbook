@@ -133,7 +133,7 @@ struct SessionPanel: View {
                                   submitRegionEdit(subject.version, drawing: drawing, prompt: text)
                               })
         }
-        .confirmationDialog("Delete this version?", isPresented: $pendingDelete.isPresent(), titleVisibility: .visible) {
+        .confirmationDialog(deleteTitle, isPresented: $pendingDelete.isPresent(), titleVisibility: .visible) {
             Button("Delete Version", role: .destructive) {
                 if let id = pendingDelete { delete(id) }
                 pendingDelete = nil
@@ -153,34 +153,35 @@ struct SessionPanel: View {
         .problemAlert($problem)
     }
 
+    /// "Delete version 2?"
+    private var deleteTitle: String {
+        let number = pendingDelete.flatMap { id in session?.versionNumber(id) }
+        return number.map { "Delete version \($0)?" } ?? "Delete this version?"
+    }
+
     private var deleteMessage: String {
         let placed = pendingDelete != nil && pendingDelete == placedID
-        let note = "It is on the page, so the box will be empty. "
+        let note = "It's on the page, so the box will be empty. "
         return (placed ? note : "") + "This can't be undone."
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(Crayon.sky)
-                .frame(width: 10, height: 10)
-                .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
-                .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1)
-                .accessibilityHidden(true)
-            Text("Session")
-                .font(Crayon.font(.headline, weight: .heavy))
-                .foregroundStyle(Crayon.ink)
+            CrayonHeader(Self.headerTitle(page: pageID, box: boxID, in: content), color: Crayon.sky)
             Spacer()
             Menu {
                 Button("Choose Image…") { showImporter = true }
+                    .disabled(!document.isEditable)
                 Divider()
                 Button("Reset Session…", role: .destructive) { confirmReset = true }
+                    .disabled(!document.isEditable)
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .foregroundStyle(Crayon.inkSoft)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .help("Session actions")
             .accessibilityLabel("Session actions")
         }
         .padding(.horizontal)
@@ -213,7 +214,7 @@ struct SessionPanel: View {
         ForEach(messages) { message in
             VStack(alignment: .leading, spacing: 5) {
                 if let refines = message.refines, let number = session.versionNumber(refines) {
-                    Label("refined version \(number)", systemImage: "arrow.triangle.branch")
+                    Label("Refined version \(number)", systemImage: "arrow.triangle.branch")
                         .font(Crayon.font(.caption, weight: .semibold)).foregroundStyle(Crayon.grape)
                 }
                 Text(MentionText.displayText(message.text, assets: content.assets,
@@ -250,22 +251,27 @@ struct SessionPanel: View {
                          onEditRegion: { startRegionEdit($0) },
                          regionEditReason: { regionEditReason(for: $0) },
                          onDelete: { pendingDelete = $0.id },
+                         isEditable: document.isEditable,
                          isChecking: { app.isConsistencyCheckPending(versionID: $0.id) })
             if let base, let version = session.version(base) {
                 consistencySection(version, session: session)
                 let reason = regionEditReason(for: version)
-                HStack {
+                WrappingRow(spacing: 8, lineSpacing: 6) {
                     Button("Export Image…") { export(version, in: session) }
                     Button("Edit Region…") { startRegionEdit(version) }
                         .disabled(reason != nil)
                         .help(reason ?? "Select an area of this picture and describe the change.")
-                    Button("Delete…", role: .destructive) { pendingDelete = version.id }
+                    Button("Delete Version…", role: .destructive) { pendingDelete = version.id }
+                        .disabled(!document.isEditable)
                 }
                 .controlSize(.small)
                 .buttonBorderShape(.capsule)
-                if let reason {
+                if let reason, reason != panelBlocker {
                     Text(reason).font(.caption).foregroundStyle(Crayon.inkSoft)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                if let panelBlocker {
+                    CrayonInlineMessage(panelBlocker, kind: .info)
                 }
             }
         }
@@ -293,7 +299,7 @@ struct SessionPanel: View {
                     } icon: {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .symbolRenderingMode(.palette)
-                            .foregroundStyle(Crayon.ink, Crayon.sunflower)
+                            .foregroundStyle(Crayon.onSunflower, Crayon.sunflower)
                     }
                     .font(Crayon.font(.caption, weight: .heavy))
                     ForEach(Array(ConsistencyPresentation.lines(report).enumerated()), id: \.offset) { _, line in
@@ -305,23 +311,34 @@ struct SessionPanel: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Crayon.sunflower.opacity(0.18),
-                            in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous)
                     .strokeBorder(Crayon.sunflower.opacity(0.7), lineWidth: 1.5))
             } else if let report = version.consistency {
-                StatusPill(color: Crayon.grass, systemImage: "checkmark.seal") {
-                    Text(ConsistencyPresentation.resultText(report))
+                if report.differences.isEmpty {
+                    StatusPill(color: Crayon.grass, systemImage: "checkmark.seal") {
+                        Text(ConsistencyPresentation.resultText(report))
+                    }
+                } else {
+                    // Differences the user dismissed (or that didn't warn): not a green "all clear".
+                    StatusPill(color: Crayon.inkSoft, systemImage: "info.circle") {
+                        Text(ConsistencyPresentation.resultText(report))
+                    }
                 }
             }
             if !checking, let entry = app.consistencyCheckEntry(versionID: version.id),
                case .failed = entry.state, let advice = app.advice(for: entry) {
                 FailureAdviceView(advice: advice)
             }
-            HStack {
+            WrappingRow(spacing: 8, lineSpacing: 6) {
                 if let report = version.consistency, report.showsWarning {
+                    let fixEstimate = app.consistencyFixIntent(bookID: document.id, sessionID: session.id,
+                                                               versionID: version.id)
+                        .map { app.estimate(for: $0, target: target, in: document) }
                     Button("Fix") { startConsistencyFix(version, sessionID: session.id) }
-                        .disabled(!document.isEditable || !app.hasOpenAIKey || !app.isOnline)
-                        .help("Refine this picture to match the references.")
+                        .disabled(panelBlocker != nil)
+                        .help(panelBlocker ?? Self.withEstimate("Refine this picture to match the references.",
+                                                                fixEstimate))
                     Button("Dismiss") {
                         _ = app.setConsistencyWarningDismissed(true, sessionID: session.id, versionID: version.id,
                                                                in: document)
@@ -338,14 +355,32 @@ struct SessionPanel: View {
                     checkThenPerform(.checkConsistency(session: session.id, version: version.id))
                 }
                 .disabled(reason != nil)
-                .help(reason ?? "Compare this picture with the images of the assets in it.")
+                .help(reason ?? Self.withEstimate(
+                    "Compare this picture with the images of the assets in it.",
+                    app.consistencyCheckEstimate(bookID: document.id, sessionID: session.id, versionID: version.id)))
             }
             .controlSize(.small)
             .buttonBorderShape(.capsule)
-            if let reason, !checking {
+            // Read-only, offline and no key are said once for the panel (`panelBlocker`).
+            if let reason, !checking, reason != panelBlocker {
                 Text(reason).font(.caption).foregroundStyle(Crayon.inkSoft).fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// What stops every AI and editing action on this panel (read-only, offline, no key), said once
+    /// under the version actions instead of under each one; nil when nothing does.
+    private var panelBlocker: String? {
+        if !document.isEditable { return UnavailableText.readOnly }
+        if !app.isOnline { return UnavailableText.offline }
+        if !app.hasOpenAIKey { return UnavailableText.noKey }
+        return nil
+    }
+
+    /// A paid action's tooltip with its estimate (PD §5: the estimate is shown before sending).
+    static func withEstimate(_ help: String, _ estimate: CostEstimate?) -> String {
+        guard let estimate else { return help }
+        return help + " Estimated cost: \(CostText.estimate(estimate))."
     }
 
     private func startConsistencyFix(_ version: Version, sessionID: SessionID) {
@@ -372,7 +407,9 @@ struct SessionPanel: View {
 
     private func submitRegionEdit(_ version: Version, drawing: RegionMaskDrawing, prompt text: String) {
         let request = RegionEditRequest(version: version, drawing: drawing,
-                                        intent: app.generationIntent(prompt: text, quality: quality ?? app.defaults.quality,
+                                        intent: app.generationIntent(prompt: MentionText.tokenizing(
+                                                                         text, assets: Array(content.assets.values)),
+                                                                     quality: quality ?? app.defaults.quality,
                                                                      includeStoryText: storyText, refines: version.id,
                                                                      attachedReferences: liveAttached))
         checkThenPerform(.regionEdit(request))
@@ -426,12 +463,18 @@ struct SessionPanel: View {
             DisclosureGroup(isExpanded: $detailsExpanded) {
                 VersionDetailsGrid(version: version, session: session, bookID: document.id, assets: content.assets)
                 if version.provenance != nil {
-                    Button("Regenerate with Same Settings") {
-                        regenerate(version)
+                    WrappingRow(spacing: 8, lineSpacing: 6) {
+                        Button("Regenerate with Same Settings") {
+                            regenerate(version)
+                        }
+                        .controlSize(.small)
+                        .buttonBorderShape(.capsule)
+                        .disabled(panelBlocker != nil)
+                        .help(panelBlocker ?? "Make a new picture from the same prompt, references and settings.")
+                        if app.isOnline, let estimate = app.regenerateEstimate(version, target: target, in: document) {
+                            CostEstimatePill(estimate: estimate)
+                        }
                     }
-                    .controlSize(.small)
-                    .buttonBorderShape(.capsule)
-                    .disabled(!app.hasOpenAIKey || !app.isOnline)
                     .padding(.top, 6)
                 }
             } label: {
@@ -441,7 +484,7 @@ struct SessionPanel: View {
             }
             .padding(12)
             .background(Crayon.paperDeep,
-                        in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius + 2, style: .continuous))
+                        in: RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous))
         }
     }
 
@@ -462,15 +505,7 @@ struct SessionPanel: View {
             TextField(number.map { "Describe the change to version \($0)" }
                       ?? "Describe the picture (type @ to mention an asset)",
                       text: $prompt, axis: .vertical)
-                .lineLimit(2...6)
-                .textFieldStyle(.plain)
-                .font(Crayon.font(.body, weight: .regular))
-                .foregroundStyle(Crayon.ink)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(Crayon.paper, in: RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous)
-                    .strokeBorder(Crayon.ink.opacity(0.12), lineWidth: 1.5))
+                .crayonComposerField()
                 .onSubmit {
                     if let query, let first = suggestions.first {
                         prompt = MentionCompletion.insert(first, replacing: query, in: prompt)
@@ -491,33 +526,34 @@ struct SessionPanel: View {
                 }
             }
             attachments
-            HStack {
-                QualityPicker(selection: Binding(get: { quality ?? app.defaults.quality }, set: { quality = $0 }))
+            // The inspector is narrow (about 260 pt) and doesn't widen with the window: one control
+            // per row wherever a label could otherwise wrap.
+            HStack(spacing: 8) {
+                QualityPicker(selection: Binding(get: { quality ?? app.defaults.quality }, set: { quality = $0 }),
+                              showsLabel: false)
                 Button {
                     showImporter = true
                 } label: {
-                    Label("Choose Image…", systemImage: "photo.badge.plus")
+                    Image(systemName: "photo.badge.plus")
                 }
                 .buttonBorderShape(.capsule)
-                .help("Use an image file from your Mac as a version for this box")
+                .help("Choose an image file from your Mac as a version for this box.")
+                .accessibilityLabel("Choose Image…")
                 .disabled(!document.isEditable)
-                Spacer()
-                Toggle("Include story text", isOn: Binding(get: { includeStoryText ?? app.defaults.includeStoryText },
-                                                           set: { includeStoryText = $0 }))
-                    .toggleStyle(.checkbox)
-                    .font(.caption)
+                Spacer(minLength: 0)
             }
-            HStack {
-                Text(app.defaultModelName).font(Crayon.font(.caption, weight: .medium)).foregroundStyle(Crayon.inkSoft)
-                Spacer()
-                if app.isOnline { CostEstimatePill(estimate: estimate) }
+            Toggle("Include story text", isOn: Binding(get: { includeStoryText ?? app.defaults.includeStoryText },
+                                                       set: { includeStoryText = $0 }))
+                .toggleStyle(.checkbox)
+                .font(.caption)
+            ComposerSendRow(modelName: app.defaultModelName, estimate: app.isOnline ? estimate : nil) {
                 Button(!app.isOnline ? "Offline" : (number.map { "Refine Version \($0)" } ?? "Generate")) {
                     generate(refining: base)
                 }
-                    .buttonStyle(.crayon)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!app.isOnline || !app.hasOpenAIKey
-                              || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .buttonStyle(.crayon)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey
+                          || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             GenerationSetupNotes()
         }
@@ -525,7 +561,7 @@ struct SessionPanel: View {
 
     /// "Reference another image…" and the chips of what's attached to the next request.
     private var attachments: some View {
-        HStack(spacing: 6) {
+        WrappingRow(spacing: 6, lineSpacing: 6) {
             Button {
                 showReferencePicker = true
             } label: {
@@ -533,6 +569,7 @@ struct SessionPanel: View {
             }
             .controlSize(.small)
             .buttonBorderShape(.capsule)
+            .disabled(!document.isEditable)
             ForEach(liveAttached, id: \.self) { ref in
                 HStack(spacing: 3) {
                     Text(ReferenceSources.chipLabel(ref, in: content) ?? "Image").lineLimit(1)
@@ -543,6 +580,7 @@ struct SessionPanel: View {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(Crayon.sky)
                     }
                     .buttonStyle(.plain)
+                    .help("Remove reference")
                     .accessibilityLabel("Remove reference")
                 }
                 .font(Crayon.font(.caption, weight: .semibold))
@@ -564,7 +602,7 @@ struct SessionPanel: View {
     }
 
     private func generate(refining base: VersionID?) {
-        guard app.hasOpenAIKey, app.isOnline,
+        guard document.isEditable, app.hasOpenAIKey, app.isOnline,
               !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let intent = app.generationIntent(prompt: storedPrompt, quality: quality ?? app.defaults.quality,
                                           includeStoryText: storyText, refines: base,
@@ -574,7 +612,7 @@ struct SessionPanel: View {
 
     /// "Regenerate with Same Settings" goes through the same checks as Generate.
     private func regenerate(_ version: Version) {
-        guard app.hasOpenAIKey, app.isOnline, version.provenance != nil else { return }
+        guard document.isEditable, app.hasOpenAIKey, app.isOnline, version.provenance != nil else { return }
         checkThenPerform(.regenerate(version))
     }
 
@@ -586,7 +624,8 @@ struct SessionPanel: View {
     private var confirmFlow: GenerationConfirmFlow<PendingGeneration> {
         GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
                               notice: { noticeProvider(for: $0) },
-                              estimate: { costEstimate(for: $0) }, perform: { perform($0) })
+                              estimate: { costEstimate(for: $0) }, perform: { perform($0) },
+                              question: { $0.kind.question })
     }
 
     /// The provider whose real-person notice `action` needs first; nil = none.
@@ -696,23 +735,48 @@ enum RegionEditEntry {
                                    refusal: RegionEditRefusal?) -> String? {
         if !isEditable { return RegionEditRefusal.readOnly.message }
         if let refusal { return refusal.message }
-        if !isOnline { return "Region editing needs an internet connection." }
-        if !hasKey { return "Add your OpenAI API key in Settings to edit a region." }
+        if !isOnline { return UnavailableText.offline }
+        if !hasKey { return UnavailableText.noKey }
         return nil
     }
 }
 
 /// Which request a cost confirmation guards, so its button names the action (not always "Generate").
 enum CostConfirmKind: Equatable {
-    case generate, regionEdit, fixConsistency, checkConsistency
+    case generate, regionEdit, fixConsistency, checkConsistency, textStyle, repaint
 
     var buttonTitle: String {
         switch self {
         case .generate: "Generate"
-        case .regionEdit: "Edit"
+        case .regionEdit: "Edit Region"
         case .fixConsistency: "Fix"
         case .checkConsistency: "Check"
+        case .textStyle: "Style"
+        case .repaint: "Repaint"
         }
+    }
+
+    /// The cost alert's closing question, without its "?" (`CostText.requestAlert`).
+    var question: String {
+        switch self {
+        case .generate: "Generate this picture"
+        case .regionEdit: "Edit this region"
+        case .fixConsistency: "Fix this picture"
+        case .checkConsistency: "Check this picture"
+        case .textStyle: "Style this text"
+        case .repaint: "Repaint this decoration"
+        }
+    }
+}
+
+extension SessionPanel {
+    /// The panel's title: the box it's for, as the Queue window names it ("Image", "Image 2",
+    /// "Cover Image"). The number is left out when the page has one image box.
+    static func headerTitle(page pageID: PageID, box boxID: BoxID, in content: BookContent) -> String {
+        let display = DraftAllPlanner.display(page: pageID, box: boxID, in: content)
+        let count = content.pages[pageID].flatMap { content.template(for: $0) }?.imageBoxes.count ?? 0
+        let box = count > 1 ? display.boxLabel : "Image"
+        return pageID == content.book.coverPageID ? "Cover \(box)" : box
     }
 }
 

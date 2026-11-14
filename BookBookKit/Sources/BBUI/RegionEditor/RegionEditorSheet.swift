@@ -46,8 +46,8 @@ public struct RegionEditorSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous))
             footer
         }
-        .frame(idealWidth: 920, idealHeight: 720)
-        .crayonSheet(minWidth: 720, minHeight: 600)
+        // A sheet opens at its minimum size, and the tool row needs about 900 pt for its labels.
+        .crayonSheet(minWidth: 920, minHeight: 700)
         .background(localUndoShortcuts)
         .onChange(of: PricingKey(prompt: model.trimmedPrompt, isPriced: estimate != nil), initial: true) { _, key in
             pricedEstimate = key.isPriced ? estimate?(key.prompt) : nil

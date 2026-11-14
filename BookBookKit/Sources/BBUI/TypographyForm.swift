@@ -37,7 +37,7 @@ struct TypographyForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Typography").font(.headline)
+            CrayonHeader("Typography", color: Crayon.grape)
             Form {
                 fontPicker("Body font", selection: $draft.bodyFont)
                 fontPicker("Title font", selection: $draft.titleFont)
@@ -68,19 +68,18 @@ struct TypographyForm: View {
                     .labelsHidden()
                 }
             }
+            .disabled(!document.isEditable)
             if !document.missingFonts.isEmpty {
                 Text("Missing: \(document.missingFonts.joined(separator: ", "))")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(Crayon.inkSoft)
             }
-            HStack {
+            CrayonSheetDoneFooter(color: Crayon.grape, action: { finish() }, leading: {
                 Button("Import Font…") { showImporter = true }
-                Spacer()
-                Button("Done") { finish() }.keyboardShortcut(.defaultAction)
-            }
+                    .disabled(!document.isEditable)
+            })
         }
-        .padding(16)
-        .frame(width: 420)
-        .disabled(!document.isEditable)
+        .crayonSheet(width: 420)
+        .onExitCommand { finish() }
         .onChange(of: current) { _, new in
             draft = new
             sizeText = String(format: "%g", new.bodySize)
@@ -95,10 +94,13 @@ struct TypographyForm: View {
             switch result {
             case .success(let url): importFont(url)
             case .failure(let error):
-                alert = FontAlert(title: "Couldn't import the font", message: error.localizedDescription)
+                alert = FontAlert(title: "Couldn't import the font", message: StoreErrorText.message(for: error))
             }
         }
-        .alert(item: $alert) { Alert(title: Text($0.title), message: Text($0.message)) }
+        .alert(alert?.title ?? "", isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } }),
+               presenting: alert) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { Text($0.message) }
     }
 
     static let fontTypes: [UTType] =
@@ -167,7 +169,7 @@ struct TypographyForm: View {
                         message: "\(info.familyName)'s licence doesn't allow embedding it in a PDF. It will show on screen, but exported PDFs can't include it.")
                 }
             } catch {
-                alert = FontAlert(title: "Couldn't import the font", message: "\(error)")
+                alert = FontAlert(title: "Couldn't import the font", message: StoreErrorText.message(for: error))
             }
         }
     }

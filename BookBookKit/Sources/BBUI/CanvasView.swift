@@ -89,7 +89,7 @@ extension CanvasController {
 ///
 /// HOT SPOT (plan §2.5): one lane at a time.
 @MainActor
-final class CanvasView: NSView {
+final class CanvasView: NSView, NSViewToolTipOwner {
     /// The active mode.
     var controller: (any CanvasController)? {
         didSet {
@@ -214,11 +214,21 @@ final class CanvasView: NSView {
     /// The tooltips now installed (see `CanvasController.tips`).
     private(set) var tips: [CanvasTip] = []
 
+    /// Each installed tooltip's text, by tag: the view is the tooltips' owner (`addToolTip`
+    /// doesn't retain its owner, so a string passed as the owner could be freed).
+    private(set) var tipTexts: [NSView.ToolTipTag: String] = [:]
+
     private func updateTips(_ new: [CanvasTip]) {
         guard new != tips else { return }
         tips = new
         removeAllToolTips()
-        for tip in new { addToolTip(tip.viewRect, owner: tip.text as NSString, userData: nil) }
+        tipTexts = [:]
+        for tip in new { tipTexts[addToolTip(tip.viewRect, owner: self, userData: nil)] = tip.text }
+    }
+
+    func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint,
+              userData data: UnsafeMutableRawPointer?) -> String {
+        tipTexts[tag] ?? ""
     }
 
     /// The tooltips' areas are also accessibility elements (VoiceOver reads the overflow badges).
@@ -391,6 +401,7 @@ struct PageCanvas: NSViewRepresentable {
         let document = document, selection = $selectedImageBox
         let undoManager = context.environment.undoManager
         let placement = view.placement
+        placement.isEditable = document.isEditable
         placement.onSelectBox = { selection.wrappedValue = $0 }
         placement.textEditing.onTextChange = { page, box, text, coalescing in
             document.perform(.setRichText(page: page, box: box, text: text, coalescing: coalescing))

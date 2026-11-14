@@ -70,24 +70,26 @@ final class TextEditingController {
 
     /// Passes a canvas mouse-down at `point` (page points) on the edited box to the editor, so
     /// the click places the caret where it landed instead of leaving it at the end. `boxRect`
-    /// and `rotationDegrees` are the box's render rect and rotation: a rotated box is edited
-    /// upright, so the point is first mapped into the upright box. Needs a window (does nothing
-    /// otherwise, e.g. in tests); returns once the mouse is released.
+    /// and `rotationDegrees` are the box's render rect and rotation.
+    ///
+    /// An upright box forwards the event to the text view, which then tracks the mouse itself
+    /// (drag to select, double-click for a word); that needs a window (does nothing otherwise,
+    /// e.g. in tests) and returns once the mouse is released. A rotated box is edited upright, so
+    /// the text view's tracking would follow the real, unrotated drag: there the point is mapped
+    /// into the upright box and the caret (or, with more clicks, the word or paragraph) is
+    /// selected directly, with no drag-select.
     func handleClick(_ event: NSEvent, at point: CGPoint, boxRect: CGRect, rotationDegrees: Double) {
-        guard let editor, let canvas, let window = canvas.window, let transform = canvas.transform else { return }
+        guard let editor, let canvas, let transform = canvas.transform else { return }
+        if rotationDegrees != 0 {
+            let upright = Self.uprightPoint(point, boxRect: boxRect, rotationDegrees: rotationDegrees)
+            editor.select(at: transform.toView(upright), in: canvas, clickCount: event.clickCount)
+            return
+        }
+        guard let window = canvas.window else { return }
         // Redraw the page without the box's text now: the text view tracks the mouse until it's
         // released, and the rendered text would show under the editor's until then.
         canvas.displayIfNeeded()
-        var forwarded = event
-        if rotationDegrees != 0 {
-            let upright = Self.uprightPoint(point, boxRect: boxRect, rotationDegrees: rotationDegrees)
-            let location = canvas.convert(transform.toView(upright), to: nil)
-            forwarded = NSEvent.mouseEvent(
-                with: event.type, location: location, modifierFlags: event.modifierFlags,
-                timestamp: event.timestamp, windowNumber: event.windowNumber, context: nil,
-                eventNumber: event.eventNumber, clickCount: event.clickCount, pressure: event.pressure) ?? event
-        }
-        editor.handleClick(forwarded, in: window)
+        editor.handleClick(event, in: window)
     }
 
     /// `point` (page points) on a box drawn rotated by `rotationDegrees` about `boxRect`'s

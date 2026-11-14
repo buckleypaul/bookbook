@@ -26,10 +26,10 @@ private struct DraftAllFlow: ViewModifier {
                 trigger = false
                 Task { await start() }
             }
-            .alert("Nothing to Draft", isPresented: $showNothing) {
+            .alert("Nothing to draft", isPresented: $showNothing) {
                 Button("OK", role: .cancel) {}
             } message: {
-                Text("Every image box already has a picture.")
+                Text("Every image box already has a picture or one on the way.")
             }
             .sheet(isPresented: $notice.isPresent(), onDismiss: { if notice == nil { proposal = nil } }) {
                 if let provider = notice {
@@ -42,7 +42,7 @@ private struct DraftAllFlow: ViewModifier {
                                           onCancel: { notice = nil; proposal = nil })
                 }
             }
-            .alert("Draft All Empty Boxes?", isPresented: $showConfirm) {
+            .alert("Draft all empty boxes?", isPresented: $showConfirm) {
                 Button("Draft All") {
                     checkNoticeThenEnqueue()
                 }
@@ -72,13 +72,15 @@ private struct DraftAllFlow: ViewModifier {
             showNothing = true
             return
         }
-        let coverIncluded = plan.targets.contains { $0.page == document.content.book.coverPageID }
+        let cover = document.content.book.coverPageID
+        let coverIncluded = plan.targets.contains { $0.page == cover }
+        let pageCount = Set(plan.targets.map(\.page).filter { $0 != cover }).count
         let (decision, spent) = await app.costDecisionAndSpent(for: plan.estimate, in: document)
         let message = CostText.batchAlert(count: plan.items.count, estimate: plan.estimate, decision: decision,
                                           spent: spent, budget: document.content.book.budget,
-                                          coverIncluded: coverIncluded)
-            + (decision.needsConfirmation ? " That is above your confirmation limit." : "")
-            + " Draft quality, queued one after another."
+                                          coverIncluded: coverIncluded, pageCount: pageCount)
+            + (plan.items.count == 1 ? " It's a Draft-quality picture."
+                                     : " Each is a Draft-quality picture, made one after another.")
         proposal = Proposal(plan: plan, message: message)
         showConfirm = true
     }

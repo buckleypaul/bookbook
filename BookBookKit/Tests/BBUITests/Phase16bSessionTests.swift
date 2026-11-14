@@ -53,7 +53,16 @@ struct Phase16bSessionTests {
                                        coverIncluded: true)
         #expect(text.hasPrefix("13 pictures (cover + 12 pages),"))
         let plain = CostText.batchAlert(count: 12, estimate: est, decision: decision, spent: 0, budget: nil)
-        #expect(plain.hasPrefix("12 requests,"))
+        #expect(plain.hasPrefix("12 pictures,"))
+        // A page with two empty boxes is still one page.
+        let twoBoxes = CostText.batchAlert(count: 3, estimate: est, decision: decision, spent: 0, budget: nil,
+                                           coverIncluded: true, pageCount: 1)
+        #expect(twoBoxes.hasPrefix("3 pictures (cover + 1 page),"))
+        // The limit remark follows the estimate, then the budget.
+        let over = CostText.batchAlert(count: 2, estimate: est, decision: .init(needsConfirmation: true, overBudget: true),
+                                       spent: 9, budget: 10)
+        #expect(over == "2 pictures, about $0.50. That's above your confirmation limit. "
+                + "This book has spent $9.00 of its $10.00 budget.")
     }
 
     @Test func badgeSaysPausedWhilePaused() {

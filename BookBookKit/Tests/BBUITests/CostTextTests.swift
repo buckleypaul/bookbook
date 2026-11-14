@@ -58,9 +58,9 @@ import Testing
     @Test func batchAlertAlwaysStatesCountAndCost() {
         let est = CostEstimate(amount: Decimal(string: "0.30")!)
         #expect(CostText.batchAlert(count: 5, estimate: est, decision: .init(needsConfirmation: false, overBudget: false),
-                                    spent: 0, budget: nil) == "5 requests, about $0.30.")
+                                    spent: 0, budget: nil) == "5 pictures, about $0.30.")
         #expect(CostText.batchAlert(count: 1, estimate: .unknown, decision: .init(needsConfirmation: false, overBudget: false),
-                                    spent: 0, budget: nil) == "1 request, cost unknown.")
+                                    spent: 0, budget: nil) == "1 picture, cost unknown.")
     }
 
     @Test func parsesMoneyFields() {

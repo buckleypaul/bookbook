@@ -12,16 +12,21 @@ import SwiftUI
 public struct RegionEditorSheet: View {
     private let imageData: Data
     private let modelName: String
-    private let estimate: CostEstimate?
+    private let estimate: ((String) -> CostEstimate)?
     private let onCancel: () -> Void
     private let onSubmit: (RegionMaskDrawing, String) -> Void
 
     @State private var model: RegionEditorModel
     @State private var displayImage: CGImage?
+    /// `estimate` for the prompt as it is now (it runs when the prompt changes, not on every stroke).
+    @State private var pricedEstimate: CostEstimate?
 
-    /// `estimate` is the cost of the edit, shown beside the button (PD §5, §8.9); the caller computes it.
+    /// `estimate` prices the edit for the prompt `onSubmit` would hand back (typed `@` mentions
+    /// send reference images, so the text matters), shown beside the button (PD §5, §8.9). The
+    /// caller builds it the way it builds the request, so it matches the cost confirmation; nil
+    /// shows no estimate.
     public init(imageData: Data, pixelSize: PixelSize, modelName: String,
-                estimate: CostEstimate? = nil,
+                estimate: ((String) -> CostEstimate)? = nil,
                 onCancel: @escaping () -> Void,
                 onSubmit: @escaping (RegionMaskDrawing, String) -> Void) {
         self.imageData = imageData
@@ -44,6 +49,9 @@ public struct RegionEditorSheet: View {
         .frame(idealWidth: 920, idealHeight: 720)
         .crayonSheet(minWidth: 720, minHeight: 600)
         .background(localUndoShortcuts)
+        .onChange(of: PricingKey(prompt: model.trimmedPrompt, isPriced: estimate != nil), initial: true) { _, key in
+            pricedEstimate = key.isPriced ? estimate?(key.prompt) : nil
+        }
         .task(id: imageData) {
             let data = imageData
             let maxSide = Self.displayMaxPixels(for: model.pixelSize)
@@ -156,7 +164,7 @@ public struct RegionEditorSheet: View {
                 .lineLimit(1)
             CrayonSheetFooter("Edit Region", color: Crayon.bubblegum, isDisabled: !model.canSubmit,
                               onCancel: onCancel, action: submit,
-                              leading: { if let estimate { CostEstimatePill(estimate: estimate) } })
+                              leading: { if let pricedEstimate { CostEstimatePill(estimate: pricedEstimate) } })
         }
     }
 
@@ -164,6 +172,11 @@ public struct RegionEditorSheet: View {
         let size = "\(model.pixelSize.width) × \(model.pixelSize.height)"
         let hint = model.drawing.isEmpty ? "Paint or lasso the area to change." : "Only the marked area will change."
         return "\(modelName) · \(size) · \(hint)"
+    }
+
+    private struct PricingKey: Equatable {
+        var prompt: String
+        var isPriced: Bool
     }
 
     private func submit() {

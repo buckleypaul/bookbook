@@ -55,8 +55,8 @@ struct RealPersonQuestionSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .crayonCard(padding: 12)
             HStack {
-                Button("Cancel", role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
                 Spacer()
+                Button("Cancel", role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
                 answerButton("No", answer: false)
                 answerButton("Yes", answer: true)
             }

@@ -53,11 +53,11 @@ import Testing
 
     @Test func bannerText() {
         #expect(QueueBannerModel(pause: nil) == nil)
-        #expect(QueueBannerModel(pause: .restored(count: 3))?.text == "Resume 3 queued requests")
-        #expect(QueueBannerModel(pause: .restored(count: 1))?.text == "Resume 1 queued request")
+        #expect(QueueBannerModel(pause: .restored(count: 3))?.text == "3 requests from last time are paused.")
+        #expect(QueueBannerModel(pause: .restored(count: 1))?.text == "1 request from last time is paused.")
         #expect(QueueBannerModel(pause: .restored(count: 2))?.offersResume == true)
         let offline = QueueBannerModel(pause: .offline)
-        #expect(offline?.text == "Offline — queued requests will run when the network returns")
+        #expect(offline?.text == "You're offline. Queued requests will run when the network returns.")
         #expect(offline?.offersResume == false)
         #expect(QueueBannerModel(pause: .user)?.offersResume == true)
     }

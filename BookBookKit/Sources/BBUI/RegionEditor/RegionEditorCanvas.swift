@@ -42,7 +42,7 @@ public final class RegionEditorCanvasView: NSView {
     var image: CGImage? { didSet { needsDisplay = true } }
 
     /// The tint the edit area is previewed in.
-    static let tint = NSColor.systemPink.withAlphaComponent(0.45)
+    static var tint: NSColor { NSColor(Crayon.bubblegum).withAlphaComponent(0.55) }
 
     private var hoverPoint: CGPoint?
     private var cachedMask: (operations: [RegionMaskDrawing.Operation], size: CGSize, image: CGImage)?
@@ -114,7 +114,7 @@ public final class RegionEditorCanvasView: NSView {
 
     public override func resetCursorRects() {
         // The brush shows its own circle; the lasso a crosshair.
-        addCursorRect(fitRect, cursor: .crosshair)
+        if model.tool == .lasso { addCursorRect(fitRect, cursor: .crosshair) }
     }
 
     // MARK: Drawing
@@ -124,7 +124,7 @@ public final class RegionEditorCanvasView: NSView {
         let rect = fitRect
         guard !rect.isEmpty else { return }
 
-        NSColor.windowBackgroundColor.blended(withFraction: 0.08, of: .black)?.setFill()
+        NSColor(Crayon.paperDeep).setFill()
         bounds.fill()
 
         if let image {

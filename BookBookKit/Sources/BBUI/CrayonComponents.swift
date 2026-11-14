@@ -133,7 +133,8 @@ public struct CrayonSheetFooter<Leading: View, Secondary: View>: View {
 
 /// The bottom row of a sheet with nothing to cancel: optional leading content, a spacer, then
 /// one crayon "Done" button (Return). Use for informational or apply-as-you-go sheets. Done
-/// dismisses the sheet unless `action` is given.
+/// dismisses the sheet unless `action` is given. Escape does the same as Done (a hidden
+/// `.cancelAction` button), so callers don't need `.onExitCommand`.
 public struct CrayonSheetDoneFooter<Leading: View>: View {
     let title: String
     let color: Color
@@ -156,12 +157,25 @@ public struct CrayonSheetDoneFooter<Leading: View>: View {
         HStack {
             leading
             Spacer()
-            Button(title) { if let action { action() } else { dismiss() } }
+            Button(title, action: done)
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.crayon(color))
                 .disabled(isDisabled)
         }
+        // Escape: a zero-size, invisible twin of Done. `.hidden()` would drop the shortcut, so
+        // it's transparent instead, and kept out of the accessibility tree.
+        .background {
+            Button("", action: done)
+                .keyboardShortcut(.cancelAction)
+                .disabled(isDisabled)
+                .buttonStyle(.plain)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
     }
+
+    private func done() { if let action { action() } else { dismiss() } }
 }
 
 // MARK: - Inline status messages

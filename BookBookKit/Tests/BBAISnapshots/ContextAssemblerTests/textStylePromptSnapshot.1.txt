@@ -15,9 +15,11 @@ Decoration:
 - decoration: a self-contained description, for an image model, of ONLY the ornament: a frame, border, corner flourishes, banner, scroll or background shapes. Describe its look, colours and materials so it matches the book's art style.
 - Never ask for letters, words, numbers or text of any kind in the decoration.
 - The central text area must stay plain and empty; keep the ornament to the edges and corners, or soft behind the text.
-- Use null when the user only wants typography (for example "make the text bigger" or "use a rounder font").
+- Use null to keep the current decoration exactly as it is (it is not repainted), or when there is none and the user only wants typography (for example "make the text bigger" or "use a rounder font").
+- Use "none" to remove the current decoration.
+- Write a full description only for a new decoration or a change to the current one.
 
-Refinements: when there are earlier instructions or a current decoration, start from the current look and change only what the new instruction asks for. Keep everything else the same, and restate the decoration's full description when it stays.
+Refinements: when there are earlier instructions or a current decoration, start from the current look and change only what the new instruction asks for. Keep everything else the same.
 
 summary: one short, friendly sentence describing the design for the user.
 

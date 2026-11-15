@@ -22,9 +22,7 @@ struct SessionPanel: View {
     private var owner: SessionOwner { .pageBox(pageID, boxID) }
 
     @State private var prompt = ""
-    @State private var selectedVersion: VersionID?
-    /// The `resetEpoch` of a reset that kept versions; the placed version isn't the base while it matches.
-    @State private var freshEpoch: Int?
+    @State private var selection = SessionVersionSelection()
     @State private var detailsExpanded = false
     @State private var quality: QualityLevel?
     @State private var includeStoryText: Bool?
@@ -49,11 +47,7 @@ struct SessionPanel: View {
 
     /// The version Details and refinement use: the selection if it still exists, else the placed one.
     private func baseID(_ session: Session) -> VersionID? {
-        if let selectedVersion, session.version(selectedVersion) != nil { return selectedVersion }
-        // After Reset Session → Keep Versions the thread starts fresh (PD §8.6): no refining the placed
-        // version until the user clicks one.
-        if freshEpoch == session.resetEpoch { return nil }
-        return placedID.flatMap { session.version($0)?.id }
+        selection.base(in: session, placed: placedID)
     }
 
     private var storyText: Bool { includeStoryText ?? app.defaults.includeStoryText }
@@ -110,8 +104,7 @@ struct SessionPanel: View {
         .onChange(of: placedID) {
             // An undo (or any other change) moved the placement: a stale selection would refine a
             // picture that isn't on the page.
-            selectedVersion = nil
-            freshEpoch = nil
+            selection.placedChanged()
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.image]) { result in
             switch result {
@@ -154,11 +147,7 @@ struct SessionPanel: View {
         .problemAlert($problem)
     }
 
-    /// "Delete version 2?"
-    private var deleteTitle: String {
-        let number = pendingDelete.flatMap { id in session?.versionNumber(id) }
-        return number.map { "Delete version \($0)?" } ?? "Delete this version?"
-    }
+    private var deleteTitle: String { SessionPanelState.deleteTitle(pendingDelete, in: session) }
 
     private var deleteMessage: String {
         let placed = pendingDelete != nil && pendingDelete == placedID
@@ -167,27 +156,13 @@ struct SessionPanel: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            CrayonHeader(Self.headerTitle(page: pageID, box: boxID, in: content), color: Crayon.sky)
-            Spacer()
-            Menu {
-                Button("Choose Image…") { showImporter = true }
-                    .disabled(!document.isEditable)
-                Divider()
-                Button("Reset Session…", role: .destructive) { confirmReset = true }
-                    .disabled(!document.isEditable)
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(Crayon.inkSoft)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Session actions")
-            .accessibilityLabel("Session actions")
+        SessionPanelHeader(title: Self.headerTitle(page: pageID, box: boxID, in: content), color: Crayon.sky) {
+            Button("Choose Image…") { showImporter = true }
+                .disabled(!document.isEditable)
+            Divider()
+            Button("Reset Session…", role: .destructive) { confirmReset = true }
+                .disabled(!document.isEditable)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(Crayon.paperDeep)
     }
 
     // MARK: Thread
@@ -196,21 +171,8 @@ struct SessionPanel: View {
     private func thread(_ session: Session) -> some View {
         let messages = session.visibleMessages.filter { $0.role == .user }
         if messages.isEmpty {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "sparkles")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(Crayon.sunflower)
-                    .accessibilityHidden(true)
-                Text("Describe the picture for this box, then press Generate. Or drop in your own image.")
-                    .font(Crayon.font(.callout, weight: .medium))
-                    .foregroundStyle(Crayon.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Crayon.sunflower.opacity(0.12), in: ThreadBubble.shape)
-            .overlay(ThreadBubble.shape.strokeBorder(Crayon.sunflower.opacity(0.5),
-                                                     style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+            ThreadIntroBubble(text: "Describe the picture for this box, then press Generate. Or drop in your own image.",
+                              systemImage: "sparkles", color: Crayon.sunflower, fillOpacity: 0.12, rimOpacity: 0.5)
         }
         ForEach(messages) { message in
             VStack(alignment: .leading, spacing: 5) {
@@ -220,13 +182,7 @@ struct SessionPanel: View {
                 }
                 Text(MentionText.displayText(message.text, assets: content.assets,
                                              fallback: VersionDetailsContent.deletedAssetName))
-                    .foregroundStyle(Crayon.ink)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Crayon.sky.opacity(0.16), in: ThreadBubble.shape)
-                    .overlay(ThreadBubble.shape.strokeBorder(Crayon.sky.opacity(0.35), lineWidth: 1))
+                    .threadBubble(Crayon.sky, fillOpacity: 0.16, rimOpacity: 0.35)
                 ForEach(message.attachedReferences, id: \.self) { ref in
                     if let label = ReferenceSources.chipLabel(ref, in: content) {
                         Label("With \(label)", systemImage: "paperclip")
@@ -426,20 +382,18 @@ struct SessionPanel: View {
     }
 
     private func choose(_ version: Version) {
-        selectedVersion = version.id
-        freshEpoch = nil
+        selection.choose(version.id)
         guard version.id != placedID else { return }
         document.perform(.chooseVersion(page: pageID, box: boxID, version: version.id))
     }
 
     private func delete(_ id: VersionID) {
-        if selectedVersion == id { selectedVersion = nil }
+        selection.deleted(id)
         document.deleteVersion(id, owner: owner)
     }
 
     private func reset(keepVersions: Bool) {
-        selectedVersion = nil
-        freshEpoch = keepVersions ? session.map { $0.resetEpoch + 1 } : nil
+        selection.reset(keepVersions: keepVersions, session: session)
         document.resetSession(owner: owner, keepVersions: keepVersions)
     }
 
@@ -459,7 +413,7 @@ struct SessionPanel: View {
         Task {
             for url in urls {
                 do {
-                    selectedVersion = try await document.importImage(from: url, page: pageID, box: boxID)
+                    selection.selected = try await document.importImage(from: url, page: pageID, box: boxID)
                 } catch {
                     problem = ImageImportFailure.message(for: error)
                 }
@@ -469,9 +423,9 @@ struct SessionPanel: View {
 
     @ViewBuilder
     private func details(_ session: Session) -> some View {
-        if let id = baseID(session) ?? session.versions.last?.id, let version = session.version(id) {
-            DisclosureGroup(isExpanded: $detailsExpanded) {
-                VersionDetailsGrid(version: version, session: session, bookID: document.id, assets: content.assets)
+        if let version = selection.detailsVersion(in: session, placed: placedID) {
+            VersionDetailsDisclosure(isExpanded: $detailsExpanded, version: version, session: session,
+                                     bookID: document.id, assets: content.assets) {
                 if version.provenance != nil {
                     WrappingRow(spacing: 8, lineSpacing: 6) {
                         Button("Regenerate with Same Settings") {
@@ -487,14 +441,7 @@ struct SessionPanel: View {
                     }
                     .padding(.top, 6)
                 }
-            } label: {
-                Text("Version details")
-                    .font(Crayon.font(.subheadline, weight: .bold))
-                    .foregroundStyle(Crayon.ink)
             }
-            .padding(12)
-            .background(Crayon.paperDeep,
-                        in: RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous))
         }
     }
 

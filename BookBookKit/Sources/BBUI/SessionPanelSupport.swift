@@ -65,6 +65,12 @@ enum SessionPanelState {
         return owner.assetID == nil ? nil : Session(id: id, owner: owner)
     }
 
+    /// The Delete Version dialog's title: "Delete version 2?".
+    static func deleteTitle(_ pending: VersionID?, in session: Session?) -> String {
+        let number = pending.flatMap { id in session?.versionNumber(id) }
+        return number.map { "Delete version \($0)?" } ?? "Delete this version?"
+    }
+
     /// The placed version (page boxes) or the asset's chosen image.
     static func placedVersion(for owner: SessionOwner, in content: BookContent) -> VersionID? {
         switch owner {

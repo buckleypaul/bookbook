@@ -9,9 +9,7 @@ enum RegionEditEntry {
                                    refusal: RegionEditRefusal?) -> String? {
         if !isEditable { return RegionEditRefusal.readOnly.message }
         if let refusal { return refusal.message }
-        if !isOnline { return UnavailableText.offline }
-        if !hasKey { return UnavailableText.noKey }
-        return nil
+        return UnavailableText.blocker(isEditable: isEditable, isOnline: isOnline, hasKey: hasKey)
     }
 }
 

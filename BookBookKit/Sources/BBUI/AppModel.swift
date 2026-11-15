@@ -505,6 +505,12 @@ public final class AppModel {
         refreshAvailability()
     }
 
+    /// What stops an AI request into `document` right now (read-only, then offline, then no key),
+    /// in `UnavailableText`'s words; nil when one can be sent.
+    public func aiBlocker(for document: BookDocument) -> String? {
+        UnavailableText.blocker(isEditable: document.isEditable, isOnline: isOnline, hasKey: hasOpenAIKey)
+    }
+
     // MARK: Generation
 
     /// "Regenerate with same settings": a new pending message and queue item built from the

@@ -37,9 +37,7 @@ public enum ConsistencyPresentation {
         if !isEditable { return UnavailableText.readOnly }
         if isPending { return "A check of this picture is already queued." }
         if !canCheck { return "No vision model is available. Choose one in Settings ▸ Models." }
-        if !isOnline { return UnavailableText.offline }
-        if !hasKey { return UnavailableText.noKey }
-        return nil
+        return UnavailableText.blocker(isEditable: isEditable, isOnline: isOnline, hasKey: hasKey)
     }
 
     /// Details rows for a version's latest check (A §11: everything sent is shown).

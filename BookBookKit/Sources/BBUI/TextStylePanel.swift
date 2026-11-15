@@ -180,7 +180,7 @@ struct TextStylePanel: View {
                         prompt = instruction
                         style()
                     }
-                    .disabled(!app.isOnline || !app.hasOpenAIKey || !document.isEditable)
+                    .disabled(app.aiBlocker(for: document) != nil)
                     Button("Dismiss") { model.dismissFailure(key) }
                 }
                 .controlSize(.small)
@@ -228,7 +228,7 @@ struct TextStylePanel: View {
                         }
                         .controlSize(.small)
                         .buttonBorderShape(.capsule)
-                        .disabled(!app.hasOpenAIKey || !app.isOnline || !document.isEditable)
+                        .disabled(app.aiBlocker(for: document) != nil)
                         .help("Paint the decoration again with the same design.")
                         if app.isOnline, let estimate = app.regenerateEstimate(version, target: target, in: document) {
                             CostEstimatePill(estimate: estimate)
@@ -266,7 +266,7 @@ struct TextStylePanel: View {
                 Button(!app.isOnline ? "Offline" : (number.map { "Restyle Version \($0)" } ?? "Style")) { style() }
                     .buttonStyle(.crayon)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!app.isOnline || !app.hasOpenAIKey || designing || !document.isEditable
+                    .disabled(app.aiBlocker(for: document) != nil || designing
                               || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             GenerationSetupNotes()
@@ -285,7 +285,7 @@ struct TextStylePanel: View {
 
     private func style() {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard document.isEditable, app.hasOpenAIKey, app.isOnline, !text.isEmpty, !model.isDesigning(key) else { return }
+        guard app.aiBlocker(for: document) == nil, !text.isEmpty, !model.isDesigning(key) else { return }
         confirmFlow.start(.style(text, quality: quality ?? app.defaults.quality, refines: baseID(session)))
     }
 

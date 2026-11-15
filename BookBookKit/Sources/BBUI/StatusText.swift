@@ -12,6 +12,15 @@ public enum UnavailableText {
     /// Read-only books are usually locked by another copy of BookBook, but
     /// not always, so this doesn't say why.
     public static let readOnly = "This book is open read-only, so it can't be changed."
+
+    /// What stops an AI request into a book, in the order every panel says it: read-only, then
+    /// offline, then no key. Nil when nothing does.
+    public static func blocker(isEditable: Bool, isOnline: Bool, hasKey: Bool) -> String? {
+        if !isEditable { return readOnly }
+        if !isOnline { return offline }
+        if !hasKey { return noKey }
+        return nil
+    }
 }
 
 /// Plain-language lines for provider errors (A §7.11; the full `RefusalAdvisor` is Phase 9).

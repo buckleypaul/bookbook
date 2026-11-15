@@ -123,7 +123,7 @@ struct AssetImageControls: View {
                 .buttonStyle(.crayon)
                 .keyboardShortcut(.return, modifiers: .command)
                 .help(AssetGeneration.generateHelp(prompt: prompt, hasReferencePhoto: asset.referencePhoto != nil))
-                .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey || prompt.isEmpty || busy)
+                .disabled(app.aiBlocker(for: document) != nil || prompt.isEmpty || busy)
             }
             if let latest, let session {
                 MessageStatusLine(message: latest, session: session, isEditable: document.isEditable, showsProduced: false)
@@ -234,7 +234,7 @@ struct AssetImageControls: View {
     }
 
     private func generate() {
-        guard document.isEditable, app.hasOpenAIKey, app.isOnline, !prompt.isEmpty else { return }
+        guard app.aiBlocker(for: document) == nil, !prompt.isEmpty else { return }
         commitDescription()
         let intent = makeIntent(prompt: prompt, quality: chosenQuality)
         confirmFlow.start(intent)

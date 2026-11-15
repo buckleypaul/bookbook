@@ -7,6 +7,15 @@ import Foundation
 import Testing
 @testable import BBUI
 
+struct UnavailableTextTests {
+    @Test func blocker_readOnlyThenOfflineThenNoKey() {
+        #expect(UnavailableText.blocker(isEditable: true, isOnline: true, hasKey: true) == nil)
+        #expect(UnavailableText.blocker(isEditable: false, isOnline: false, hasKey: false) == UnavailableText.readOnly)
+        #expect(UnavailableText.blocker(isEditable: true, isOnline: false, hasKey: false) == UnavailableText.offline)
+        #expect(UnavailableText.blocker(isEditable: true, isOnline: true, hasKey: false) == UnavailableText.noKey)
+    }
+}
+
 struct ProviderErrorTextTests {
     @Test func offline() {
         #expect(ProviderErrorText.message(for: .offline) == "Offline — check your internet connection, then try again.")

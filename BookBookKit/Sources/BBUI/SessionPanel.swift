@@ -327,12 +327,7 @@ struct SessionPanel: View {
 
     /// What stops every AI and editing action on this panel (read-only, offline, no key), said once
     /// under the version actions instead of under each one; nil when nothing does.
-    private var panelBlocker: String? {
-        if !document.isEditable { return UnavailableText.readOnly }
-        if !app.isOnline { return UnavailableText.offline }
-        if !app.hasOpenAIKey { return UnavailableText.noKey }
-        return nil
-    }
+    private var panelBlocker: String? { app.aiBlocker(for: document) }
 
     /// A paid action's tooltip with its estimate (PD §5: the estimate is shown before sending).
     static func withEstimate(_ help: String, _ estimate: CostEstimate?) -> String {
@@ -509,8 +504,7 @@ struct SessionPanel: View {
                 }
                 .buttonStyle(.crayon)
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey
-                          || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(panelBlocker != nil || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             GenerationSetupNotes()
         }
@@ -559,8 +553,7 @@ struct SessionPanel: View {
     }
 
     private func generate(refining base: VersionID?) {
-        guard document.isEditable, app.hasOpenAIKey, app.isOnline,
-              !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard panelBlocker == nil, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let intent = app.generationIntent(prompt: storedPrompt, quality: quality ?? app.defaults.quality,
                                           includeStoryText: storyText, refines: base,
                                           attachedReferences: liveAttached)
@@ -569,7 +562,7 @@ struct SessionPanel: View {
 
     /// "Regenerate with Same Settings" goes through the same checks as Generate.
     private func regenerate(_ version: Version) {
-        guard document.isEditable, app.hasOpenAIKey, app.isOnline, version.provenance != nil else { return }
+        guard panelBlocker == nil, version.provenance != nil else { return }
         checkThenPerform(.regenerate(version))
     }
 

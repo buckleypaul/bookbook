@@ -62,13 +62,13 @@ struct MessageStatusLine: View {
                     }
                 }
                 if let entry {
+                    let blocker = UnavailableText.blocker(isEditable: isEditable, isOnline: app.isOnline,
+                                                          hasKey: app.hasOpenAIKey)
                     // The same actions as the Queue window's failed row.
                     HStack {
                         Button("Try Again") { app.retryQueueItem(entry.id) }
-                            .disabled(!isEditable || !app.isOnline || !app.hasOpenAIKey)
-                            .help(!isEditable ? UnavailableText.readOnly
-                                  : !app.isOnline ? UnavailableText.offline
-                                  : !app.hasOpenAIKey ? UnavailableText.noKey : "Send this request again.")
+                            .disabled(blocker != nil)
+                            .help(blocker ?? "Send this request again.")
                         Button("Dismiss") { app.removeQueueItem(entry.id) }
                             .help("Remove this failed request from the queue.")
                     }

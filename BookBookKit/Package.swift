@@ -9,7 +9,6 @@ let settings: [SwiftSetting] = [
     .treatAllWarnings(as: .error),
 ]
 
-let collections: Target.Dependency = .product(name: "Collections", package: "swift-collections")
 let snapshots: Target.Dependency = .product(name: "SnapshotTesting", package: "swift-snapshot-testing")
 
 let modules = ["BBModel", "BBStore", "BBLayout", "BBNet", "BBAICore", "BBAI", "BBOpenAI", "BBGemini", "BBExport", "BBUI"]
@@ -19,12 +18,11 @@ let package = Package(
     platforms: [.macOS("27.0")],
     products: modules.map { .library(name: $0, targets: [$0]) },
     dependencies: [
-        .package(url: "https://github.com/apple/swift-collections", exact: "1.7.5"),
         .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.19.7"),
     ],
     targets: [
         // Value types, IDs, schema versions, derived queries. Foundation only, no I/O.
-        .target(name: "BBModel", dependencies: [collections], swiftSettings: settings),
+        .target(name: "BBModel", swiftSettings: settings),
         // Package I/O, journal, library, migrations, image store, keychain. Bundles style/template presets.
         .target(name: "BBStore", dependencies: ["BBModel"], resources: [.copy("Resources/Presets"), .copy("Resources/SampleBook")],
                 swiftSettings: settings),
@@ -37,7 +35,7 @@ let package = Package(
         // Queue, context assembly, cost, errors, catalog. Bundles ModelCatalog.json, PriceList.json, prompts.
         .target(
             name: "BBAI",
-            dependencies: ["BBAICore", "BBModel", collections],
+            dependencies: ["BBAICore", "BBModel"],
             resources: [.copy("Resources/ModelCatalog.json"), .copy("Resources/PriceList.json"), .copy("Resources/Prompts"),
                         .copy("Resources/SensitiveTerms.json")],
             swiftSettings: settings

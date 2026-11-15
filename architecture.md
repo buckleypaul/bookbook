@@ -16,7 +16,7 @@
 | D1 | UI | SwiftUI for app structure, forms, panels and lists. AppKit for the page/template **canvas** and **text editing** (NSTextView on TextKit 2). | Pure SwiftUI. Its `TextEditor` has no layout geometry for overflow and unreliable spell checking. |
 | D2 | Book format | A folder package `Name.bookbook/` holding **several small JSON files**, content-addressed image files and embedded fonts. *(Your choice.)* | SQLite, SwiftData |
 | D3 | Crash safety | Atomic per-file replacement, plus a **write-ahead staging journal** for saves that touch several files. Images are written before the JSON that refers to them. | Single-file manifest |
-| D4 | Dependencies | Apple SDKs first; **a few vetted packages** allowed (swift-collections, plus swift-snapshot-testing in tests only). **No vendor AI SDKs.** *(Your choice.)* | Community OpenAI/Gemini SDKs |
+| D4 | Dependencies | Apple SDKs first; **a few vetted packages** allowed (as built: only swift-snapshot-testing, in tests only; swift-collections was allowed but never used, so it was removed). **No vendor AI SDKs.** *(Your choice.)* | Community OpenAI/Gemini SDKs |
 | D5 | AI abstraction | Three capability protocols (`ImageProvider`, `LayoutProvider`, `VisionProvider`) with a provider-neutral request model, a **data-driven model catalog** and a separate **price list**. | One protocol per provider |
 | D6 | Session context | **The app owns the conversation.** Requests are rebuilt from local state every time. Gemini (post-MVP) gets native multi-turn history when it's safe; otherwise requests are stateless "edit this image" calls. OpenAI always uses the stateless Images API. | OpenAI Responses API with `previous_response_id`. It keeps state on the server and makes branching from older versions harder. |
 | D7 | Text layout | **TextKit 2 for both editing and final rendering.** The same `NSTextLayoutManager` layout is drawn on screen, in thumbnails, in PDFs and in print. | Core Text for output and TextKit for editing. Small layout differences would break WYSIWYG. |
@@ -56,7 +56,7 @@
 | Secrets | Security framework Keychain (generic password items). |
 | Persistence | `JSONEncoder` / `JSONDecoder` and `FileManager`. |
 | Testing | Swift Testing, plus `swift-snapshot-testing` (test-only) for prompts, layouts and rendered pages. |
-| Third-party (runtime) | `swift-collections` (`OrderedDictionary`, `Deque`). Nothing else without a decision-log entry. |
+| Third-party (runtime) | None. `swift-collections` was removed because nothing imported it. Nothing is added without a decision-log entry. |
 
 ---
 
@@ -97,7 +97,7 @@ The Xcode app target stays thin, and the code lives in local Swift packages so t
 - `BBModel` imports Foundation only. It contains no I/O.
 - `BBOpenAI` and `BBGemini` depend on `BBAI`'s protocol and request types (shown in a separate small target, `BBAICore`, if the dependency graph needs it), not the other way round. The app wires up the concrete providers.
 - `BBLayout` depends on AppKit only for TextKit 2 and font types. It has no views.
-- **As-built dependencies (Phase 1b, `BookBookKit/Package.swift`; this list wins where the diagram is looser):** BBModel → swift-collections · BBStore → BBModel · BBLayout → BBModel · BBNet → nothing (it needs no model types) · BBAICore → BBModel · BBAI → BBAICore, BBModel · BBOpenAI and BBGemini → BBAICore, BBNet · BBExport → BBLayout, BBModel · BBUI → BBExport, BBAI, BBAICore (added Phase 2: the UI shows `ProviderError`s), BBStore, BBLayout, BBModel · app → BBUI, BBOpenAI, BBGemini. BBAI does **not** depend on the provider adapters; the diagram's BBAI → BBOpenAI/BBGemini arrows mean "uses through BBAICore's protocols".
+- **As-built dependencies (Phase 1b, `BookBookKit/Package.swift`; this list wins where the diagram is looser):** BBModel → nothing · BBStore → BBModel · BBLayout → BBModel · BBNet → nothing (it needs no model types) · BBAICore → BBModel · BBAI → BBAICore, BBModel · BBOpenAI and BBGemini → BBAICore, BBNet · BBExport → BBLayout, BBModel · BBUI → BBExport, BBAI, BBAICore (added Phase 2: the UI shows `ProviderError`s), BBStore, BBLayout, BBModel · app → BBUI, BBOpenAI, BBGemini. BBAI does **not** depend on the provider adapters; the diagram's BBAI → BBOpenAI/BBGemini arrows mean "uses through BBAICore's protocols".
 - **As built (Phase 1b):** every module is a library target in one local package, `BookBookKit/` (plan P-1), and `BBAICore` exists as its own target from the start. A test-only target, `BBTestSupport` (the live-test gate and the bundled test font, Atkinson Hyperlegible, OFL), is depended on only by test targets and never linked into the app.
 - **Bundled resources:** `BBAI` holds `ModelCatalog.json`, `PriceList.json` and `Prompts/`. `BBStore` holds `Presets/StylePresets.json` and `Presets/TemplatePresets.json` (§10), because `BBModel` does no I/O and both the UI and the layout requests need the presets. The app passes presets to the providers; providers never load them.
 

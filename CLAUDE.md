@@ -24,12 +24,12 @@ Targets are defined in `BookBookKit/Package.swift` (architecture.md §3). Depend
 
 | Target | Folder | Holds | May depend on |
 |---|---|---|---|
-| BBModel | `BookBookKit/Sources/BBModel` | value types, IDs, schema versions, derived queries. Foundation only, no I/O | swift-collections |
+| BBModel | `BookBookKit/Sources/BBModel` | value types, IDs, schema versions, derived queries. Foundation only, no I/O | nothing |
 | BBStore | `BookBookKit/Sources/BBStore` | package I/O, journal, library, migrations, image store, keychain. Bundles presets | BBModel |
 | BBLayout | `BookBookKit/Sources/BBLayout` | geometry, page order, TextKit 2 layout, PageRenderer. AppKit only for TextKit 2 and fonts; no views | BBModel |
 | BBNet | `BookBookKit/Sources/BBNet` | HTTP client, multipart, SSE. Redacts `Authorization` and `x-goog-api-key` | nothing |
 | BBAICore | `BookBookKit/Sources/BBAICore` | provider protocols and request/response types shared by BBAI and the adapters | BBModel |
-| BBAI | `BookBookKit/Sources/BBAI` | queue, context assembly, cost, errors, catalog. Bundles the catalog, prices and prompts | BBAICore, BBModel, swift-collections |
+| BBAI | `BookBookKit/Sources/BBAI` | queue, context assembly, cost, errors, catalog. Bundles the catalog, prices and prompts | BBAICore, BBModel |
 | BBOpenAI | `BookBookKit/Sources/BBOpenAI` | OpenAI provider adapter | BBAICore, BBNet |
 | BBGemini | `BookBookKit/Sources/BBGemini` | Gemini provider adapter | BBAICore, BBNet |
 | BBExport | `BookBookKit/Sources/BBExport` | PDF, booklet, upscale, preflight | BBLayout, BBModel |

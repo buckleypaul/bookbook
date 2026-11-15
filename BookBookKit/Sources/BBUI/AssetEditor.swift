@@ -276,7 +276,7 @@ private struct AssetImageCard: View {
     let image: ImageRef?
     let images: ImageCache
     let color: Color
-    @State private var preview: CGImage?
+    @State private var preview: ImagePreview?
 
     var body: some View {
         let cg = image.flatMap { images.image(for: $0) }
@@ -292,10 +292,8 @@ private struct AssetImageCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: Crayon.smallCornerRadius, style: .continuous))
                         .padding(8)
                         .accessibilityLabel("\(asset.name)'s image")
-                        .onTapGesture(count: 2) { preview = cg }
-                        .contextMenu {
-                            Button("View Larger", systemImage: "arrow.up.left.and.arrow.down.right") { preview = cg }
-                        }
+                        .onTapGesture(count: 2) { show(cg) }
+                        .contextMenu { ViewLargerButton { show(cg) } }
                 } else {
                     VStack(spacing: 12) {
                         CrayonBlobIcon(systemImage: AssetEditing.typeSymbol(asset.type), color: color, size: 64)
@@ -319,19 +317,16 @@ private struct AssetImageCard: View {
             if let cg {
                 HStack {
                     Spacer()
-                    Button("View Larger", systemImage: "arrow.up.left.and.arrow.down.right") { preview = cg }
+                    ViewLargerButton { show(cg) }
                         .buttonBorderShape(.capsule)
                 }
             }
         }
-        .sheet(item: Binding(get: { preview.map(PreviewItem.init) }, set: { preview = $0?.image })) { item in
-            ImagePreviewSheet(title: asset.name, image: item.image)
-        }
+        .imagePreviewSheet($preview)
     }
 
-    private struct PreviewItem: Identifiable {
-        let image: CGImage
-        var id: ObjectIdentifier { ObjectIdentifier(image) }
+    private func show(_ image: CGImage) {
+        preview = ImagePreview(title: asset.name, image: image)
     }
 }
 

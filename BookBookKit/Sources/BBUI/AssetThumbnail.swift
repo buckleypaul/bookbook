@@ -32,6 +32,29 @@ struct AssetThumbnail: View {
     }
 }
 
+/// An image to show enlarged: what `imagePreviewSheet` presents.
+struct ImagePreview: Identifiable {
+    let id = UUID()
+    let title: String
+    let image: CGImage
+}
+
+extension View {
+    /// Shows `item` in an `ImagePreviewSheet` while it holds a value.
+    func imagePreviewSheet(_ item: Binding<ImagePreview?>) -> some View {
+        sheet(item: item) { ImagePreviewSheet(title: $0.title, image: $0.image) }
+    }
+}
+
+/// "View Larger", for a context menu or beside an image; `action` sets an `ImagePreview`.
+struct ViewLargerButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button("View Larger", systemImage: "arrow.up.left.and.arrow.down.right", action: action)
+    }
+}
+
 /// An asset image shown as large as the window allows, fitted, on paper.
 struct ImagePreviewSheet: View {
     let title: String

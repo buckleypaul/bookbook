@@ -283,12 +283,17 @@ extension BookDocument {
         var page = source
         page.id = PageID()
         page.isDone = false
-        for (boxID, slot) in source.images {
-            var session = content.sessions[slot.sessionID] ?? Session(owner: .pageBox(page.id, boxID))
+        /// The session copied under a new ID for `owner` (empty if the original is missing).
+        func copy(_ id: SessionID, owner: SessionOwner) -> Session {
+            var session = content.sessions[id] ?? Session(owner: owner)
             session.id = SessionID()
-            session.owner = .pageBox(page.id, boxID)
+            session.owner = owner
             // Requests still in flight deliver to the original session only.
             for i in session.messages.indices { session.messages[i].queueItemID = nil }
+            return session
+        }
+        for (boxID, slot) in source.images {
+            let session = copy(slot.sessionID, owner: .pageBox(page.id, boxID))
             sessions[session.id] = session
             page.images[boxID]?.sessionID = session.id
             if let placement = slot.placement, session.version(placement.versionID) == nil {
@@ -297,10 +302,7 @@ extension BookDocument {
         }
         // AI text styles (A §7.13): each styled box's session is copied the same way.
         for (boxID, slot) in source.textStyles {
-            var session = content.sessions[slot.sessionID] ?? Session(owner: .textBox(page.id, boxID))
-            session.id = SessionID()
-            session.owner = .textBox(page.id, boxID)
-            for i in session.messages.indices { session.messages[i].queueItemID = nil }
+            let session = copy(slot.sessionID, owner: .textBox(page.id, boxID))
             sessions[session.id] = session
             page.textStyles[boxID]?.sessionID = session.id
             if let shown = slot.versionID, session.version(shown) == nil { page.textStyles[boxID]?.versionID = nil }

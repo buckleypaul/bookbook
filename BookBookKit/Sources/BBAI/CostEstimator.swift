@@ -85,19 +85,12 @@ public enum CostEstimator {
         let planned = ContextAssembler.plan(prepared)
         var data: [ImageRef: Data] = [:]
         for image in planned { data[image.ref] = Data([0]) }
-        if let maskRef = intent.regionMask {
-            // Region edit (A §7.6): the assembler decodes the mask and checks it against the base's
-            // pixel size, so give it a blank mask at that size (and a base header to match when the
-            // book doesn't know the base's size).
-            let base = planned.first { $0.role == .base }
-            let size = base?.pixelSize ?? assumedImageSize
-            guard let blank = try? placeholderMaskPNG(size) else { return nil }
-            data[maskRef] = blank
-            if let base, base.pixelSize == nil { data[base.ref] = blank }
-        }
+        // A region edit's mask (A §7.6) isn't encoded: only the prompt and the images sent are counted.
         guard let (request, report) = try? ContextAssembler.assemble(
-            prepared: prepared, intent: intent, content: content, model: model, imageData: data)
+            prepared: prepared, intent: intent, content: content, model: model, imageData: data, encodingMask: false)
         else { return nil }
+        // A mask needs a base image to edit: no estimate without one, as the assembler refuses it.
+        guard intent.regionMask == nil || request.baseImage != nil else { return nil }
 
         var knownSizes: [ImageRef: PixelSize] = [:]
         for image in planned { if let size = image.pixelSize { knownSizes[image.ref] = size } }
@@ -119,11 +112,5 @@ public enum CostEstimator {
         }
         return ImageEstimateInput(model: model, quality: intent.quality, outputSize: outputSize,
                                   inputImageSizes: sizes, promptCharacters: report.promptText.count)
-    }
-
-    /// An all-keep grayscale mask PNG at `size` (it compresses to a few hundred bytes).
-    static func placeholderMaskPNG(_ size: PixelSize) throws(ImageOpsError) -> Data {
-        try ImageOps.grayscalePNG(RegionMask(pixelSize: size,
-                                             bytes: [UInt8](repeating: 0, count: size.width * size.height)))
     }
 }

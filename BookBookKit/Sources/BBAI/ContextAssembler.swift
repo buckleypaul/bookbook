@@ -307,9 +307,12 @@ public enum ContextAssembler {
         return try assemble(prepared: prepared, intent: intent, content: content, model: model, imageData: imageData)
     }
 
-    /// `assemble` for an already prepared request (the same `intent` and `content`).
+    /// `assemble` for an already prepared request (the same `intent` and `content`). A caller that
+    /// only needs the prompt and the images counted (the cost estimate) passes `encodingMask: false`
+    /// to skip decoding and re-encoding a region edit's mask; the request then has no `mask`.
     static func assemble(prepared: Prepared, intent: GenerationIntent, content: BookContent, model: CatalogModel,
-                         imageData: [ImageRef: Data]) throws(AssemblyError) -> (ImageRequest, AssemblyReport) {
+                         imageData: [ImageRef: Data],
+                         encodingMask: Bool = true) throws(AssemblyError) -> (ImageRequest, AssemblyReport) {
         let session = prepared.context.session
         if let refines = intent.refines, session.version(refines) == nil { throw .baseVersionGone }
         let style = content.style
@@ -406,7 +409,7 @@ public enum ContextAssembler {
         let references = sent.dropFirst(isRefinement ? 1 : 0).map {
             ReferenceImage(payload: $0.payload, sent: $0.plan.sentReference)
         }
-        let mask = try regionMask(intent: intent, baseImage: baseImage, imageData: imageData)
+        let mask = try encodingMask ? regionMask(intent: intent, baseImage: baseImage, imageData: imageData) : nil
         let request = ImageRequest(model: model, quality: intent.quality,
                                    output: OutputShape(boxAspect: aspect, exactSize: exactSize),
                                    instruction: prompt, baseImage: baseImage, references: references, mask: mask,

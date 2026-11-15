@@ -40,11 +40,8 @@ struct CostSettings: View {
     private var invalid: Bool { CostText.parse(thresholdText) == .invalid }
 
     private func commit() {
-        switch CostText.parse(thresholdText) {
-        case let .value(v): app.preferences.confirmThreshold = v
-        case .empty, .invalid: thresholdText = Self.money(app.preferences.confirmThreshold)
-        }
-        if case .value = CostText.parse(thresholdText) { thresholdText = Self.money(app.preferences.confirmThreshold) }
+        if case let .value(v) = CostText.parse(thresholdText) { app.preferences.confirmThreshold = v }
+        thresholdText = Self.money(app.preferences.confirmThreshold)
     }
 
     /// The editable amount with at least two decimal places ("0.50"), keeping any extra precision.

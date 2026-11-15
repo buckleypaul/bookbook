@@ -13,7 +13,7 @@ struct AssetChecklistView: View {
     private var checklist: [AssetID] { content.pages[pageID]?.assetChecklist ?? [] }
 
     var body: some View {
-        let assets = content.assets.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let assets = AssetEditing.list(content, type: nil)
         let ticked = checklist.filter { content.assets[$0] != nil }.count
         DisclosureGroup(isExpanded: $expanded) {
             if assets.isEmpty {

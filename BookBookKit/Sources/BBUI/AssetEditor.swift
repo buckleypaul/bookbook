@@ -41,16 +41,11 @@ enum AssetEditing {
         }
     }
 
-    /// The asset's image: its chosen version's picture (nil when nothing is chosen, or the
-    /// session or version is gone).
+    /// The asset's image, which is also its thumbnail everywhere: its chosen version's picture
+    /// (nil when nothing is chosen, or the session or version is gone).
     static func image(of asset: Asset, in content: BookContent) -> ImageRef? {
         guard let chosen = asset.chosen else { return nil }
         return content.sessions[asset.sessionID]?.version(chosen)?.image
-    }
-
-    /// The thumbnail shown everywhere for an asset: its image.
-    static func thumbnail(of asset: Asset, in content: BookContent) -> ImageRef? {
-        image(of: asset, in: content)
     }
 
     /// The large image's empty placeholder text.

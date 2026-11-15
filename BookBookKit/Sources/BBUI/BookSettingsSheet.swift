@@ -141,7 +141,7 @@ struct BookSettingsSheet: View {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(summary.recent) { record in
                                 HStack(alignment: .firstTextBaseline) {
-                                    Text(record.at.formatted(date: .abbreviated, time: .shortened))
+                                    Text(VersionDetailsContent.defaultDate(record.at))
                                         .foregroundStyle(Crayon.inkSoft)
                                     Text(CostText.kindName(record.kind))
                                     Text(record.model + (record.quality.map { " · " + VersionDetailsContent.qualityName($0) } ?? ""))

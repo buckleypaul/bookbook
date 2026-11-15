@@ -12,10 +12,9 @@ struct AssetEditingTests {
         let version = Version(image: Fixtures.ref, pixelSize: PixelSize(width: 8, height: 8), source: .generated,
                               createdAt: Fixtures.date)
         content.sessions[pip.sessionID] = Session(id: pip.sessionID, owner: pip.owner, versions: [version])
-        #expect(AssetEditing.thumbnail(of: pip, in: content) == nil, "nothing chosen")
+        #expect(AssetEditing.image(of: pip, in: content) == nil, "nothing chosen")
         pip.chosen = version.id
         #expect(AssetEditing.image(of: pip, in: content) == Fixtures.ref)
-        #expect(AssetEditing.thumbnail(of: pip, in: content) == Fixtures.ref)
         pip.chosen = VersionID()
         #expect(AssetEditing.image(of: pip, in: content) == nil, "a gone version shows the placeholder")
         #expect(AssetEditing.emptyImageMessage(for: pip).contains("Pip"))

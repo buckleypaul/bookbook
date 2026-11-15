@@ -30,13 +30,12 @@ struct TemplatePicker: View {
     }
 
     private func cell(_ template: Template) -> some View {
-        let aspect = trimSize.height > 0 ? trimSize.width / trimSize.height : 0.75
-        let width = height * aspect * (template.kind == .spread ? 2 : 1)
+        let size = TemplateDiagram.size(for: template, trimSize: trimSize, height: height)
         let selected = selection == template.id
         let isCurrent = currentTemplateID == template.id
         return VStack(spacing: 6) {
             TemplateDiagram(template: template)
-                .frame(width: min(width, 200), height: height)
+                .frame(width: min(size.width, 200), height: size.height)
                 .shadow(color: Crayon.shadow, radius: 0, x: 0, y: 1.5)
                 .padding(8)
                 .crayonCard(selected: selected, cornerRadius: Crayon.mediumCornerRadius)
@@ -96,6 +95,13 @@ struct TemplateDiagram: View {
         }
         .accessibilityLabel(template.name)
     }
+
+    /// The diagram's size at `height`: the page's aspect (3:4 when the trim has no height),
+    /// twice as wide for a spread.
+    static func size(for template: Template, trimSize: PointSize, height: CGFloat) -> CGSize {
+        let aspect = trimSize.height > 0 ? trimSize.width / trimSize.height : 0.75
+        return CGSize(width: height * aspect * (template.kind == .spread ? 2 : 1), height: height)
+    }
 }
 
 /// A sheet that picks a template, for adding a page or changing a page's layout.
@@ -108,6 +114,8 @@ struct TemplatePickerSheet: View {
     /// The page's layout now (Change Layout): marked in the grid, and choosing it again is
     /// disabled because it would change nothing.
     var currentTemplateID: TemplateID? = nil
+    /// Closes the sheet itself (via `PagesController.dismissSheet(then:)`), so a split warning
+    /// can follow.
     let onChoose: (TemplateID) -> Void
     @State private var selection: TemplateID?
 
@@ -115,22 +123,16 @@ struct TemplatePickerSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             CrayonHeader(title)
             TemplatePicker(templates: templates, trimSize: trimSize, selection: $selection,
-                           onConfirm: { if $0 != currentTemplateID { choose($0) } },
+                           onConfirm: { if $0 != currentTemplateID { onChoose($0) } },
                            currentTemplateID: currentTemplateID)
                 .frame(minHeight: 260)
                 .background(Crayon.paperDeep, in: .rect(cornerRadius: Crayon.cornerRadius, style: .continuous))
             CrayonSheetFooter(confirmTitle, isDisabled: selection == nil || selection == currentTemplateID) {
-                if let selection { choose(selection) }
+                if let selection { onChoose(selection) }
             }
         }
         .crayonSheet(width: 560, height: 420)
         .onAppear { if selection == nil { selection = initialSelection ?? templates.first?.id } }
-    }
-
-    /// `onChoose` closes the sheet itself (via `PagesController.dismissSheet(then:)`), so a
-    /// split warning can follow.
-    private func choose(_ id: TemplateID) {
-        onChoose(id)
     }
 }
 

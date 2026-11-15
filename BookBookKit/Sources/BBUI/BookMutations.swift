@@ -4,7 +4,8 @@ import BBModel
 import BBStore
 import Foundation
 
-/// The settings a Generate press uses in the slice (Phase 9 adds the per-book and app settings).
+/// The settings a Generate press starts from: the provider, the Settings default model and
+/// quality (`AppModel.defaults`), and whether the story text goes along.
 public struct GenerationDefaults: Hashable, Sendable {
     public var provider: ProviderID
     public var model: String
@@ -30,7 +31,8 @@ public enum BookMutations {
     ///
     /// - Success (with `storedImage`, the ref `BookStore.storeImage` returned): adds a
     ///   `.generated` version with the provenance, sets the message's `producedVersion`, clears
-    ///   its `queueItemID`, and places the version (zoom 1, centred) only if the box is empty.
+    ///   its `queueItemID`, and then by target: a page box places the version (zoom 1, centred)
+    ///   only if the box is empty; an asset takes it as its image; a text box shows it.
     /// - Failure, or success without a stored image: clears the message's `queueItemID` only.
     ///
     /// The session is found through the target even if its page is gone: page commands never
@@ -51,43 +53,48 @@ public enum BookMutations {
         if case .success = delivery.outcome, content.sessions.values.contains(where: { $0.version(versionID) != nil }) {
             return DirtySet()
         }
-        if case .textBox = delivery.item.target {
-            return applyTextStyleDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID,
-                                          now: now)
+        let target = delivery.item.target
+        let owner = target.owner
+        // By message first: box IDs can move, the message can't (Phase 5 follow-up). Then the
+        // owner's own session, and for a page box any session that names it as owner.
+        var found = content.session(containing: delivery.item.messageID)?.id ?? sessionID(for: owner, in: content)
+        if found == nil, case .pageBox = target {
+            found = content.sessions.first(where: { $0.value.owner == owner })?.key
         }
-        guard case let .pageBox(pageID, boxID) = delivery.item.target else {
-            return applyAssetDelivery(delivery, storedImage: storedImage, to: &content, versionID: versionID, now: now)
-        }
-        let page = content.pages[pageID]
-        let slot = page?.images[boxID]
-        let owner = SessionOwner.pageBox(pageID, boxID)
-        // By message first: box IDs can move, the message can't (Phase 5 follow-up).
-        guard let sessionID = content.session(containing: delivery.item.messageID)?.id
-                ?? slot?.sessionID ?? content.sessions.first(where: { $0.value.owner == owner })?.key,
-              var session = content.sessions[sessionID] else { return DirtySet() }
+        guard let sessionID = found, var session = content.sessions[sessionID] else { return DirtySet() }
 
         var dirty = DirtySet()
         let (changed, delivered) = record(delivery, storedImage: storedImage, versionID: versionID, now: now,
                                           in: &session, content: content)
-        if changed { dirty.sessions.insert(session.id) }
+        if changed { dirty.sessions.insert(sessionID) }
+        content.sessions[sessionID] = session
+        guard let version = delivered else { return dirty }
 
-        if let version = delivered {
-            // The box may have moved since the request: place into whichever box holds the session.
-            var home: (PageID, BoxID)? = slot?.sessionID == session.id ? (pageID, boxID) : nil
+        switch target {
+        case let .pageBox(pageID, boxID):
+            // Placed only if the box is empty. The box may have moved since the request: place
+            // into whichever box holds the session.
+            var home: (PageID, BoxID)? = content.pages[pageID]?.images[boxID]?.sessionID == sessionID
+                ? (pageID, boxID) : nil
             if home == nil {
                 outer: for (id, page) in content.pages {
-                    for (box, candidate) in page.images where candidate.sessionID == session.id {
+                    for (box, candidate) in page.images where candidate.sessionID == sessionID {
                         home = (id, box)
                         break outer
                     }
                 }
             }
-            if let home, placeIfEmpty(version.id, session: session.id, page: home.0, box: home.1, in: &content) {
+            if let home, placeIfEmpty(version.id, session: sessionID, page: home.0, box: home.1, in: &content) {
                 dirty.pages.insert(home.0)
             }
+        case .asset:
+            // The newest image always wins as the asset's `chosen`, bumping the revision; earlier
+            // versions stay in the session.
+            if let asset = chooseLatest(version.id, session: sessionID, in: &content) { dirty.assets.insert(asset) }
+        case .textBox:
+            // The newest style always wins too (choosing an older one is undoable).
+            if let page = show(version.id, session: sessionID, in: &content) { dirty.pages.insert(page) }
         }
-
-        content.sessions[session.id] = session
         return dirty
     }
 
@@ -185,9 +192,7 @@ public enum BookMutations {
         }
         content.sessions[sessionID] = session
         var dirty = DirtySet(sessions: [sessionID])
-        dirty.pages = clearPlacements(of: [version], in: &content)
-            .union(clearTextStyles(of: [version], in: &content))
-        dirty.assets = clearAssetChoices(of: [version], in: &content)
+        dirty.formUnion(clearUses(of: [version], in: &content))
         return dirty
     }
 
@@ -201,9 +206,7 @@ public enum BookMutations {
         if !keepVersions {
             let removed = Set(session.versions.map(\.id))
             session.versions = []
-            dirty.pages = clearPlacements(of: removed, in: &content)
-                .union(clearTextStyles(of: removed, in: &content))
-            dirty.assets = clearAssetChoices(of: removed, in: &content)
+            dirty.formUnion(clearUses(of: removed, in: &content))
         }
         content.sessions[sessionID] = session
         return dirty
@@ -224,6 +227,13 @@ public enum BookMutations {
             dirty.pages.insert(page)
         }
         return dirty
+    }
+
+    /// Clears every use of `versions` (deleted): the boxes that had one placed, the text boxes
+    /// showing one, and the assets that had one chosen. Returns the pages and assets changed.
+    private static func clearUses(of versions: Set<VersionID>, in content: inout BookContent) -> DirtySet {
+        let pages = clearPlacements(of: versions, in: &content).union(clearTextStyles(of: versions, in: &content))
+        return DirtySet(pages: pages, assets: clearAssetChoices(of: versions, in: &content))
     }
 
     private static func clearPlacements(of versions: Set<VersionID>, in content: inout BookContent) -> Set<PageID> {

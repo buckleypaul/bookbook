@@ -46,28 +46,6 @@ extension BookMutations {
         return DirtySet(sessions: [id])
     }
 
-    /// A finished generation for an asset: the version goes into the session (found by
-    /// message first) and becomes the asset's `chosen` (the newest image always wins, bumping
-    /// the revision; earlier versions stay in the session).
-    static func applyAssetDelivery(_ delivery: GenerationDelivery, storedImage: ImageRef?,
-                                   to content: inout BookContent, versionID: VersionID, now: Date) -> DirtySet {
-        let owner = delivery.item.target.owner
-        guard let sessionID = content.session(containing: delivery.item.messageID)?.id
-                ?? Self.sessionID(for: owner, in: content),
-              var session = content.sessions[sessionID] else { return DirtySet() }
-        var dirty = DirtySet()
-        let (changed, delivered) = record(delivery, storedImage: storedImage, versionID: versionID, now: now,
-                                          in: &session, content: content)
-        if changed { dirty.sessions.insert(sessionID) }
-        if let version = delivered {
-            content.sessions[sessionID] = session
-            if let asset = chooseLatest(version.id, session: sessionID, in: &content) { dirty.assets.insert(asset) }
-            return dirty
-        }
-        content.sessions[sessionID] = session
-        return dirty
-    }
-
     /// A request queued before its asset was deleted still holds the token in the stored intent.
     /// The answered message's text was rewritten to plain names at delete, so the delivered
     /// provenance takes it (Version details and Regenerate keep the name).

@@ -400,6 +400,25 @@ public struct Box: Hashable, Codable, Sendable, Identifiable {
     }
 }
 
+extension Box {
+    /// The edges the bleed pushes out: `bleedEdges` while `bleed` (points) is above 0, except,
+    /// on a spread, an edge lying on the fold (the fold is not a trim edge, so a half-spread
+    /// full-bleed box must not spill onto the facing page). `trimWidth` is the width the frame
+    /// is normalized over, in points: double width for a spread, whose fold is its middle.
+    /// The one rule behind `BookContent.boxAspect` and `BBLayout.PageGeometry.renderRect`.
+    public func pushedBleedEdges(trimWidth: Double, isSpread: Bool, bleed: Double) -> EdgeSet {
+        guard bleed > 0, !bleedEdges.isEmpty else { return [] }
+        var edges = bleedEdges
+        if isSpread {
+            let fold = trimWidth / 2
+            let tolerance = 0.5
+            if abs(frame.x * trimWidth - fold) <= tolerance { edges.remove(.leading) }
+            if abs(frame.maxX * trimWidth - fold) <= tolerance { edges.remove(.trailing) }
+        }
+        return edges
+    }
+}
+
 public enum BoxContentKind: Hashable, Codable, Sendable {
     case image
     case text(TextBoxStyle)

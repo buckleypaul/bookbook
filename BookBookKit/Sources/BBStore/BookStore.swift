@@ -107,11 +107,8 @@ public actor BookStore {
         for p in try readAll(PackageCoding.pagesFolder, Page.self) { pages[p.id] = p }
         var sessions: [SessionID: Session] = [:]
         var retired: Set<SessionID> = []
-        for file in try readAll(PackageCoding.sessionsFolder, Session.self, skippingLegacySheetItems: true) {
-            switch file {
-            case let .decoded(s): sessions[s.id] = s.droppingInvalidImageRefs()
-            case let .legacySheetItem(id): retired.insert(id)
-            }
+        for s in try readAll(PackageCoding.sessionsFolder, Session.self, onLegacySheetItem: { retired.insert($0) }) {
+            sessions[s.id] = s.droppingInvalidImageRefs()
         }
         // Older packages have no `assets/` folder (readAll tolerates that); no schema bump.
         var assets: [AssetID: Asset] = [:]
@@ -255,39 +252,28 @@ public actor BookStore {
         return try PackageCoding.io("read \(path)") { try Data(contentsOf: url) }
     }
 
-    private func readAll<T: Decodable>(_ folder: String, _ type: T.Type) throws(StoreError) -> [T] {
-        try readAll(folder, type, skippingLegacySheetItems: false).compactMap {
-            if case let .decoded(value) = $0 { value } else { nil }
-        }
-    }
-
-    private enum ReadFile<T> {
-        case decoded(T)
-        /// A session file whose owner is a legacy character-sheet item (`LegacySheetItemError`).
-        case legacySheetItem(SessionID)
-    }
-
-    /// Every `<folder>/*.json`, decoded. With `skippingLegacySheetItems`, a file that throws
-    /// `LegacySheetItemError` is reported by the ID in its name instead of failing the read.
+    /// Every `<folder>/*.json`, decoded. With `onLegacySheetItem`, a file that throws
+    /// `LegacySheetItemError` (a session owned by a legacy character-sheet item) is left out and
+    /// reported by the ID in its name instead of failing the read.
     private func readAll<T: Decodable>(_ folder: String, _ type: T.Type,
-                                       skippingLegacySheetItems: Bool) throws(StoreError) -> [ReadFile<T>] {
+                                       onLegacySheetItem: ((SessionID) -> Void)? = nil) throws(StoreError) -> [T] {
         let dir = packageURL.appending(path: folder, directoryHint: .isDirectory)
         guard FileManager.default.fileExists(atPath: dir.path(percentEncoded: false)) else { return [] }
         let urls = try PackageCoding.io("list \(folder)") {
             try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
         }
-        var out: [ReadFile<T>] = []
+        var out: [T] = []
         for url in urls where url.pathExtension == "json" && !url.lastPathComponent.hasPrefix(".") {
             let data = try PackageCoding.io("read \(url.lastPathComponent)") { try Data(contentsOf: url) }
             let what = "\(folder)/\(url.lastPathComponent)"
-            guard skippingLegacySheetItems else {
-                out.append(.decoded(try PackageCoding.decode(T.self, from: data, what: what)))
+            guard let onLegacySheetItem else {
+                out.append(try PackageCoding.decode(T.self, from: data, what: what))
                 continue
             }
             if let value = try PackageCoding.decodeUnlessLegacySheetItem(T.self, from: data, what: what) {
-                out.append(.decoded(value))
+                out.append(value)
             } else if let uuid = UUID(uuidString: url.deletingPathExtension().lastPathComponent) {
-                out.append(.legacySheetItem(SessionID(rawValue: uuid)))
+                onLegacySheetItem(SessionID(rawValue: uuid))
             }
             // A legacy sheet file with a non-UUID name: ignored (and left in place).
         }

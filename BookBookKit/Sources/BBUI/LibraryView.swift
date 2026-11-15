@@ -71,11 +71,7 @@ public struct LibraryView: View {
             NewBookWizard(fromStory: kind == .fromStory) { id in openWindow(value: id) }
         }
         .bookActions($actions)
-        .alert("Couldn't open the sample book", isPresented: $app.sampleBookError.isPresent()) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(app.sampleBookError ?? "")
-        }
+        .messageAlert("Couldn't open the sample book", $app.sampleBookError)
         .task {
             await app.start()
             await app.reopenBooks { openWindow(value: $0) }

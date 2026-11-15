@@ -120,8 +120,7 @@ struct TypographyForm: View {
                 alert = FontAlert(title: "Couldn't import the font", message: StoreErrorText.message(for: error))
             }
         }
-        .alert(alert?.title ?? "", isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } }),
-               presenting: alert) { _ in
+        .alert(alert?.title ?? "", isPresented: $alert.isPresent(), presenting: alert) { _ in
             Button("OK", role: .cancel) {}
         } message: { Text($0.message) }
     }

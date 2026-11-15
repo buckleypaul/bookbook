@@ -73,8 +73,7 @@ struct TemplateList: View {
         }
         .onDeleteCommand { if let id = model.templateID { requestDelete(id) } }
         .safeAreaInset(edge: .top, spacing: 0) { header }
-        .confirmationDialog("Delete this layout?", isPresented: Binding(get: { confirmDelete != nil },
-                                                                         set: { if !$0 { confirmDelete = nil } }),
+        .confirmationDialog("Delete this layout?", isPresented: $confirmDelete.isPresent(),
                             titleVisibility: .visible, presenting: confirmDelete) { id in
             Button("Delete", role: .destructive) { model.delete(id) }
             Button("Cancel", role: .cancel) {}

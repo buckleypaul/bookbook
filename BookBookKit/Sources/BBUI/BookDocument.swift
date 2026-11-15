@@ -111,7 +111,7 @@ public final class BookDocument {
             await store.setAutosaveResultHandler { continuation.yield($0) }
         }
         autosaveResults = Task { [weak self] in
-            for await error in results { self?.lastSaveError = error }
+            for await error in results { self?.noteSaveResult(error) }
         }
         // Imported fonts (A §8.3): every file in `fonts/` is registered for this process.
         FontRegistry.register(store.fontFileURLs())
@@ -392,11 +392,17 @@ public final class BookDocument {
         await pending?.value
         do {
             try await store.flush()
-            lastSaveError = nil
+            noteSaveResult(nil)
         } catch {
-            lastSaveError = error
+            noteSaveResult(error)
         }
         await writeThumbnailIfNeeded()
+    }
+
+    /// Records a save's result in `lastSaveError`. Written only when it changes: the usual
+    /// nil-to-nil after an autosave would otherwise invalidate every view reading the document.
+    private func noteSaveResult(_ error: StoreError?) {
+        if lastSaveError != error { lastSaveError = error }
     }
 
     /// Stops editing, flushes, writes the thumbnail and releases the lock (window close, quit).

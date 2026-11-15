@@ -25,8 +25,9 @@ public final class BookDocument {
     /// Phase 4: the window's format bar / Format menu state, driven by the inline text editor.
     public let formatting = TextFormatController()
     /// Phase 4: PostScript names the book uses that don't resolve (book-level warning, A §8.3).
-    /// Refreshed when the book opens, after a font import and after every undoable edit except
-    /// coalesced typing (which reuses the formatting already there).
+    /// Refreshed when the book opens, after a font import and after every undoable edit that can
+    /// change the text or the typography (`canChangeFonts`), except coalesced typing (which
+    /// reuses the formatting already there).
     public private(set) var missingFonts: [String] = []
     /// Bumped after a font import, so cached text layouts that resolved
     /// a font before it was registered can be thrown away (the canvas watches this).
@@ -501,8 +502,29 @@ public final class BookDocument {
         guard isEditable, let (inverse, dirty) = applyEdit(edit) else { return nil }
         didApply(dirty)
         // Only text (pages, including deleted and restored ones) and the style's typography name fonts.
-        if dirty.style || !dirty.pages.isEmpty || !dirty.deletedPages.isEmpty { refreshMissingFonts() }
+        if Self.canChangeFonts(edit), dirty.style || !dirty.pages.isEmpty || !dirty.deletedPages.isEmpty {
+            refreshMissingFonts()
+        }
         return inverse
+    }
+
+    /// Whether `edit` can change what `refreshMissingFonts` reads: the text of the pages in the
+    /// story order, or the style's typography. Exhaustive on purpose (no `default`), so a new
+    /// edit has to be placed; when in doubt, true.
+    private static func canChangeFonts(_ edit: Edit) -> Bool {
+        switch edit {
+        case .setText, .insertPage, .removePage, .setPageLayout, .setTypography, .setStyleGuide:
+            true
+        case let .compound(edits):
+            edits.contains(where: canChangeFonts)
+        // A page's slots, flags and checklist; a pure reorder (the same pages, and the result is
+        // sorted); the other style fields; templates, assets and sessions.
+        case .setPlacement, .setTextStyle, .setPageDone, .setCrop, .setBaselines, .setChecklist, .setPageOrder,
+             .setStyleVisual, .setPageSetup, .setPageNumberStyle,
+             .insertTemplate, .removeTemplate, .setTemplate, .insertAsset, .removeAsset, .updateAsset,
+             .setConsistencyDismissed:
+            false
+        }
     }
 
     /// After any applied edit (registered or a coalesced keystroke): stamps `modifiedAt` and

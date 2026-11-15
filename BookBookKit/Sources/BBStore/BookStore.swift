@@ -94,10 +94,9 @@ public actor BookStore {
     /// change retired them (`RetiredAssetSessions`). Any other undecodable file fails the open.
     private func readContent() throws(StoreError) -> (BookContent, Set<SessionID>) {
         // Also guards a migrator that leaves a newer book untouched, and read-only opens (no migration).
-        struct SchemaProbe: Decodable { var schemaVersion: Int }
         let bookData = try readFile(PackageCoding.bookPath)
-        let probe = try PackageCoding.decode(SchemaProbe.self, from: bookData, what: "book.json")
-        if probe.schemaVersion > Book.currentSchemaVersion { throw StoreError.schemaTooNew(probe.schemaVersion) }
+        let schemaVersion = try PackageCoding.schemaVersion(ofBook: bookData)
+        if schemaVersion > Book.currentSchemaVersion { throw StoreError.schemaTooNew(schemaVersion) }
         let book = try PackageCoding.decode(Book.self, from: bookData, what: "book.json")
         var style = try PackageCoding.decode(StyleGuide.self, from: readFile(PackageCoding.stylePath), what: "style.json")
         style.styleReferences.removeAll { !$0.isValid }

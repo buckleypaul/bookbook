@@ -20,8 +20,7 @@ public struct Library: Sendable {
         else { return [] }
         var entries: [LibraryEntry] = []
         for url in urls where url.pathExtension == "bookbook" {
-            guard let data = try? Data(contentsOf: url.appending(path: PackageCoding.bookPath)),
-                  let book = try? PackageCoding.decoder().decode(Book.self, from: data) else { continue }
+            guard let book = try? PackageCoding.readBook(in: url, what: "read book") else { continue }
             entries.append(Self.entry(for: book, at: url))
         }
         return entries.sorted {
@@ -139,10 +138,7 @@ extension Library {
             title = "\(entry.title) copy \(n)"
             n += 1
         }
-        let sourceData = try PackageCoding.io("read book") {
-            try Data(contentsOf: entry.url.appending(path: PackageCoding.bookPath))
-        }
-        let book = try PackageCoding.decode(Book.self, from: sourceData, what: "book.json")
+        let book = try PackageCoding.readBook(in: entry.url, what: "read book")
         return try copyPackage(from: entry.url, book: book, title: title, what: "duplicate book") {
             $0.id = BookID()
             $0.title = title

@@ -71,6 +71,18 @@ enum PackageCoding {
         }
     }
 
+    /// The `schemaVersion` in `book.json`'s bytes, read without decoding the rest of the book.
+    static func schemaVersion(ofBook data: Data) throws(StoreError) -> Int {
+        struct SchemaProbe: Decodable { var schemaVersion: Int }
+        return try decode(SchemaProbe.self, from: data, what: bookPath).schemaVersion
+    }
+
+    /// Reads and decodes `<package>/book.json` alone. `what` labels a failed read in the error.
+    static func readBook(in package: URL, what: String) throws(StoreError) -> Book {
+        let data = try io(what) { try Data(contentsOf: package.appending(path: bookPath)) }
+        return try decode(Book.self, from: data, what: bookPath)
+    }
+
     /// Runs `body`, mapping any non-`StoreError` to `.io`.
     @discardableResult
     static func io<T>(_ what: String, _ body: () throws -> T) throws(StoreError) -> T {

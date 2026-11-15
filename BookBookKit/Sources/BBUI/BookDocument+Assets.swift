@@ -3,8 +3,8 @@ import BBStore
 import Foundation
 import ImageIO
 
-// Phase 10 contract (main thread); bodies by the UI-core lane. Signatures are frozen.
-
+/// Assets on an open book (Phase 10): usage, deletion, image and reference-photo import, and
+/// session lookups for any owner.
 extension BookDocument {
     /// Where an asset is used (PD §8.3), from the document's incrementally maintained
     /// `UsageIndex` (refreshed on every edit and delivery).
@@ -119,10 +119,6 @@ extension BookDocument {
     }
 
     /// A short label for an owner: "Page 3 · Image 1", or the asset's name.
-    public func ownerLabel(_ owner: SessionOwner) -> String {
-        Self.ownerLabel(owner, in: content)
-    }
-
     nonisolated static func ownerLabel(_ owner: SessionOwner, in content: BookContent) -> String {
         switch owner {
         case let .pageBox(page, box):

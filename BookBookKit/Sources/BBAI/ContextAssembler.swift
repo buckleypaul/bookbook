@@ -21,6 +21,14 @@ public struct PlannedImage: Hashable, Sendable {
     }
 }
 
+extension PlannedImage {
+    /// A reference candidate as planned, before the model's budget is applied.
+    init(_ candidate: ReferenceSelector.Candidate) {
+        self.init(ref: candidate.ref, role: candidate.role, label: candidate.label, pixelSize: candidate.pixelSize,
+                  depictsRealPerson: candidate.depictsRealPerson)
+    }
+}
+
 /// Why assembly could not produce a request.
 public enum AssemblyError: Error, Hashable, Sendable {
     /// The page, box, template, asset or session is gone.
@@ -57,6 +65,8 @@ public enum AssemblyError: Error, Hashable, Sendable {
 /// Two steps so the queue can load bytes in between: `plan` lists the images needed, `assemble`
 /// takes their bytes.
 public enum ContextAssembler {
+    /// A box target, resolved: the page, its template, the box and the session making its
+    /// picture (an image box) or its decoration (a text box, A §7.13).
     struct Resolved {
         var page: Page
         var template: Template
@@ -70,21 +80,12 @@ public enum ContextAssembler {
         var session: Session
     }
 
-    /// A text box's styling target, resolved (A §7.13): the page, its template, the text box and
-    /// the session making the box's decoration.
-    struct TextBoxResolved {
-        var page: Page
-        var template: Template
-        var box: Box
-        var session: Session
-    }
-
     /// What the request is for.
     enum Context {
         case page(Resolved)
         case asset(AssetResolved)
         /// A text box's decoration (A §7.13).
-        case textBox(TextBoxResolved)
+        case textBox(Resolved)
 
         var session: Session {
             switch self {
@@ -98,27 +99,48 @@ public enum ContextAssembler {
     /// Resolves the session by the queue item's message first (box IDs can move), then by the
     /// target's slot. Page-box targets only.
     static func resolve(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> Resolved? {
-        guard case let .pageBox(targetPage, targetBox) = target else { return nil }
+        resolveBox(target: target, messageID: messageID, content: content, textBox: false)
+    }
+
+    /// A page-box target, its `Page.images` slot and an image box; or (`textBox`, A §7.13) a
+    /// text-box target, its `Page.textStyles` slot and a text box, whose message must belong to
+    /// a text-box session. Nil for a target of the other kind.
+    private static func resolveBox(target: GenerationTarget, messageID: MessageID?, content: BookContent,
+                                   textBox: Bool) -> Resolved? {
+        /// The page and box of a target of the wanted kind.
+        func location(_ target: GenerationTarget?) -> (PageID, BoxID)? {
+            switch target {
+            case let .pageBox(page, box)? where !textBox: (page, box)
+            case let .textBox(page, box)? where textBox: (page, box)
+            default: nil
+            }
+        }
+        /// The session the box's slot holds.
+        func slotSession(_ page: PageID, _ box: BoxID) -> SessionID? {
+            textBox ? content.pages[page]?.textStyles[box]?.sessionID : content.pages[page]?.images[box]?.sessionID
+        }
+        guard let (targetPage, targetBox) = location(target) else { return nil }
         var pageID = targetPage, boxID = targetBox
         let session: Session
         if let messageID, let owner = content.session(containing: messageID) {
+            if textBox { guard case .textBox = owner.owner else { return nil } }
             // The message's session owns the geometry: find the slot that holds it now, since the
             // target's box ID may have moved or been reused by another box.
-            if content.pages[targetPage]?.images[targetBox]?.sessionID != owner.id {
+            if slotSession(targetPage, targetBox) != owner.id {
                 // No slot holds the session any more. If the target box now belongs to another session,
                 // its shape is not this session's: resolve to nothing rather than use it.
-                guard case let .pageBox(home, box) = ConsistencyAssembler.target(for: owner, in: content)
-                else { return nil }
-                (pageID, boxID) = (home, box)
+                guard let home = location(ConsistencyAssembler.target(for: owner, in: content)) else { return nil }
+                (pageID, boxID) = home
             }
             session = owner
         } else {
-            guard let slot = content.pages[pageID]?.images[boxID], let found = content.sessions[slot.sessionID]
-            else { return nil }
+            guard let slot = slotSession(pageID, boxID), let found = content.sessions[slot] else { return nil }
             session = found
         }
         guard let page = content.pages[pageID], let template = content.template(for: page),
-              let box = template.box(boxID), box.content == .image else { return nil }
+              let box = template.box(boxID) else { return nil }
+        let isText = if case .text = box.content { true } else { false }
+        guard textBox ? isText : box.content == .image else { return nil }
         return Resolved(page: page, template: template, box: box, session: session)
     }
 
@@ -139,36 +161,12 @@ public enum ContextAssembler {
         }
     }
 
-    /// Text-box targets (A §7.13): the session by the queue item's message first (box IDs can
-    /// move), then by the box's `Page.textStyles` slot. The box must be a text box.
-    static func resolveTextBox(target: GenerationTarget, messageID: MessageID?,
-                               content: BookContent) -> TextBoxResolved? {
-        guard case let .textBox(targetPage, targetBox) = target else { return nil }
-        var pageID = targetPage, boxID = targetBox
-        let session: Session
-        if let messageID, let owner = content.session(containing: messageID) {
-            guard case .textBox = owner.owner else { return nil }
-            if content.pages[targetPage]?.textStyles[targetBox]?.sessionID != owner.id {
-                guard case let .textBox(home, box) = ConsistencyAssembler.target(for: owner, in: content)
-                else { return nil }
-                (pageID, boxID) = (home, box)
-            }
-            session = owner
-        } else {
-            guard let slot = content.pages[pageID]?.textStyles[boxID], let found = content.sessions[slot.sessionID]
-            else { return nil }
-            session = found
-        }
-        guard let page = content.pages[pageID], let template = content.template(for: page),
-              let box = template.box(boxID), case .text = box.content else { return nil }
-        return TextBoxResolved(page: page, template: template, box: box, session: session)
-    }
-
     static func context(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> Context? {
         switch target {
         case .pageBox: resolve(target: target, messageID: messageID, content: content).map(Context.page)
         case .asset: resolveAsset(target: target, messageID: messageID, content: content).map(Context.asset)
-        case .textBox: resolveTextBox(target: target, messageID: messageID, content: content).map(Context.textBox)
+        case .textBox:
+            resolveBox(target: target, messageID: messageID, content: content, textBox: true).map(Context.textBox)
         }
     }
 
@@ -285,10 +283,7 @@ public enum ContextAssembler {
 
     /// `plan` for an already prepared request, so callers that go on to `assemble` prepare once.
     static func plan(_ prepared: Prepared) -> [PlannedImage] {
-        prepared.candidates.map {
-            PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize,
-                         depictsRealPerson: $0.depictsRealPerson)
-        }
+        prepared.candidates.map(PlannedImage.init)
     }
 
     static func limits(_ model: CatalogModel) -> ReferenceSelector.Limits {
@@ -379,27 +374,26 @@ public enum ContextAssembler {
         let isPage = !composition.isEmpty
         let transparent = isDecoration && model.image.supportsTransparentBackground
 
-        let values: [(key: String, placeholders: [String: String], required: Bool)] = [
-            ("role", [:], true),
-            ("style", ["style": styleText], !styleText.isEmpty),
-            ("avoid", ["avoid": style.negativeGuidance.trimmed], !style.negativeGuidance.trimmed.isEmpty),
-            ("cast", ["entries": cast], !cast.isEmpty),
-            ("subject", ["subject": subject], !subject.isEmpty),
-            ("composition", composition, isPage),
-            ("story", ["story": prepared.storyText], includeStory),
-            ("history", ["earlier": history], !history.isEmpty),
-            ("region", [:], intent.regionMask != nil),
-            ("request", ["request": requestText], !requestText.isEmpty),
-            ("legend", ["lines": legend], !legend.isEmpty),
-        ]
-        let sections = isDecoration
-            ? decorationSections(intent: intent, styleText: styleText, avoid: style.negativeGuidance.trimmed,
-                                 history: history, legend: legend, aspect: aspect, transparent: transparent)
-            : values.compactMap { entry -> ComposedPrompt.Section? in
-                guard entry.required, let template = PromptTemplates.text(for: entry.key) else { return nil }
-                return .init(key: entry.key, text: PromptTemplates.render(template, entry.placeholders))
-            }
-        let prompt = ComposedPrompt(sections: sections)
+        let avoid = style.negativeGuidance.trimmed
+        let specs: [SectionSpec] = if isDecoration {
+            decorationSpecs(intent: intent, styleText: styleText, avoid: avoid, history: history, legend: legend,
+                            aspect: aspect, transparent: transparent)
+        } else {
+            [
+                ("role", "role", [:], true),
+                ("style", "style", ["style": styleText], !styleText.isEmpty),
+                ("avoid", "avoid", ["avoid": avoid], !avoid.isEmpty),
+                ("cast", "cast", ["entries": cast], !cast.isEmpty),
+                ("subject", "subject", ["subject": subject], !subject.isEmpty),
+                ("composition", "composition", composition, isPage),
+                ("story", "story", ["story": prepared.storyText], includeStory),
+                ("history", "history", ["earlier": history], !history.isEmpty),
+                ("region", "region", [:], intent.regionMask != nil),
+                ("request", "request", ["request": requestText], !requestText.isEmpty),
+                ("legend", "legend", ["lines": legend], !legend.isEmpty),
+            ]
+        }
+        let prompt = ComposedPrompt(sections: render(specs))
 
         // Refinements keep the base image's shape (A §7.6), snapped to the model's size rules so imported
         // images (scans, photos) stay valid; new images use §7.5 fitting.
@@ -426,17 +420,29 @@ public enum ContextAssembler {
         return (request, report)
     }
 
+    /// One prompt section: its stable `key`, the template `file` that words it, the values for
+    /// the template's placeholders, and whether this request has it.
+    typealias SectionSpec = (key: String, file: String, placeholders: [String: String], required: Bool)
+
+    /// The required sections whose template file exists, in table order.
+    static func render(_ specs: [SectionSpec]) -> [ComposedPrompt.Section] {
+        specs.compactMap { spec in
+            guard spec.required, let template = PromptTemplates.text(for: spec.file) else { return nil }
+            return .init(key: spec.key, text: PromptTemplates.render(template, spec.placeholders))
+        }
+    }
+
     /// A text box's decoration prompt (A §7.13): ornament only, in the book's style, with an
     /// empty centre for the text and a transparent (or plain white, keyed out locally)
     /// background. The request is the text model's decoration description, else the message.
     /// Section keys match the picture prompt's where the meaning is the same; the wording comes
     /// from the `decoration-*` files.
-    static func decorationSections(intent: GenerationIntent, styleText: String, avoid: String, history: String,
-                                   legend: String, aspect: Double, transparent: Bool) -> [ComposedPrompt.Section] {
+    static func decorationSpecs(intent: GenerationIntent, styleText: String, avoid: String, history: String,
+                                legend: String, aspect: Double, transparent: Bool) -> [SectionSpec] {
         let described = intent.textStyle?.decorationPrompt?.trimmed ?? ""
         let request = described.isEmpty ? intent.messageText.trimmed : described
         let background = transparent ? "decoration-background-transparent" : "decoration-background-white"
-        let entries: [(key: String, file: String, placeholders: [String: String], required: Bool)] = [
+        return [
             ("role", "decoration-role", [:], true),
             ("style", "style", ["style": styleText], !styleText.isEmpty),
             ("avoid", "avoid", ["avoid": avoid], !avoid.isEmpty),
@@ -447,10 +453,6 @@ public enum ContextAssembler {
             ("background", background, [:], true),
             ("legend", "legend", ["lines": legend], !legend.isEmpty),
         ]
-        return entries.compactMap { entry in
-            guard entry.required, let template = PromptTemplates.text(for: entry.file) else { return nil }
-            return .init(key: entry.key, text: PromptTemplates.render(template, entry.placeholders))
-        }
     }
 
     /// Region edit (A §7.6): the stored 8-bit mask, checked against the base payload's pixel size

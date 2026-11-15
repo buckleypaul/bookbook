@@ -29,7 +29,11 @@ extension PageGeometry {
     /// half) for a spread geometry, each inset by the margins on all four sides of its own
     /// half (the gutter margin applies on both sides of the fold).
     public var pageSafeAreas: [CGRect] {
-        safeAreas(spread: isSpread)
+        guard isSpread else { return [safeArea] }
+        var half = setup
+        half.trimSize = PointSize(width: setup.trimSize.width / 2, height: setup.trimSize.height)
+        let left = PageGeometry(setup: half).safeArea
+        return [left, left.offsetBy(dx: trimSize.width / 2, dy: 0)]
     }
 }
 
@@ -164,9 +168,9 @@ public struct SnapTargets: Hashable, Sendable {
 
     /// Margins (each page's safe area edges), the trim edges, each page's centre lines, the
     /// fold (spreads), and the edges and centres of `others` (their rotated bounds).
-    public static func make(geometry: PageGeometry, isSpread: Bool, others: [EditableBox]) -> SnapTargets {
+    public static func make(geometry: PageGeometry, others: [EditableBox]) -> SnapTargets {
         let size = geometry.trimSize
-        let pages = geometry.safeAreas(spread: isSpread)
+        let pages = geometry.pageSafeAreas
         let pageCount = CGFloat(max(1, pages.count))
         let pageWidth = size.width / pageCount
         var xs: [CGFloat] = [0, size.width]
@@ -175,7 +179,7 @@ public struct SnapTargets: Hashable, Sendable {
             xs += [safe.minX, safe.maxX, pageWidth * (CGFloat(index) + 0.5)]
             ys += [safe.minY, safe.maxY]
         }
-        if isSpread { xs.append(geometry.foldX) }
+        if geometry.isSpread { xs.append(geometry.foldX) }
         for other in others {
             let b = BoxHitTesting.rotatedBounds(other)
             xs += [b.minX, b.midX, b.maxX]
@@ -350,15 +354,4 @@ private func union(of frames: [NormalizedRect]) -> NormalizedRect {
     let x0 = frames.map(\.x).min()!, y0 = frames.map(\.y).min()!
     let x1 = frames.map(\.maxX).max()!, y1 = frames.map(\.maxY).max()!
     return NormalizedRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
-}
-
-extension PageGeometry {
-    /// Safe areas for one page, or for the two halves of a spread geometry.
-    func safeAreas(spread: Bool) -> [CGRect] {
-        guard spread else { return [safeArea] }
-        var half = setup
-        half.trimSize = PointSize(width: setup.trimSize.width / 2, height: setup.trimSize.height)
-        let left = PageGeometry(setup: half).safeArea
-        return [left, left.offsetBy(dx: trimSize.width / 2, dy: 0)]
-    }
 }

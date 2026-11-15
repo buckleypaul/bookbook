@@ -119,11 +119,8 @@ public struct PageRenderer {
         if let prepared, let image = prepared.preparedImage(for: BoxImageKey(page: page.id, box: box.id)) {
             ctx.addPath(path)
             ctx.clip()
-            // Already cropped and resampled to the render rect: draw it filling the rect (flip locally).
-            ctx.translateBy(x: rect.minX, y: rect.maxY)
-            ctx.scaleBy(x: 1, y: -1)
-            ctx.interpolationQuality = .high
-            ctx.draw(image, in: CGRect(origin: .zero, size: rect.size))
+            // Already cropped and resampled to the render rect: draw it filling the rect.
+            Self.drawFlipped(image, in: rect, ctx: ctx)
         } else if let slot = page.images[box.id], let placement = slot.placement,
            let version = content.placedVersion(page: page.id, box: box.id),
            let image = images.image(for: version.image) {
@@ -131,11 +128,7 @@ public struct PageRenderer {
             ctx.clip()
             let imageSize = CGSize(width: image.width, height: image.height)
             let target = PageGeometry.imageRect(imageSize: imageSize, boxRect: rect, placement: placement)
-            // The context is y-down; CGContext.draw(image:) assumes y-up, so flip locally.
-            ctx.translateBy(x: target.minX, y: target.maxY)
-            ctx.scaleBy(x: 1, y: -1)
-            ctx.interpolationQuality = .high
-            ctx.draw(image, in: CGRect(origin: .zero, size: target.size))
+            Self.drawFlipped(image, in: target, ctx: ctx)
         } else if isOutput {
             // Print and bleed PDFs never draw editor placeholders or sample art.
             return
@@ -169,8 +162,7 @@ public struct PageRenderer {
     /// The text box's layout at `size` with fully resolved typography, from `layouts` when set.
     /// Shared by drawing and overflow checks so they agree.
     private func textLayout(_ text: RichText, typography: Typography, size: CGSize) -> TextBoxLayout {
-        layouts?.layout(text: text, typography: typography, containerSize: size)
-            ?? TextBoxLayout(text: text, typography: typography, containerSize: size)
+        TextBoxLayout.cached(in: layouts, text: text, typography: typography, containerSize: size)
     }
 
     private func drawTextBox(_ box: Box, appearance: TextBoxAppearance, text: RichText?, geometry: PageGeometry,
@@ -191,10 +183,7 @@ public struct PageRenderer {
         }
         if let decoration {
             ctx.saveGState()
-            ctx.translateBy(x: rect.minX, y: rect.maxY)
-            ctx.scaleBy(x: 1, y: -1)
-            ctx.interpolationQuality = .high
-            ctx.draw(decoration, in: CGRect(origin: .zero, size: rect.size))
+            Self.drawFlipped(decoration, in: rect, ctx: ctx)
             ctx.restoreGState()
         }
         if let background = appearance.background {
@@ -273,6 +262,16 @@ public struct PageRenderer {
     static func bounds(of box: Box, geometry: PageGeometry) -> CGRect {
         BoxHitTesting.rotatedBounds(EditableBox(id: box.id, rect: geometry.renderRect(for: box),
                                                 rotationDegrees: box.rotationDegrees))
+    }
+
+    /// Draws `image` filling `rect`. The context is y-down and `CGContext.draw(image:)` assumes
+    /// y-up, so this flips the CTM (and sets high interpolation) and leaves both changed: the
+    /// caller's own save/restore undoes them, so a PDF content stream gains no extra `q`/`Q`.
+    private static func drawFlipped(_ image: CGImage, in rect: CGRect, ctx: CGContext) {
+        ctx.translateBy(x: rect.minX, y: rect.maxY)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(origin: .zero, size: rect.size))
     }
 
     private func boxPath(_ rect: CGRect, cornerRadius: Double) -> CGPath {

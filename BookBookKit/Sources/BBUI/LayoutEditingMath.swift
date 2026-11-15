@@ -68,7 +68,7 @@ enum LayoutEditingMath {
     /// Snap targets for a drag: `SnapTargets.make`, plus the bleed's outer edges when bleed
     /// is on (a full-bleed box's render edges sit there).
     static func snapTargets(geometry: PageGeometry, others: [EditableBox]) -> SnapTargets {
-        var targets = SnapTargets.make(geometry: geometry, isSpread: geometry.isSpread, others: others)
+        var targets = SnapTargets.make(geometry: geometry, others: others)
         let bleed = geometry.bleed
         guard bleed > 0 else { return targets }
         let sheet = geometry.bleedRect

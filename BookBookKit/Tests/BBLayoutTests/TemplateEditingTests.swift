@@ -128,7 +128,7 @@ struct TemplateEditingTests {
     @Test func snapTargetsSingleHaveNoDuplicates() {
         let g = PageGeometry(setup: Self.setup)
         let other = EditableBox(id: Self.id1, rect: CGRect(x: 20, y: 10, width: 130, height: 50), rotationDegrees: 0)
-        let t = SnapTargets.make(geometry: g, isSpread: false, others: [other, other])
+        let t = SnapTargets.make(geometry: g, others: [other, other])
         #expect(t.xs.count == Set(t.xs).count)
         #expect(t.ys.count == Set(t.ys).count)
         for x in [0, 20, 150, 260, 300] as [CGFloat] { #expect(t.xs.contains(x)) }
@@ -137,7 +137,7 @@ struct TemplateEditingTests {
 
     @Test func snapTargetsSpreadIncludeFoldAndBothHalves() {
         let g = PageGeometry(setup: Self.setup, kind: .spread)
-        let t = SnapTargets.make(geometry: g, isSpread: true, others: [])
+        let t = SnapTargets.make(geometry: g, others: [])
         for x in [0, 20, 150, 260, 300, 320, 450, 560, 600] as [CGFloat] { #expect(t.xs.contains(x)) }
     }
 

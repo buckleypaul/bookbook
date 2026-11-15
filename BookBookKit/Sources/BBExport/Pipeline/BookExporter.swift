@@ -29,8 +29,7 @@ public final class BookExporter {
     public convenience init(content: BookContent, images: any PageImageSource, preparer: any ImagePreparing,
                             imageURL: @escaping @Sendable (ImageRef) -> URL) {
         self.init(content: content, images: images, preparer: preparer, requestBuilder: { page, content in
-            ImagePreparationPlanner.requests(page: page, in: content, imageURL: imageURL,
-                                             pixelSize: { ImagePixelSize.of(url: imageURL($0)) })
+            ImagePreparationPlanner.requests(page: page, in: content, imageURL: imageURL)
         })
     }
 
@@ -47,8 +46,7 @@ public final class BookExporter {
 
     public func pdfData(_ options: ExportOptions,
                         progress: @MainActor (ExportProgress) -> Void) async throws -> (Data, ExportResult) {
-        let data = NSMutableData()
-        guard let consumer = CGDataConsumer(data: data as CFMutableData) else { throw ExportError.contextCreationFailed }
+        let (data, consumer) = try Self.memoryConsumer()
         let result = try await render(options, into: consumer, progress: progress)
         return (data as Data, result)
     }
@@ -90,9 +88,7 @@ public final class BookExporter {
         else { throw ExportError.contextCreationFailed }
         ctx.translateBy(x: 0, y: CGFloat(height))
         ctx.scaleBy(x: scale, y: -scale)
-        var renderer = PageRenderer(images: images)
-        renderer.prepared = prepared
-        OutputPageDrawing.draw(slot, content: content, renderer: renderer,
+        OutputPageDrawing.draw(slot, content: content, renderer: pageRenderer(drawing: prepared),
                                marks: PageNumberMarks(content: content).marks(for: page.id), target: .pdfTrim, bleed: 0, ctx: ctx)
         guard let image = ctx.makeImage() else { throw ExportError.encodingFailed }
         return try Self.encode(image, format: format)
@@ -101,8 +97,7 @@ public final class BookExporter {
     /// Cover only, single trim-size page: for printing on card when a booklet excludes it.
     public func coverPDFData() async throws -> Data {
         guard let cover = content.coverPage else { throw ExportError.noPages }
-        let data = NSMutableData()
-        guard let consumer = CGDataConsumer(data: data as CFMutableData) else { throw ExportError.contextCreationFailed }
+        let (data, consumer) = try Self.memoryConsumer()
         _ = try await renderPages([OutputSlot(page: cover, half: nil)], kind: .standard, into: consumer,
                                   progress: { _ in })
         return data as Data
@@ -125,12 +120,25 @@ public final class BookExporter {
             .map { (page: $0, position: $1) }
     }
 
+    /// The pages `options` exports: the cover when included (and the book has one), and the
+    /// story pages its range selects. Every "which pages does this export include" goes through here.
+    nonisolated static func selection(
+        _ content: BookContent, options: ExportOptions
+    ) -> (cover: Page?, story: [(page: Page, position: PagePosition)]) {
+        (cover: options.includeCover ? content.coverPage : nil,
+         story: storyPositions(content, range: options.pageRange))
+    }
+
     /// Output pages for standard and print-shop exports.
     func pageSlots(_ options: ExportOptions) -> [OutputSlot] {
-        var slots: [OutputSlot] = []
-        if options.includeCover, let cover = content.coverPage { slots.append(OutputSlot(page: cover, half: nil)) }
-        let pages = Self.storyPositions(content, range: options.pageRange).map(\.page)
-        return slots + storySlots(pages, splitSpreads: options.spreads == .singlePages)
+        let selection = Self.selection(content, options: options)
+        return coverSlots(selection.cover)
+            + storySlots(selection.story.map(\.page), splitSpreads: options.spreads == .singlePages)
+    }
+
+    /// The cover's slot, if there is a cover to export.
+    private func coverSlots(_ cover: Page?) -> [OutputSlot] {
+        cover.map { [OutputSlot(page: $0, half: nil)] } ?? []
     }
 
     /// One slot per page, or two halves for a spread page when `splitSpreads`.
@@ -148,13 +156,12 @@ public final class BookExporter {
     /// `PageSequencer` gives it (so spreads face each other and outer page numbers stay
     /// outside), and trailing blanks to a multiple of 4. Blank slots have no page.
     func bookletPages(_ options: ExportOptions) -> [OutputSlot] {
-        var head: [OutputSlot] = []
-        if options.includeCover, let cover = content.coverPage { head.append(OutputSlot(page: cover, half: nil)) }
-        let positions = Self.storyPositions(content, range: options.pageRange)
-        let story = storySlots(positions.map(\.page), splitSpreads: true)
+        let selection = Self.selection(content, options: options)
+        let head = coverSlots(selection.cover)
+        let story = storySlots(selection.story.map(\.page), splitSpreads: true)
         guard !head.isEmpty || !story.isEmpty else { return [] }
         let blanks = BookletImposition.blanks(contentPages: head.count + story.count, includeCover: !head.isEmpty,
-                                              firstStoryPosition: positions.first?.position.position)
+                                              firstStoryPosition: selection.story.first?.position.position)
         return head + Array(repeating: .blank, count: blanks.leading) + story
             + Array(repeating: .blank, count: blanks.trailing)
     }
@@ -207,14 +214,11 @@ public final class BookExporter {
             ctx.saveGState()
             OutputPageDrawing.flipToTopLeft(ctx, height: media.height)
             if isPrintShop {
-                drawCropMarks(trim: CGRect(x: margin, y: margin, width: trim.width, height: trim.height),
-                              bleed: bleed, ctx: ctx)
+                drawCropMarks(trim: trimPDF, bleed: bleed, ctx: ctx)
             }
             ctx.translateBy(x: margin, y: margin)
-            var renderer = PageRenderer(images: images)
-            renderer.prepared = prepared
-            OutputPageDrawing.draw(slot, content: content, renderer: renderer,
-                                   marks: slot.page.map { marks.marks(for: $0.id) } ?? [],
+            OutputPageDrawing.draw(slot, content: content, renderer: pageRenderer(drawing: prepared),
+                                   marks: marks.marks(for: slot),
                                    target: isPrintShop ? .pdfBleed : .pdfTrim, bleed: bleed, ctx: ctx)
             ctx.restoreGState()
             ctx.endPDFPage()
@@ -230,12 +234,10 @@ public final class BookExporter {
     private func renderBooklet(_ pages: [OutputSlot], sheet: SheetSize, into consumer: CGDataConsumer,
                                progress: @MainActor (ExportProgress) -> Void) async throws -> ExportResult {
         guard !pages.isEmpty else { throw ExportError.noPages }
-        let padded = pages.count
         let blanks = pages.filter { $0.page == nil }.count
-        let all = pages
         let pageSize = PageGeometry(setup: content.style.pageSetup).trimSize
         let layout = BookletImposition.layout(pageSize: pageSize, sheet: sheet)
-        let sides = BookletImposition.sheetSides(pageCount: padded)
+        let sides = BookletImposition.sheetSides(pageCount: pages.count)
 
         var media = CGRect(origin: .zero, size: layout.sheetSize)
         guard let ctx = CGContext(consumer: consumer, mediaBox: &media, OutputPageDrawing.documentInfo(content))
@@ -245,7 +247,7 @@ public final class BookExporter {
         var cache: PreparedPages = [:]
         for (index, side) in sides.enumerated() {
             try Task.checkCancellation()
-            let placed = [(all[side.leftPage - 1], layout.firstSlot), (all[side.rightPage - 1], layout.secondSlot)]
+            let placed = [(pages[side.leftPage - 1], layout.firstSlot), (pages[side.rightPage - 1], layout.secondSlot)]
             let prepared = try await prepareImages(for: placed.compactMap(\.0.page), cache: &cache)
             try Task.checkCancellation()
 
@@ -253,15 +255,14 @@ public final class BookExporter {
             ctx.saveGState()
             OutputPageDrawing.flipToTopLeft(ctx, height: media.height)
             OutputPageDrawing.drawBlank(size: media.size, ctx: ctx)
-            var renderer = PageRenderer(images: images)
-            renderer.prepared = prepared
+            let renderer = pageRenderer(drawing: prepared)
             for (slot, slotRect) in placed {
                 let rect = BookletImposition.pageRect(in: slotRect, pageSize: pageSize, scale: layout.scale)
                 ctx.saveGState()
                 ctx.translateBy(x: rect.minX, y: rect.minY)
                 ctx.scaleBy(x: layout.scale, y: layout.scale)
                 OutputPageDrawing.draw(slot, content: content, renderer: renderer,
-                                       marks: slot.page.map { marks.marks(for: $0.id) } ?? [],
+                                       marks: marks.marks(for: slot),
                                        target: .pdfTrim, bleed: 0, ctx: ctx)
                 ctx.restoreGState()
             }
@@ -292,7 +293,21 @@ public final class BookExporter {
         ctx.restoreGState()
     }
 
+    /// An in-memory PDF destination: the consumer and the data it fills.
+    private static func memoryConsumer() throws -> (data: NSMutableData, consumer: CGDataConsumer) {
+        let data = NSMutableData()
+        guard let consumer = CGDataConsumer(data: data as CFMutableData) else { throw ExportError.contextCreationFailed }
+        return (data, consumer)
+    }
+
     // MARK: Images
+
+    /// A renderer that draws one unit's `prepared` bitmaps.
+    private func pageRenderer(drawing prepared: PreparedImages) -> PageRenderer {
+        var renderer = PageRenderer(images: images)
+        renderer.prepared = prepared
+        return renderer
+    }
 
     /// Prepared bitmaps by page, then box: the previous unit's, carried into the next.
     private typealias PreparedPages = [PageID: [BoxImageKey: CGImage]]
@@ -335,6 +350,13 @@ public final class BookExporter {
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw ExportError.encodingFailed }
         return data as Data
+    }
+}
+
+private extension PageNumberMarks {
+    /// The marks for `slot`'s page: none for a booklet blank.
+    func marks(for slot: OutputSlot) -> [PageNumberMark] {
+        slot.page.map { marks(for: $0.id) } ?? []
     }
 }
 

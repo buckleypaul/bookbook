@@ -4,6 +4,12 @@ import CoreGraphics
 import Foundation
 
 public enum ImagePreparationPlanner {
+    /// `requests(page:in:imageURL:pixelSize:)` with each image's pixel size read from its file.
+    public static func requests(page: Page, in content: BookContent,
+                                imageURL: (ImageRef) -> URL) -> [ImagePreparationRequest] {
+        requests(page: page, in: content, imageURL: imageURL, pixelSize: { ImagePixelSize.of(url: imageURL($0)) })
+    }
+
     /// One request per placed image box on `page` (A §9.2 steps 1–2), then one per AI-styled
     /// text box's decoration. Boxes with no placed
     /// version, or whose image size is unknown, are skipped. Box rotation is ignored: the crop

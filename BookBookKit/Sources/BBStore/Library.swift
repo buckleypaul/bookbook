@@ -40,7 +40,7 @@ public struct Library: Sendable {
 
     /// An entry for `book` stored at `url`, with its thumbnail if `thumbnail.png` exists.
     static func entry(for book: Book, at url: URL) -> LibraryEntry {
-        let thumb = url.appending(path: "thumbnail.png", directoryHint: .notDirectory)
+        let thumb = PackageCoding.thumbnailURL(in: url)
         let hasThumb = FileManager.default.fileExists(atPath: thumb.path(percentEncoded: false))
         return LibraryEntry(id: book.id, title: book.title, url: url, modifiedAt: book.modifiedAt,
                             thumbnailURL: hasThumb ? thumb : nil)
@@ -59,7 +59,7 @@ public struct Library: Sendable {
         do {
             try PackageCoding.io(what) {
                 try fm.copyItem(at: source, to: dest)
-                for skipped in [".lock", ".journal"] {
+                for skipped in [BookLock.fileName, Journal.folderName] {
                     let item = dest.appending(path: skipped)
                     if fm.fileExists(atPath: item.path(percentEncoded: false)) { try fm.removeItem(at: item) }
                 }

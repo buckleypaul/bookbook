@@ -81,10 +81,42 @@ enum PackageCoding {
 
     static let bookPath = "book.json"
     static let stylePath = "style.json"
-    static func templatePath(_ id: TemplateID) -> String { "templates/\(id.rawValue.uuidString).json" }
-    static func pagePath(_ id: PageID) -> String { "pages/\(id.rawValue.uuidString).json" }
-    static func sessionPath(_ id: SessionID) -> String { "sessions/\(id.rawValue.uuidString).json" }
-    static func assetPath(_ id: AssetID) -> String { "assets/\(id.rawValue.uuidString).json" }
+    static func templatePath(_ id: TemplateID) -> String { "\(templatesFolder)/\(id.rawValue.uuidString).json" }
+    static func pagePath(_ id: PageID) -> String { "\(pagesFolder)/\(id.rawValue.uuidString).json" }
+    static func sessionPath(_ id: SessionID) -> String { "\(sessionsFolder)/\(id.rawValue.uuidString).json" }
+    static func assetPath(_ id: AssetID) -> String { "\(assetsFolder)/\(id.rawValue.uuidString).json" }
+
+    // MARK: Package layout (A §5.1)
+    //
+    // `Journal.pathPattern` spells the entity folders out again in its regex; `.lock` and
+    // `.journal` are `BookLock.fileName` and `Journal.folderName`.
+
+    static let templatesFolder = "templates"
+    static let pagesFolder = "pages"
+    static let sessionsFolder = "sessions"
+    static let assetsFolder = "assets"
+    /// The folders that hold one `<uuid>.json` per entity.
+    static let entityFolders = [templatesFolder, pagesFolder, assetsFolder, sessionsFolder]
+    static let imagesFolder = "images"
+    static let thumbnailName = "thumbnail.png"
+
+    /// `<package>/images/`.
+    static func imagesDirectory(in package: URL) -> URL {
+        package.appending(path: imagesFolder, directoryHint: .isDirectory)
+    }
+
+    /// `<package>/thumbnail.png`.
+    static func thumbnailURL(in package: URL) -> URL {
+        package.appending(path: thumbnailName, directoryHint: .notDirectory)
+    }
+
+    /// Refuses a package subfolder (`what`: "images", "fonts") that is a symlink, or sits in a
+    /// symlinked package, leading outside `package`.
+    static func requireInside(_ dir: URL, _ package: URL, what: String) throws(StoreError) {
+        guard CanonicalPath.isInside(dir, package) else {
+            throw StoreError.io("\(what) folder is outside the package")
+        }
+    }
 
     /// Encoded files for the dirty entities of `content`, keyed by relative path.
     static func files(for content: BookContent, dirty: DirtySet) throws(StoreError) -> [String: Data] {
@@ -128,6 +160,21 @@ enum PackageCoding {
             try? FileManager.default.removeItem(at: tmp)
             throw error
         }
+    }
+
+    /// Writes `data` as `<dir>/<fileName>` (temp file + rename), where `fileName` is derived
+    /// from the bytes' SHA-256, creating `dir` if needed. A file already there is left alone.
+    /// Refuses a `dir` that resolves outside `package` (`what` names it in the error). Returns
+    /// the file's URL and whether it already existed.
+    static func storeContentAddressed(_ data: Data, as fileName: String, in dir: URL, of package: URL,
+                                      what: String) throws -> (url: URL, existed: Bool) {
+        let fm = FileManager.default
+        let dest = dir.appending(path: fileName)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try requireInside(dir, package, what: what)
+        if fm.fileExists(atPath: dest.path(percentEncoded: false)) { return (dest, true) }
+        try writeAtomically(data, to: dest, tempIn: dir)
+        return (dest, false)
     }
 
     /// Lowercase hex SHA-256 of `data`, as used for content-addressed file names.

@@ -85,7 +85,7 @@ public struct Migrator: Sendable {
                 let url = packageURL.appending(path: name)
                 if fm.fileExists(atPath: url.path(percentEncoded: false)) { out[name] = try Data(contentsOf: url) }
             }
-            for dir in ["templates", "pages", "assets", "sessions"] {
+            for dir in PackageCoding.entityFolders {
                 let folder = packageURL.appending(path: dir, directoryHint: .isDirectory)
                 guard fm.fileExists(atPath: folder.path(percentEncoded: false)) else { continue }
                 for url in try fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
@@ -107,7 +107,7 @@ public struct Migrator: Sendable {
         try fm.createDirectory(at: copy, withIntermediateDirectories: true)
         for item in try fm.contentsOfDirectory(at: packageURL, includingPropertiesForKeys: nil) {
             let name = item.lastPathComponent
-            if name == ".lock" || name == ".journal" { continue }
+            if name == BookLock.fileName || name == Journal.folderName { continue }
             try fm.copyItem(at: item, to: copy.appending(path: name))
         }
         try fm.trashItem(at: copy, resultingItemURL: nil)

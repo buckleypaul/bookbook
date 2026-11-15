@@ -47,7 +47,7 @@ public actor BookStore {
         try PackageCoding.io("create") {
             defer { try? fm.removeItem(at: tmp) }
             try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
-            for dir in ["templates", "pages", "sessions", "assets", "images"] {
+            for dir in PackageCoding.entityFolders + [PackageCoding.imagesFolder] {
                 try fm.createDirectory(at: tmp.appending(path: dir, directoryHint: .isDirectory),
                                        withIntermediateDirectories: true)
             }
@@ -102,12 +102,12 @@ public actor BookStore {
         var style = try PackageCoding.decode(StyleGuide.self, from: readFile(PackageCoding.stylePath), what: "style.json")
         style.styleReferences.removeAll { !$0.isValid }
         var templates: [TemplateID: Template] = [:]
-        for t in try readAll("templates", Template.self) { templates[t.id] = t }
+        for t in try readAll(PackageCoding.templatesFolder, Template.self) { templates[t.id] = t }
         var pages: [PageID: Page] = [:]
-        for p in try readAll("pages", Page.self) { pages[p.id] = p }
+        for p in try readAll(PackageCoding.pagesFolder, Page.self) { pages[p.id] = p }
         var sessions: [SessionID: Session] = [:]
         var retired: Set<SessionID> = []
-        for file in try readAll("sessions", Session.self, skippingLegacySheetItems: true) {
+        for file in try readAll(PackageCoding.sessionsFolder, Session.self, skippingLegacySheetItems: true) {
             switch file {
             case let .decoded(s): sessions[s.id] = s.droppingInvalidImageRefs()
             case let .legacySheetItem(id): retired.insert(id)
@@ -115,7 +115,7 @@ public actor BookStore {
         }
         // Older packages have no `assets/` folder (readAll tolerates that); no schema bump.
         var assets: [AssetID: Asset] = [:]
-        for var a in try readAll("assets", Asset.self) {
+        for var a in try readAll(PackageCoding.assetsFolder, Asset.self) {
             if a.referencePhoto?.image.isValid == false { a.referencePhoto = nil }
             assets[a.id] = a
         }
@@ -221,22 +221,16 @@ public actor BookStore {
         guard !readOnly else { throw StoreError.readOnly }
         let ref = ImageRef(sha256: PackageCoding.sha256Hex(data), contentType: contentType)
         guard ref.isValid else { throw StoreError.io("unsupported image content type: \(contentType)") }
-        let dest = imageURL(for: ref)
         try PackageCoding.io("storeImage") {
-            let fm = FileManager.default
-            let dir = dest.deletingLastPathComponent()
-            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            // Refuse if `images/` (or the package) is a symlink leading outside the package.
-            guard CanonicalPath.isInside(dir, packageURL) else {
-                throw StoreError.io("images folder is outside the package")
-            }
-            if fm.fileExists(atPath: dest.path(percentEncoded: false)) {
+            let stored = try PackageCoding.storeContentAddressed(
+                data, as: ref.fileName, in: PackageCoding.imagesDirectory(in: packageURL), of: packageURL,
+                what: PackageCoding.imagesFolder)
+            if stored.existed {
                 // Same bytes as an existing file, maybe a >24 h orphan: make it young again so the
                 // open-time sweep can't remove it before the JSON that refers to it is saved (#100).
-                try fm.setAttributes([.modificationDate: Date()], ofItemAtPath: dest.path(percentEncoded: false))
-                return
+                try FileManager.default.setAttributes([.modificationDate: Date()],
+                                                      ofItemAtPath: stored.url.path(percentEncoded: false))
             }
-            try PackageCoding.writeAtomically(data, to: dest, tempIn: dir)
         }
         // The caller may put this ref into content later; a Clean Up already under way must not
         // delete the file from under it (`deleteImages(named:keepingImagesStoredAfter:)`).
@@ -248,8 +242,7 @@ public actor BookStore {
     /// Where an image file lives (it may not exist yet). Always inside `images/`: a ref that
     /// fails validation (untrusted `sha256`) maps to a file name that never exists.
     public nonisolated func imageURL(for ref: ImageRef) -> URL {
-        let images = packageURL.appending(path: "images", directoryHint: .isDirectory)
-        return images.appending(path: ref.isValid ? ref.fileName : "_invalid-image")
+        PackageCoding.imagesDirectory(in: packageURL).appending(path: ref.isValid ? ref.fileName : "_invalid-image")
     }
 
     // MARK: Reading
@@ -386,7 +379,7 @@ public actor BookStore {
 
     /// `<package>/thumbnail.png` (A §5.1).
     public nonisolated var thumbnailURL: URL {
-        packageURL.appending(path: "thumbnail.png", directoryHint: .notDirectory)
+        PackageCoding.thumbnailURL(in: packageURL)
     }
 
     /// Writes `thumbnail.png` atomically (temp file + rename). Not journaled: it's a rebuildable cache.

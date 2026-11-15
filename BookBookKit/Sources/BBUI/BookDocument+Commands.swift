@@ -172,7 +172,7 @@ extension BookDocument {
                   let box = template.box(boxID), box.content == .image,
                   let placement = page.images[boxID]?.placement,
                   let version = content.placedVersion(page: pageID, box: boxID) else { return nil }
-            let boxRect = PageGeometry(setup: content.style.pageSetup, kind: template.kind).renderRect(for: box)
+            let boxRect = PageGeometry.drawGeometry(for: page, in: content).renderRect(for: box)
             let imageSize = CGSize(width: version.pixelSize.width, height: version.pixelSize.height)
             let crop = CropMath.clamped(zoom: zoom, center: center, imageSize: imageSize, boxRect: boxRect)
             if CropMath.isSame(crop, (placement.zoom, placement.center)) { return nil }

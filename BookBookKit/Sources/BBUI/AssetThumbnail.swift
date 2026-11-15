@@ -79,7 +79,6 @@ private struct ExpandedImage: Identifiable {
 struct ImagePreviewSheet: View {
     let title: String
     let image: CGImage
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 12) {
@@ -101,6 +100,5 @@ struct ImagePreviewSheet: View {
         // makes this "larger" than the inline thumbnail.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .crayonSheet(minWidth: 720, minHeight: 720)
-        .onExitCommand { dismiss() }
     }
 }

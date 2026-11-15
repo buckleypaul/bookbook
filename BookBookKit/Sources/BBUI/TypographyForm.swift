@@ -102,7 +102,6 @@ struct TypographyForm: View {
             })
         }
         .crayonSheet(width: 480)
-        .onExitCommand { finish() }
         .onChange(of: current) { _, new in
             draft = new
             sizeText = String(format: "%g", new.bodySize)

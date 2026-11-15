@@ -204,7 +204,6 @@ struct UpscalePreview: Identifiable {
 /// The prepared image at 100 percent: actual pixels, so one image pixel is one screen pixel.
 struct UpscalePreviewSheet: View {
     let preview: UpscalePreview
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var scale
 
     var body: some View {
@@ -220,7 +219,6 @@ struct UpscalePreviewSheet: View {
             CrayonSheetDoneFooter()
         }
         .crayonSheet(minWidth: 560, minHeight: 440)
-        .onExitCommand { dismiss() }
     }
 
     private var pixels: CGSize {

@@ -158,7 +158,6 @@ struct PageNumbersSheet: View {
             }
         }
         .crayonSheet(width: 460)
-        .onExitCommand { dismiss() }
         .onAppear {
             var list = FontFamilies.all
             // Keep a family the style names even if it isn't installed.

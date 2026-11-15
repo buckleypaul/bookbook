@@ -73,11 +73,7 @@ extension NewBookSpec {
         if let stylePresetID {
             let all = presets ?? ((try? Presets.stylePresets()) ?? [])
             if let preset = all.first(where: { $0.id == stylePresetID }) {
-                var visual = result.style.visual
-                visual.presetID = preset.id
-                visual.visualDescription = preset.visualDescription
-                visual.negativeGuidance = preset.negativeGuidance ?? StyleGuide.defaultNegativeGuidance
-                result.style = result.style.applying(visual)
+                result.style = result.style.applying(result.style.visual.applying(preset))
             }
         }
 

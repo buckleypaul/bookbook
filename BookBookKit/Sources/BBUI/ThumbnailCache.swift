@@ -1,3 +1,4 @@
+import BBExport
 import BBLayout
 import BBModel
 import CryptoKit
@@ -157,8 +158,9 @@ final class PlacedImageSource: PageImageSource {
         guard let source = CGImageSourceCreateWithURL(urlForRef(ref) as CFURL,
                                                       [kCGImageSourceShouldCache: false] as CFDictionary)
         else { return nil }
-        // An unreadable header decodes whole, as before downsampling.
-        let maxPixelSize = ImageCache.orientedPixelSize(source).flatMap {
+        // An unreadable header decodes whole, as before downsampling. The size has the
+        // orientation applied, as a downsampled `load` returns the image.
+        let maxPixelSize = ImagePixelSize.of(source: source).flatMap {
             Self.decodePixelSize(imageSize: $0, uses: uses[ref] ?? [])
         }
         guard let image = ImageCache.load(source, maxPixelSize: maxPixelSize) else { return nil }

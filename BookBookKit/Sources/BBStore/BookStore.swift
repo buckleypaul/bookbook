@@ -327,6 +327,20 @@ public actor BookStore {
         }
     }
 
+    /// Runs `body` on this store while it holds `.lock`, then releases it, also when `body`
+    /// throws. Throws `.locked(owner)` when someone else holds it; `exclusively` uses
+    /// `acquireLockExclusively()`'s rule. Only for a fresh headless store (lock, load, save,
+    /// release): a store that already held the lock would lose it here.
+    func withLock<T: Sendable>(
+        exclusively: Bool = false, _ body: @Sendable (isolated BookStore) throws(StoreError) -> T
+    ) throws(StoreError) -> T {
+        if case .heldByOther(let owner) = try acquireLock(exclusiveInProcess: exclusively) {
+            throw StoreError.locked(owner)
+        }
+        defer { releaseLock() }
+        return try body(self)
+    }
+
     /// "Open Anyway" (#99b): replaces a lock that `acquireLock()` reported as
     /// `.heldByOther(expectedOwner)` (typically another Mac's, which can never be proved stale
     /// from here) with this process's, after the user confirms. Succeeds only if `.lock` still

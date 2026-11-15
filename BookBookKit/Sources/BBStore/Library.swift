@@ -168,17 +168,11 @@ extension Library {
     /// Sets the title of a closed book through a headless `BookStore` (lock, load, save, release).
     /// The package folder keeps its name. Throws `.locked` if another process holds it.
     public func rename(_ entry: LibraryEntry, to title: String, now: Date = Date()) async throws(StoreError) -> LibraryEntry {
-        let store = BookStore(packageURL: entry.url)
-        do throws(StoreError) {
-            if case .heldByOther(let owner) = try await store.acquireLock() { throw StoreError.locked(owner) }
-            var content = try await store.load()
+        try await BookStore(packageURL: entry.url).withLock { store throws(StoreError) in
+            var content = try store.load()
             content.book.title = title
             content.book.modifiedAt = now
-            try await store.save(content, dirty: DirtySet(book: true))
-            await store.releaseLock()
-        } catch {
-            await store.releaseLock()
-            throw error
+            try store.save(content, dirty: DirtySet(book: true))
         }
         var updated = entry
         updated.title = title

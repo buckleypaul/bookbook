@@ -7,8 +7,6 @@ import UniformTypeIdentifiers
 /// A §9.2: crop → resample to required pixels → JPEG/PNG encode, cached on disk.
 /// Preparations run one at a time so only one source image is in memory at once.
 public actor ExportImagePreparer: ImagePreparing {
-    public static let jpegQuality: Double = 0.92
-
     private let cacheDirectory: URL
     private let upscaler: any Upscaler
     private var busy = false
@@ -137,7 +135,7 @@ public actor ExportImagePreparer: ImagePreparing {
         guard let dest = CGImageDestinationCreateWithURL(temp as CFURL, type.identifier as CFString, 1, nil) else {
             throw ExportError.encodingFailed
         }
-        let options: [CFString: Any] = hasAlpha ? [:] : [kCGImageDestinationLossyCompressionQuality: jpegQuality]
+        let options: [CFString: Any] = hasAlpha ? [:] : [kCGImageDestinationLossyCompressionQuality: PrintResolution.jpegQuality]
         CGImageDestinationAddImage(dest, toWrite, options as CFDictionary)
         guard CGImageDestinationFinalize(dest) else {
             try? FileManager.default.removeItem(at: temp)

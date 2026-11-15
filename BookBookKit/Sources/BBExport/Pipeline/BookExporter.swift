@@ -19,7 +19,6 @@ public final class BookExporter {
 
     /// Bitmap export resolution (A §9.1).
     static let bitmapDPI: CGFloat = PrintResolution.dpi
-    static let jpegQuality: CGFloat = 0.92
 
     let content: BookContent
     let images: any PageImageSource
@@ -78,7 +77,7 @@ public final class BookExporter {
         try Task.checkCancellation()
 
         let size = OutputPageDrawing.trimSize(of: slot, in: content)
-        let scale = Self.bitmapDPI / 72
+        let scale = PrintResolution.pixelsPerPoint
         let width = Int((size.width * scale).rounded())
         let height = Int((size.height * scale).rounded())
         let alpha: CGImageAlphaInfo = format == .png ? .premultipliedLast : .noneSkipLast
@@ -346,7 +345,7 @@ public final class BookExporter {
         var properties: [CFString: Any] = [
             kCGImagePropertyDPIWidth: bitmapDPI, kCGImagePropertyDPIHeight: bitmapDPI,
         ]
-        if format == .jpeg { properties[kCGImageDestinationLossyCompressionQuality] = jpegQuality }
+        if format == .jpeg { properties[kCGImageDestinationLossyCompressionQuality] = PrintResolution.jpegQuality }
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw ExportError.encodingFailed }
         return data as Data

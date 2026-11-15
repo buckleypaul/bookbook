@@ -214,6 +214,16 @@ public protocol Upscaler: Sendable {
 
 public enum PrintResolution {
     public static let dpi: CGFloat = 300
+    /// Output pixels per PDF point at `dpi`.
+    static let pixelsPerPoint: CGFloat = dpi / 72
+    /// JPEG quality for everything export encodes: bitmap exports and prepared images.
+    static let jpegQuality: Double = 0.92
+
+    /// The pixels `rect` (in points) needs at `dpi`, rounded up.
+    static func pixels(for rect: CGRect) -> CGSize {
+        CGSize(width: (rect.width / 72 * dpi).rounded(.up), height: (rect.height / 72 * dpi).rounded(.up))
+    }
+
     /// Tunable softness thresholds (A §9.2 step 4).
     public static let softUpscaleFactor: Double = 2.5
     public static let softShortSidePixels: Int = 600

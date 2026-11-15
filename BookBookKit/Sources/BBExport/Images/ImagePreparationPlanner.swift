@@ -39,11 +39,10 @@ public enum ImagePreparationPlanner {
             let crop = visible.integral.intersection(bounds)
             guard !crop.isNull, crop.width >= 1, crop.height >= 1 else { continue }
 
-            let required = CGSize(width: (boxRect.width / 72 * PrintResolution.dpi).rounded(.up),
-                                  height: (boxRect.height / 72 * PrintResolution.dpi).rounded(.up))
             result.append(ImagePreparationRequest(
                 key: BoxImageKey(page: page.id, box: box.id), image: version.image,
-                sourceURL: imageURL(version.image), cropPixels: crop, requiredPixels: required))
+                sourceURL: imageURL(version.image), cropPixels: crop,
+                requiredPixels: PrintResolution.pixels(for: boxRect)))
         }
         // AI text-box decorations (A §7.13): the whole image, stretched to the render rect.
         for box in template.boxes {
@@ -52,11 +51,10 @@ public enum ImagePreparationPlanner {
                   let imageSize = pixelSize(decoration), imageSize.width > 0, imageSize.height > 0 else { continue }
             let boxRect = geometry.renderRect(for: box)
             guard boxRect.width > 0, boxRect.height > 0 else { continue }
-            let required = CGSize(width: (boxRect.width / 72 * PrintResolution.dpi).rounded(.up),
-                                  height: (boxRect.height / 72 * PrintResolution.dpi).rounded(.up))
             result.append(ImagePreparationRequest(
                 key: BoxImageKey(page: page.id, box: box.id), image: decoration, sourceURL: imageURL(decoration),
-                cropPixels: CGRect(origin: .zero, size: imageSize), requiredPixels: required))
+                cropPixels: CGRect(origin: .zero, size: imageSize),
+                requiredPixels: PrintResolution.pixels(for: boxRect)))
         }
         return result
     }

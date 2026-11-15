@@ -3,8 +3,9 @@ import BBModel
 import CoreGraphics
 import Foundation
 
-// Phase 14 contracts (main thread). Lanes implement the stubbed bodies in their own files and
-// must not change these signatures; ask the main thread instead. A §9, PD §8.8.
+// Export contracts (A §9, PD §8.8). The public types are what BBUI and the app use: options,
+// results, errors, the preparation and preflight values and the protocols tests fake. The
+// imposition, crop-mark and resolution types are internal: only the pipeline shares them.
 //
 // UNITS: sizes and rects are PDF points (1/72 in) unless the name says pixels.
 // PAGE NUMBERS: "reading positions" are 1-based, as numbered by `PageSequencer` (a spread
@@ -16,7 +17,7 @@ public enum SheetSize: String, CaseIterable, Hashable, Sendable, Codable {
     case letter, a4, tabloid, a3
 
     /// Portrait size in points: Letter 612×792, A4 595.28×841.89, Tabloid 792×1224, A3 841.89×1190.55.
-    public var portraitSize: CGSize {
+    var portraitSize: CGSize {
         switch self {
         case .letter: CGSize(width: 612, height: 792)
         case .a4: CGSize(width: 595.28, height: 841.89)
@@ -115,39 +116,25 @@ public enum ExportError: Error, Equatable, Sendable {
 // MARK: - Booklet imposition (A §9.3)
 
 /// One side of one booklet sheet. Page numbers are 1-based positions in the padded sequence.
-public struct SheetSide: Hashable, Sendable {
+struct SheetSide: Hashable, Sendable {
     /// 0-based sheet index (sheet 0 is the outer sheet).
-    public var sheet: Int
-    public var isFront: Bool
-    public var leftPage: Int
-    public var rightPage: Int
-    public init(sheet: Int, isFront: Bool, leftPage: Int, rightPage: Int) {
-        self.sheet = sheet
-        self.isFront = isFront
-        self.leftPage = leftPage
-        self.rightPage = rightPage
-    }
+    var sheet: Int
+    var isFront: Bool
+    var leftPage: Int
+    var rightPage: Int
 }
 
 /// Where the two page slots go on a sheet side.
-public struct BookletSheetLayout: Hashable, Sendable {
+struct BookletSheetLayout: Hashable, Sendable {
     /// The sheet's media size (landscape for portrait pages laid side by side).
-    public var sheetSize: CGSize
+    var sheetSize: CGSize
     /// Slot rects in sheet space, origin top-left, y down. `firstSlot` holds `SheetSide.leftPage`.
-    public var firstSlot: CGRect
-    public var secondSlot: CGRect
+    var firstSlot: CGRect
+    var secondSlot: CGRect
     /// ≤ 1. Pages are scaled by this and centred in their slot.
-    public var scale: CGFloat
-    public var scaledToFit: Bool { BookletImposition.isScaledToFit(scale) }
-    public var printingInstructions: String
-    public init(sheetSize: CGSize, firstSlot: CGRect, secondSlot: CGRect, scale: CGFloat,
-                printingInstructions: String) {
-        self.sheetSize = sheetSize
-        self.firstSlot = firstSlot
-        self.secondSlot = secondSlot
-        self.scale = scale
-        self.printingInstructions = printingInstructions
-    }
+    var scale: CGFloat
+    var scaledToFit: Bool { BookletImposition.isScaledToFit(scale) }
+    var printingInstructions: String
 }
 
 public enum BookletImposition {
@@ -156,7 +143,7 @@ public enum BookletImposition {
     static func isScaledToFit(_ scale: CGFloat) -> Bool { scale < 0.9999 }
 
     /// `n` rounded up to a multiple of 4 (minimum 4).
-    public static func paddedCount(_ n: Int) -> Int {
+    static func paddedCount(_ n: Int) -> Int {
         max(4, (n + 3) / 4 * 4)
     }
 
@@ -178,7 +165,7 @@ public enum BookletImposition {
 
     /// Sheet sides for `n` pages (n a multiple of 4), front then back for each sheet:
     /// front (n − 2s, 1 + 2s), back (2 + 2s, n − 1 − 2s), s = 0…n/4 − 1.
-    public static func sheetSides(pageCount n: Int) -> [SheetSide] {
+    static func sheetSides(pageCount n: Int) -> [SheetSide] {
         precondition(n > 0 && n % 4 == 0, "booklet page count must be a positive multiple of 4")
         return (0..<(n / 4)).flatMap { s in
             [SheetSide(sheet: s, isFront: true, leftPage: n - 2 * s, rightPage: 1 + 2 * s),
@@ -189,21 +176,17 @@ public enum BookletImposition {
 
 // MARK: - Print-shop marks (A §9.1)
 
-public enum CropMarks {
+enum CropMarks {
     /// Mark area outside the bleed: 0.25 in.
-    public static let markArea: CGFloat = 18
+    static let markArea: CGFloat = 18
     /// Gap between the bleed edge and the start of each mark.
-    public static let offsetFromBleed: CGFloat = 3
-    public static let lineWidth: CGFloat = 0.25
+    static let offsetFromBleed: CGFloat = 3
+    static let lineWidth: CGFloat = 0.25
 }
 
-public struct CropMarkSegment: Hashable, Sendable {
-    public var start: CGPoint
-    public var end: CGPoint
-    public init(start: CGPoint, end: CGPoint) {
-        self.start = start
-        self.end = end
-    }
+struct CropMarkSegment: Hashable, Sendable {
+    var start: CGPoint
+    var end: CGPoint
 }
 
 // MARK: - Image preparation (A §9.2)
@@ -212,8 +195,8 @@ public protocol Upscaler: Sendable {
     func upscale(_ image: CGImage, to size: CGSize) async throws -> CGImage
 }
 
-public enum PrintResolution {
-    public static let dpi: CGFloat = 300
+enum PrintResolution {
+    static let dpi: CGFloat = 300
     /// Output pixels per PDF point at `dpi`.
     static let pixelsPerPoint: CGFloat = dpi / 72
     /// JPEG quality for everything export encodes: bitmap exports and prepared images.
@@ -225,10 +208,10 @@ public enum PrintResolution {
     }
 
     /// Tunable softness thresholds (A §9.2 step 4).
-    public static let softUpscaleFactor: Double = 2.5
-    public static let softShortSidePixels: Int = 600
+    static let softUpscaleFactor: Double = 2.5
+    static let softShortSidePixels: Int = 600
 
-    public static func isSoft(upscaleFactor: Double, cropShortSidePixels: Int) -> Bool {
+    static func isSoft(upscaleFactor: Double, cropShortSidePixels: Int) -> Bool {
         // The short-side rule only matters when the image is enlarged: a small crop that is
         // downsampled into a small box is fine.
         upscaleFactor > softUpscaleFactor || (upscaleFactor > 1 && cropShortSidePixels < softShortSidePixels)

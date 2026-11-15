@@ -6,7 +6,7 @@ import Foundation
 /// enlarging. Downsampling is Lanczos only.
 public struct CoreImageUpscaler: Upscaler {
     /// `CISharpenLuminance` sharpness used after enlarging.
-    public static let sharpness: Double = 0.4
+    static let sharpness: Double = 0.4
 
     public init() {}
 

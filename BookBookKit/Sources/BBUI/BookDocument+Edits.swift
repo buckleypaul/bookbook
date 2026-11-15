@@ -146,7 +146,7 @@ extension BookDocument {
 
         case let .insertPage(page, index):
             guard content.pages[page.id] == nil, content.templates[page.templateID] != nil else { return nil }
-            let at = min(max(0, index), content.book.pageOrder.count)
+            let at = clamped(index, in: content)
             content.pages[page.id] = clearingGonePlacements(of: page, in: content)
             content.book.pageOrder.insert(page.id, at: at)
             // A page restored by undoing its deletion may lack slots for image boxes its
@@ -296,6 +296,11 @@ extension BookDocument {
             out = out.revised(from: current)
         }
         return out
+    }
+
+    /// `index` held within `0...pageOrder.count`: a valid place to insert a page.
+    static func clamped(_ index: Int, in content: BookContent) -> Int {
+        min(max(0, index), content.book.pageOrder.count)
     }
 
     /// `page` with every placement whose version is no longer in its slot's session removed

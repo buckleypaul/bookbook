@@ -114,7 +114,7 @@ extension BookDocument {
             guard let template = resolveTemplate(templateID, into: &created), PageKind.story.accepts(template.kind)
             else { return nil }
             let page = BookContent.makePage(kind: .story, template: template, sessions: &created.sessions)
-            edit = .insertPage(page, index: clamped(index))
+            edit = .insertPage(page, index: Self.clamped(index, in: content))
             fixSplits = fix
 
         case let .duplicatePage(pageID, fix):
@@ -153,7 +153,7 @@ extension BookDocument {
         case let .importStoryText(texts, templateID, index, fix):
             guard !texts.isEmpty, let template = resolveTemplate(templateID, into: &created),
                   PageKind.story.accepts(template.kind), let textBox = Self.firstTextBox(of: template) else { return nil }
-            let start = clamped(index)
+            let start = Self.clamped(index, in: content)
             var inserts: [Edit] = []
             for (offset, text) in texts.enumerated() {
                 var page = BookContent.makePage(kind: .story, template: template, sessions: &created.sessions)
@@ -273,8 +273,6 @@ extension BookDocument {
         guard content.sessions[asset.sessionID] == nil else { return }
         prepared.sessions[asset.sessionID] = Session(id: asset.sessionID, owner: asset.owner)
     }
-
-    private func clamped(_ index: Int) -> Int { min(max(0, index), content.book.pageOrder.count) }
 
     /// A copy of `source` under a new ID: same template, text, checklist and placements, each
     /// image box's session copied under a new ID (versions keep their IDs, so placements still

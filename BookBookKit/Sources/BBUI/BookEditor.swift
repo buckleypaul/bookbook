@@ -17,7 +17,6 @@ struct BookEditor: View {
     @State private var assetsModel = AssetsModel()
     @State private var styleSection: StyleSection = .visual
     @State private var styleScrollRequest = 0
-    @State private var selectedBox: BoxID?
     @State private var canvasImportError: String?
     @State private var showTypography = false
     @State private var showExport = false
@@ -130,9 +129,7 @@ struct BookEditor: View {
             pages.validateSelection()
         }
         .onChange(of: sidebarTab) { layouts.finishContinuousEdit() }
-        .onChange(of: pages.selectedPage) { selectedBox = nil }
         .onChange(of: content.assets) { assetsModel.validate(document.content) }
-        .onChange(of: pages.mode) { _, mode in if mode == .overview { selectedBox = nil } }
     }
 
     @ViewBuilder
@@ -143,13 +140,6 @@ struct BookEditor: View {
         case .assets: AssetsList(document: document, content: content, model: assetsModel, images: images)
         case .layouts: TemplateList(document: document, content: content, model: layouts, chat: layoutChat)
         }
-    }
-
-    /// Where-used link: the page editor on that page, with the box selected when there is one.
-    private func openFromWhereUsed(_ page: PageID, _ box: BoxID?) {
-        pages.open(page)  // switches to the Pages tab
-        // `selectedPage` changing clears the box selection, so set it after that has run.
-        Task { @MainActor in selectedBox = box }
     }
 
     private func isReorder(_ command: BookCommand?) -> Bool {
@@ -224,7 +214,9 @@ struct BookEditor: View {
             }
             if sidebarTab == .assets {
                 AssetsDetail(document: document, content: content, model: assetsModel, images: images,
-                             onOpenPage: openFromWhereUsed)
+                             // Where-used link: the page editor on that page (the Pages tab), with
+                             // the box selected when there is one.
+                             onOpenPage: { [pages] page, box in pages.open(page, box: box) })
             } else if sidebarTab == .layouts {
                 LayoutsDetail(document: document, model: layouts, images: images)
             } else if sidebarTab == .style {
@@ -237,7 +229,7 @@ struct BookEditor: View {
             case .editor:
                 if let page = pages.selectedPage, content.pages[page] != nil {
                     PageCanvas(document: document, content: content, pageID: page, imageSource: images,
-                               selectedImageBox: $selectedBox,
+                               selectedImageBox: $pages.selectedBox,
                                onOpenBookSettings: { [pages] in pages.sheet = .bookSettings },
                                onDropImageFiles: { page, box, urls in importDroppedImages(urls, page: page, box: box) })
                         // Read-only: no text editing or box selection (the canvas is AppKit).
@@ -257,7 +249,7 @@ struct BookEditor: View {
     /// "Use your own image" by dropping files on an image box (PD §8.6): selects the box and
     /// imports each file as a version (the first auto-places if the box is empty).
     private func importDroppedImages(_ urls: [URL], page: PageID, box: BoxID) {
-        selectedBox = box
+        pages.selectedBox = box
         let document = document
         Task {
             for url in urls {
@@ -274,17 +266,17 @@ struct BookEditor: View {
     private func sessionPanel(_ content: BookContent) -> some View {
         if sidebarTab == .layouts {
             LayoutsInspector(document: document, editor: layouts, chat: layoutChat)
-        } else if pages.mode == .editor, let page = pages.selectedPage, let box = selectedBox,
+        } else if pages.mode == .editor, let page = pages.selectedPage, let box = pages.selectedBox,
            content.pages[page]?.images[box] != nil {
             VStack(spacing: 0) {
                 ImageFlagsRow(flags: content.imageFlags(page: page, box: box), editable: document.isEditable) {
-                    styleModel.markOK(page: page, box: box)
+                    [pages] in pages.markFlagsOK(page, box: box)
                 }
                 SessionPanel(document: document, content: content, pageID: page, boxID: box)
                     .id(box)
             }
             .disabled(!document.isEditable)
-        } else if pages.mode == .editor, let page = pages.selectedPage, let box = selectedBox,
+        } else if pages.mode == .editor, let page = pages.selectedPage, let box = pages.selectedBox,
                   let template = content.pages[page].flatMap(content.template(for:)),
                   case .text = template.box(box)?.content {
             TextStylePanel(document: document, content: content, model: textStyles, pageID: page, boxID: box)

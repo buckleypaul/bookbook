@@ -47,6 +47,73 @@ struct PagesNavigationTests {
         #expect(!pages.hasImageFlags(PageID()))
     }
 
+    @Test func selectedBox_isKeptOnTheSamePage_andClearedByAnotherPageOrTheOverview() {
+        let (pages, doc) = make()
+        let order = doc.content.book.pageOrder
+        let box = BoxID()
+        pages.open(order[0])
+        pages.selectedBox = box
+        // The same page again, by any route: kept.
+        pages.selectedPage = order[0]
+        pages.open(order[0])
+        pages.mode = .editor
+        #expect(pages.selectedBox == box)
+        // Another tab and back: kept (the selection belongs to the page).
+        pages.sidebarTab = .style
+        pages.sidebarTab = .pages
+        #expect(pages.selectedBox == box)
+        // Another page: cleared.
+        pages.selectedPage = order[1]
+        #expect(pages.selectedBox == nil)
+        // The overview: cleared, and not brought back by the editor.
+        pages.selectedBox = box
+        pages.showOverview()
+        #expect(pages.selectedBox == nil)
+        pages.mode = .editor
+        #expect(pages.selectedBox == nil)
+    }
+
+    @Test func selectedBox_isClearedWhenThePageIsDeleted() {
+        let (pages, doc) = make()
+        let order = doc.content.book.pageOrder
+        pages.open(order[1])
+        pages.selectedBox = BoxID()
+        pages.delete(order[1])
+        #expect(pages.selectedPage != order[1])
+        #expect(pages.selectedBox == nil)
+    }
+
+    @Test func openWithABox_selectsItAfterThePageChange() {
+        let (pages, doc) = make()
+        let order = doc.content.book.pageOrder
+        let box = BoxID()
+        pages.open(order[0])
+        pages.selectedBox = BoxID()
+        pages.sidebarTab = .assets
+        pages.open(order[1], box: box)
+        #expect(pages.isShowingEditor && pages.selectedPage == order[1])
+        #expect(pages.selectedBox == box)
+        // From the overview too.
+        pages.showOverview()
+        pages.open(order[1], box: box)
+        #expect(pages.selectedBox == box)
+        // No box: nothing selected, even on the page already open.
+        pages.open(order[1], box: nil)
+        #expect(pages.selectedBox == nil)
+    }
+
+    @Test func markFlagsOK_forABox_sendsThatBox_unlessReadOnly() {
+        let (pages, doc) = make()
+        let page = doc.content.book.pageOrder[0]
+        let box = BoxID()
+        doc.editable = false
+        pages.markFlagsOK(page, box: box)
+        #expect(doc.performed.isEmpty)
+        doc.editable = true
+        pages.markFlagsOK(page, box: box)
+        #expect(doc.performed == [.markFlagsOK(page: page, box: box)])
+    }
+
     @Test func keyboardSelection_walksCoverThenStoryPages_andStopsAtTheEnds() {
         let (_, doc) = make(pages: 2)
         let content = doc.content

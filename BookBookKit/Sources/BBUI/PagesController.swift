@@ -28,12 +28,21 @@ public final class PagesController {
     /// How the user answered the spread-split warning.
     public enum SplitChoice: Sendable { case insertBlankPage, moveAnyway, cancel }
 
-    public var mode: Mode = .overview
+    /// Switching to the overview clears the box selection.
+    public var mode: Mode = .overview {
+        didSet { if mode != oldValue, mode == .overview { selectedBox = nil } }
+    }
     /// The book window's sidebar tab. Kept here rather than in the view so that every route to
     /// a page or the overview (the Page menu, the export sheet's preflight links, where-used
     /// links) brings the Pages tab forward: see `open(_:)` and `showOverview()`.
     var sidebarTab: SidebarTab = .pages
-    public var selectedPage: PageID?
+    /// Selecting another page clears the box selection.
+    public var selectedPage: PageID? {
+        didSet { if selectedPage != oldValue { selectedBox = nil } }
+    }
+    /// The box selected on the page canvas (its session or styling panel shows in the
+    /// inspector). Belongs to `selectedPage`, and is only set in editor mode.
+    public var selectedBox: BoxID?
     public var sheet: Sheet?
     /// A structural command waiting on the spread-split warning (sent with `fixSplits: false`).
     public private(set) var pendingSplit: BookCommand?
@@ -112,11 +121,19 @@ public final class PagesController {
 
     // MARK: Navigation
 
-    /// Opens `page` in the page editor, switching to the Pages tab from any other tab.
+    /// Opens `page` in the page editor, switching to the Pages tab from any other tab. The box
+    /// selection is kept if the page was already the selected one.
     public func open(_ page: PageID) {
         selectedPage = page
         sidebarTab = .pages
         mode = .editor
+    }
+
+    /// Opens `page` with `box` selected, or with nothing selected when `box` is nil (a
+    /// where-used link). Set last, after the page change has cleared the old selection.
+    public func open(_ page: PageID, box: BoxID?) {
+        open(page)
+        selectedBox = box
     }
 
     /// Shows the spread overview, switching to the Pages tab from any other tab.
@@ -190,10 +207,11 @@ public final class PagesController {
         run(.setPageNumberStyle(style))
     }
 
-    /// Mark as OK over all of the page's images (one undoable step).
-    public func markFlagsOK(_ page: PageID) {
-        guard isEditable, hasImageFlags(page) else { return }
-        run(.markFlagsOK(page: page, box: nil))
+    /// Mark as OK (one undoable step): over all of the page's images, or just `box`'s (the
+    /// inspector's row, which only offers it for a box that has flags).
+    public func markFlagsOK(_ page: PageID, box: BoxID? = nil) {
+        guard isEditable, box != nil || hasImageFlags(page) else { return }
+        run(.markFlagsOK(page: page, box: box))
     }
 
     public func setPageNumberStyle(_ style: PageNumberStyle) {

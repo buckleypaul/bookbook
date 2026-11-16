@@ -143,10 +143,6 @@ final class StyleTabModel {
         guard setup != pageSetup else { return }
         send(.setPageSetup(setup))
     }
-
-    // MARK: Flags
-
-    func markOK(page: PageID, box: BoxID?) { send(.markFlagsOK(page: page, box: box)) }
 }
 
 extension PageSizePreset {

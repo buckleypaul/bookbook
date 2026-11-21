@@ -56,5 +56,5 @@ public final class OnboardingModel {
 
     public func finish() { state.markCompleted() }
     /// "Skip setup": same flag as finishing.
-    public func skipSetup() { state.markCompleted() }
+    public func skipSetup() { finish() }
 }

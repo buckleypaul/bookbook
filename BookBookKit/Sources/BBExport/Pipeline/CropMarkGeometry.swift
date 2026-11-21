@@ -5,7 +5,7 @@ extension CropMarks {
     /// Line segments in media space for a media box laid out as mark area + bleed + trim.
     /// Eight segments, two per trim corner, on the extensions of the trim lines, running from
     /// `offsetFromBleed` past the bleed edge out to the media edge (`markArea` beyond the bleed).
-    public static func segments(trim: CGRect, bleed: CGFloat) -> [CropMarkSegment] {
+    static func segments(trim: CGRect, bleed: CGFloat) -> [CropMarkSegment] {
         let inner = max(0, bleed) + offsetFromBleed
         let outer = max(0, bleed) + markArea
         var result: [CropMarkSegment] = []

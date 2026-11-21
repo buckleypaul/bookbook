@@ -33,12 +33,18 @@ private final class NoImages: PageImageSource {
 /// A §9.4: the "Before export" checks (PD §8.8).
 @MainActor
 public enum Preflight {
-    /// The pages `options` will put in the PDF: the cover when included, and the story pages
-    /// the range selects (a range that cuts a spread widens to the whole spread).
+    /// The pages `options` will put in the PDF, each once: the cover first when included, then
+    /// the story pages the range selects in reading order (a range that cuts a spread widens to
+    /// the whole spread).
+    public static func exportedPages(_ content: BookContent, options: ExportOptions) -> [Page] {
+        let selection = BookExporter.selection(content, options: options)
+        guard let cover = selection.cover else { return selection.story.map(\.page) }
+        return [cover] + selection.story.map(\.page).filter { $0.id != cover.id }
+    }
+
+    /// `exportedPages` as a set of IDs.
     public static func exportedPageIDs(_ content: BookContent, options: ExportOptions) -> Set<PageID> {
-        var ids = Set(BookExporter.storyPositions(content, range: options.pageRange).map(\.page.id))
-        if options.includeCover, let cover = content.coverPage { ids.insert(cover.id) }
-        return ids
+        Set(exportedPages(content, options: options).map(\.id))
     }
 
     public static func run(_ content: BookContent,
@@ -46,9 +52,8 @@ public enum Preflight {
                            spelling: any SpellingChecking,
                            pages selectedPages: Set<PageID>? = nil) -> [PreflightIssue] {
         let renderer = PageRenderer(images: NoImages())
-        var pages: [Page] = []
-        if let cover = content.coverPage { pages.append(cover) }
-        pages += content.storyPages.filter { $0.id != content.book.coverPageID }
+        // Every page (the default options), narrowed to `selectedPages`.
+        var pages = exportedPages(content, options: ExportOptions())
         if let selectedPages { pages = pages.filter { selectedPages.contains($0.id) } }
 
         var issues: [PreflightIssue] = []

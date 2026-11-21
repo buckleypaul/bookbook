@@ -95,13 +95,25 @@ public final class RegionEditorCanvasView: NSView {
     }
 
     public override func mouseMoved(with event: NSEvent) {
-        hoverPoint = convert(event.locationInWindow, from: nil)
-        needsDisplay = true
+        moveHover(to: convert(event.locationInWindow, from: nil))
     }
 
     public override func mouseExited(with event: NSEvent) {
-        hoverPoint = nil
-        needsDisplay = true
+        moveHover(to: nil)
+    }
+
+    /// Moves the brush ring, redrawing only where it was and where it now is (the lasso draws
+    /// no ring, so nothing).
+    private func moveHover(to point: CGPoint?) {
+        let old = hoverPoint
+        hoverPoint = point
+        guard model.tool == .brush else { return }
+        let rect = fitRect
+        for point in [old, point].compactMap(\.self) {
+            // Outset by the ring's widest stroke plus a point, for antialiasing.
+            setNeedsDisplay(brushCircle(at: point, rect: rect).insetBy(dx: -(Self.ringLineWidth + 1),
+                                                                       dy: -(Self.ringLineWidth + 1)))
+        }
     }
 
     public override func updateTrackingAreas() {
@@ -193,13 +205,20 @@ public final class RegionEditorCanvasView: NSView {
         context.restoreGState()
     }
 
+    /// The brush ring's outer stroke width.
+    private static let ringLineWidth: CGFloat = 2.5
+
+    /// The brush ring centred on `point` (view points) for the picture drawn in `rect`.
+    private func brushCircle(at point: CGPoint, rect: CGRect) -> CGRect {
+        let diameter = model.brushDiameter * RegionEditorModel.scale(fitRect: rect, pixelSize: model.pixelSize)
+        return CGRect(x: point.x - diameter / 2, y: point.y - diameter / 2, width: diameter, height: diameter)
+    }
+
     private func drawBrushCursor(_ context: CGContext, rect: CGRect) {
         guard model.tool == .brush, let hoverPoint, rect.insetBy(dx: -4, dy: -4).contains(hoverPoint) else { return }
-        let diameter = model.brushDiameter * RegionEditorModel.scale(fitRect: rect, pixelSize: model.pixelSize)
-        let circle = CGRect(x: hoverPoint.x - diameter / 2, y: hoverPoint.y - diameter / 2,
-                            width: diameter, height: diameter)
+        let circle = brushCircle(at: hoverPoint, rect: rect)
         context.saveGState()
-        context.setLineWidth(2.5)
+        context.setLineWidth(Self.ringLineWidth)
         context.setStrokeColor(NSColor.black.withAlphaComponent(0.6).cgColor)
         context.strokeEllipse(in: circle)
         context.setLineWidth(1)

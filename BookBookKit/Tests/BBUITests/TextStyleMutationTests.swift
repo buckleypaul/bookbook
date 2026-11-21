@@ -178,6 +178,22 @@ struct TextStyleMutationTests {
 
     // MARK: Appearance
 
+    @Test func thumbnail_redrawsWhenAStyleIsChosenOrRemoved() throws {
+        var (content, page, _) = styledBook()
+        let thumbnails = PageThumbnailRenderer(images: ImageCache(maxPixelSize: 64) { _ in
+            URL(filePath: "/nonexistent")
+        })
+        let plain = try #require(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40))
+        _ = deliver(styleIntent(), page: page, to: &content)
+        try #require(content.appliedTextStyle(page: page, box: textBox) != nil)
+        let styled = try #require(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40))
+        #expect(styled !== plain)
+        #expect(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40) === styled)
+
+        content.pages[page]?.textStyles[textBox]?.versionID = nil
+        #expect(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40) !== styled)
+    }
+
     @Test func appearance_layersThePageStyleOverTheTemplate() throws {
         var (content, page, _) = styledBook()
         guard case let .text(style) = Fixtures.textBox.content else { Issue.record("not a text box"); return }

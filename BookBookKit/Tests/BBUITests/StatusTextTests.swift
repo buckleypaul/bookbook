@@ -1,5 +1,6 @@
 import BBAI
 import BBAICore
+import BBLayout
 import BBModel
 import BBStore
 import CoreGraphics
@@ -264,8 +265,11 @@ struct CanvasGeometryTests {
 
     @Test func textRect_insetsByPadding() {
         let rect = CGRect(x: 0, y: 0, width: 100, height: 50)
-        #expect(CanvasHitTest.textRect(rect, box: Fixtures.textBox) == CGRect(x: 4, y: 4, width: 92, height: 42))
-        #expect(CanvasHitTest.textRect(rect, box: Fixtures.imageBox) == rect)
+        let appearance = TextBoxAppearance.resolve(box: Fixtures.textBox, style: TextBoxStyle(padding: 4), pageID: nil,
+                                                   content: Fixtures.book(), renderSize: rect.size)
+        #expect(appearance.textRect(in: rect) == CGRect(x: 4, y: 4, width: 92, height: 42))
+        // Padding that swallows the box: the whole rect.
+        #expect(appearance.textRect(in: CGRect(x: 0, y: 0, width: 6, height: 6)) == CGRect(x: 0, y: 0, width: 6, height: 6))
     }
 }
 

@@ -56,7 +56,7 @@ public struct RegionEditorSheet: View {
             let data = imageData
             let maxSide = Self.displayMaxPixels(for: model.pixelSize)
             displayImage = await Task.detached(priority: .userInitiated) {
-                Self.decodeForDisplay(data, maxPixels: maxSide)
+                ImageCache.load(data, maxPixelSize: maxSide)
             }.value
         }
     }
@@ -191,10 +191,5 @@ public struct RegionEditorSheet: View {
     static func displayMaxPixels(for pixelSize: PixelSize) -> Int {
         let screen = NSScreen.main.map { max($0.frame.width, $0.frame.height) * $0.backingScaleFactor } ?? 2560
         return max(1, min(max(pixelSize.width, pixelSize.height), Int(screen)))
-    }
-
-    /// Decodes `data` downsampled so its longest side is at most `maxPixels` (CGImageSource thumbnail).
-    nonisolated static func decodeForDisplay(_ data: Data, maxPixels: Int) -> CGImage? {
-        ImageCache.load(data, maxPixelSize: maxPixels)
     }
 }

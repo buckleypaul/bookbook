@@ -143,10 +143,6 @@ final class StyleTabModel {
         guard setup != pageSetup else { return }
         send(.setPageSetup(setup))
     }
-
-    // MARK: Flags
-
-    func markOK(page: PageID, box: BoxID?) { send(.markFlagsOK(page: page, box: box)) }
 }
 
 extension PageSizePreset {
@@ -240,8 +236,10 @@ struct StyleTab: View {
     var section: StyleSection = .visual
     /// Changes each time the sidebar asks for a scroll, even to the same section.
     var scrollRequest = 0
+    /// Opens the window's Typography sheet (the same one the Format menu and the missing-fonts
+    /// banner open).
+    let onEditTypography: () -> Void
     let onEditPageNumbers: () -> Void
-    @State private var showTypography = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -283,7 +281,7 @@ struct StyleTab: View {
             .id(StyleSection.visual)
             Section {
                 HStack(spacing: 8) {
-                    Button("Edit Typography…") { showTypography = true }
+                    Button("Edit Typography…") { onEditTypography() }
                     Button("Edit Page Numbers…") { onEditPageNumbers() }
                 }
                 .buttonBorderShape(.capsule)
@@ -299,7 +297,6 @@ struct StyleTab: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .crayonPaper()
-        .sheet(isPresented: $showTypography) { TypographyForm(document: document) }
     }
 
     @ViewBuilder

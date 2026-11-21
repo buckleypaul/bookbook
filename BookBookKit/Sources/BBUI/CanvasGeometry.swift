@@ -73,11 +73,4 @@ enum CanvasHitTest {
         guard let id = BoxHitTesting.box(at: point, in: editable) else { return nil }
         return boxes.last { $0.box.id == id }?.box
     }
-
-    /// A text box's rect inset by its padding (the text container's area).
-    static func textRect(_ rect: CGRect, box: Box) -> CGRect {
-        guard case let .text(style) = box.content else { return rect }
-        let inset = rect.insetBy(dx: style.padding, dy: style.padding)
-        return inset.width > 0 && inset.height > 0 ? inset : rect
-    }
 }

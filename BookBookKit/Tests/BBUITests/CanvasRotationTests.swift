@@ -37,18 +37,20 @@ struct CanvasRotationTests {
     }
 
     @Test func textBoxTypographyAppliesTheBoxStyle() {
-        let base = Fixtures.book().style.typography
-        let styled = Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 1),
-                         content: .text(TextBoxStyle(fontSize: 31, alignment: .center,
-                                                     color: RGBA(red: 1, green: 0, blue: 0, alpha: 1))))
-        let typography = InlineTextEditor.typography(for: styled, base: base)
-        #expect(typography == base.resolved(for: nil).applying(TextBoxStyle(fontSize: 31, alignment: .center,
-                                                                              color: RGBA(red: 1, green: 0, blue: 0, alpha: 1))))
+        let content = Fixtures.book()
+        let base = content.style.typography
+        let style = TextBoxStyle(fontSize: 31, alignment: .center, color: RGBA(red: 1, green: 0, blue: 0, alpha: 1))
+        let styled = Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 1), content: .text(style))
+        let size = CGSize(width: 100, height: 100)
+        let typography = TextBoxAppearance.resolve(box: styled, style: style, pageID: nil, content: content,
+                                                   renderSize: size).typography
+        #expect(typography == base.resolved(for: nil).applying(style))
         #expect(typography.bodySize == 31)
         #expect(typography.alignment == .center)
         // No overrides: just the style guide's.
         let plain = Box(frame: NormalizedRect(x: 0, y: 0, width: 1, height: 1), content: .text(TextBoxStyle()))
-        #expect(InlineTextEditor.typography(for: plain, base: base) == base)
+        #expect(TextBoxAppearance.resolve(box: plain, style: TextBoxStyle(), pageID: nil, content: content,
+                                          renderSize: size).typography == base)
     }
 
     @Test func fittingTransformKeepsTheTrimOriginAtPagePointZero() {

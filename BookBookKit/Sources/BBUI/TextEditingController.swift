@@ -23,7 +23,7 @@ final class TextEditingController {
     var editingBoxID: BoxID? { editor?.boxID }
 
     /// Opens the editor on `boxID`, closing any other first. `typography` is the box's own
-    /// (`InlineTextEditor.typography(for:base:)`); `textRect` is in page points.
+    /// (`TextBoxAppearance.typography`); `textRect` is in page points.
     func begin(pageID: PageID, boxID: BoxID, text: RichText, typography: Typography, textRect: CGRect) {
         end()
         guard let canvas else { return }

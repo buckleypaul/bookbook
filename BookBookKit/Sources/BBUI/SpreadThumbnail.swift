@@ -4,27 +4,27 @@ import CoreGraphics
 import SwiftUI
 
 /// Renders page thumbnails for the Pages overview with `PageRenderer` (thumbnail target), and
-/// keeps them in memory keyed by everything that affects the drawing, so an unchanged page
-/// isn't redrawn when another one changes. One per book window.
+/// keeps the latest one for each page and pixel height in memory with everything that affects
+/// the drawing, so an unchanged page isn't redrawn when another one changes. One per book window.
 @MainActor
 final class PageThumbnailRenderer {
     /// What `PageRenderer` reads to draw a page at the thumbnail target: the template, the
-    /// page's text and placed images, the style's typography, page setup and page-number style,
+    /// page's text, placed images and AI text styles, the style's typography, page setup and page-number style,
     /// and the cover's bound title and author. The rest of the style (description, guidance,
     /// references) and of the page (status, asset list, flag baselines) never shows.
     private struct Key: Hashable {
         var template: Template?
         var text: [BoxID: RichText]
         var images: [BoxID: PlacedImage]
+        var textStyles: [BoxID: StyledText]
         var typography: Typography
         var pageSetup: PageSetup
         var pageNumbers: PageNumberStyle
         var title: String
         var author: String
         var marks: [PageNumberMark]
-        var pixelHeight: Int
 
-        init(page: Page, in content: BookContent, marks: [PageNumberMark], pixelHeight: Int) {
+        init(page: Page, in content: BookContent, marks: [PageNumberMark]) {
             template = content.template(for: page)
             text = page.text
             var images: [BoxID: PlacedImage] = [:]
@@ -34,13 +34,18 @@ final class PageThumbnailRenderer {
                                           placement: placement)
             }
             self.images = images
+            var textStyles: [BoxID: StyledText] = [:]
+            for box in page.textStyles.keys {
+                guard let applied = content.appliedTextStyle(page: page.id, box: box) else { continue }
+                textStyles[box] = StyledText(styling: applied.styling, decoration: applied.decoration)
+            }
+            self.textStyles = textStyles
             typography = content.style.typography
             pageSetup = content.style.pageSetup
             pageNumbers = content.style.pageNumbers
             title = content.book.title
             author = content.book.author
             self.marks = marks
-            self.pixelHeight = pixelHeight
         }
     }
 
@@ -50,18 +55,27 @@ final class PageThumbnailRenderer {
         var placement: ImagePlacement
     }
 
+    /// A text box's AI text style as drawn: its typography and its decoration picture.
+    private struct StyledText: Hashable {
+        var styling: TextStyling
+        var decoration: ImageRef?
+    }
+
     private let images: any PageImageSource
     /// Reuses text layouts when a page redraws with the same text (another size, a new picture).
     private let layouts = TextBoxLayoutCache()
-    private var cache: [Key: CGImage] = [:]
-    private var order: [Key] = []
-    private let capacity: Int
+    /// One thumbnail per page and pixel height: the latest drawn, with what it was drawn from.
+    /// An edit replaces the page's entry rather than adding one.
+    private struct Slot: Hashable {
+        var page: PageID
+        var pixelHeight: Int
+    }
+    private var cache: [Slot: (key: Key, image: CGImage)] = [:]
     /// `BookDocument.fontsRevision` the cached layouts and thumbnails were made under.
     private var fontsRevision: Int?
 
-    init(images: any PageImageSource, capacity: Int = 200) {
+    init(images: any PageImageSource) {
         self.images = images
-        self.capacity = capacity
     }
 
     /// The whole page (both halves for a spread), `pixelHeight` tall. `fontsRevision` is
@@ -74,11 +88,11 @@ final class PageThumbnailRenderer {
             self.fontsRevision = fontsRevision
             layouts.removeAll()
             cache.removeAll()
-            order.removeAll()
         }
         guard let page = content.pages[pageID], pixelHeight > 0 else { return nil }
-        let key = Key(page: page, in: content, marks: marks, pixelHeight: pixelHeight)
-        if let image = cache[key] { return image }
+        let slot = Slot(page: pageID, pixelHeight: pixelHeight)
+        let key = Key(page: page, in: content, marks: marks)
+        if let entry = cache[slot], entry.key == key { return entry.image }
 
         // Double width for a spread (its boxes are normalized over both pages, A §4.1).
         let size = PageGeometry.drawGeometry(for: page, in: content).trimSize
@@ -92,9 +106,9 @@ final class PageThumbnailRenderer {
                                                     options: options, fillWhite: true)
         else { return nil }
 
-        cache[key] = image
-        order.append(key)
-        if order.count > capacity { cache[order.removeFirst()] = nil }
+        cache[slot] = (key, image)
+        // Drop pages that left the book (only on a redraw, so a hit stays cheap).
+        cache = cache.filter { content.pages[$0.key.page] != nil }
         return image
     }
 }

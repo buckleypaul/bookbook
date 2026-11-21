@@ -13,7 +13,7 @@ public enum LayoutPrompt {
                                presets: [Template], model: CatalogTextModel) -> LayoutRequest {
         let chosen = examples(kind: kind, from: presets)
         let examplesText = chosen.enumerated().map { index, preset in
-            "Example \(index + 1) (\(preset.name)):\n" + json(draft(from: preset, pageSetup: pageSetup))
+            "Example \(index + 1) (\(preset.name)):\n" + json(draft(from: preset))
         }.joined(separator: "\n\n")
 
         var values = setupValues(kind: kind, pageSetup: pageSetup)
@@ -30,7 +30,7 @@ public enum LayoutPrompt {
                                        pageSetup: PageSetup, model: CatalogTextModel) -> LayoutRequest {
         let earlier = history.map(\.trimmed).filter { !$0.isEmpty }
         var values = setupValues(kind: current.kind, pageSetup: pageSetup)
-        values["current"] = json(draft(from: current, pageSetup: pageSetup))
+        values["current"] = json(draft(from: current))
         values["history"] = PromptTemplates.bulletList(earlier)
         values["instruction"] = instruction.trimmed
         let prompt = PromptTemplates.textPrompt(set: set, user: "revise", values)
@@ -75,7 +75,7 @@ public enum LayoutPrompt {
     }
 
     /// A preset as a few-shot `TemplateDraft` (the inverse of `TemplateNormalizer`).
-    public static func draft(from template: Template, pageSetup: PageSetup) -> TemplateDraft {
+    public static func draft(from template: Template) -> TemplateDraft {
         let boxes = template.boxes.map { box -> DraftBox in
             let radius = box.cornerRadius > 0 ? box.cornerRadius : nil
             switch box.content {

@@ -149,7 +149,7 @@ public enum ContextAssembler {
         let messageSession = messageID.flatMap { content.session(containing: $0) }.flatMap { session in
             session.owner.assetID == nil ? nil : session
         }
-        let owner = messageSession?.owner ?? target.owner
+        let owner = messageSession?.owner ?? target
         switch owner {
         case .pageBox, .textBox:
             return nil

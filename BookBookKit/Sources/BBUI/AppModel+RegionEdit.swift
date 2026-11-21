@@ -123,6 +123,6 @@ extension AppModel {
     }
 
     private func baseVersion(_ id: VersionID, target: GenerationTarget, content: BookContent) -> Version? {
-        BookMutations.sessionID(for: target.owner, in: content).flatMap { content.sessions[$0]?.version(id) }
+        BookMutations.sessionID(for: target, in: content).flatMap { content.sessions[$0]?.version(id) }
     }
 }

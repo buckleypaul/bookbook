@@ -54,7 +54,7 @@ public enum BookMutations {
             return DirtySet()
         }
         let target = delivery.item.target
-        let owner = target.owner
+        let owner = target
         // By message first: box IDs can move, the message can't (Phase 5 follow-up). Then the
         // owner's own session, and for a page box any session that names it as owner.
         var found = content.session(containing: delivery.item.messageID)?.id ?? sessionID(for: owner, in: content)

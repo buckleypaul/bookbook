@@ -88,7 +88,7 @@ struct MessageStatusTests {
     private func resolve(_ message: Message, _ state: QueueItemState?, pending: Set<QueueItemID> = [],
                          failures: [MessageID: String] = [:]) -> MessageStatus {
         let snapshot = QueueSnapshot(entries: state.map { [QueueEntry(item: item, state: $0)] } ?? [])
-        return MessageStatus.resolve(message, in: item.target.owner, snapshot: snapshot, pendingThisLaunch: pending,
+        return MessageStatus.resolve(message, in: item.target, snapshot: snapshot, pendingThisLaunch: pending,
                                      deliveryFailures: failures) { _ in 14 }
     }
 
@@ -148,7 +148,7 @@ struct MessageStatusTests {
         var check = item
         check.id = QueueItemID()
         check.kind = .consistencyCheck(version)
-        let checked = MessageStatus.resolve(message(queued: false, produced: version), in: item.target.owner,
+        let checked = MessageStatus.resolve(message(queued: false, produced: version), in: item.target,
                                             snapshot: QueueSnapshot(entries: [QueueEntry(item: check, state: running)]),
                                             pendingThisLaunch: []) { _ in 14 }
         #expect(checked == .produced(version))

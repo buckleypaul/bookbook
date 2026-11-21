@@ -34,9 +34,9 @@ extension BookMutations {
     /// session is missing (legacy file) gets an empty one first. Empty if gone.
     public static func appendPendingMessage(_ message: Message, target: GenerationTarget,
                                             to content: inout BookContent) -> DirtySet {
-        guard let id = sessionID(for: target.owner, in: content) else { return DirtySet() }
-        if content.sessions[id] == nil, target.owner.assetID != nil {
-            content.sessions[id] = Session(id: id, owner: target.owner)
+        guard let id = sessionID(for: target, in: content) else { return DirtySet() }
+        if content.sessions[id] == nil, target.assetID != nil {
+            content.sessions[id] = Session(id: id, owner: target)
         }
         guard var session = content.sessions[id] else { return DirtySet() }
         var message = message

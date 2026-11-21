@@ -47,7 +47,7 @@ enum AssetQueueDisplay {
     static func display(for target: GenerationTarget, in content: BookContent) -> QueueItemDisplay {
         switch target {
         case let .pageBox(page, box): DraftAllPlanner.display(page: page, box: box, in: content)
-        case .asset: display(target.owner, in: content)
+        case .asset: display(target, in: content)
         case let .textBox(page, box): DraftAllPlanner.textStyleDisplay(page: page, box: box, in: content)
         }
     }

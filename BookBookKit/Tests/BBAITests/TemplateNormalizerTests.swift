@@ -198,7 +198,7 @@ import Testing
                 content: .text(TextBoxStyle(padding: 12, background: RGBA(red: 1, green: 245.0 / 255, blue: 225.0 / 255),
                                             alignment: .leading))),
         ])
-        let draft = LayoutPrompt.draft(from: preset, pageSetup: Self.setup)
+        let draft = LayoutPrompt.draft(from: preset)
         #expect(draft.boxes.count == 2)
         #expect(draft.boxes[1].backgroundColor == "#FFF5E1")
         #expect(draft.boxes[0].cornerRadius == nil)

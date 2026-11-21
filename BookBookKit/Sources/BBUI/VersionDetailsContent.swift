@@ -149,8 +149,7 @@ public enum VersionDetailsContent {
 
     /// `#RRGGBB` (with the alpha as a percentage when not opaque).
     static func hex(_ color: RGBA) -> String {
-        func byte(_ v: Double) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
-        let text = String(format: "#%02X%02X%02X", byte(color.red), byte(color.green), byte(color.blue))
+        let text = color.hexString
         return color.alpha < 1 ? text + " (\(Int((color.alpha * 100).rounded()))%)" : text
     }
 

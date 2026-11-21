@@ -38,7 +38,7 @@ struct SessionPanel: View {
     @State private var confirmation: PendingConfirmation<PendingGeneration>?
     @State private var regionEditing: RegionEditSubject?
 
-    private var target: GenerationTarget { GenerationTarget(owner: owner) }
+    private var target: GenerationTarget { owner }
 
     private var session: Session? { SessionPanelState.session(for: owner, in: content) }
 

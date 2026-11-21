@@ -89,7 +89,7 @@ struct AssetImageControls: View {
     @State private var laterQuestions: [PendingQuestion] = []
     @State private var problem: String?
 
-    private var target: GenerationTarget { GenerationTarget(owner: asset.owner) }
+    private var target: GenerationTarget { asset.owner }
     private var session: Session? { SessionPanelState.session(for: asset.owner, in: content) }
     private var prompt: String {
         AssetGeneration.prompt(from: description, name: asset.name, hasReferencePhoto: asset.referencePhoto != nil)

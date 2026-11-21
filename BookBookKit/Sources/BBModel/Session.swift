@@ -41,7 +41,7 @@ public enum SessionOwner: Hashable, Sendable {
     }
 }
 
-/// Coding keys shared by `SessionOwner` and `GenerationTarget`, matching the synthesized enum
+/// Coding keys for `SessionOwner` (and so `GenerationTarget`), matching the synthesized enum
 /// format (`{"pageBox":{"_0":…,"_1":…}}`). `assetReference` and `sheetItem` are legacy cases
 /// (before 2026-11-11) that are only decoded.
 private enum OwnerCaseKey: String, CodingKey { case pageBox, asset, textBox, assetReference, sheetItem }
@@ -311,34 +311,6 @@ public struct Provenance: Hashable, Codable, Sendable {
     }
 }
 
-/// What a queued generation writes into (A §7.9).
-public enum GenerationTarget: Hashable, Sendable {
-    case pageBox(PageID, BoxID)
-    /// The asset's one image session.
-    case asset(AssetID)
-    /// A page text box's styling decoration (A §7.13).
-    case textBox(PageID, BoxID)
-
-    public var owner: SessionOwner {
-        switch self {
-        case let .pageBox(p, b): .pageBox(p, b)
-        case let .asset(a): .asset(a)
-        case let .textBox(p, b): .textBox(p, b)
-        }
-    }
-
-    public init(owner: SessionOwner) {
-        switch owner {
-        case let .pageBox(p, b): self = .pageBox(p, b)
-        case let .asset(a): self = .asset(a)
-        case let .textBox(p, b): self = .textBox(p, b)
-        }
-    }
-}
-
-extension GenerationTarget: Codable {
-    /// Same format and legacy handling as `SessionOwner` (a legacy sheet-item target throws
-    /// `LegacySheetItemError`, so the queue loader drops that entry).
-    public init(from decoder: any Decoder) throws { self.init(owner: try OwnerCoding.decode(decoder)) }
-    public func encode(to encoder: any Encoder) throws { try OwnerCoding.encode(owner, encoder) }
-}
+/// What a queued generation writes into (A §7.9): the session owner recorded when it was
+/// queued. The same type as `SessionOwner`, so the queue file and sessions share one format.
+public typealias GenerationTarget = SessionOwner

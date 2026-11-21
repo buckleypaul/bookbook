@@ -153,7 +153,7 @@ extension QueueSnapshot {
     public func entry(answering message: Message, in owner: SessionOwner) -> QueueEntry? {
         if let id = message.queueItemID, let entry = entry(for: id) { return entry }
         return entries.first {
-            $0.item.messageID == message.id && $0.item.kind == .image && $0.item.target.owner == owner
+            $0.item.messageID == message.id && $0.item.kind == .image && $0.item.target == owner
         }
     }
 }

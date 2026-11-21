@@ -86,7 +86,7 @@ public enum LayoutPrompt {
                 return DraftBox(kind: .text, x: box.frame.x, y: box.frame.y, width: box.frame.width,
                                 height: box.frame.height,
                                 textAlignment: style.alignment.flatMap { DraftBox.Alignment(rawValue: $0.rawValue) },
-                                cornerRadius: radius, backgroundColor: style.background.map(TemplateNormalizer.hex))
+                                cornerRadius: radius, backgroundColor: style.background.map(\.hexString))
             }
         }
         return TemplateDraft(name: template.name, boxes: boxes)

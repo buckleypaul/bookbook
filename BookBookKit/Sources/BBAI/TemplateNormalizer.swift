@@ -128,27 +128,12 @@ public enum TemplateNormalizer {
         case .image:
             return Box(frame: frame, cornerRadius: radius, bleedEdges: edges, content: .image)
         case .text:
-            let background = raw.backgroundColor.flatMap(parseHex)
+            let background = raw.backgroundColor.flatMap(RGBA.init(hex:))
             let style = TextBoxStyle(padding: background == nil ? 0 : 12, background: background,
                                      alignment: raw.textAlignment.flatMap { TextAlignment(rawValue: $0.rawValue) })
             // Bleed only matters for text boxes that paint a background.
             return Box(frame: frame, cornerRadius: radius, bleedEdges: background == nil ? [] : edges,
                        content: .text(style))
         }
-    }
-
-    /// `#RRGGBB` (the `#` optional); anything else is nil.
-    static func parseHex(_ text: String) -> RGBA? {
-        var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if s.hasPrefix("#") { s.removeFirst() }
-        guard s.utf8.count == 6, s.utf8.allSatisfy({ ($0 >= 48 && $0 <= 57) || ($0 >= 65 && $0 <= 70) || ($0 >= 97 && $0 <= 102) }),
-              let value = UInt32(s, radix: 16) else { return nil }
-        return RGBA(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255,
-                    blue: Double(value & 0xFF) / 255)
-    }
-
-    static func hex(_ color: RGBA) -> String {
-        func byte(_ v: Double) -> Int { Int((min(1, max(0, v.isFinite ? v : 0)) * 255).rounded()) }
-        return String(format: "#%02X%02X%02X", byte(color.red), byte(color.green), byte(color.blue))
     }
 }

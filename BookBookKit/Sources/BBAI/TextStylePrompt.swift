@@ -90,10 +90,10 @@ public enum TextStylePrompt {
         return PromptTemplates.sortedJSON([
             "fontFamily": current.fontFamily,
             "fontSize": rounded(current.fontSize),
-            "textColor": TemplateNormalizer.hex(current.textColor),
+            "textColor": current.textColor.hexString,
             "alignment": current.alignment.rawValue,
             "textInset": rounded(current.textInset, places: 3),
-            "panelColor": current.panelColor.map(TemplateNormalizer.hex) ?? NSNull(),
+            "panelColor": current.panelColor.map(\.hexString) ?? NSNull(),
             "decoration": decoration.flatMap { $0.isEmpty ? nil : $0 } ?? NSNull(),
         ])
     }
@@ -125,9 +125,9 @@ public enum TextStyleNormalizer {
         let size = draft.fontSize.flatMap { $0.isFinite ? min(max($0, fontSizeRange.lowerBound), fontSizeRange.upperBound) : nil }
         let inset = draft.textInset.isFinite ? min(max(draft.textInset, 0), TextStyling.maxInsetFraction) : 0
         let styling = TextStyling(
-            font: font, fontSize: size, color: draft.textColor.flatMap(TemplateNormalizer.parseHex),
+            font: font, fontSize: size, color: draft.textColor.flatMap(RGBA.init(hex:)),
             alignment: draft.alignment.flatMap { TextAlignment(rawValue: $0.rawValue) },
-            insetFraction: inset, background: draft.panelColor.flatMap(TemplateNormalizer.parseHex))
+            insetFraction: inset, background: draft.panelColor.flatMap(RGBA.init(hex:)))
         let decoration = draft.decoration?.trimmed
         let summary = draft.summary.trimmed
         return (styling, decoration.flatMap { $0.isEmpty ? nil : $0 }, summary.isEmpty ? fallbackSummary : summary)

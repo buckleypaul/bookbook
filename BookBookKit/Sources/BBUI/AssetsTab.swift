@@ -85,7 +85,7 @@ struct AssetsList: View {
                 ForEach(assets) { asset in
                     let color = Crayon.color(forKey: asset.id.rawValue.uuidString)
                     HStack(spacing: 10) {
-                        AssetThumbnail(ref: AssetEditing.thumbnail(of: asset, in: content), images: images, size: 32,
+                        AssetThumbnail(ref: AssetEditing.image(of: asset, in: content), images: images, size: 32,
                                        ring: model.selectedAsset == asset.id ? color : Crayon.ink.opacity(0.18))
                         VStack(alignment: .leading, spacing: 1) {
                             Text(asset.name).font(Crayon.font(.body, weight: .semibold)).lineLimit(1)

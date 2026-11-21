@@ -47,7 +47,7 @@ public actor BookStore {
         try PackageCoding.io("create") {
             defer { try? fm.removeItem(at: tmp) }
             try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
-            for dir in ["templates", "pages", "sessions", "assets", "images"] {
+            for dir in PackageCoding.entityFolders + [PackageCoding.imagesFolder] {
                 try fm.createDirectory(at: tmp.appending(path: dir, directoryHint: .isDirectory),
                                        withIntermediateDirectories: true)
             }
@@ -94,28 +94,24 @@ public actor BookStore {
     /// change retired them (`RetiredAssetSessions`). Any other undecodable file fails the open.
     private func readContent() throws(StoreError) -> (BookContent, Set<SessionID>) {
         // Also guards a migrator that leaves a newer book untouched, and read-only opens (no migration).
-        struct SchemaProbe: Decodable { var schemaVersion: Int }
         let bookData = try readFile(PackageCoding.bookPath)
-        let probe = try PackageCoding.decode(SchemaProbe.self, from: bookData, what: "book.json")
-        if probe.schemaVersion > Book.currentSchemaVersion { throw StoreError.schemaTooNew(probe.schemaVersion) }
+        let schemaVersion = try PackageCoding.schemaVersion(ofBook: bookData)
+        if schemaVersion > Book.currentSchemaVersion { throw StoreError.schemaTooNew(schemaVersion) }
         let book = try PackageCoding.decode(Book.self, from: bookData, what: "book.json")
         var style = try PackageCoding.decode(StyleGuide.self, from: readFile(PackageCoding.stylePath), what: "style.json")
         style.styleReferences.removeAll { !$0.isValid }
         var templates: [TemplateID: Template] = [:]
-        for t in try readAll("templates", Template.self) { templates[t.id] = t }
+        for t in try readAll(PackageCoding.templatesFolder, Template.self) { templates[t.id] = t }
         var pages: [PageID: Page] = [:]
-        for p in try readAll("pages", Page.self) { pages[p.id] = p }
+        for p in try readAll(PackageCoding.pagesFolder, Page.self) { pages[p.id] = p }
         var sessions: [SessionID: Session] = [:]
         var retired: Set<SessionID> = []
-        for file in try readAll("sessions", Session.self, skippingLegacySheetItems: true) {
-            switch file {
-            case let .decoded(s): sessions[s.id] = s.droppingInvalidImageRefs()
-            case let .legacySheetItem(id): retired.insert(id)
-            }
+        for s in try readAll(PackageCoding.sessionsFolder, Session.self, onLegacySheetItem: { retired.insert($0) }) {
+            sessions[s.id] = s.droppingInvalidImageRefs()
         }
         // Older packages have no `assets/` folder (readAll tolerates that); no schema bump.
         var assets: [AssetID: Asset] = [:]
-        for var a in try readAll("assets", Asset.self) {
+        for var a in try readAll(PackageCoding.assetsFolder, Asset.self) {
             if a.referencePhoto?.image.isValid == false { a.referencePhoto = nil }
             assets[a.id] = a
         }
@@ -221,22 +217,16 @@ public actor BookStore {
         guard !readOnly else { throw StoreError.readOnly }
         let ref = ImageRef(sha256: PackageCoding.sha256Hex(data), contentType: contentType)
         guard ref.isValid else { throw StoreError.io("unsupported image content type: \(contentType)") }
-        let dest = imageURL(for: ref)
         try PackageCoding.io("storeImage") {
-            let fm = FileManager.default
-            let dir = dest.deletingLastPathComponent()
-            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            // Refuse if `images/` (or the package) is a symlink leading outside the package.
-            guard CanonicalPath.isInside(dir, packageURL) else {
-                throw StoreError.io("images folder is outside the package")
-            }
-            if fm.fileExists(atPath: dest.path(percentEncoded: false)) {
+            let stored = try PackageCoding.storeContentAddressed(
+                data, as: ref.fileName, in: PackageCoding.imagesDirectory(in: packageURL), of: packageURL,
+                what: PackageCoding.imagesFolder)
+            if stored.existed {
                 // Same bytes as an existing file, maybe a >24 h orphan: make it young again so the
                 // open-time sweep can't remove it before the JSON that refers to it is saved (#100).
-                try fm.setAttributes([.modificationDate: Date()], ofItemAtPath: dest.path(percentEncoded: false))
-                return
+                try FileManager.default.setAttributes([.modificationDate: Date()],
+                                                      ofItemAtPath: stored.url.path(percentEncoded: false))
             }
-            try PackageCoding.writeAtomically(data, to: dest, tempIn: dir)
         }
         // The caller may put this ref into content later; a Clean Up already under way must not
         // delete the file from under it (`deleteImages(named:keepingImagesStoredAfter:)`).
@@ -248,8 +238,7 @@ public actor BookStore {
     /// Where an image file lives (it may not exist yet). Always inside `images/`: a ref that
     /// fails validation (untrusted `sha256`) maps to a file name that never exists.
     public nonisolated func imageURL(for ref: ImageRef) -> URL {
-        let images = packageURL.appending(path: "images", directoryHint: .isDirectory)
-        return images.appending(path: ref.isValid ? ref.fileName : "_invalid-image")
+        PackageCoding.imagesDirectory(in: packageURL).appending(path: ref.isValid ? ref.fileName : "_invalid-image")
     }
 
     // MARK: Reading
@@ -262,39 +251,28 @@ public actor BookStore {
         return try PackageCoding.io("read \(path)") { try Data(contentsOf: url) }
     }
 
-    private func readAll<T: Decodable>(_ folder: String, _ type: T.Type) throws(StoreError) -> [T] {
-        try readAll(folder, type, skippingLegacySheetItems: false).compactMap {
-            if case let .decoded(value) = $0 { value } else { nil }
-        }
-    }
-
-    private enum ReadFile<T> {
-        case decoded(T)
-        /// A session file whose owner is a legacy character-sheet item (`LegacySheetItemError`).
-        case legacySheetItem(SessionID)
-    }
-
-    /// Every `<folder>/*.json`, decoded. With `skippingLegacySheetItems`, a file that throws
-    /// `LegacySheetItemError` is reported by the ID in its name instead of failing the read.
+    /// Every `<folder>/*.json`, decoded. With `onLegacySheetItem`, a file that throws
+    /// `LegacySheetItemError` (a session owned by a legacy character-sheet item) is left out and
+    /// reported by the ID in its name instead of failing the read.
     private func readAll<T: Decodable>(_ folder: String, _ type: T.Type,
-                                       skippingLegacySheetItems: Bool) throws(StoreError) -> [ReadFile<T>] {
+                                       onLegacySheetItem: ((SessionID) -> Void)? = nil) throws(StoreError) -> [T] {
         let dir = packageURL.appending(path: folder, directoryHint: .isDirectory)
         guard FileManager.default.fileExists(atPath: dir.path(percentEncoded: false)) else { return [] }
         let urls = try PackageCoding.io("list \(folder)") {
             try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
         }
-        var out: [ReadFile<T>] = []
+        var out: [T] = []
         for url in urls where url.pathExtension == "json" && !url.lastPathComponent.hasPrefix(".") {
             let data = try PackageCoding.io("read \(url.lastPathComponent)") { try Data(contentsOf: url) }
             let what = "\(folder)/\(url.lastPathComponent)"
-            guard skippingLegacySheetItems else {
-                out.append(.decoded(try PackageCoding.decode(T.self, from: data, what: what)))
+            guard let onLegacySheetItem else {
+                out.append(try PackageCoding.decode(T.self, from: data, what: what))
                 continue
             }
             if let value = try PackageCoding.decodeUnlessLegacySheetItem(T.self, from: data, what: what) {
-                out.append(.decoded(value))
+                out.append(value)
             } else if let uuid = UUID(uuidString: url.deletingPathExtension().lastPathComponent) {
-                out.append(.legacySheetItem(SessionID(rawValue: uuid)))
+                onLegacySheetItem(SessionID(rawValue: uuid))
             }
             // A legacy sheet file with a non-UUID name: ignored (and left in place).
         }
@@ -332,6 +310,20 @@ public actor BookStore {
         case .heldByOther(let owner):
             return .heldByOther(owner)
         }
+    }
+
+    /// Runs `body` on this store while it holds `.lock`, then releases it, also when `body`
+    /// throws. Throws `.locked(owner)` when someone else holds it; `exclusively` uses
+    /// `acquireLockExclusively()`'s rule. Only for a fresh headless store (lock, load, save,
+    /// release): a store that already held the lock would lose it here.
+    func withLock<T: Sendable>(
+        exclusively: Bool = false, _ body: @Sendable (isolated BookStore) throws(StoreError) -> T
+    ) throws(StoreError) -> T {
+        if case .heldByOther(let owner) = try acquireLock(exclusiveInProcess: exclusively) {
+            throw StoreError.locked(owner)
+        }
+        defer { releaseLock() }
+        return try body(self)
     }
 
     /// "Open Anyway" (#99b): replaces a lock that `acquireLock()` reported as
@@ -386,7 +378,7 @@ public actor BookStore {
 
     /// `<package>/thumbnail.png` (A §5.1).
     public nonisolated var thumbnailURL: URL {
-        packageURL.appending(path: "thumbnail.png", directoryHint: .notDirectory)
+        PackageCoding.thumbnailURL(in: packageURL)
     }
 
     /// Writes `thumbnail.png` atomically (temp file + rename). Not journaled: it's a rebuildable cache.

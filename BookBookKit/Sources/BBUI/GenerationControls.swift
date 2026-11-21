@@ -317,10 +317,16 @@ extension View {
 
     /// "Couldn't complete that" with `problem` as the message.
     func problemAlert(_ problem: Binding<String?>) -> some View {
-        alert("Couldn't complete that", isPresented: problem.isPresent()) {
+        messageAlert("Couldn't complete that", problem)
+    }
+
+    /// An alert with `title`, the optional's text as its message and one OK button: shown while
+    /// `message` holds a value, which closing the alert clears.
+    func messageAlert(_ title: String, _ message: Binding<String?>) -> some View {
+        alert(title, isPresented: message.isPresent()) {
             Button("OK", role: .cancel) {}
         } message: {
-            Text(problem.wrappedValue ?? "")
+            Text(message.wrappedValue ?? "")
         }
     }
 }

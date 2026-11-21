@@ -54,3 +54,12 @@ public final class TextBoxLayoutCache {
         entries.removeAll()
     }
 }
+
+extension TextBoxLayout {
+    /// `cache`'s layout for these inputs, or a fresh layout when there is no cache.
+    static func cached(in cache: TextBoxLayoutCache?, text: RichText, typography: Typography,
+                       containerSize: CGSize) -> TextBoxLayout {
+        cache?.layout(text: text, typography: typography, containerSize: containerSize)
+            ?? TextBoxLayout(text: text, typography: typography, containerSize: containerSize)
+    }
+}

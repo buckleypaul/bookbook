@@ -20,8 +20,7 @@ public struct Library: Sendable {
         else { return [] }
         var entries: [LibraryEntry] = []
         for url in urls where url.pathExtension == "bookbook" {
-            guard let data = try? Data(contentsOf: url.appending(path: PackageCoding.bookPath)),
-                  let book = try? PackageCoding.decoder().decode(Book.self, from: data) else { continue }
+            guard let book = try? PackageCoding.readBook(in: url, what: "read book") else { continue }
             entries.append(Self.entry(for: book, at: url))
         }
         return entries.sorted {
@@ -40,7 +39,7 @@ public struct Library: Sendable {
 
     /// An entry for `book` stored at `url`, with its thumbnail if `thumbnail.png` exists.
     static func entry(for book: Book, at url: URL) -> LibraryEntry {
-        let thumb = url.appending(path: "thumbnail.png", directoryHint: .notDirectory)
+        let thumb = PackageCoding.thumbnailURL(in: url)
         let hasThumb = FileManager.default.fileExists(atPath: thumb.path(percentEncoded: false))
         return LibraryEntry(id: book.id, title: book.title, url: url, modifiedAt: book.modifiedAt,
                             thumbnailURL: hasThumb ? thumb : nil)
@@ -59,7 +58,7 @@ public struct Library: Sendable {
         do {
             try PackageCoding.io(what) {
                 try fm.copyItem(at: source, to: dest)
-                for skipped in [".lock", ".journal"] {
+                for skipped in [BookLock.fileName, Journal.folderName] {
                     let item = dest.appending(path: skipped)
                     if fm.fileExists(atPath: item.path(percentEncoded: false)) { try fm.removeItem(at: item) }
                 }
@@ -139,10 +138,7 @@ extension Library {
             title = "\(entry.title) copy \(n)"
             n += 1
         }
-        let sourceData = try PackageCoding.io("read book") {
-            try Data(contentsOf: entry.url.appending(path: PackageCoding.bookPath))
-        }
-        let book = try PackageCoding.decode(Book.self, from: sourceData, what: "book.json")
+        let book = try PackageCoding.readBook(in: entry.url, what: "read book")
         return try copyPackage(from: entry.url, book: book, title: title, what: "duplicate book") {
             $0.id = BookID()
             $0.title = title
@@ -168,17 +164,11 @@ extension Library {
     /// Sets the title of a closed book through a headless `BookStore` (lock, load, save, release).
     /// The package folder keeps its name. Throws `.locked` if another process holds it.
     public func rename(_ entry: LibraryEntry, to title: String, now: Date = Date()) async throws(StoreError) -> LibraryEntry {
-        let store = BookStore(packageURL: entry.url)
-        do throws(StoreError) {
-            if case .heldByOther(let owner) = try await store.acquireLock() { throw StoreError.locked(owner) }
-            var content = try await store.load()
+        try await BookStore(packageURL: entry.url).withLock { store throws(StoreError) in
+            var content = try store.load()
             content.book.title = title
             content.book.modifiedAt = now
-            try await store.save(content, dirty: DirtySet(book: true))
-            await store.releaseLock()
-        } catch {
-            await store.releaseLock()
-            throw error
+            try store.save(content, dirty: DirtySet(book: true))
         }
         var updated = entry
         updated.title = title

@@ -33,13 +33,10 @@ public final class LiveExportServices: ExportServices {
     public func runPreflight(for options: ExportOptions) async -> [PreflightIssue] {
         let content = document.content
         let store = document.store
-        let selected = Preflight.exportedPageIDs(content, options: options)
+        let pages = Preflight.exportedPages(content, options: options)
         var all: [ImagePreparationRequest] = []
-        for page in [content.coverPage].compactMap({ $0 }) + content.storyPages where selected.contains(page.id) {
-            all += ImagePreparationPlanner.requests(
-                page: page, in: content,
-                imageURL: { store.imageURL(for: $0) },
-                pixelSize: { ImagePixelSize.of(url: store.imageURL(for: $0)) })
+        for page in pages {
+            all += ImagePreparationPlanner.requests(page: page, in: content, imageURL: { store.imageURL(for: $0) })
         }
         var assessments: [BoxImageKey: ImageAssessment] = [:]
         var byKey: [BoxImageKey: ImagePreparationRequest] = [:]
@@ -51,7 +48,7 @@ public final class LiveExportServices: ExportServices {
         // A superseded check: skip the layout and spelling pass; the sheet ignores the result.
         guard !Task.isCancelled else { return [] }
         return Preflight.run(content, assessments: assessments, spelling: SystemSpellingChecker(),
-                             pages: selected)
+                             pages: Set(pages.map(\.id)))
     }
 
     public func export(_ options: ExportOptions, to url: URL,

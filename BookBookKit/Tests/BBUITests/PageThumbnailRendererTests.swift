@@ -8,7 +8,7 @@ import Testing
 struct PageThumbnailRendererTests {
     private let textBox = BoxID()
 
-    private func content() -> BookContent {
+    private func content(pages: Int = 1) -> BookContent {
         let template = Template(name: "T", kind: .single, boxes: [
             Box(id: BoxID(), frame: NormalizedRect(x: 0.1, y: 0.1, width: 0.8, height: 0.5), content: .image),
             Box(id: textBox, frame: NormalizedRect(x: 0.1, y: 0.65, width: 0.8, height: 0.25),
@@ -16,7 +16,7 @@ struct PageThumbnailRendererTests {
         ])
         return BookContent.makeNew(title: "B", storyTemplate: template,
                                    coverTemplate: Template(name: "C", kind: .cover, boxes: []),
-                                   storyPageCount: 1, now: Date(timeIntervalSince1970: 0))
+                                   storyPageCount: pages, now: Date(timeIntervalSince1970: 0))
     }
 
     private func renderer() -> PageThumbnailRenderer {
@@ -48,6 +48,19 @@ struct PageThumbnailRendererTests {
 
         content.style.typography.color = RGBA(red: 1, green: 0, blue: 0)
         #expect(thumbnails.image(for: page, in: content, marks: [], pixelHeight: 40) !== withText)
+    }
+
+    @Test func manyEditsToOnePageKeepTheOthersCached() throws {
+        var content = content(pages: 2)
+        let pages = content.book.pageOrder
+        let edited = try #require(pages.last), other = try #require(pages.dropLast().last)
+        let thumbnails = renderer()
+        let otherFirst = try #require(thumbnails.image(for: other, in: content, marks: [], pixelHeight: 40))
+        for n in 0..<250 {
+            content.pages[edited]?.text[textBox] = RichText(plain: "Draft \(n)")
+            _ = thumbnails.image(for: edited, in: content, marks: [], pixelHeight: 40)
+        }
+        #expect(thumbnails.image(for: other, in: content, marks: [], pixelHeight: 40) === otherFirst)
     }
 
     @Test func aFontImportRedrawsEveryThumbnail() throws {

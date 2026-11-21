@@ -1,11 +1,21 @@
 import BBAI
 import BBAICore
+import BBLayout
 import BBModel
 import BBStore
 import CoreGraphics
 import Foundation
 import Testing
 @testable import BBUI
+
+struct UnavailableTextTests {
+    @Test func blocker_readOnlyThenOfflineThenNoKey() {
+        #expect(UnavailableText.blocker(isEditable: true, isOnline: true, hasKey: true) == nil)
+        #expect(UnavailableText.blocker(isEditable: false, isOnline: false, hasKey: false) == UnavailableText.readOnly)
+        #expect(UnavailableText.blocker(isEditable: true, isOnline: false, hasKey: false) == UnavailableText.offline)
+        #expect(UnavailableText.blocker(isEditable: true, isOnline: true, hasKey: false) == UnavailableText.noKey)
+    }
+}
 
 struct ProviderErrorTextTests {
     @Test func offline() {
@@ -78,7 +88,7 @@ struct MessageStatusTests {
     private func resolve(_ message: Message, _ state: QueueItemState?, pending: Set<QueueItemID> = [],
                          failures: [MessageID: String] = [:]) -> MessageStatus {
         let snapshot = QueueSnapshot(entries: state.map { [QueueEntry(item: item, state: $0)] } ?? [])
-        return MessageStatus.resolve(message, in: item.target.owner, snapshot: snapshot, pendingThisLaunch: pending,
+        return MessageStatus.resolve(message, in: item.target, snapshot: snapshot, pendingThisLaunch: pending,
                                      deliveryFailures: failures) { _ in 14 }
     }
 
@@ -138,7 +148,7 @@ struct MessageStatusTests {
         var check = item
         check.id = QueueItemID()
         check.kind = .consistencyCheck(version)
-        let checked = MessageStatus.resolve(message(queued: false, produced: version), in: item.target.owner,
+        let checked = MessageStatus.resolve(message(queued: false, produced: version), in: item.target,
                                             snapshot: QueueSnapshot(entries: [QueueEntry(item: check, state: running)]),
                                             pendingThisLaunch: []) { _ in 14 }
         #expect(checked == .produced(version))
@@ -255,8 +265,11 @@ struct CanvasGeometryTests {
 
     @Test func textRect_insetsByPadding() {
         let rect = CGRect(x: 0, y: 0, width: 100, height: 50)
-        #expect(CanvasHitTest.textRect(rect, box: Fixtures.textBox) == CGRect(x: 4, y: 4, width: 92, height: 42))
-        #expect(CanvasHitTest.textRect(rect, box: Fixtures.imageBox) == rect)
+        let appearance = TextBoxAppearance.resolve(box: Fixtures.textBox, style: TextBoxStyle(padding: 4), pageID: nil,
+                                                   content: Fixtures.book(), renderSize: rect.size)
+        #expect(appearance.textRect(in: rect) == CGRect(x: 4, y: 4, width: 92, height: 42))
+        // Padding that swallows the box: the whole rect.
+        #expect(appearance.textRect(in: CGRect(x: 0, y: 0, width: 6, height: 6)) == CGRect(x: 0, y: 0, width: 6, height: 6))
     }
 }
 

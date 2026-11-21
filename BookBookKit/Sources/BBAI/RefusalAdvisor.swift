@@ -26,6 +26,12 @@ public enum RefusalAdvisor {
             self.error = error
             self.context = context
             provider = RefusalAdvisor.displayName(context.provider)
+            // Only the refusal rule reads the terms, so other errors skip the scan.
+            guard case .refused = error else {
+                promptTerms = []
+                storyTerms = []
+                return
+            }
             let story = context.report?.storyText ?? ""
             var prompt = context.report?.promptText ?? ""
             if !story.isEmpty { prompt = prompt.replacingOccurrences(of: story, with: " ") }

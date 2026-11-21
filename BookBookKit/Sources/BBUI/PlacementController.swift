@@ -101,9 +101,9 @@ final class PlacementController: CanvasController {
             let editedBox = textBox(editing)
             if pageChanged || editedBox == nil {
                 textEditing.end()
-            } else if let pageID, let (box, rect) = editedBox {
+            } else if let pageID, let (box, style, rect) = editedBox {
                 textEditing.reloadIfNeeded(modelText: content.pages[pageID]?.text[editing] ?? .empty,
-                                           typography: typography(for: box, rect: rect, in: content))
+                                           typography: appearance(for: box, style: style, rect: rect, in: content).typography)
                 positionEditor()
             }
         }
@@ -140,26 +140,19 @@ final class PlacementController: CanvasController {
     /// `PageRenderer` draws. Set in `update`, the only place its inputs change.
     private(set) var boxRects: [(box: Box, rect: CGRect)] = []
 
-    private func textBox(_ id: BoxID) -> (box: Box, rect: CGRect)? {
-        boxRects.first { $0.box.id == id && $0.box.content != .image }
+    /// The text box `id` on this page with its text style and render rect; nil for an image box
+    /// or a box that isn't on the page.
+    private func textBox(_ id: BoxID) -> (box: Box, style: TextBoxStyle, rect: CGRect)? {
+        for (box, rect) in boxRects where box.id == id {
+            if case let .text(style) = box.content { return (box, style, rect) }
+        }
+        return nil
     }
 
     /// The box's look on this page (as `PageRenderer`: role, the box's overrides, then the
     /// page's AI text style, A §7.13). `rect` is the box's render rect.
-    private func appearance(for box: Box, rect: CGRect, in content: BookContent) -> TextBoxAppearance? {
-        guard case let .text(style) = box.content else { return nil }
-        return TextBoxAppearance.resolve(box: box, style: style, pageID: pageID, content: content, renderSize: rect.size)
-    }
-
-    /// The typography a box lays out with (as `PageRenderer`).
-    private func typography(for box: Box, rect: CGRect, in content: BookContent) -> Typography {
-        appearance(for: box, rect: rect, in: content)?.typography
-            ?? InlineTextEditor.typography(for: box, base: content.style.typography)
-    }
-
-    /// The text container rect of a text box (its render rect inset by the padding in force).
-    private func textRect(for box: Box, rect: CGRect, in content: BookContent) -> CGRect {
-        appearance(for: box, rect: rect, in: content)?.textRect(in: rect) ?? CanvasHitTest.textRect(rect, box: box)
+    private func appearance(for box: Box, style: TextBoxStyle, rect: CGRect, in content: BookContent) -> TextBoxAppearance {
+        TextBoxAppearance.resolve(box: box, style: style, pageID: pageID, content: content, renderSize: rect.size)
     }
 
     /// Text boxes on the page whose text doesn't fit (same container as `PageRenderer`).
@@ -270,7 +263,7 @@ final class PlacementController: CanvasController {
             onSelectBox(id)
             // The click places the caret where it landed (a press in the box's padding goes to
             // the nearest character), on the first click as on later ones.
-            if textEditing.editingBoxID == id, let (box, rect) = textBox(id) {
+            if textEditing.editingBoxID == id, let (box, _, rect) = textBox(id) {
                 textEditing.handleClick(event, at: point, boxRect: rect, rotationDegrees: box.rotationDegrees)
             }
         case .openBookSettings:
@@ -421,14 +414,14 @@ final class PlacementController: CanvasController {
     private func beginEditing(_ boxID: BoxID) {
         textEditing.end()
         // Title/author boxes show the book's fields; they're edited in Book Settings.
-        guard let content, let pageID, let (box, rect) = textBox(boxID), !CoverText.isBound(box.role) else { return }
+        guard let content, let pageID, let (box, style, rect) = textBox(boxID), !CoverText.isBound(box.role) else { return }
+        let appearance = appearance(for: box, style: style, rect: rect, in: content)
         textEditing.begin(pageID: pageID, boxID: boxID, text: content.pages[pageID]?.text[boxID] ?? .empty,
-                          typography: typography(for: box, rect: rect, in: content),
-                          textRect: textRect(for: box, rect: rect, in: content))
+                          typography: appearance.typography, textRect: appearance.textRect(in: rect))
     }
 
     private func positionEditor() {
-        guard let editing = textEditing.editingBoxID, let (box, rect) = textBox(editing), let content else { return }
-        textEditing.place(textRect: textRect(for: box, rect: rect, in: content))
+        guard let editing = textEditing.editingBoxID, let (box, style, rect) = textBox(editing), let content else { return }
+        textEditing.place(textRect: appearance(for: box, style: style, rect: rect, in: content).textRect(in: rect))
     }
 }

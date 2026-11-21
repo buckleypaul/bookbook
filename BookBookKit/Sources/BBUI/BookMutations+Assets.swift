@@ -34,9 +34,9 @@ extension BookMutations {
     /// session is missing (legacy file) gets an empty one first. Empty if gone.
     public static func appendPendingMessage(_ message: Message, target: GenerationTarget,
                                             to content: inout BookContent) -> DirtySet {
-        guard let id = sessionID(for: target.owner, in: content) else { return DirtySet() }
-        if content.sessions[id] == nil, target.owner.assetID != nil {
-            content.sessions[id] = Session(id: id, owner: target.owner)
+        guard let id = sessionID(for: target, in: content) else { return DirtySet() }
+        if content.sessions[id] == nil, target.assetID != nil {
+            content.sessions[id] = Session(id: id, owner: target)
         }
         guard var session = content.sessions[id] else { return DirtySet() }
         var message = message
@@ -44,28 +44,6 @@ extension BookMutations {
         session.messages.append(message)
         content.sessions[id] = session
         return DirtySet(sessions: [id])
-    }
-
-    /// A finished generation for an asset: the version goes into the session (found by
-    /// message first) and becomes the asset's `chosen` (the newest image always wins, bumping
-    /// the revision; earlier versions stay in the session).
-    static func applyAssetDelivery(_ delivery: GenerationDelivery, storedImage: ImageRef?,
-                                   to content: inout BookContent, versionID: VersionID, now: Date) -> DirtySet {
-        let owner = delivery.item.target.owner
-        guard let sessionID = content.session(containing: delivery.item.messageID)?.id
-                ?? Self.sessionID(for: owner, in: content),
-              var session = content.sessions[sessionID] else { return DirtySet() }
-        var dirty = DirtySet()
-        let (changed, delivered) = record(delivery, storedImage: storedImage, versionID: versionID, now: now,
-                                          in: &session, content: content)
-        if changed { dirty.sessions.insert(sessionID) }
-        if let version = delivered {
-            content.sessions[sessionID] = session
-            if let asset = chooseLatest(version.id, session: sessionID, in: &content) { dirty.assets.insert(asset) }
-            return dirty
-        }
-        content.sessions[sessionID] = session
-        return dirty
     }
 
     /// A request queued before its asset was deleted still holds the token in the stored intent.

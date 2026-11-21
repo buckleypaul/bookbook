@@ -5,7 +5,7 @@ extension BookStore {
     /// Size in bytes of `images/<fileName>` on disk (nil when missing). For `CleanUp.plan`.
     public nonisolated func imageFileSize(_ fileName: String) -> Int64? {
         guard !fileName.contains("/"), !fileName.isEmpty else { return nil }
-        let url = packageURL.appending(path: "images", directoryHint: .isDirectory).appending(path: fileName)
+        let url = PackageCoding.imagesDirectory(in: packageURL).appending(path: fileName)
         guard let v = try? url.resourceValues(forKeys: [.fileAllocatedSizeKey, .fileSizeKey]),
               let size = v.fileAllocatedSize ?? v.fileSize else { return nil }
         return Int64(size)
@@ -23,11 +23,9 @@ extension BookStore {
                              keepingImagesStoredAfter generation: Int? = nil) throws(StoreError) -> Int {
         if isReadOnly { throw StoreError.readOnly }
         let fm = FileManager.default
-        let dir = packageURL.appending(path: "images", directoryHint: .isDirectory)
+        let dir = PackageCoding.imagesDirectory(in: packageURL)
         return try PackageCoding.io("delete images") {
-            guard CanonicalPath.isInside(dir, packageURL) else {
-                throw StoreError.io("images folder is outside the package")
-            }
+            try PackageCoding.requireInside(dir, packageURL, what: PackageCoding.imagesFolder)
             var removed = 0
             for name in fileNames where !name.contains("/") && !name.isEmpty && !name.hasPrefix(".") {
                 if let generation, let handedOut = imageHandOuts[name], handedOut > generation { continue }

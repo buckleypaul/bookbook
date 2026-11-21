@@ -45,4 +45,39 @@ extension AppModel {
     public func setBudget(_ budget: Decimal?, in document: BookDocument) -> Bool {
         document.setBudget(budget)
     }
+
+    // MARK: Text-model requests (the Layouts chat and text styling run outside the queue)
+
+    /// The Settings layout model (text styling uses the same one) in `provider`'s part of the
+    /// catalog (nil = OpenAI), when the catalog has it.
+    func defaultTextModel(for provider: ProviderID?) -> CatalogTextModel? {
+        catalog.textModel(provider: provider ?? .openai, id: preferences.defaultTemplateModelID)
+    }
+
+    /// What a request says when `defaultTextModel` is nil.
+    var missingTextModelAdvice: String {
+        "“\(preferences.defaultTemplateModelID)” isn't in the model list. Choose another layout model in Settings."
+    }
+
+    /// Writes the ledger line for a text-model request into the book; returns the line's ID.
+    @discardableResult
+    func recordTextModelCost(kind: CostKind, model: CatalogTextModel, provider: ProviderID, target: GenerationTarget?,
+                             estimate: CostEstimate, charge: LedgerCharge, in bookID: BookID) async -> CostRecordID {
+        let record = CostRecord(at: now(), kind: kind, provider: provider, model: model.id, quality: nil,
+                                target: target, charge: charge, estimate: estimate,
+                                currentPriceListAsOf: prices.current.asOf)
+        await openBooks.recordCost(record, in: bookID)
+        return record.id
+    }
+
+    /// The ledger line for a text-model request that failed with `error`, by the queue's rule
+    /// (A §7.10), so it is billed like an image request. Nil means no line: nothing left the
+    /// machine (no key, offline).
+    func recordTextModelFailure(_ error: ProviderError, kind: CostKind, model: CatalogTextModel, provider: ProviderID,
+                                target: GenerationTarget?, estimate: CostEstimate,
+                                in bookID: BookID) async -> CostRecordID? {
+        guard let charge = QueueLedgerRule.forFailure(error).charge else { return nil }
+        return await recordTextModelCost(kind: kind, model: model, provider: provider, target: target,
+                                         estimate: estimate, charge: charge, in: bookID)
+    }
 }

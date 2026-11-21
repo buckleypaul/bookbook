@@ -34,14 +34,8 @@ struct ExportSheet: View {
         .task { await model.runPreflight() }
         .onAppear { model.chooseDestination = Self.runSavePanel }
         .interactiveDismissDisabled(model.isExporting)
-        .alert("Couldn't export", isPresented: Binding(get: { model.errorMessage != nil },
-                                                       set: { if !$0 { model.errorMessage = nil } })) {
-            Button("OK", role: .cancel) { model.errorMessage = nil }
-        } message: { Text(model.errorMessage ?? "") }
-        .alert("Couldn't preview the image", isPresented: Binding(get: { previewError != nil },
-                                                                  set: { if !$0 { previewError = nil } })) {
-            Button("OK", role: .cancel) { previewError = nil }
-        } message: { Text(previewError ?? "") }
+        .messageAlert("Couldn't export", $model.errorMessage)
+        .messageAlert("Couldn't preview the image", $previewError)
         .sheet(item: $preview) { UpscalePreviewSheet(preview: $0) }
     }
 
@@ -210,7 +204,6 @@ struct UpscalePreview: Identifiable {
 /// The prepared image at 100 percent: actual pixels, so one image pixel is one screen pixel.
 struct UpscalePreviewSheet: View {
     let preview: UpscalePreview
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var scale
 
     var body: some View {
@@ -226,7 +219,6 @@ struct UpscalePreviewSheet: View {
             CrayonSheetDoneFooter()
         }
         .crayonSheet(minWidth: 560, minHeight: 440)
-        .onExitCommand { dismiss() }
     }
 
     private var pixels: CGSize {

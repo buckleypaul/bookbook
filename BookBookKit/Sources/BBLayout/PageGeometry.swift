@@ -54,15 +54,7 @@ public struct PageGeometry: Hashable, Sendable {
     /// on, except, on a spread, an edge lying on the fold (the fold is not a trim edge, so a
     /// half-spread full-bleed box must not spill onto the facing page).
     public func pushedBleedEdges(for box: Box) -> EdgeSet {
-        guard bleed > 0, !box.bleedEdges.isEmpty else { return [] }
-        var edges = box.bleedEdges
-        if isSpread {
-            let fold = foldX
-            let tolerance: CGFloat = 0.5
-            if abs(CGFloat(box.frame.x) * trimSize.width - fold) <= tolerance { edges.remove(.leading) }
-            if abs(CGFloat(box.frame.maxX) * trimSize.width - fold) <= tolerance { edges.remove(.trailing) }
-        }
-        return edges
+        box.pushedBleedEdges(trimWidth: setup.trimSize.width, isSpread: isSpread, bleed: Double(bleed))
     }
 
     /// The box's normalized frame times the trim size, with each edge in `bleedEdges` pushed
@@ -72,10 +64,7 @@ public struct PageGeometry: Hashable, Sendable {
     /// rect's centre, so with bleed on a rotated full-bleed box pivots about the bleed-extended
     /// rect's centre (and with bleed off, about the trim frame's centre).
     public func renderRect(for box: Box) -> CGRect {
-        let size = trimSize
-        let trim = CGRect(x: CGFloat(box.frame.x) * size.width, y: CGFloat(box.frame.y) * size.height,
-                          width: CGFloat(box.frame.width) * size.width, height: CGFloat(box.frame.height) * size.height)
-        return Self.expand(trim, edges: pushedBleedEdges(for: box), by: bleed)
+        Self.expand(trimRect(for: box.frame), edges: pushedBleedEdges(for: box), by: bleed)
     }
 
     /// Inverse of the bleed expansion: the trim rect whose render rect is `rect`, given the

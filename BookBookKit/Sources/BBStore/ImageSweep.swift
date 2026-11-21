@@ -28,11 +28,9 @@ enum ImageSweep {
     /// than `minimumAge` before `now`. Refuses if `images/` resolves outside the package.
     static func sweep(packageURL: URL, referenced: Set<String>, minimumAge: TimeInterval, now: Date) throws -> Int {
         let fm = FileManager.default
-        let dir = packageURL.appending(path: "images", directoryHint: .isDirectory)
+        let dir = PackageCoding.imagesDirectory(in: packageURL)
         guard fm.fileExists(atPath: dir.path(percentEncoded: false)) else { return 0 }
-        guard CanonicalPath.isInside(dir, packageURL) else {
-            throw StoreError.io("images folder is outside the package")
-        }
+        try PackageCoding.requireInside(dir, packageURL, what: PackageCoding.imagesFolder)
         let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey]
         let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys)
         let cutoff = now.addingTimeInterval(-minimumAge)

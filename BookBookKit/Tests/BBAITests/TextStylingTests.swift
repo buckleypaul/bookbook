@@ -123,10 +123,10 @@ struct TextBoxBook {
         let out = TextStyleNormalizer.styling(from: draft, fonts: Self.fonts, current: TextStylePromptTests.snapshot)
         #expect(out.styling.font == FontRef(postScriptName: "ChalkboardSE-Regular"))
         #expect(out.styling.fontSize == 30)
-        #expect(out.styling.color == TemplateNormalizer.parseHex("#3A2A10"))
+        #expect(out.styling.color == RGBA(hex: "#3A2A10"))
         #expect(out.styling.alignment == .center)
         #expect(out.styling.insetFraction == 0.15)
-        #expect(out.styling.background == TemplateNormalizer.parseHex("#FFF8E0"))
+        #expect(out.styling.background == RGBA(hex: "#FFF8E0"))
         #expect(out.decorationPrompt == "A gold frame.")
         #expect(out.summary == "A golden frame.")
     }

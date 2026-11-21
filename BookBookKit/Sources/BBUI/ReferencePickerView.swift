@@ -27,8 +27,7 @@ public enum ReferenceSources {
             guard let page = content.pages[pageID], let template = content.template(for: page) else { continue }
             for box in template.imageBoxes { add(.pageBox(pageID, box.id)) }
         }
-        let assets = content.assets.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        for asset in assets { add(asset.owner) }
+        for asset in AssetEditing.list(content, type: nil) { add(asset.owner) }
         return out
     }
 

@@ -167,6 +167,147 @@ private func diff(_ asset: String?, _ aspect: String, _ observed: String = "x", 
     }
 }
 
+/// Pins the exact user text of the layout and consistency prompts (no snapshot covers them),
+/// so refactoring the prompt scaffolding cannot change the bytes sent to the provider.
+@Suite struct PromptTextPinTests {
+    @Test func layoutRequestText() {
+        let layout = LayoutPrompt.request(description: "  big picture on top ", kind: .single, pageSetup: LayoutPromptTests.setup,
+                                          presets: [LayoutPromptTests.preset("Plain A")], model: LayoutPromptTests.model)
+        #expect(layout.user == """
+            Design a layout for this description:
+            big picture on top
+
+            Page setup:
+            - Layout type: single page
+            - Page size: 576 x 720 pt (8 x 10 in)
+            - Orientation: portrait
+            - Margins: top 36 pt, leading 54 pt, bottom 36 pt, trailing 54 pt (margin lines at x = 0.0938, 0.9062; y = 0.0500, 0.9500)
+            - Bleed: on (9 pt); images that touch a page edge run into the bleed
+
+            Examples of the output format:
+
+            Example 1 (Plain A):
+            {
+              "boxes" : [
+                {
+                  "backgroundColor" : null,
+                  "cornerRadius" : null,
+                  "height" : 0.59999999999999998,
+                  "kind" : "image",
+                  "textAlignment" : null,
+                  "width" : 1,
+                  "x" : 0,
+                  "y" : 0
+                },
+                {
+                  "backgroundColor" : null,
+                  "cornerRadius" : null,
+                  "height" : 0.20000000000000001,
+                  "kind" : "text",
+                  "textAlignment" : null,
+                  "width" : 0.80000000000000004,
+                  "x" : 0.10000000000000001,
+                  "y" : 0.69999999999999996
+                }
+              ],
+              "name" : "Plain A"
+            }
+            """)
+        #expect(layout.system == PromptTemplates.text(for: "system", set: "layout-v1"))
+        #expect(!layout.system.isEmpty && layout.system.trimmingCharacters(in: .newlines) == layout.system)
+    }
+
+    @Test func layoutRevisionText() {
+        var current = LayoutPromptTests.preset("Mine", kind: .spread)
+        current.boxes[1].content = .text(TextBoxStyle(background: RGBA(red: 1, green: 0.97, blue: 0.9, alpha: 1), alignment: .center))
+        let revise = LayoutPrompt.revisionRequest(instruction: "  make the picture full-bleed ",
+                                                  history: ["big picture on top", " "], current: current,
+                                                  pageSetup: LayoutPromptTests.setup, model: LayoutPromptTests.model)
+        #expect(revise.user == """
+            Revise this layout. Change only what the request asks for and keep every other box where it is.
+            Return the whole revised layout, listing the boxes in the same order as the current layout; add new boxes at the end.
+
+            Current layout:
+            {
+              "boxes" : [
+                {
+                  "backgroundColor" : null,
+                  "cornerRadius" : null,
+                  "height" : 0.59999999999999998,
+                  "kind" : "image",
+                  "textAlignment" : null,
+                  "width" : 1,
+                  "x" : 0,
+                  "y" : 0
+                },
+                {
+                  "backgroundColor" : "#FFF7E6",
+                  "cornerRadius" : null,
+                  "height" : 0.20000000000000001,
+                  "kind" : "text",
+                  "textAlignment" : "center",
+                  "width" : 0.80000000000000004,
+                  "x" : 0.10000000000000001,
+                  "y" : 0.69999999999999996
+                }
+              ],
+              "name" : "Mine"
+            }
+
+            Earlier requests in this conversation, oldest first:
+            - big picture on top
+
+            Request:
+            make the picture full-bleed
+
+            Page setup:
+            - Layout type: spread (two facing pages)
+            - Page size: 576 x 720 pt (8 x 10 in) per page; the layout area is two pages wide: 1152 x 720 pt
+            - Orientation: portrait
+            - Margins: top 36 pt, leading 54 pt, bottom 36 pt, trailing 54 pt (margin lines at x = 0.0469, 0.4531, 0.5469, 0.9531; y = 0.0500, 0.9500)
+            - Bleed: on (9 pt); images that touch a page edge run into the bleed
+            """)
+        #expect(revise.system == PromptTemplates.text(for: "system", set: "layout-v1"))
+    }
+
+    @Test func consistencyText() {
+        let check = ConsistencyPrompt.instructions(
+            assets: [ConsistencyAssetContext(name: "Pip", description: " a fox with a red scarf "),
+                     ConsistencyAssetContext(name: "Castle", description: " ")],
+            styleDescription: " soft watercolour ", imageLabels: ["page", "Pip", "style 1"])
+        #expect(check.user == """
+            Image 1 (page) is the new illustration to check. The other images are references:
+            Image 2: Pip
+            Image 3: style 1
+
+            Compare the first image with the references. For each asset that appears in it, check that it still matches its reference.
+
+            Assets:
+            - Pip: a fox with a red scarf
+            - Castle
+
+            Art style: soft watercolour
+
+            For every difference give: the asset name (null for style or general differences), the aspect that differs, what you observed, what the reference shows (expected), and the severity.
+            """)
+        #expect(check.system == PromptTemplates.text(for: "system", set: "consistency-v1"))
+        #expect(!check.system.isEmpty)
+        let empty = ConsistencyPrompt.instructions(assets: [], styleDescription: " ", imageLabels: ["page"])
+        #expect(empty.user == """
+            Image 1 (page) is the new illustration to check. No references are attached.
+
+            Compare the first image with the references. For each asset that appears in it, check that it still matches its reference.
+
+            Assets:
+            (none)
+
+            Art style: (not described)
+
+            For every difference give: the asset name (null for style or general differences), the aspect that differs, what you observed, what the reference shows (expected), and the severity.
+            """)
+    }
+}
+
 @Suite struct TextEstimateTests {
     static func list(luna: PriceEntry.Estimation? = nil) throws -> PriceList { try PriceList.bundled() }
     static let luna = CatalogTextModel(provider: .openai, id: "gpt-6-luna", displayName: "Luna", kind: .text)

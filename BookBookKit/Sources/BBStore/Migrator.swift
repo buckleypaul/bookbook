@@ -54,14 +54,13 @@ public struct Migrator: Sendable {
     /// journaled transaction. Returns the version migrated from, or nil if nothing was needed.
     @discardableResult
     public func migrateIfNeeded(packageURL: URL) throws(StoreError) -> Int? {
-        struct SchemaProbe: Decodable { var schemaVersion: Int }
         // Read only book.json first: an up-to-date book needs nothing else.
         let bookURL = packageURL.appending(path: PackageCoding.bookPath)
         guard FileManager.default.fileExists(atPath: bookURL.path(percentEncoded: false)) else {
             throw StoreError.notFound(packageURL.lastPathComponent)
         }
         let bookData = try PackageCoding.io("read package") { try Data(contentsOf: bookURL) }
-        let version = try PackageCoding.decode(SchemaProbe.self, from: bookData, what: "book.json").schemaVersion
+        let version = try PackageCoding.schemaVersion(ofBook: bookData)
         if version > currentVersion { throw StoreError.schemaTooNew(version) }
         if version == currentVersion { return nil }
         let original = try Self.gather(packageURL)
@@ -85,7 +84,7 @@ public struct Migrator: Sendable {
                 let url = packageURL.appending(path: name)
                 if fm.fileExists(atPath: url.path(percentEncoded: false)) { out[name] = try Data(contentsOf: url) }
             }
-            for dir in ["templates", "pages", "assets", "sessions"] {
+            for dir in PackageCoding.entityFolders {
                 let folder = packageURL.appending(path: dir, directoryHint: .isDirectory)
                 guard fm.fileExists(atPath: folder.path(percentEncoded: false)) else { continue }
                 for url in try fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
@@ -107,7 +106,7 @@ public struct Migrator: Sendable {
         try fm.createDirectory(at: copy, withIntermediateDirectories: true)
         for item in try fm.contentsOfDirectory(at: packageURL, includingPropertiesForKeys: nil) {
             let name = item.lastPathComponent
-            if name == ".lock" || name == ".journal" { continue }
+            if name == BookLock.fileName || name == Journal.folderName { continue }
             try fm.copyItem(at: item, to: copy.appending(path: name))
         }
         try fm.trashItem(at: copy, resultingItemURL: nil)

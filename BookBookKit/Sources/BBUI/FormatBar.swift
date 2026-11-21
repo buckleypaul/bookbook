@@ -6,7 +6,36 @@ import SwiftUI
 /// Installed font families and their regular faces, for the format bar and the typography form.
 @MainActor
 enum FontFamilies {
-    static var all: [String] { NSFontManager.shared.availableFontFamilies.sorted() }
+    /// Every installed family, sorted. Built once and reused: the format bar and the typography
+    /// form read it from view bodies. Cleared when the system font set changes or any book
+    /// imports a font; a caller holding a document passes its `fontsRevision`, which also
+    /// rebuilds the list when that book's fonts changed.
+    static func all(revision: Int = 0) -> [String] {
+        if let cached, cachedRevision == revision { return cached }
+        observeChanges
+        let families = NSFontManager.shared.availableFontFamilies.sorted()
+        cached = families
+        cachedRevision = revision
+        return families
+    }
+
+    static var all: [String] { all() }
+
+    /// Forgets the list. For registrations that post neither notification: a book registering
+    /// its own fonts as it opens.
+    static func invalidate() { cached = nil }
+
+    private static var cached: [String]?
+    private static var cachedRevision = 0
+
+    /// Registers the two invalidating notifications on first use.
+    private static let observeChanges: Void = {
+        for name in [NSFont.fontSetChangedNotification, BookDocument.fontsRegisteredNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { cached = nil }
+            }
+        }
+    }()
 
     /// PostScript name of the family's regular face.
     static func regularFace(of family: String) -> String? {
@@ -154,7 +183,7 @@ struct FormatBar: View {
         Menu {
             Button("Style Default") { formatting.perform(.setFont(nil)) }
             Divider()
-            ForEach(FontFamilies.all, id: \.self) { family in
+            ForEach(FontFamilies.all(), id: \.self) { family in
                 Button(family) {
                     if let face = FontFamilies.regularFace(of: family) { formatting.perform(.setFont(face)) }
                 }

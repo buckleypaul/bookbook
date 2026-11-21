@@ -31,21 +31,15 @@ enum OutputPageDrawing {
         guard let page = slot.page else { return drawBlank(size: trimSize(of: slot, in: content), ctx: ctx) }
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        guard content.isSpread(page) else {
-            let trim = PageGeometry(setup: content.style.pageSetup).trimRect
+        // A whole page: a single page, the cover, or a spread at double width.
+        guard let half = slot.half, content.isSpread(page) else {
+            let trim = PageGeometry.drawGeometry(for: page, in: content).trimRect
             ctx.clip(to: trim.insetBy(dx: -bleed, dy: -bleed))
             renderer.draw(page: page, in: content, into: ctx,
                           options: RenderOptions(target: target, pageNumbers: marks))
             return
         }
         let single = PageGeometry(setup: content.style.pageSetup).trimSize
-        guard let half = slot.half else {
-            let trim = PageGeometry(setup: content.style.pageSetup, kind: .spread).trimRect
-            ctx.clip(to: trim.insetBy(dx: -bleed, dy: -bleed))
-            renderer.draw(page: page, in: content, into: ctx,
-                          options: RenderOptions(target: target, pageNumbers: marks))
-            return
-        }
         let halfRect = CGRect(x: CGFloat(half) * single.width, y: 0, width: single.width, height: single.height)
         let visible = halfRect.insetBy(dx: -bleed, dy: -bleed)
         ctx.translateBy(x: -halfRect.minX, y: 0)

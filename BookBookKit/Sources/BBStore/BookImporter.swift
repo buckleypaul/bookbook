@@ -234,7 +234,7 @@ public enum BookImporter {
                 report.skippedDuplicates += 1
                 continue
             }
-            let url = sourcePackage.appending(path: "images", directoryHint: .isDirectory).appending(path: ref.fileName)
+            let url = PackageCoding.imagesDirectory(in: sourcePackage).appending(path: ref.fileName)
             guard fm.fileExists(atPath: url.path(percentEncoded: false)) else {
                 throw StoreError.notFound("images/\(ref.fileName)")
             }

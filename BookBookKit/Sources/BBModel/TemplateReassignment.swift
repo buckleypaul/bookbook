@@ -35,67 +35,63 @@ public enum TemplateReassignment {
         }
     }
 
+    /// Top to bottom, then left to right; ties keep the layer order.
+    private static func readingOrder(_ boxes: [Box]) -> [Box] {
+        boxes.enumerated().sorted { a, b in
+            let (x, y) = (a.element.frame, b.element.frame)
+            if x.y != y.y { return x.y < y.y }
+            if x.x != y.x { return x.x < y.x }
+            return a.offset < b.offset
+        }.map(\.element)
+    }
+
+    /// Rules 1 and 2 for one kind of box: each `old` box with a role goes to the first unused
+    /// `new` box with that role, then the remaining boxes that are `free` pair up in reading
+    /// order. Returns the pairs in the order they are made, and the free old boxes left without
+    /// a partner (reading order).
+    private static func pair(_ old: [Box], _ new: [Box],
+                             free: (Box) -> Bool) -> (pairs: [(from: BoxID, to: BoxID)], leftover: [Box]) {
+        var pairs: [(from: BoxID, to: BoxID)] = []
+        var usedOld = Set<BoxID>()
+        var usedNew = Set<BoxID>()
+        for box in old {
+            guard let role = box.role,
+                  let target = new.first(where: { $0.role == role && !usedNew.contains($0.id) })
+            else { continue }
+            pairs.append((box.id, target.id))
+            usedOld.insert(box.id)
+            usedNew.insert(target.id)
+        }
+        let restOld = readingOrder(old.filter { !usedOld.contains($0.id) && free($0) })
+        let restNew = readingOrder(new.filter { !usedNew.contains($0.id) && free($0) })
+        for (from, to) in zip(restOld, restNew) { pairs.append((from.id, to.id)) }
+        return (pairs, Array(restOld.dropFirst(restNew.count)))
+    }
+
     public static func reassign(_ page: Page, from old: Template, to new: Template) -> Result {
         var result = page
         result.templateID = new.id
         result.text = [:]
         result.images = [:]
 
-        func readingOrder(_ boxes: [Box]) -> [Box] {
-            boxes.enumerated().sorted { a, b in
-                let (x, y) = (a.element.frame, b.element.frame)
-                if x.y != y.y { return x.y < y.y }
-                if x.x != y.x { return x.x < y.x }
-                return a.offset < b.offset
-            }.map(\.element)
-        }
-
-        // Text.
-        let oldText = old.textBoxes.filter { page.text[$0.id] != nil }
+        // Text. Bound boxes neither give nor receive body text (Phase 5, 16b); with no free box
+        // the text is dropped.
         let newText = new.textBoxes
-        var usedOldText = Set<BoxID>()
-        var usedNewText = Set<BoxID>()
-        for box in oldText {
-            guard let role = box.role,
-                  let target = newText.first(where: { $0.role == role && !usedNewText.contains($0.id) })
-            else { continue }
-            result.text[target.id] = page.text[box.id]
-            usedOldText.insert(box.id)
-            usedNewText.insert(target.id)
-        }
-        // Bound boxes neither give nor receive body text (Phase 5, 16b); with no free box the text is dropped.
-        let restOldText = readingOrder(oldText.filter { !usedOldText.contains($0.id) && !Self.isBound($0) })
-        let restNewText = readingOrder(newText.filter { !usedNewText.contains($0.id) && !Self.isBound($0) })
-        for (from, to) in zip(restOldText, restNewText) {
-            result.text[to.id] = page.text[from.id]
-        }
-        let leftover = restOldText.dropFirst(restNewText.count)
-        if !leftover.isEmpty, let last = readingOrder(newText.filter { result.text[$0.id] != nil && !Self.isBound($0) }).last {
+        let text = pair(old.textBoxes.filter { page.text[$0.id] != nil }, newText) { !isBound($0) }
+        for (from, to) in text.pairs { result.text[to] = page.text[from] }
+        if !text.leftover.isEmpty,
+           let last = readingOrder(newText.filter { result.text[$0.id] != nil && !isBound($0) }).last {
             var target = result.text[last.id] ?? RichText()
-            for box in leftover {
+            for box in text.leftover {
                 target.paragraphs.append(contentsOf: page.text[box.id]?.paragraphs ?? [])
             }
             result.text[last.id] = target
         }
 
-        // Images.
-        let oldImages = old.imageBoxes.filter { page.images[$0.id] != nil }
+        // Images. Leftover slots are dropped.
         let newImages = new.imageBoxes
-        var usedOldImages = Set<BoxID>()
-        var usedNewImages = Set<BoxID>()
-        for box in oldImages {
-            guard let role = box.role,
-                  let target = newImages.first(where: { $0.role == role && !usedNewImages.contains($0.id) })
-            else { continue }
-            result.images[target.id] = page.images[box.id]
-            usedOldImages.insert(box.id)
-            usedNewImages.insert(target.id)
-        }
-        let restOldImages = readingOrder(oldImages.filter { !usedOldImages.contains($0.id) })
-        let restNewImages = readingOrder(newImages.filter { !usedNewImages.contains($0.id) })
-        for (from, to) in zip(restOldImages, restNewImages) {
-            result.images[to.id] = page.images[from.id]
-        }
+        let images = pair(old.imageBoxes.filter { page.images[$0.id] != nil }, newImages) { _ in true }
+        for (from, to) in images.pairs { result.images[to] = page.images[from] }
 
         let unassigned = newImages.filter { result.images[$0.id] == nil }.map(\.id)
         return Result(page: result, unassignedImageBoxes: unassigned)

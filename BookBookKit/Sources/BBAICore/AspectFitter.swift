@@ -10,10 +10,13 @@ public enum AspectFitter {
         case ratio(String)
     }
 
+    /// The pixel count aimed for when a quality level names none (about one megapixel).
+    public static let defaultTargetPixels = 1_048_576
+
     public static func fit(boxAspect: Double, model: CatalogModel, quality: QualityLevel) -> Fit {
         switch model.image.aspect {
         case let .free(minRatio, maxRatio, multipleOf, minPixels, maxPixels, experimentalAbove):
-            let target = model.image.quality[quality]?.targetPixels ?? 1_048_576
+            let target = model.image.quality[quality]?.targetPixels ?? defaultTargetPixels
             let ceiling = min(maxPixels, experimentalAbove ?? maxPixels)
             return .pixels(freeSize(boxAspect: boxAspect, targetPixels: target, minRatio: minRatio, maxRatio: maxRatio,
                                     multipleOf: multipleOf, minPixels: minPixels, maxPixels: ceiling))
@@ -39,7 +42,7 @@ public enum AspectFitter {
 
     /// Free-size fit: clamp the ratio, solve `w·h ≈ target` with `w/h = r`, round to
     /// multiples, then keep the pixel count inside `[minPixels, maxPixels]`.
-    public static func freeSize(boxAspect: Double, targetPixels: Int, minRatio: Double, maxRatio: Double,
+    static func freeSize(boxAspect: Double, targetPixels: Int, minRatio: Double, maxRatio: Double,
                                 multipleOf m: Int, minPixels: Int, maxPixels: Int) -> PixelSize {
         let ratio = min(max(boxAspect.isFinite && boxAspect > 0 ? boxAspect : 1, minRatio), maxRatio)
         let target = Double(min(max(targetPixels, minPixels), maxPixels))
@@ -68,10 +71,11 @@ public enum AspectFitter {
 
     /// The supported ratio minimizing |log(r_box) − log(r_model)|.
     public static func nearestRatio(boxAspect: Double, ratios: [String]) -> String? {
-        ratios.min { abs(log(boxAspect) - log(value($0))) < abs(log(boxAspect) - log(value($1))) }
+        ratios.min { abs(log(boxAspect) - log(ratioValue($0))) < abs(log(boxAspect) - log(ratioValue($1))) }
     }
 
-    private static func value(_ ratio: String) -> Double {
+    /// "W:H" as W / H; 1 for anything malformed.
+    public static func ratioValue(_ ratio: String) -> Double {
         let parts = ratio.split(separator: ":").compactMap { Double($0) }
         guard parts.count == 2, parts[1] > 0 else { return 1 }
         return parts[0] / parts[1]

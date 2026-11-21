@@ -84,9 +84,14 @@ public struct Asset: Hashable, Sendable, Identifiable {
 }
 
 extension Asset: Codable {
+    /// Also the keys and order of the synthesized `encode(to:)`.
     private enum CodingKeys: String, CodingKey {
         case id, type, name, description, sessionID, chosen, revision, revisionHighWater, referencePhoto
-        /// Legacy (before 2026-11-11): `[ReferenceSlot]`; `sheet` is ignored.
+    }
+
+    /// Decode-only keys of files written before 2026-11-11, never written back.
+    private enum LegacyCodingKeys: String, CodingKey {
+        /// `[ReferenceSlot]`; `sheet` is ignored.
         case references
     }
 
@@ -107,7 +112,8 @@ extension Asset: Codable {
             chosen = try c.decodeIfPresent(VersionID.self, forKey: .chosen)
         } else {
             // Legacy: keep the primary slot (or the first); other slots and the sheet are dropped.
-            let slots = try c.decodeIfPresent([LegacySlot].self, forKey: .references) ?? []
+            let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
+            let slots = try legacy.decodeIfPresent([LegacySlot].self, forKey: .references) ?? []
             let keep = slots.first { $0.isPrimary } ?? slots.first
             sessionID = keep?.sessionID ?? SessionID()
             chosen = keep?.chosen
@@ -115,19 +121,6 @@ extension Asset: Codable {
         revision = try c.decodeIfPresent(Int.self, forKey: .revision) ?? 1
         revisionHighWater = max(try c.decodeIfPresent(Int.self, forKey: .revisionHighWater) ?? revision, revision)
         referencePhoto = try c.decodeIfPresent(AssetReferencePhoto.self, forKey: .referencePhoto)
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(id, forKey: .id)
-        try c.encode(type, forKey: .type)
-        try c.encode(name, forKey: .name)
-        try c.encode(description, forKey: .description)
-        try c.encode(sessionID, forKey: .sessionID)
-        try c.encodeIfPresent(chosen, forKey: .chosen)
-        try c.encode(revision, forKey: .revision)
-        try c.encode(revisionHighWater, forKey: .revisionHighWater)
-        try c.encodeIfPresent(referencePhoto, forKey: .referencePhoto)
     }
 }
 

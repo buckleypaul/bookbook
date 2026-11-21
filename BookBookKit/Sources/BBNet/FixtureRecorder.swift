@@ -24,12 +24,12 @@ public enum FixtureRecorderError: Error, Sendable, CustomStringConvertible {
 /// patterns; on a match nothing is written and it throws.
 public struct FixtureRecorder: Sendable {
     /// Same variable `scripts/record-fixtures.sh` sets.
-    public static let recordVariable = "BOOKBOOK_RECORD_FIXTURES"
+    static let recordVariable = "BOOKBOOK_RECORD_FIXTURES"
 
     public static var isRecordingEnabled: Bool { ProcessInfo.processInfo.environment[recordVariable] == "1" }
 
     /// content-type, retry-after, x-request-id and every x-ratelimit-* header.
-    public static func isAllowedHeader(_ lowercasedName: String) -> Bool {
+    static func isAllowedHeader(_ lowercasedName: String) -> Bool {
         ["content-type", "retry-after", "x-request-id"].contains(lowercasedName)
             || lowercasedName.hasPrefix("x-ratelimit-")
     }

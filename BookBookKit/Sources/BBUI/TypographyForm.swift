@@ -102,7 +102,6 @@ struct TypographyForm: View {
             })
         }
         .crayonSheet(width: 480)
-        .onExitCommand { finish() }
         .onChange(of: current) { _, new in
             draft = new
             sizeText = String(format: "%g", new.bodySize)
@@ -120,8 +119,7 @@ struct TypographyForm: View {
                 alert = FontAlert(title: "Couldn't import the font", message: StoreErrorText.message(for: error))
             }
         }
-        .alert(alert?.title ?? "", isPresented: Binding(get: { alert != nil }, set: { if !$0 { alert = nil } }),
-               presenting: alert) { _ in
+        .alert(alert?.title ?? "", isPresented: $alert.isPresent(), presenting: alert) { _ in
             Button("OK", role: .cancel) {}
         } message: { Text($0.message) }
     }
@@ -149,7 +147,7 @@ struct TypographyForm: View {
                 }
             })) {
             if family == nil { Text("\(name) (missing)").tag(name) }
-            ForEach(FontFamilies.all, id: \.self) { Text($0).tag($0) }
+            ForEach(FontFamilies.all(revision: document.fontsRevision), id: \.self) { Text($0).tag($0) }
         }
         .labelsHidden()
         .frame(width: 240, alignment: .leading)

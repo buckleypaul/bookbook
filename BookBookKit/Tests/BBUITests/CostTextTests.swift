@@ -13,6 +13,19 @@ import Testing
         #expect(CostText.amount(1234) == "$1234.00")
     }
 
+    @Test func amountsAtTheEdges() {
+        #expect(CostText.amount(Decimal(string: "-0.07")!) == "$-0.07")
+        #expect(CostText.amount(Decimal(string: "-0.0059")!) == "$-0.0059")
+        #expect(CostText.amount(Decimal(string: "1234567.891")!) == "$1234567.89")
+        #expect(CostText.amount(Decimal(string: "0.005")!) == "$0.0050")
+        #expect(CostText.amount(Decimal(string: "0.00005")!) == "$0.0001")
+        #expect(CostText.amount(Decimal(string: "0.00004")!) == "$0.0000")
+        #expect(CostText.amount(Decimal(string: "0.01")!) == "$0.01")
+        #expect(CostText.amount(Decimal(string: "0.015")!) == "$0.02")
+        #expect(CostText.amount(Decimal(string: "0.994")!) == "$0.99")
+        #expect(CostText.amount(Decimal(string: "0.995")!) == "$1.00")
+    }
+
     @Test func estimateTextAndUnknown() {
         #expect(CostText.estimate(CostEstimate(amount: Decimal(string: "0.0712")!)) == "about $0.07")
         #expect(CostText.estimate(.unknown) == "cost unknown")

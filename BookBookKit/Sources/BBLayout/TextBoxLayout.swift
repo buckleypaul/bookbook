@@ -10,11 +10,17 @@ public final class TextBoxLayout {
     static let overflowTolerance: CGFloat = 0.5
 
     public let containerSize: CGSize
+    /// The height the laid-out text uses.
+    public let usedHeight: CGFloat
+    /// True if the laid-out text is taller than the container or doesn't reach the end.
+    public let isOverflowing: Bool
     // NSTextContentStorage only weakly references its layout managers, so all three stay here.
-    private let contentStorage = NSTextContentStorage()
-    private let layoutManager = NSTextLayoutManager()
+    private let contentStorage: NSTextContentStorage
+    private let layoutManager: NSTextLayoutManager
     private let container: NSTextContainer
-    private var fragments: [NSTextLayoutFragment] = []
+    private let fragments: [NSTextLayoutFragment]
+    /// The bottom (container coordinates) of the last line that fits entirely in the container.
+    private let visibleBottom: CGFloat
 
     /// `containerSize` is the box's render rect size minus its padding.
     public convenience init(text: RichText, typography: Typography, containerSize: CGSize) {
@@ -22,39 +28,46 @@ public final class TextBoxLayout {
                   containerSize: containerSize)
     }
 
-    /// Lays out an already-converted string (the editor overlay can measure with this).
+    /// Lays out an already-converted string (the editor overlay can measure with this). The
+    /// layout never changes afterwards, so its results are worked out once here.
     public init(attributedString: NSAttributedString, containerSize: CGSize) {
         let size = CGSize(width: max(0, containerSize.width), height: max(0, containerSize.height))
-        self.containerSize = size
-        container = NSTextContainer(size: size)
+        let container = NSTextContainer(size: size)
         container.lineFragmentPadding = TextContainerSettings.lineFragmentPadding
+        let layoutManager = NSTextLayoutManager()
         layoutManager.textContainer = container
+        let contentStorage = NSTextContentStorage()
         contentStorage.addTextLayoutManager(layoutManager)
         contentStorage.textStorage = NSTextStorage(attributedString: attributedString)
         layoutManager.ensureLayout(for: layoutManager.documentRange)
-        var collected: [NSTextLayoutFragment] = []
+        var fragments: [NSTextLayoutFragment] = []
         layoutManager.enumerateTextLayoutFragments(from: layoutManager.documentRange.location,
                                                    options: [.ensuresLayout]) { fragment in
-            collected.append(fragment)
+            fragments.append(fragment)
             return true
         }
-        fragments = collected
-    }
+        let usedHeight = layoutManager.usageBoundsForTextContainer.height
+        let length = contentStorage.textStorage?.length ?? 0
 
-    /// The height the laid-out text uses.
-    public var usedHeight: CGFloat { layoutManager.usageBoundsForTextContainer.height }
-
-    /// True if the laid-out text is taller than the container or doesn't reach the end.
-    public var isOverflowing: Bool {
-        // No text can't overflow, even in a box too small for an empty line.
-        if (contentStorage.textStorage?.length ?? 0) == 0 { return false }
-        if usedHeight > containerSize.height + Self.overflowTolerance { return true }
-        let documentEnd = layoutManager.documentRange.endLocation
-        guard let last = fragments.last else {
-            // Nothing laid out: overflowing only if there was text to lay out.
-            return contentStorage.textStorage.map { $0.length > 0 } ?? false
+        self.containerSize = size
+        self.container = container
+        self.layoutManager = layoutManager
+        self.contentStorage = contentStorage
+        self.fragments = fragments
+        self.usedHeight = usedHeight
+        if length == 0 {
+            // No text can't overflow, even in a box too small for an empty line.
+            isOverflowing = false
+        } else if usedHeight > size.height + Self.overflowTolerance {
+            isOverflowing = true
+        } else if let last = fragments.last {
+            isOverflowing = last.rangeInElement.endLocation
+                .compare(layoutManager.documentRange.endLocation) == .orderedAscending
+        } else {
+            // Nothing laid out, though there was text to lay out.
+            isOverflowing = true
         }
-        return last.rangeInElement.endLocation.compare(documentEnd) == .orderedAscending
+        visibleBottom = Self.lastVisibleLineBottom(of: fragments, containerHeight: size.height)
     }
 
     /// Draws the fragments with `draw(at:in:)` into `ctx`, whose user space is top-left origin,
@@ -63,9 +76,7 @@ public final class TextBoxLayout {
     /// Lines that don't fit entirely inside the container are not drawn (overset text is hidden;
     /// the canvas badge and preflight report it).
     public func draw(in ctx: CGContext, origin: CGPoint) {
-        guard !fragments.isEmpty else { return }
-        let visibleBottom = lastVisibleLineBottom()
-        guard visibleBottom > 0 else { return }
+        guard !fragments.isEmpty, visibleBottom > 0 else { return }
 
         ctx.saveGState()
         defer { ctx.restoreGState() }
@@ -84,9 +95,11 @@ public final class TextBoxLayout {
         }
     }
 
-    /// The bottom (container coordinates) of the last line that fits entirely in the container.
-    private func lastVisibleLineBottom() -> CGFloat {
-        let limit = containerSize.height + Self.overflowTolerance
+    /// The bottom (container coordinates) of the last line that fits entirely in a container
+    /// `containerHeight` tall.
+    private static func lastVisibleLineBottom(of fragments: [NSTextLayoutFragment],
+                                              containerHeight: CGFloat) -> CGFloat {
+        let limit = containerHeight + overflowTolerance
         var bottom: CGFloat = 0
         for fragment in fragments {
             let frame = fragment.layoutFragmentFrame
@@ -97,6 +110,6 @@ public final class TextBoxLayout {
             }
         }
         // Everything fits: don't clip glyph descenders that hang below the last line box.
-        return max(bottom, containerSize.height) + max(containerSize.height, 100)
+        return max(bottom, containerHeight) + max(containerHeight, 100)
     }
 }

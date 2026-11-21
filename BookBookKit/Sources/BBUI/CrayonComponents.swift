@@ -75,6 +75,8 @@ public extension View {
     /// The house sheet body: 20 pt padding, an optional fixed or minimum size, then paper behind
     /// it. Apply once to a sheet's root `VStack` (which starts with a `CrayonHeader` and ends
     /// with a `CrayonSheetFooter`); pass the sizes here rather than in a separate `.frame`.
+    /// A sheet opens at its minimum size (an ideal size does nothing), so `minWidth` and
+    /// `minHeight` are the size a resizable sheet opens at.
     func crayonSheet(width: CGFloat? = nil, height: CGFloat? = nil,
                      minWidth: CGFloat? = nil, minHeight: CGFloat? = nil) -> some View {
         padding(20)

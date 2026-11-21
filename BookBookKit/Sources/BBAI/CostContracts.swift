@@ -89,6 +89,34 @@ public struct PriceEntry: Hashable, Codable, Sendable, Identifiable {
     }
 }
 
+extension PriceEntry {
+    /// The `perMillionTokens` keys.
+    enum Rate: String, Sendable {
+        case textIn, textOut, imageIn, imageOut, cachedTextIn, cachedImageIn
+    }
+
+    /// Prompt tokens per character when the entry doesn't measure its own.
+    static let defaultTextTokensPerChar = 0.27
+
+    /// The per-million-token rate for `rate`, or `fallback` when the entry has none.
+    func rate(_ rate: Rate, else fallback: Decimal = 0) -> Decimal {
+        perMillionTokens[rate.rawValue] ?? fallback
+    }
+
+    /// Σ rate × tokens, summed left to right, then divided by a million (rates are per million tokens).
+    static func cost(_ terms: (rate: Decimal, tokens: Decimal)...) -> Decimal {
+        guard let first = terms.first else { return 0 }
+        return terms.dropFirst().reduce(first.rate * first.tokens) { $0 + $1.rate * $1.tokens } / 1_000_000
+    }
+
+    /// Estimated prompt tokens for `characters` of text, rounded up, at the entry's per-character
+    /// rate (else `defaultTextTokensPerChar`).
+    func textTokens(characters: Int) -> Int {
+        let perChar = estimation?.textTokensPerPromptChar ?? Self.defaultTextTokensPerChar
+        return Int((Double(max(0, characters)) * perChar).rounded(.up))
+    }
+}
+
 public enum PriceListError: Error, Equatable, Sendable {
     case missingResource
     case malformed(String)

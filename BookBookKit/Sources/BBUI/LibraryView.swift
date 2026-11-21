@@ -71,11 +71,7 @@ public struct LibraryView: View {
             NewBookWizard(fromStory: kind == .fromStory) { id in openWindow(value: id) }
         }
         .bookActions($actions)
-        .alert("Couldn't open the sample book", isPresented: $app.sampleBookError.isPresent()) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(app.sampleBookError ?? "")
-        }
+        .messageAlert("Couldn't open the sample book", $app.sampleBookError)
         .task {
             await app.start()
             await app.reopenBooks { openWindow(value: $0) }
@@ -152,7 +148,7 @@ public struct LibraryView: View {
         Button("Open") { openWindow(value: entry.id) }
         Divider()
         Button("Rename…") { actions.renaming = entry }
-        Button("Duplicate") { duplicate(entry) }
+        Button("Duplicate") { $actions.duplicate(entry, in: app) { selection = $0.id } }
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([entry.url]) }
         Divider()
         Button("Move to Trash…", role: .destructive) { actions.trashing = entry }
@@ -160,17 +156,6 @@ public struct LibraryView: View {
 
     private func openSample() {
         Task { await app.openSampleBook { openWindow(value: $0) } }
-    }
-
-    private func duplicate(_ entry: LibraryEntry) {
-        Task {
-            do {
-                selection = try await app.duplicate(entry).id
-            } catch {
-                actions.error = .init(title: "Couldn't duplicate the book",
-                                      message: "“\(entry.title)” wasn't duplicated. \(StoreErrorText.message(for: error))")
-            }
-        }
     }
 }
 

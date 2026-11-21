@@ -20,10 +20,7 @@ extension Library {
     /// Copies a read-only sample package (`SampleBook.bundledURL`) into the library under a new
     /// `Book.id`, keeping its title. Needs no API key.
     public func installSample(from source: URL, now: Date = Date()) throws(StoreError) -> LibraryEntry {
-        let sourceData = try PackageCoding.io("read sample") {
-            try Data(contentsOf: source.appending(path: PackageCoding.bookPath))
-        }
-        let book = try PackageCoding.decode(Book.self, from: sourceData, what: "book.json")
+        let book = try PackageCoding.readBook(in: source, what: "read sample")
         // A bundled copy can be read-only; the library copy must be writable.
         return try copyPackage(from: source, book: book, title: book.title, what: "copy sample",
                                makeWritable: true) {

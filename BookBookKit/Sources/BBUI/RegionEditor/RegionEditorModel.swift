@@ -93,8 +93,6 @@ public final class RegionEditorModel {
         if let operation = stroke.operation { append(operation) }
     }
 
-    public func cancelStroke() { activeStroke = nil }
-
     /// Swaps edit and keep for everything drawn so far.
     public func invert() { append(.invert) }
 

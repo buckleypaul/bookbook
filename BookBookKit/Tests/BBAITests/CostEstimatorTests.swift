@@ -186,6 +186,14 @@ import Testing
         #expect(amount > 0)
     }
 
+    @Test func regionEditWithoutABaseHasNoEstimate() throws {
+        let b = try RegionEditPipelineTests.makeBook()
+        var intent = b.intent()
+        intent.refines = nil
+        #expect(CostEstimator.estimateInput(intent: intent, target: b.book.target, content: b.book.content,
+                                            catalog: try ModelCatalog.bundled()) == nil)
+    }
+
     @Test func estimateInputNilForUnknownModelOrTarget() throws {
         let catalog = try ModelCatalog.bundled()
         let book = SliceBook.make()

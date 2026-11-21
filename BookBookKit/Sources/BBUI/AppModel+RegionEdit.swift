@@ -42,16 +42,13 @@ public enum RegionEditRefusal: Error, Hashable, Sendable {
 extension AppModel {
     /// Region edit (A §7.6, PD §8.6): rasterises `drawing` at the base version's pixel size (off
     /// the main actor), stores the 8-bit mask in the book's `images/`, then appends the pending
-    /// message and enqueues the request like `generate`, with `refines` and `regionMask` set.
-    /// The model is the user's default, as for `generate`. Callers run the cost and real-person
-    /// checks first, as for `generate`. Returns the queue item's ID.
+    /// message and enqueues the request like `generate`, with `regionMask` set on `intent`
+    /// (built by `generationIntent` with `refines` the version to edit). Callers run the cost
+    /// and real-person checks first, as for `generate`. Returns the queue item's ID.
     @discardableResult
-    public func generateRegionEdit(prompt: String, quality: QualityLevel, includeStoryText: Bool, refines: VersionID,
-                                   drawing: RegionMaskDrawing, attachedReferences: [VersionRef] = [],
-                                   target: GenerationTarget,
+    public func generateRegionEdit(_ intent: GenerationIntent, drawing: RegionMaskDrawing, target: GenerationTarget,
                                    in document: BookDocument) async throws(RegionEditRefusal) -> QueueItemID {
-        var intent = generationIntent(prompt: prompt, quality: quality, includeStoryText: includeStoryText,
-                                      refines: refines, attachedReferences: attachedReferences)
+        var intent = intent
         guard !intent.messageText.isEmpty else { throw .emptyPrompt }
         guard document.isEditable else { throw .readOnly }
         try checkRegionEdit(intent: intent, drawing: drawing, target: target, content: document.content)
@@ -126,6 +123,6 @@ extension AppModel {
     }
 
     private func baseVersion(_ id: VersionID, target: GenerationTarget, content: BookContent) -> Version? {
-        BookMutations.sessionID(for: target.owner, in: content).flatMap { content.sessions[$0]?.version(id) }
+        BookMutations.sessionID(for: target, in: content).flatMap { content.sessions[$0]?.version(id) }
     }
 }

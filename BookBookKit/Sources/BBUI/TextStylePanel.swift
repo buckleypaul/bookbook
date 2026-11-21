@@ -17,10 +17,10 @@ struct TextStylePanel: View {
     let boxID: BoxID
 
     @State private var prompt = ""
-    @State private var selectedVersion: VersionID?
-    @State private var freshEpoch: Int?
+    @State private var selection = SessionVersionSelection()
     @State private var detailsExpanded = false
     @State private var quality: QualityLevel?
+    private var chosenQuality: QualityLevel { quality ?? app.defaults.quality }
     @State private var estimate = CostEstimate.unknown
     @State private var pendingDelete: VersionID?
     @State private var confirmReset = false
@@ -37,10 +37,7 @@ struct TextStylePanel: View {
 
     /// The version refinement and Details use: the selection, else the shown one.
     private func baseID(_ session: Session?) -> VersionID? {
-        guard let session else { return nil }
-        if let selectedVersion, session.version(selectedVersion) != nil { return selectedVersion }
-        if freshEpoch == session.resetEpoch { return nil }
-        return shownID.flatMap { session.version($0)?.id }
+        selection.base(in: session, placed: shownID)
     }
 
     var body: some View {
@@ -65,8 +62,7 @@ struct TextStylePanel: View {
                 .padding(12)
         }
         .onChange(of: shownID) {
-            selectedVersion = nil
-            freshEpoch = nil
+            selection.placedChanged()
         }
         .confirmationDialog(deleteTitle, isPresented: $pendingDelete.isPresent(), titleVisibility: .visible) {
             Button("Delete Version", role: .destructive) {
@@ -96,34 +92,16 @@ struct TextStylePanel: View {
         .problemAlert($problem)
     }
 
-    /// "Delete version 2?"
-    private var deleteTitle: String {
-        let number = pendingDelete.flatMap { id in session?.versionNumber(id) }
-        return number.map { "Delete version \($0)?" } ?? "Delete this version?"
-    }
+    private var deleteTitle: String { SessionPanelState.deleteTitle(pendingDelete, in: session) }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            CrayonHeader("\(boxLabel) Style", color: Crayon.grape)
-            Spacer()
-            Menu {
-                Button("Remove Style") { removeStyle() }
-                    .disabled(shownID == nil || !document.isEditable)
-                Divider()
-                Button("Reset Session…", role: .destructive) { confirmReset = true }
-                    .disabled(session == nil || !document.isEditable)
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(Crayon.inkSoft)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Session actions")
-            .accessibilityLabel("Session actions")
+        SessionPanelHeader(title: "\(boxLabel) Style", color: Crayon.grape) {
+            Button("Remove Style") { removeStyle() }
+                .disabled(shownID == nil || !document.isEditable)
+            Divider()
+            Button("Reset Session…", role: .destructive) { confirmReset = true }
+                .disabled(session == nil || !document.isEditable)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(Crayon.paperDeep)
     }
 
     // MARK: Thread
@@ -132,21 +110,9 @@ struct TextStylePanel: View {
     private var thread: some View {
         let messages = session?.visibleMessages.filter { $0.role == .user } ?? []
         if messages.isEmpty, !model.isDesigning(key) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "textformat")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(Crayon.grape)
-                    .accessibilityHidden(true)
-                Text("Describe a look for this text: a font, colours, a frame, a banner or flourishes around it. The words stay editable.")
-                    .font(Crayon.font(.callout, weight: .medium))
-                    .foregroundStyle(Crayon.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Crayon.grape.opacity(0.10), in: ThreadBubble.shape)
-            .overlay(ThreadBubble.shape.strokeBorder(Crayon.grape.opacity(0.45),
-                                                     style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+            ThreadIntroBubble(
+                text: "Describe a look for this text: a font, colours, a frame, a banner or flourishes around it. The words stay editable.",
+                systemImage: "textformat", color: Crayon.grape, fillOpacity: 0.10, rimOpacity: 0.45)
         }
         if let session {
             ForEach(messages) { message in
@@ -174,14 +140,7 @@ struct TextStylePanel: View {
     }
 
     private func bubble(_ text: String) -> some View {
-        Text(text)
-            .foregroundStyle(Crayon.ink)
-            .textSelection(.enabled)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Crayon.grape.opacity(0.14), in: ThreadBubble.shape)
-            .overlay(ThreadBubble.shape.strokeBorder(Crayon.grape.opacity(0.35), lineWidth: 1))
+        Text(text).threadBubble(Crayon.grape, fillOpacity: 0.14, rimOpacity: 0.35)
     }
 
     /// The design summary of a message whose decoration is still queued (Try Again included).
@@ -222,7 +181,7 @@ struct TextStylePanel: View {
                         prompt = instruction
                         style()
                     }
-                    .disabled(!app.isOnline || !app.hasOpenAIKey || !document.isEditable)
+                    .disabled(app.aiBlocker(for: document) != nil)
                     Button("Dismiss") { model.dismissFailure(key) }
                 }
                 .controlSize(.small)
@@ -260,9 +219,9 @@ struct TextStylePanel: View {
 
     @ViewBuilder
     private func details(_ session: Session) -> some View {
-        if let id = baseID(session) ?? session.versions.last?.id, let version = session.version(id) {
-            DisclosureGroup(isExpanded: $detailsExpanded) {
-                VersionDetailsGrid(version: version, session: session, bookID: document.id, assets: content.assets)
+        if let version = selection.detailsVersion(in: session, placed: shownID) {
+            VersionDetailsDisclosure(isExpanded: $detailsExpanded, version: version, session: session,
+                                     bookID: document.id, assets: content.assets) {
                 if version.textStyle?.decorationPrompt != nil {
                     WrappingRow(spacing: 8, lineSpacing: 6) {
                         Button("Repaint with Same Settings") {
@@ -270,7 +229,7 @@ struct TextStylePanel: View {
                         }
                         .controlSize(.small)
                         .buttonBorderShape(.capsule)
-                        .disabled(!app.hasOpenAIKey || !app.isOnline || !document.isEditable)
+                        .disabled(app.aiBlocker(for: document) != nil)
                         .help("Paint the decoration again with the same design.")
                         if app.isOnline, let estimate = app.regenerateEstimate(version, target: target, in: document) {
                             CostEstimatePill(estimate: estimate)
@@ -278,14 +237,7 @@ struct TextStylePanel: View {
                     }
                     .padding(.top, 6)
                 }
-            } label: {
-                Text("Version details")
-                    .font(Crayon.font(.subheadline, weight: .bold))
-                    .foregroundStyle(Crayon.ink)
             }
-            .padding(12)
-            .background(Crayon.paperDeep,
-                        in: RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous))
         }
     }
 
@@ -301,13 +253,13 @@ struct TextStylePanel: View {
                       text: $prompt, axis: .vertical)
                 .crayonComposerField()
                 .onSubmit { style() }
-                .onChange(of: EstimateKey(prompt: prompt, quality: quality ?? app.defaults.quality, base: base,
+                .onChange(of: EstimateKey(prompt: prompt, quality: chosenQuality, base: base,
                                           model: app.defaults.model, shown: shownID), initial: true) { _, key in
                     estimate = model.estimate(key.prompt.isEmpty ? "style" : key.prompt, quality: key.quality,
                                               refines: key.base, for: self.key, app: app)
                 }
             HStack {
-                QualityPicker(selection: Binding(get: { quality ?? app.defaults.quality }, set: { quality = $0 }),
+                QualityPicker(selection: Binding(get: { chosenQuality }, set: { quality = $0 }),
                               showsLabel: false)
                 Spacer(minLength: 0)
             }
@@ -315,7 +267,7 @@ struct TextStylePanel: View {
                 Button(!app.isOnline ? "Offline" : (number.map { "Restyle Version \($0)" } ?? "Style")) { style() }
                     .buttonStyle(.crayon)
                     .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(!app.isOnline || !app.hasOpenAIKey || designing || !document.isEditable
+                    .disabled(app.aiBlocker(for: document) != nil || designing
                               || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             GenerationSetupNotes()
@@ -334,8 +286,8 @@ struct TextStylePanel: View {
 
     private func style() {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard document.isEditable, app.hasOpenAIKey, app.isOnline, !text.isEmpty, !model.isDesigning(key) else { return }
-        confirmFlow.start(.style(text, quality: quality ?? app.defaults.quality, refines: baseID(session)))
+        guard app.aiBlocker(for: document) == nil, !text.isEmpty, !model.isDesigning(key) else { return }
+        confirmFlow.start(.style(text, quality: chosenQuality, refines: baseID(session)))
     }
 
     private var confirmFlow: GenerationConfirmFlow<PendingStyle> {
@@ -374,25 +326,23 @@ struct TextStylePanel: View {
     }
 
     private func choose(_ version: Version) {
-        selectedVersion = version.id
-        freshEpoch = nil
+        selection.choose(version.id)
         guard version.id != shownID else { return }
         document.perform(.chooseTextStyle(page: pageID, box: boxID, version: version.id))
     }
 
     private func removeStyle() {
-        selectedVersion = nil
+        selection.selected = nil
         document.perform(.chooseTextStyle(page: pageID, box: boxID, version: nil))
     }
 
     private func delete(_ id: VersionID) {
-        if selectedVersion == id { selectedVersion = nil }
+        selection.deleted(id)
         document.deleteVersion(id, owner: owner)
     }
 
     private func reset(keepVersions: Bool) {
-        selectedVersion = nil
-        freshEpoch = keepVersions ? session.map { $0.resetEpoch + 1 } : nil
+        selection.reset(keepVersions: keepVersions, session: session)
         document.resetSession(owner: owner, keepVersions: keepVersions)
     }
 

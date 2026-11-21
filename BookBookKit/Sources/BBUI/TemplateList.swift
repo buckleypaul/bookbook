@@ -39,8 +39,19 @@ enum LayoutsListing {
 
     /// Where a template is used: "Cover", then "Page N" in reading order.
     static func usage(of id: TemplateID, in content: BookContent) -> [String] {
-        let numbers = Dictionary(uniqueKeysWithValues: PageListing.items(content).map { ($0.id, $0.title) })
+        // The page list's titles (`PageListItem.title`), without working out each page's status.
+        let numbers = Dictionary(uniqueKeysWithValues: content.storyPages.enumerated().map { ($1.id, "Page \($0 + 1)") })
         return content.pages(using: id).map { $0 == content.book.coverPageID ? "Cover" : (numbers[$0] ?? "Page") }
+    }
+
+    /// How many pages (the cover included) use each template: `content.pages(using:).count` for
+    /// every template in one pass.
+    static func usageCounts(in content: BookContent) -> [TemplateID: Int] {
+        var counts: [TemplateID: Int] = [:]
+        for id in content.pageIDsCoverFirst {
+            if let template = content.pages[id]?.templateID { counts[template, default: 0] += 1 }
+        }
+        return counts
     }
 }
 
@@ -59,11 +70,12 @@ struct TemplateList: View {
 
     var body: some View {
         let sections = LayoutsListing.sections(in: content, presets: Presets.bundledTemplates)
+        let counts = LayoutsListing.usageCounts(in: content)
         List(selection: Binding(get: { model.templateID }, set: { if let id = $0 { model.open(id) } })) {
             ForEach(sections) { section in
                 Section(section.title) {
                     ForEach(section.templates) { template in
-                        row(template).tag(template.id)
+                        row(template, pagesUsing: counts[template.id] ?? 0).tag(template.id)
                     }
                 }
             }
@@ -73,8 +85,7 @@ struct TemplateList: View {
         }
         .onDeleteCommand { if let id = model.templateID { requestDelete(id) } }
         .safeAreaInset(edge: .top, spacing: 0) { header }
-        .confirmationDialog("Delete this layout?", isPresented: Binding(get: { confirmDelete != nil },
-                                                                         set: { if !$0 { confirmDelete = nil } }),
+        .confirmationDialog("Delete this layout?", isPresented: $confirmDelete.isPresent(),
                             titleVisibility: .visible, presenting: confirmDelete) { id in
             Button("Delete", role: .destructive) { model.delete(id) }
             Button("Cancel", role: .cancel) {}
@@ -83,13 +94,12 @@ struct TemplateList: View {
         }
     }
 
-    private func row(_ template: Template) -> some View {
+    private func row(_ template: Template, pagesUsing n: Int) -> some View {
         let inBook = content.templates[template.id] != nil
-        let aspect = content.style.pageSetup.trimSize.width / max(1, content.style.pageSetup.trimSize.height)
-        let height: CGFloat = 32
+        let size = TemplateDiagram.size(for: template, trimSize: content.style.pageSetup.trimSize, height: 32)
         return HStack(spacing: 8) {
             TemplateDiagram(template: template)
-                .frame(width: height * aspect * (template.kind == .spread ? 2 : 1), height: height)
+                .frame(width: size.width, height: size.height)
             if renaming == template.id {
                 TextField("Name", text: $renameText)
                     .focused($renameFocused)
@@ -103,9 +113,8 @@ struct TemplateList: View {
                     .onTapGesture(count: 2) { beginRename(template) }
             }
             Spacer(minLength: 0)
-            if inBook {
-                let n = content.pages(using: template.id).count
-                if n > 0 { CrayonSticker("\(n)", color: Crayon.sky).help("Used on \(n) \(n == 1 ? "page" : "pages")") }
+            if inBook, n > 0 {
+                CrayonSticker("\(n)", color: Crayon.sky).help("Used on \(n) \(n == 1 ? "page" : "pages")")
             }
         }
     }

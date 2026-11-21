@@ -48,7 +48,8 @@ xcb() {
   xcodebuild -project BookBook.xcodeproj -scheme BookBook -destination 'platform=macOS' \
     -derivedDataPath build/DerivedData "$@" 2>&1 | pretty
 }
-step_app()     { xcb -configuration Debug build test; }
+# `test` builds what the scheme tests, so there is no separate `build`.
+step_app()     { xcb -configuration Debug test; }
 step_release() { xcb -configuration Release build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY=""; }
 
 if [ "$step" = all ]; then steps=(secrets bootstrap kit spikes xcodeproj app release); else steps=("$step"); fi

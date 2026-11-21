@@ -33,8 +33,7 @@ public struct TypicalCosts: Hashable, Sendable {
         bookAtStandard = standardPerImage.map { $0 * Decimal(Self.bookPages) }
     }
 
-    public static func format(_ amount: Decimal?) -> String {
-        guard let amount else { return "unknown" }
+    public static func format(_ amount: Decimal) -> String {
         let value = NSDecimalNumber(decimal: amount).doubleValue
         return value.formatted(.currency(code: "USD").precision(.fractionLength(value < 1 ? 3 : 2)))
     }

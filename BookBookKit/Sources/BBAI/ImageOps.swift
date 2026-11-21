@@ -125,7 +125,7 @@ public enum ImageOps {
     }
 
     /// Decodes a stored grayscale mask PNG back into a `RegionMask`.
-    public static func decodeMask(_ png: Data) throws(ImageOpsError) -> RegionMask {
+    static func decodeMask(_ png: Data) throws(ImageOpsError) -> RegionMask {
         let image = try decodeImage(png)
         let w = image.width, h = image.height
         var bytes = [UInt8](repeating: 0, count: w * h)
@@ -144,7 +144,7 @@ public enum ImageOps {
 
     /// The OpenAI wire mask (SP-4 polarity): RGBA PNG at the mask's size, alpha 0 where the mask is
     /// edit (> 127), alpha 255 elsewhere. RGB is black.
-    public static func providerMaskPNG(_ mask: RegionMask) throws(ImageOpsError) -> Data {
+    static func providerMaskPNG(_ mask: RegionMask) throws(ImageOpsError) -> Data {
         let w = mask.pixelSize.width, h = mask.pixelSize.height
         var rgba = [UInt8](repeating: 0, count: w * h * 4)
         for i in 0..<(w * h) { rgba[i * 4 + 3] = mask.bytes[i] > 127 ? 0 : 255 }
@@ -194,7 +194,7 @@ public enum ImageOps {
 
     /// The fraction (0...1) of edit-area pixels (mask > 127) in `image` that are near-black
     /// (max channel ≤ 16). Used to detect SP-4's "black hole" failure.
-    public static func blackFillFraction(of image: Data, in mask: RegionMask) throws(ImageOpsError) -> Double {
+    static func blackFillFraction(of image: Data, in mask: RegionMask) throws(ImageOpsError) -> Double {
         try blackFillFraction(of: try decodeImage(image), in: mask)
     }
 

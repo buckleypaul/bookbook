@@ -92,12 +92,7 @@ public enum CostText {
         var rounded = Decimal()
         var v = value
         NSDecimalRound(&rounded, &v, places, .plain)
-        let f = NumberFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.numberStyle = .decimal
-        f.minimumFractionDigits = places
-        f.maximumFractionDigits = places
-        f.usesGroupingSeparator = false
-        return f.string(from: NSDecimalNumber(decimal: rounded)) ?? "\(rounded)"
+        return rounded.formatted(.number.precision(.fractionLength(places)).grouping(.never)
+            .locale(Locale(identifier: "en_US_POSIX")))
     }
 }

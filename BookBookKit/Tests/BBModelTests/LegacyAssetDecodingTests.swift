@@ -81,12 +81,6 @@ struct LegacyAssetDecodingTests {
             #expect(try JSONDecoder().decode(SynthesizedOwner.self, from: ownerData) == synthesized)
             #expect(try JSONDecoder().decode(SessionOwner.self, from: synthesizedData) == owner)
             #expect(try JSONDecoder().decode(SessionOwner.self, from: ownerData) == owner)
-
-            let target = GenerationTarget(owner: owner)
-            #expect(target.owner == owner)
-            let targetData = try JSONEncoder().encode(target)
-            #expect(try JSONDecoder().decode(SynthesizedOwner.self, from: targetData) == synthesized)
-            #expect(try JSONDecoder().decode(GenerationTarget.self, from: synthesizedData) == target)
         }
         #expect(try Self.decode(SessionOwner.self, #"{"asset": {"_0": "\#(Self.assetID)"}}"#)
             == .asset(AssetID(Self.assetID)))

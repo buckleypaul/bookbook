@@ -16,6 +16,22 @@ struct BookActionRequests {
     }
 }
 
+extension Binding where Value == BookActionRequests {
+    /// Duplicates `entry` and hands the copy to `onSuccess`; a failure becomes the requests'
+    /// `error` (shown by `bookActions`).
+    @MainActor
+    func duplicate(_ entry: LibraryEntry, in app: AppModel, onSuccess: @escaping @MainActor (LibraryEntry) -> Void) {
+        Task {
+            do {
+                onSuccess(try await app.duplicate(entry))
+            } catch {
+                wrappedValue.error = .init(title: "Couldn't duplicate the book",
+                                           message: "“\(entry.title)” wasn't duplicated. \(StoreErrorText.message(for: error))")
+            }
+        }
+    }
+}
+
 extension View {
     func bookActions(_ requests: Binding<BookActionRequests>) -> some View {
         modifier(BookActionsModifier(requests: requests))

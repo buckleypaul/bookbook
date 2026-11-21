@@ -42,7 +42,7 @@ public enum AspectFitter {
 
     /// Free-size fit: clamp the ratio, solve `w·h ≈ target` with `w/h = r`, round to
     /// multiples, then keep the pixel count inside `[minPixels, maxPixels]`.
-    public static func freeSize(boxAspect: Double, targetPixels: Int, minRatio: Double, maxRatio: Double,
+    static func freeSize(boxAspect: Double, targetPixels: Int, minRatio: Double, maxRatio: Double,
                                 multipleOf m: Int, minPixels: Int, maxPixels: Int) -> PixelSize {
         let ratio = min(max(boxAspect.isFinite && boxAspect > 0 ? boxAspect : 1, minRatio), maxRatio)
         let target = Double(min(max(targetPixels, minPixels), maxPixels))

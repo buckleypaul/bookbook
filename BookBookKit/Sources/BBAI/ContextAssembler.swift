@@ -175,7 +175,7 @@ public enum ContextAssembler {
     /// current message, then mentions in earlier current-epoch messages along the refined
     /// version's lineage, then the page's checklist. Deleted or unknown IDs are ignored. Empty if
     /// the target is gone.
-    public static func assetsInPlay(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
+    static func assetsInPlay(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
                                     content: BookContent) -> [AssetID] {
         guard let context = context(target: target, messageID: messageID, content: content) else { return [] }
         return assetsInPlay(intent: intent, context: context, content: content).map(\.asset.id)
@@ -275,7 +275,7 @@ public enum ContextAssembler {
 
     /// The images this request needs, in send order (A §7.4 tiers). Not yet capped by the
     /// model's budget; `assemble` applies it. Nil if the target is gone.
-    public static func plan(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
+    static func plan(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
                             content: BookContent) -> [PlannedImage]? {
         prepare(intent: intent, target: target, messageID: messageID, content: content).map(plan)
     }
@@ -293,7 +293,7 @@ public enum ContextAssembler {
     // MARK: Assembly
 
     /// `imageData` holds the bytes the queue managed to load for `plan`'s refs.
-    public static func assemble(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
+    static func assemble(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
                                 content: BookContent, model: CatalogModel,
                                 imageData: [ImageRef: Data] = [:]) throws(AssemblyError) -> (ImageRequest, AssemblyReport) {
         guard let prepared = prepare(intent: intent, target: target, messageID: messageID, content: content)

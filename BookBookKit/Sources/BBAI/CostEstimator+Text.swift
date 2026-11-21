@@ -26,15 +26,10 @@ extension CostEstimator {
         guard let entry = priceList.entry(provider: model.provider, model: model.id),
               let typical = entry.estimation.flatMap(pick), let output = typical.outputTokens
         else { return .unknown }
-        let input: Int
-        if let perChar = entry.estimation?.textTokensPerPromptChar {
-            input = Int((Double(characters) * perChar).rounded(.up))
-        } else {
-            input = typical.inputTokens ?? Int((Double(characters) * 0.27).rounded(.up))
-        }
-        let rates = entry.perMillionTokens
-        let total = (rates["textIn"] ?? 0) * Decimal(input) + (rates["textOut"] ?? 0) * Decimal(output)
-        return CostEstimate(amount: total / 1_000_000, priceListAsOf: entry.asOf)
+        let measured = entry.estimation?.textTokensPerPromptChar != nil
+        let input = (measured ? nil : typical.inputTokens) ?? entry.textTokens(characters: characters)
+        let amount = PriceEntry.cost((entry.rate(.textIn), Decimal(input)), (entry.rate(.textOut), Decimal(output)))
+        return CostEstimate(amount: amount, priceListAsOf: entry.asOf)
     }
 
     /// A consistency check sending `imageCount` low-detail images (checked image + references),
@@ -50,9 +45,8 @@ extension CostEstimator {
         let input = count == typicalImages
             ? Decimal(twoImages)
             : Decimal(twoImages) * Decimal(count) / Decimal(typicalImages)
-        let rates = entry.perMillionTokens
-        let inputRate = rates["imageIn"] ?? rates["textIn"] ?? 0
-        let total = inputRate * input + (rates["textOut"] ?? 0) * Decimal(output)
-        return CostEstimate(amount: total / 1_000_000, extrapolated: count != typicalImages, priceListAsOf: entry.asOf)
+        let inputRate = entry.rate(.imageIn, else: entry.rate(.textIn))
+        let amount = PriceEntry.cost((inputRate, input), (entry.rate(.textOut), Decimal(output)))
+        return CostEstimate(amount: amount, extrapolated: count != typicalImages, priceListAsOf: entry.asOf)
     }
 }

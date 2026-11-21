@@ -30,14 +30,11 @@ public enum CostEstimator {
             }
         }
 
-        let perChar = table?.textTokensPerPromptChar ?? 0.27
-        let textIn = Int((Double(max(0, input.promptCharacters)) * perChar).rounded(.up))
-
-        let rates = entry.perMillionTokens
-        let total = (rates["textIn"] ?? 0) * Decimal(textIn)
-            + (rates["imageIn"] ?? 0) * Decimal(imageIn)
-            + (rates["imageOut"] ?? 0) * Decimal(output.tokens)
-        return CostEstimate(amount: total / 1_000_000, extrapolated: extrapolated, priceListAsOf: entry.asOf)
+        let textIn = entry.textTokens(characters: input.promptCharacters)
+        let amount = PriceEntry.cost((entry.rate(.textIn), Decimal(textIn)),
+                                     (entry.rate(.imageIn), Decimal(imageIn)),
+                                     (entry.rate(.imageOut), Decimal(output.tokens)))
+        return CostEstimate(amount: amount, extrapolated: extrapolated, priceListAsOf: entry.asOf)
     }
 
     /// "Downscale so the longer side is at most 512 px, then one token per 16x16 patch" (A §7.10).
@@ -104,9 +101,8 @@ public enum CostEstimator {
             case let .pixels(size):
                 outputSize = size
             case let .ratio(ratio):
-                let parts = ratio.split(separator: ":").compactMap { Double($0) }
-                let aspect = parts.count == 2 && parts[1] > 0 ? parts[0] / parts[1] : 1
-                let height = (1_048_576 / aspect).squareRoot()
+                let aspect = AspectFitter.ratioValue(ratio)
+                let height = (Double(AspectFitter.defaultTargetPixels) / aspect).squareRoot()
                 outputSize = PixelSize(width: Int((height * aspect).rounded()), height: Int(height.rounded()))
             }
         }

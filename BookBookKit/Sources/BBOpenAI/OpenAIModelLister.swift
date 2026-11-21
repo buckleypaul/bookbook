@@ -18,8 +18,8 @@ public struct OpenAIModelLister: ModelLister {
     public func listModelIDs() async throws(ProviderError) -> Set<String> {
         let key = try await connection.key()
         let response = try await connection.send("GET", "models", timeout: 60, key: key)
-        guard let root = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
-              let data = root["data"] as? [[String: Any]] else {
+        let root = try OpenAIConnection.jsonRoot(of: response, key: key)
+        guard let data = root["data"] as? [[String: Any]] else {
             throw .unknown(OpenAIErrorMapper.raw(response, code: nil, key: key))
         }
         return Set(data.compactMap { $0["id"] as? String })

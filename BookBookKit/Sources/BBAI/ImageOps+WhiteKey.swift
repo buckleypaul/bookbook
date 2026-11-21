@@ -17,7 +17,7 @@ extension ImageOps {
     /// soft edges in between are un-blended from white (c' = (c − (1 − a)·255) / a) so they don't
     /// leave a white halo. Returns a PNG with alpha at the same pixel size, or nil when the bytes
     /// can't be decoded or encoded.
-    public static func keyOutWhite(pngData: Data) -> Data? {
+    static func keyOutWhite(pngData: Data) -> Data? {
         guard let image = try? decodeImage(pngData) else { return nil }
         let width = image.width, height = image.height
         guard width > 0, height > 0, var bytes = try? rgba(of: image, width: width, height: height) else { return nil }
@@ -51,7 +51,7 @@ extension ImageOps {
     /// True when the image has at least one pixel that isn't fully opaque; nil when it can't be
     /// decoded. A decoration that already has transparency (the provider honoured a transparent
     /// background) is not keyed again.
-    public static func hasTransparentPixels(_ data: Data) -> Bool? {
+    static func hasTransparentPixels(_ data: Data) -> Bool? {
         guard let image = try? decodeImage(data) else { return nil }
         guard hasAlpha(image) else { return false }
         guard let bytes = try? rgba(of: image, width: image.width, height: image.height) else { return nil }

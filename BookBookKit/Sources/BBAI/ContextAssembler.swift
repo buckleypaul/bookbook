@@ -1,7 +1,6 @@
 import BBAICore
 import BBModel
 import Foundation
-import Synchronization
 
 /// An image the assembler needs bytes for, in send order (A §7.3, §7.9).
 public struct PlannedImage: Hashable, Sendable {
@@ -18,6 +17,14 @@ public struct PlannedImage: Hashable, Sendable {
     /// How provenance records it when sent.
     public var sentReference: SentReference {
         SentReference(image: ref, role: role.rawValue, label: label, depictsRealPerson: depictsRealPerson)
+    }
+}
+
+extension PlannedImage {
+    /// A reference candidate as planned, before the model's budget is applied.
+    init(_ candidate: ReferenceSelector.Candidate) {
+        self.init(ref: candidate.ref, role: candidate.role, label: candidate.label, pixelSize: candidate.pixelSize,
+                  depictsRealPerson: candidate.depictsRealPerson)
     }
 }
 
@@ -57,6 +64,8 @@ public enum AssemblyError: Error, Hashable, Sendable {
 /// Two steps so the queue can load bytes in between: `plan` lists the images needed, `assemble`
 /// takes their bytes.
 public enum ContextAssembler {
+    /// A box target, resolved: the page, its template, the box and the session making its
+    /// picture (an image box) or its decoration (a text box, A §7.13).
     struct Resolved {
         var page: Page
         var template: Template
@@ -70,21 +79,12 @@ public enum ContextAssembler {
         var session: Session
     }
 
-    /// A text box's styling target, resolved (A §7.13): the page, its template, the text box and
-    /// the session making the box's decoration.
-    struct TextBoxResolved {
-        var page: Page
-        var template: Template
-        var box: Box
-        var session: Session
-    }
-
     /// What the request is for.
     enum Context {
         case page(Resolved)
         case asset(AssetResolved)
         /// A text box's decoration (A §7.13).
-        case textBox(TextBoxResolved)
+        case textBox(Resolved)
 
         var session: Session {
             switch self {
@@ -98,27 +98,48 @@ public enum ContextAssembler {
     /// Resolves the session by the queue item's message first (box IDs can move), then by the
     /// target's slot. Page-box targets only.
     static func resolve(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> Resolved? {
-        guard case let .pageBox(targetPage, targetBox) = target else { return nil }
+        resolveBox(target: target, messageID: messageID, content: content, textBox: false)
+    }
+
+    /// A page-box target, its `Page.images` slot and an image box; or (`textBox`, A §7.13) a
+    /// text-box target, its `Page.textStyles` slot and a text box, whose message must belong to
+    /// a text-box session. Nil for a target of the other kind.
+    private static func resolveBox(target: GenerationTarget, messageID: MessageID?, content: BookContent,
+                                   textBox: Bool) -> Resolved? {
+        /// The page and box of a target of the wanted kind.
+        func location(_ target: GenerationTarget?) -> (PageID, BoxID)? {
+            switch target {
+            case let .pageBox(page, box)? where !textBox: (page, box)
+            case let .textBox(page, box)? where textBox: (page, box)
+            default: nil
+            }
+        }
+        /// The session the box's slot holds.
+        func slotSession(_ page: PageID, _ box: BoxID) -> SessionID? {
+            textBox ? content.pages[page]?.textStyles[box]?.sessionID : content.pages[page]?.images[box]?.sessionID
+        }
+        guard let (targetPage, targetBox) = location(target) else { return nil }
         var pageID = targetPage, boxID = targetBox
         let session: Session
         if let messageID, let owner = content.session(containing: messageID) {
+            if textBox { guard case .textBox = owner.owner else { return nil } }
             // The message's session owns the geometry: find the slot that holds it now, since the
             // target's box ID may have moved or been reused by another box.
-            if content.pages[targetPage]?.images[targetBox]?.sessionID != owner.id {
+            if slotSession(targetPage, targetBox) != owner.id {
                 // No slot holds the session any more. If the target box now belongs to another session,
                 // its shape is not this session's: resolve to nothing rather than use it.
-                guard case let .pageBox(home, box) = ConsistencyAssembler.target(for: owner, in: content)
-                else { return nil }
-                (pageID, boxID) = (home, box)
+                guard let home = location(ConsistencyAssembler.target(for: owner, in: content)) else { return nil }
+                (pageID, boxID) = home
             }
             session = owner
         } else {
-            guard let slot = content.pages[pageID]?.images[boxID], let found = content.sessions[slot.sessionID]
-            else { return nil }
+            guard let slot = slotSession(pageID, boxID), let found = content.sessions[slot] else { return nil }
             session = found
         }
         guard let page = content.pages[pageID], let template = content.template(for: page),
-              let box = template.box(boxID), box.content == .image else { return nil }
+              let box = template.box(boxID) else { return nil }
+        let isText = if case .text = box.content { true } else { false }
+        guard textBox ? isText : box.content == .image else { return nil }
         return Resolved(page: page, template: template, box: box, session: session)
     }
 
@@ -139,36 +160,12 @@ public enum ContextAssembler {
         }
     }
 
-    /// Text-box targets (A §7.13): the session by the queue item's message first (box IDs can
-    /// move), then by the box's `Page.textStyles` slot. The box must be a text box.
-    static func resolveTextBox(target: GenerationTarget, messageID: MessageID?,
-                               content: BookContent) -> TextBoxResolved? {
-        guard case let .textBox(targetPage, targetBox) = target else { return nil }
-        var pageID = targetPage, boxID = targetBox
-        let session: Session
-        if let messageID, let owner = content.session(containing: messageID) {
-            guard case .textBox = owner.owner else { return nil }
-            if content.pages[targetPage]?.textStyles[targetBox]?.sessionID != owner.id {
-                guard case let .textBox(home, box) = ConsistencyAssembler.target(for: owner, in: content)
-                else { return nil }
-                (pageID, boxID) = (home, box)
-            }
-            session = owner
-        } else {
-            guard let slot = content.pages[pageID]?.textStyles[boxID], let found = content.sessions[slot.sessionID]
-            else { return nil }
-            session = found
-        }
-        guard let page = content.pages[pageID], let template = content.template(for: page),
-              let box = template.box(boxID), case .text = box.content else { return nil }
-        return TextBoxResolved(page: page, template: template, box: box, session: session)
-    }
-
     static func context(target: GenerationTarget, messageID: MessageID?, content: BookContent) -> Context? {
         switch target {
         case .pageBox: resolve(target: target, messageID: messageID, content: content).map(Context.page)
         case .asset: resolveAsset(target: target, messageID: messageID, content: content).map(Context.asset)
-        case .textBox: resolveTextBox(target: target, messageID: messageID, content: content).map(Context.textBox)
+        case .textBox:
+            resolveBox(target: target, messageID: messageID, content: content, textBox: true).map(Context.textBox)
         }
     }
 
@@ -178,7 +175,7 @@ public enum ContextAssembler {
     /// current message, then mentions in earlier current-epoch messages along the refined
     /// version's lineage, then the page's checklist. Deleted or unknown IDs are ignored. Empty if
     /// the target is gone.
-    public static func assetsInPlay(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
+    static func assetsInPlay(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
                                     content: BookContent) -> [AssetID] {
         guard let context = context(target: target, messageID: messageID, content: content) else { return [] }
         return assetsInPlay(intent: intent, context: context, content: content).map(\.asset.id)
@@ -278,17 +275,14 @@ public enum ContextAssembler {
 
     /// The images this request needs, in send order (A §7.4 tiers). Not yet capped by the
     /// model's budget; `assemble` applies it. Nil if the target is gone.
-    public static func plan(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
+    static func plan(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
                             content: BookContent) -> [PlannedImage]? {
         prepare(intent: intent, target: target, messageID: messageID, content: content).map(plan)
     }
 
     /// `plan` for an already prepared request, so callers that go on to `assemble` prepare once.
     static func plan(_ prepared: Prepared) -> [PlannedImage] {
-        prepared.candidates.map {
-            PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize,
-                         depictsRealPerson: $0.depictsRealPerson)
-        }
+        prepared.candidates.map(PlannedImage.init)
     }
 
     static func limits(_ model: CatalogModel) -> ReferenceSelector.Limits {
@@ -299,7 +293,7 @@ public enum ContextAssembler {
     // MARK: Assembly
 
     /// `imageData` holds the bytes the queue managed to load for `plan`'s refs.
-    public static func assemble(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
+    static func assemble(intent: GenerationIntent, target: GenerationTarget, messageID: MessageID? = nil,
                                 content: BookContent, model: CatalogModel,
                                 imageData: [ImageRef: Data] = [:]) throws(AssemblyError) -> (ImageRequest, AssemblyReport) {
         guard let prepared = prepare(intent: intent, target: target, messageID: messageID, content: content)
@@ -307,9 +301,12 @@ public enum ContextAssembler {
         return try assemble(prepared: prepared, intent: intent, content: content, model: model, imageData: imageData)
     }
 
-    /// `assemble` for an already prepared request (the same `intent` and `content`).
+    /// `assemble` for an already prepared request (the same `intent` and `content`). A caller that
+    /// only needs the prompt and the images counted (the cost estimate) passes `encodingMask: false`
+    /// to skip decoding and re-encoding a region edit's mask; the request then has no `mask`.
     static func assemble(prepared: Prepared, intent: GenerationIntent, content: BookContent, model: CatalogModel,
-                         imageData: [ImageRef: Data]) throws(AssemblyError) -> (ImageRequest, AssemblyReport) {
+                         imageData: [ImageRef: Data],
+                         encodingMask: Bool = true) throws(AssemblyError) -> (ImageRequest, AssemblyReport) {
         let session = prepared.context.session
         if let refines = intent.refines, session.version(refines) == nil { throw .baseVersionGone }
         let style = content.style
@@ -336,7 +333,7 @@ public enum ContextAssembler {
         var styleText = style.visualDescription.trimmed
         if let first = styleIndexes.first, let last = styleIndexes.last {
             let range = first == last ? "Image \(first) is a style reference" : "Images \(first)–\(last) are style references"
-            let note = PromptTemplates.render(PromptTemplates.text(for: "style-references") ?? "{{range}}.", ["range": range])
+            let note = PromptTemplates.render(file: "style-references", fallback: "{{range}}.", ["range": range])
             styleText = styleText.isEmpty ? note : styleText + " " + note
         }
         let isRefinement = sent.first?.plan.role == .base
@@ -351,8 +348,7 @@ public enum ContextAssembler {
         let legend = sent.enumerated().map { index, entry in
             let name = entry.plan.asset.flatMap { content.assets[$0]?.name } ?? ""
             let key = isDecoration && entry.plan.role == .base ? "decoration-legend-base" : "legend-\(entry.plan.role.rawValue)"
-            return PromptTemplates.render(PromptTemplates.text(for: key) ?? "Image {{n}}.",
-                                          ["n": "\(index + 1)", "name": name])
+            return PromptTemplates.render(file: key, fallback: "Image {{n}}.", ["n": "\(index + 1)", "name": name])
         }.joined(separator: "\n")
         let cast = castLines(prepared.assets, sent: sent.map(\.plan), numbers: numbers)
 
@@ -376,27 +372,26 @@ public enum ContextAssembler {
         let isPage = !composition.isEmpty
         let transparent = isDecoration && model.image.supportsTransparentBackground
 
-        let values: [(key: String, placeholders: [String: String], required: Bool)] = [
-            ("role", [:], true),
-            ("style", ["style": styleText], !styleText.isEmpty),
-            ("avoid", ["avoid": style.negativeGuidance.trimmed], !style.negativeGuidance.trimmed.isEmpty),
-            ("cast", ["entries": cast], !cast.isEmpty),
-            ("subject", ["subject": subject], !subject.isEmpty),
-            ("composition", composition, isPage),
-            ("story", ["story": prepared.storyText], includeStory),
-            ("history", ["earlier": history], !history.isEmpty),
-            ("region", [:], intent.regionMask != nil),
-            ("request", ["request": requestText], !requestText.isEmpty),
-            ("legend", ["lines": legend], !legend.isEmpty),
-        ]
-        let sections = isDecoration
-            ? decorationSections(intent: intent, styleText: styleText, avoid: style.negativeGuidance.trimmed,
-                                 history: history, legend: legend, aspect: aspect, transparent: transparent)
-            : values.compactMap { entry -> ComposedPrompt.Section? in
-                guard entry.required, let template = PromptTemplates.text(for: entry.key) else { return nil }
-                return .init(key: entry.key, text: PromptTemplates.render(template, entry.placeholders))
-            }
-        let prompt = ComposedPrompt(sections: sections)
+        let avoid = style.negativeGuidance.trimmed
+        let specs: [SectionSpec] = if isDecoration {
+            decorationSpecs(intent: intent, styleText: styleText, avoid: avoid, history: history, legend: legend,
+                            aspect: aspect, transparent: transparent)
+        } else {
+            [
+                ("role", "role", [:], true),
+                ("style", "style", ["style": styleText], !styleText.isEmpty),
+                ("avoid", "avoid", ["avoid": avoid], !avoid.isEmpty),
+                ("cast", "cast", ["entries": cast], !cast.isEmpty),
+                ("subject", "subject", ["subject": subject], !subject.isEmpty),
+                ("composition", "composition", composition, isPage),
+                ("story", "story", ["story": prepared.storyText], includeStory),
+                ("history", "history", ["earlier": history], !history.isEmpty),
+                ("region", "region", [:], intent.regionMask != nil),
+                ("request", "request", ["request": requestText], !requestText.isEmpty),
+                ("legend", "legend", ["lines": legend], !legend.isEmpty),
+            ]
+        }
+        let prompt = ComposedPrompt(sections: render(specs))
 
         // Refinements keep the base image's shape (A §7.6), snapped to the model's size rules so imported
         // images (scans, photos) stay valid; new images use §7.5 fitting.
@@ -406,7 +401,7 @@ public enum ContextAssembler {
         let references = sent.dropFirst(isRefinement ? 1 : 0).map {
             ReferenceImage(payload: $0.payload, sent: $0.plan.sentReference)
         }
-        let mask = try regionMask(intent: intent, baseImage: baseImage, imageData: imageData)
+        let mask = try encodingMask ? regionMask(intent: intent, baseImage: baseImage, imageData: imageData) : nil
         let request = ImageRequest(model: model, quality: intent.quality,
                                    output: OutputShape(boxAspect: aspect, exactSize: exactSize),
                                    instruction: prompt, baseImage: baseImage, references: references, mask: mask,
@@ -423,17 +418,29 @@ public enum ContextAssembler {
         return (request, report)
     }
 
+    /// One prompt section: its stable `key`, the template `file` that words it, the values for
+    /// the template's placeholders, and whether this request has it.
+    typealias SectionSpec = (key: String, file: String, placeholders: [String: String], required: Bool)
+
+    /// The required sections whose template file exists, in table order.
+    static func render(_ specs: [SectionSpec]) -> [ComposedPrompt.Section] {
+        specs.compactMap { spec in
+            guard spec.required, let template = PromptTemplates.text(for: spec.file) else { return nil }
+            return .init(key: spec.key, text: PromptTemplates.render(template, spec.placeholders))
+        }
+    }
+
     /// A text box's decoration prompt (A §7.13): ornament only, in the book's style, with an
     /// empty centre for the text and a transparent (or plain white, keyed out locally)
     /// background. The request is the text model's decoration description, else the message.
     /// Section keys match the picture prompt's where the meaning is the same; the wording comes
     /// from the `decoration-*` files.
-    static func decorationSections(intent: GenerationIntent, styleText: String, avoid: String, history: String,
-                                   legend: String, aspect: Double, transparent: Bool) -> [ComposedPrompt.Section] {
+    static func decorationSpecs(intent: GenerationIntent, styleText: String, avoid: String, history: String,
+                                legend: String, aspect: Double, transparent: Bool) -> [SectionSpec] {
         let described = intent.textStyle?.decorationPrompt?.trimmed ?? ""
         let request = described.isEmpty ? intent.messageText.trimmed : described
         let background = transparent ? "decoration-background-transparent" : "decoration-background-white"
-        let entries: [(key: String, file: String, placeholders: [String: String], required: Bool)] = [
+        return [
             ("role", "decoration-role", [:], true),
             ("style", "style", ["style": styleText], !styleText.isEmpty),
             ("avoid", "avoid", ["avoid": avoid], !avoid.isEmpty),
@@ -444,10 +451,6 @@ public enum ContextAssembler {
             ("background", background, [:], true),
             ("legend", "legend", ["lines": legend], !legend.isEmpty),
         ]
-        return entries.compactMap { entry in
-            guard entry.required, let template = PromptTemplates.text(for: entry.file) else { return nil }
-            return .init(key: entry.key, text: PromptTemplates.render(template, entry.placeholders))
-        }
     }
 
     /// Region edit (A §7.6): the stored 8-bit mask, checked against the base payload's pixel size
@@ -486,9 +489,9 @@ public enum ContextAssembler {
 
     /// What to draw in an asset session: the asset's one reference image, worded per asset type.
     static func assetSubject(_ asset: Asset) -> String {
-        let template = PromptTemplates.text(for: "asset-reference-\(asset.type.rawValue)") ?? "A reference image of {{name}}."
         // One pass over the template, so a name containing `{{...}}` is never expanded.
-        return PromptTemplates.render(template, ["name": asset.name, "type": asset.type.rawValue])
+        PromptTemplates.render(file: "asset-reference-\(asset.type.rawValue)", fallback: "A reference image of {{name}}.",
+                               ["name": asset.name, "type": asset.type.rawValue])
     }
 
     // MARK: Composition wording
@@ -530,8 +533,7 @@ public enum ContextAssembler {
         let position = (0.5 - box.frame.x) / box.frame.width
         guard position > 0.03, position < 0.97 else { return "" }
         let percent = Int((position * 100).rounded())
-        return " " + PromptTemplates.render(PromptTemplates.text(for: "fold") ?? "{{percent}}%",
-                                            ["percent": "\(percent)"])
+        return " " + PromptTemplates.render(file: "fold", fallback: "{{percent}}%", ["percent": "\(percent)"])
     }
 
     /// Leading-space sentence about the trimmed outer edge when the box bleeds, or "". Geometry follows
@@ -569,7 +571,7 @@ public enum ContextAssembler {
         case (true, false): area = "the central \(percent(safeW))% horizontally"
         default: area = "the central \(percent(safeH))% vertically"
         }
-        return " " + PromptTemplates.render(PromptTemplates.text(for: "safe-area") ?? "{{area}}", ["area": area])
+        return " " + PromptTemplates.render(file: "safe-area", fallback: "{{area}}", ["area": area])
     }
 
     private static func describeRegion(_ r: NormalizedRect) -> String {
@@ -603,48 +605,5 @@ extension Page {
             .map { $0.trimmed }
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
-    }
-}
-
-extension String {
-    fileprivate var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
-}
-
-/// Versioned prompt text files in `Resources/Prompts/<version>/<key>.txt` with `{{name}}` substitution.
-enum PromptTemplates {
-    static let version = "image-v1"
-
-    /// Loaded files by `set/key`, misses included. The bundle is read-only, so entries never go stale.
-    private static let cache = Mutex<[String: String?]>([:])
-
-    /// The trimmed text of `Prompts/<set>/<key>.txt`, or nil if the file is missing. Cached.
-    static func text(for key: String, set: String = version) -> String? {
-        let path = "\(set)/\(key)"
-        if let cached = cache.withLock({ $0[path] }) { return cached }
-        var text: String?
-        if let url = Bundle.module.resourceURL?.appendingPathComponent("Prompts/\(path).txt"),
-           let contents = try? String(contentsOf: url, encoding: .utf8) {
-            text = contents.trimmingCharacters(in: .newlines)
-        }
-        cache.withLock { $0[path] = .some(text) }
-        return text
-    }
-
-    /// One left-to-right scan, so substituted text (a name containing `{{name}}`) is never re-expanded.
-    static func render(_ template: String, _ values: [String: String]) -> String {
-        var out = ""
-        var rest = Substring(template)
-        while let open = rest.range(of: "{{") {
-            out += rest[..<open.lowerBound]
-            let afterOpen = rest[open.upperBound...]
-            if let close = afterOpen.range(of: "}}"), let value = values[String(afterOpen[..<close.lowerBound])] {
-                out += value
-                rest = afterOpen[close.upperBound...]
-            } else {
-                out += "{{"
-                rest = afterOpen
-            }
-        }
-        return out + rest
     }
 }

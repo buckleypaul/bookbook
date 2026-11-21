@@ -1,6 +1,6 @@
 import Foundation
 
-/// `multipart/form-data` encoder. Unused by the Phase 2 slice; edits (Phase 8) upload with it.
+/// `multipart/form-data` encoder: image edits (`/images/edits`) upload their images and mask with it.
 public struct MultipartForm: Sendable {
     private let boundary: String
     private var parts = Data()

@@ -4,14 +4,14 @@ import Foundation
 
 extension Redaction {
     /// Header names whose values are never shown (any case).
-    public static let secretHeaderNames: Set<String> = ["authorization", "x-goog-api-key"]
+    static let secretHeaderNames: Set<String> = ["authorization", "x-goog-api-key"]
 
     /// A masked key echo: any key-ish prefix, four or more asterisks, then the visible suffix.
     /// Matches `sk-proj-****abcd` and also keys without the `sk-` prefix (SP-5 echoed `bookbook****-key`).
     static let maskedKeyPattern = #"[A-Za-z0-9_-]*\*{4,}[A-Za-z0-9_-]{0,8}"#
 
     /// A copy with secret headers replaced by `<redacted>`.
-    public static func redactedHeaders(_ headers: [String: String]) -> [String: String] {
+    static func redactedHeaders(_ headers: [String: String]) -> [String: String] {
         var out = headers
         for name in headers.keys where secretHeaderNames.contains(name.lowercased()) {
             out[name] = "<redacted>"

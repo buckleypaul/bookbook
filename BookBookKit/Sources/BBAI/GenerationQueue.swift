@@ -45,6 +45,8 @@ public actor GenerationQueue {
 
     private var undelivered: [PendingDelivery] = []
     private var redeliveryWorker: Task<Void, Never>?
+    /// A redelivery pass is running (passes never overlap).
+    private var isRedelivering = false
     /// The worker's current 30 s wait; cancelled to wake it early when the queue changes.
     private var redeliveryWait: Task<Void, Never>?
 
@@ -307,8 +309,7 @@ public actor GenerationQueue {
         if restoredPause, !entries.contains(where: { $0.state == .waiting }) {
             restoredPause = false
             if pauseReason == nil {
-                unpauseWaiter?.resume()
-                unpauseWaiter = nil
+                wakeUnpauseWaiter()
             }
         }
         publish()
@@ -316,10 +317,15 @@ public actor GenerationQueue {
         redeliveryWait?.cancel()
     }
 
-    private func pauseMayHaveCleared() {
-        guard pauseReason == nil else { return }
+    /// Resumes the run task if it is waiting in `waitUntilUnpaused`.
+    private func wakeUnpauseWaiter() {
         unpauseWaiter?.resume()
         unpauseWaiter = nil
+    }
+
+    private func pauseMayHaveCleared() {
+        guard pauseReason == nil else { return }
+        wakeUnpauseWaiter()
         startNextIfIdle()
     }
 
@@ -337,8 +343,7 @@ public actor GenerationQueue {
         guard current != nil, current?.cancelRequested == false else { return }
         current?.cancelRequested = true
         current?.task?.cancel()
-        unpauseWaiter?.resume()
-        unpauseWaiter = nil
+        wakeUnpauseWaiter()
     }
 
     // MARK: - Persistence
@@ -406,7 +411,9 @@ public actor GenerationQueue {
     private func run(_ item: QueueItem) async {
         do throws(ProviderError) {
             if case let .consistencyCheck(version) = item.kind {
-                guard let check = try await prepareCheck(item, version: version) else { return finishDropped(item) }
+                // A check whose version (or its page, box or asset) is gone: removed without a
+                // request, a ledger line or a delivery.
+                guard let check = try await prepareCheck(item, version: version) else { return removeEntry(item.id) }
                 await runCheck(item, check)
             } else {
                 await runImage(item, try await prepareImage(item))
@@ -714,12 +721,6 @@ public actor GenerationQueue {
         await deliver(GenerationDelivery(item: item, outcome: .consistency(report), costRecordID: costID))
     }
 
-    /// A check whose version (or its page, box or asset) is gone: removed without a
-    /// request, a ledger line or a delivery.
-    private func finishDropped(_ item: QueueItem) {
-        removeEntry(item.id)
-    }
-
     /// Removes the item's entry and publishes the change.
     private func removeEntry(_ id: QueueItemID) {
         entries.removeAll { $0.id == id }
@@ -785,8 +786,6 @@ public actor GenerationQueue {
         guard redeliveryWorker == nil else { return }
         redeliveryWorker = Task { [weak self] in await self?.runRedelivery() }
     }
-
-    private var isRedelivering = false
 
     /// Retries kept deliveries every 30 s, and early whenever the queue changes.
     private func runRedelivery() async {

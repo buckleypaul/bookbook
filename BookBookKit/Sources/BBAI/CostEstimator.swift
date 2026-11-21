@@ -30,14 +30,11 @@ public enum CostEstimator {
             }
         }
 
-        let perChar = table?.textTokensPerPromptChar ?? 0.27
-        let textIn = Int((Double(max(0, input.promptCharacters)) * perChar).rounded(.up))
-
-        let rates = entry.perMillionTokens
-        let total = (rates["textIn"] ?? 0) * Decimal(textIn)
-            + (rates["imageIn"] ?? 0) * Decimal(imageIn)
-            + (rates["imageOut"] ?? 0) * Decimal(output.tokens)
-        return CostEstimate(amount: total / 1_000_000, extrapolated: extrapolated, priceListAsOf: entry.asOf)
+        let textIn = entry.textTokens(characters: input.promptCharacters)
+        let amount = PriceEntry.cost((entry.rate(.textIn), Decimal(textIn)),
+                                     (entry.rate(.imageIn), Decimal(imageIn)),
+                                     (entry.rate(.imageOut), Decimal(output.tokens)))
+        return CostEstimate(amount: amount, extrapolated: extrapolated, priceListAsOf: entry.asOf)
     }
 
     /// "Downscale so the longer side is at most 512 px, then one token per 16x16 patch" (A §7.10).
@@ -85,19 +82,12 @@ public enum CostEstimator {
         let planned = ContextAssembler.plan(prepared)
         var data: [ImageRef: Data] = [:]
         for image in planned { data[image.ref] = Data([0]) }
-        if let maskRef = intent.regionMask {
-            // Region edit (A §7.6): the assembler decodes the mask and checks it against the base's
-            // pixel size, so give it a blank mask at that size (and a base header to match when the
-            // book doesn't know the base's size).
-            let base = planned.first { $0.role == .base }
-            let size = base?.pixelSize ?? assumedImageSize
-            guard let blank = try? placeholderMaskPNG(size) else { return nil }
-            data[maskRef] = blank
-            if let base, base.pixelSize == nil { data[base.ref] = blank }
-        }
+        // A region edit's mask (A §7.6) isn't encoded: only the prompt and the images sent are counted.
         guard let (request, report) = try? ContextAssembler.assemble(
-            prepared: prepared, intent: intent, content: content, model: model, imageData: data)
+            prepared: prepared, intent: intent, content: content, model: model, imageData: data, encodingMask: false)
         else { return nil }
+        // A mask needs a base image to edit: no estimate without one, as the assembler refuses it.
+        guard intent.regionMask == nil || request.baseImage != nil else { return nil }
 
         var knownSizes: [ImageRef: PixelSize] = [:]
         for image in planned { if let size = image.pixelSize { knownSizes[image.ref] = size } }
@@ -111,19 +101,12 @@ public enum CostEstimator {
             case let .pixels(size):
                 outputSize = size
             case let .ratio(ratio):
-                let parts = ratio.split(separator: ":").compactMap { Double($0) }
-                let aspect = parts.count == 2 && parts[1] > 0 ? parts[0] / parts[1] : 1
-                let height = (1_048_576 / aspect).squareRoot()
+                let aspect = AspectFitter.ratioValue(ratio)
+                let height = (Double(AspectFitter.defaultTargetPixels) / aspect).squareRoot()
                 outputSize = PixelSize(width: Int((height * aspect).rounded()), height: Int(height.rounded()))
             }
         }
         return ImageEstimateInput(model: model, quality: intent.quality, outputSize: outputSize,
                                   inputImageSizes: sizes, promptCharacters: report.promptText.count)
-    }
-
-    /// An all-keep grayscale mask PNG at `size` (it compresses to a few hundred bytes).
-    static func placeholderMaskPNG(_ size: PixelSize) throws(ImageOpsError) -> Data {
-        try ImageOps.grayscalePNG(RegionMask(pixelSize: size,
-                                             bytes: [UInt8](repeating: 0, count: size.width * size.height)))
     }
 }

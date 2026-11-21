@@ -50,17 +50,16 @@ public enum TextStylePrompt {
         let fontList = fonts.map(\.trimmed).filter { !$0.isEmpty }
         let values: [String: String] = [
             "instruction": instruction.trimmed,
-            "history": earlier.isEmpty ? "(none)" : earlier.map { "- \($0)" }.joined(separator: "\n"),
+            "history": PromptTemplates.bulletList(earlier),
             "style": style.isEmpty ? "(not described)" : style,
             "role": roleText(boxRole),
             "size": sizeText(boxSizePoints),
             "text": textExcerpt(boxText),
             "current": json(current),
-            "fonts": fontList.isEmpty ? "(none: use null for fontFamily)" : fontList.map { "- \($0)" }.joined(separator: "\n"),
+            "fonts": PromptTemplates.bulletList(fontList, empty: "(none: use null for fontFamily)"),
         ]
-        let user = PromptTemplates.render(PromptTemplates.text(for: "user", set: set) ?? "", values)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return TextStyleRequest(model: model, system: PromptTemplates.text(for: "system", set: set) ?? "", user: user)
+        let prompt = PromptTemplates.textPrompt(set: set, user: "user", values)
+        return TextStyleRequest(model: model, system: prompt.system, user: prompt.user)
     }
 
     static func roleText(_ role: BoxRole?) -> String {
@@ -88,18 +87,15 @@ public enum TextStylePrompt {
     /// The current look in the schema's field names (`null` for none), keys sorted.
     static func json(_ current: TextStyleSnapshot) -> String {
         let decoration = current.decoration?.trimmed
-        let object: [String: Any] = [
+        return PromptTemplates.sortedJSON([
             "fontFamily": current.fontFamily,
             "fontSize": rounded(current.fontSize),
-            "textColor": TemplateNormalizer.hex(current.textColor),
+            "textColor": current.textColor.hexString,
             "alignment": current.alignment.rawValue,
             "textInset": rounded(current.textInset, places: 3),
-            "panelColor": current.panelColor.map(TemplateNormalizer.hex) ?? NSNull(),
+            "panelColor": current.panelColor.map(\.hexString) ?? NSNull(),
             "decoration": decoration.flatMap { $0.isEmpty ? nil : $0 } ?? NSNull(),
-        ]
-        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted]),
-              let text = String(data: data, encoding: .utf8) else { return "{}" }
-        return text
+        ])
     }
 
     private static func rounded(_ value: Double, places: Int = 1) -> Double {
@@ -129,9 +125,9 @@ public enum TextStyleNormalizer {
         let size = draft.fontSize.flatMap { $0.isFinite ? min(max($0, fontSizeRange.lowerBound), fontSizeRange.upperBound) : nil }
         let inset = draft.textInset.isFinite ? min(max(draft.textInset, 0), TextStyling.maxInsetFraction) : 0
         let styling = TextStyling(
-            font: font, fontSize: size, color: draft.textColor.flatMap(TemplateNormalizer.parseHex),
+            font: font, fontSize: size, color: draft.textColor.flatMap(RGBA.init(hex:)),
             alignment: draft.alignment.flatMap { TextAlignment(rawValue: $0.rawValue) },
-            insetFraction: inset, background: draft.panelColor.flatMap(TemplateNormalizer.parseHex))
+            insetFraction: inset, background: draft.panelColor.flatMap(RGBA.init(hex:)))
         let decoration = draft.decoration?.trimmed
         let summary = draft.summary.trimmed
         return (styling, decoration.flatMap { $0.isEmpty ? nil : $0 }, summary.isEmpty ? fallbackSummary : summary)
@@ -148,8 +144,4 @@ public enum TextStyleNormalizer {
         else { return nil }
         return FontRef(postScriptName: postScript)
     }
-}
-
-extension String {
-    fileprivate var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }

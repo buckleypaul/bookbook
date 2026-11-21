@@ -14,7 +14,7 @@ public enum TextModelKind: String, Codable, Sendable {
 }
 
 /// A text or vision model from `ModelCatalog.json` (`kind: text | vision`).
-public struct CatalogTextModel: Hashable, Codable, Sendable {
+public struct CatalogTextModel: Hashable, Sendable {
     public var provider: ProviderID
     public var id: String
     public var displayName: String
@@ -44,7 +44,7 @@ public struct CatalogTextModel: Hashable, Codable, Sendable {
 }
 
 /// A §7.8: warn on at least `warnOnMajor` major differences, or at least `warnOnMinor` minor ones.
-public struct ConsistencyThresholds: Hashable, Codable, Sendable {
+public struct ConsistencyThresholds: Hashable, Sendable {
     public var warnOnMajor: Int
     public var warnOnMinor: Int
 
@@ -167,9 +167,9 @@ public enum StructuredSchemas {
     """#
 }
 
-/// A provider-neutral layout request. `system` and `user` are fully rendered by BBAI
-/// (`LayoutPrompt`), including the page setup and the few-shot preset examples.
-public struct LayoutRequest: Hashable, Sendable {
+/// A provider-neutral structured-output text request. `system` and `user` are fully rendered
+/// by BBAI; the schema the reply must follow is chosen by the provider method it's passed to.
+public struct StructuredTextRequest: Hashable, Sendable {
     public var model: CatalogTextModel
     public var system: String
     public var user: String
@@ -181,18 +181,24 @@ public struct LayoutRequest: Hashable, Sendable {
     }
 }
 
-public struct LayoutResult: Hashable, Sendable {
-    public var draft: TemplateDraft
+/// A structured-output reply decoded to its schema's `Draft`.
+public struct StructuredTextResult<Draft: Hashable & Sendable>: Hashable, Sendable {
+    public var draft: Draft
     public var usage: TokenUsage?
     /// Wire parameters sent besides the prompt (e.g. `model`, `store`, `response_format`).
     public var parametersSent: [String: String]
 
-    public init(draft: TemplateDraft, usage: TokenUsage? = nil, parametersSent: [String: String] = [:]) {
+    public init(draft: Draft, usage: TokenUsage? = nil, parametersSent: [String: String] = [:]) {
         self.draft = draft
         self.usage = usage
         self.parametersSent = parametersSent
     }
 }
+
+/// A layout request, rendered by `LayoutPrompt` (the page setup and the few-shot preset
+/// examples included).
+public typealias LayoutRequest = StructuredTextRequest
+public typealias LayoutResult = StructuredTextResult<TemplateDraft>
 
 // MARK: - Consistency check (A §7.8)
 
@@ -314,31 +320,10 @@ extension StructuredSchemas {
     """#
 }
 
-/// A provider-neutral text-styling request. `system` and `user` are fully rendered by BBAI
-/// (`TextStylePrompt`), including the allowed font families and the box's current look.
-public struct TextStyleRequest: Hashable, Sendable {
-    public var model: CatalogTextModel
-    public var system: String
-    public var user: String
-
-    public init(model: CatalogTextModel, system: String, user: String) {
-        self.model = model
-        self.system = system
-        self.user = user
-    }
-}
-
-public struct TextStyleResult: Hashable, Sendable {
-    public var draft: TextStyleDraft
-    public var usage: TokenUsage?
-    public var parametersSent: [String: String]
-
-    public init(draft: TextStyleDraft, usage: TokenUsage? = nil, parametersSent: [String: String] = [:]) {
-        self.draft = draft
-        self.usage = usage
-        self.parametersSent = parametersSent
-    }
-}
+/// A text-styling request, rendered by `TextStylePrompt` (the allowed font families and the
+/// box's current look included).
+public typealias TextStyleRequest = StructuredTextRequest
+public typealias TextStyleResult = StructuredTextResult<TextStyleDraft>
 
 /// Same error mapping as `LayoutProvider`.
 public protocol TextStyleProvider: Sendable {

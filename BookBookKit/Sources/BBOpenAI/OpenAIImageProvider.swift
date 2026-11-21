@@ -5,9 +5,9 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// OpenAI GPT Image adapter: `/images/generations`, or `/images/edits` (multipart) when a base
-/// image or references are present (architecture.md §7.6). Masks arrive in Phase 11.
+/// image or references are present (architecture.md §7.6); a region edit adds its `mask` file.
 public struct OpenAIImageProvider: ImageProvider {
-    public static let defaultBaseURL = URL(string: "https://api.openai.com/v1")!
+    public static let defaultBaseURL = OpenAIConnection.defaultBaseURL
 
     public var id: ProviderID { .openai }
 
@@ -28,10 +28,12 @@ public struct OpenAIImageProvider: ImageProvider {
     ) async throws(ProviderError) -> ImageResult {
         let images = [request.baseImage].compactMap { $0 } + request.references.map(\.payload)
         let isEdit = !images.isEmpty
-        var parameters = try Self.parameters(for: request)
+        let parameters = try Self.parameters(for: request)
+        var parametersSent = parameters.mapValues { "\($0)" }
         if let mask = request.mask {
             try Self.validate(mask: mask, base: request.baseImage, limit: request.model.image.maxImageBytes)
-            parameters["mask"] = "\(mask.pixelSize.width)x\(mask.pixelSize.height) png"
+            // Display only (Version details): the mask goes as a file, not a field.
+            parametersSent["mask"] = "\(mask.pixelSize.width)x\(mask.pixelSize.height) png"
         }
         if isEdit {
             try Self.validate(images, limit: request.model.image.maxImageBytes)
@@ -55,7 +57,7 @@ public struct OpenAIImageProvider: ImageProvider {
                 form.addFile(name: "mask", filename: "mask.png", mimeType: "image/png", data: mask.pngData)
             }
             form.addField(name: "prompt", value: prompt)
-            for (name, value) in parameters.sorted(by: { $0.key < $1.key }) where name != "mask" { form.addField(name: name, value: "\(value)") }
+            for (name, value) in parameters.sorted(by: { $0.key < $1.key }) { form.addField(name: name, value: "\(value)") }
             let encoded = form.encoded()
             path = "images/edits"
             contentType = encoded.contentType
@@ -74,7 +76,7 @@ public struct OpenAIImageProvider: ImageProvider {
         let response = try await connection.send("POST", path, contentType: contentType, body: bodyData, key: key) {
             progress(.receiving)
         }
-        return try Self.decode(response, parametersSent: parameters.mapValues { "\($0)" }, key: key)
+        return try Self.decode(response, parametersSent: parametersSent, key: key)
     }
 
     // MARK: Request
@@ -157,13 +159,10 @@ public struct OpenAIImageProvider: ImageProvider {
 
     private static func decode(_ response: HTTPResponse, parametersSent: [String: String],
                                key: APIKey) throws(ProviderError) -> ImageResult {
-        let raw = OpenAIErrorMapper.raw(response, code: nil, key: key)
-        guard let root = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] else {
-            throw .unknown(raw)
-        }
+        let root = try OpenAIConnection.jsonRoot(of: response, key: key)
         guard let first = (root["data"] as? [[String: Any]])?.first,
               let b64 = first["b64_json"] as? String, !b64.isEmpty else {
-            throw .noImage(raw)
+            throw .noImage(OpenAIErrorMapper.raw(response, code: nil, key: key))
         }
         guard let png = Data(base64Encoded: b64), let size = ImageHeader.pixelSize(of: png) else {
             throw .unknown(ProviderErrorRaw(status: response.status, code: nil, body: "image could not be decoded"))

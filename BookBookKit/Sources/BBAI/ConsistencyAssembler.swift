@@ -101,18 +101,19 @@ public enum ConsistencyAssembler {
 
     /// The session's target: the box that holds it now (box IDs can move), or its asset owner.
     public static func target(for session: Session, in content: BookContent) -> GenerationTarget? {
+        /// The page and box whose slot (in `slots`) holds the session.
+        func home<Slot>(_ slots: KeyPath<Page, [BoxID: Slot]>, _ sessionID: KeyPath<Slot, SessionID>) -> (PageID, BoxID)? {
+            for (pageID, page) in content.pages {
+                for (boxID, slot) in page[keyPath: slots] where slot[keyPath: sessionID] == session.id {
+                    return (pageID, boxID)
+                }
+            }
+            return nil
+        }
         switch session.owner {
-        case .pageBox:
-            for (pageID, page) in content.pages {
-                for (boxID, slot) in page.images where slot.sessionID == session.id { return .pageBox(pageID, boxID) }
-            }
-            return nil
+        case .pageBox: return home(\.images, \.sessionID).map { .pageBox($0, $1) }
         case let .asset(asset): return .asset(asset)
-        case .textBox:
-            for (pageID, page) in content.pages {
-                for (boxID, slot) in page.textStyles where slot.sessionID == session.id { return .textBox(pageID, boxID) }
-            }
-            return nil
+        case .textBox: return home(\.textStyles, \.sessionID).map { .textBox($0, $1) }
         }
     }
 
@@ -134,10 +135,7 @@ public enum ConsistencyAssembler {
         let assetTiers: Set<ReferenceSelector.Tier> = [.mentionedAsset, .checklistAsset]
         let assetImages = usable.filter { assetTiers.contains($0.tier) }
         let style = usable.filter { $0.tier == .style }.prefix(maxStyleReferences)
-        let planned = (assetImages + style).map {
-            PlannedImage(ref: $0.ref, role: $0.role, label: $0.label, pixelSize: $0.pixelSize,
-                         depictsRealPerson: $0.depictsRealPerson)
-        }
+        let planned = (assetImages + style).map(PlannedImage.init)
         let assets = prepared.assets.map {
             ConsistencyAssetContext(name: $0.asset.name, description: $0.asset.description)
         }

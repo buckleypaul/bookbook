@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// consistency (vision) requests (architecture.md §7.7, §7.8, §7.13; plan P-5): `store: false`,
 /// strict `json_schema`.
 public struct OpenAIChatProvider: LayoutProvider, VisionProvider, TextStyleProvider {
-    public static let defaultBaseURL = OpenAIImageProvider.defaultBaseURL
+    public static let defaultBaseURL = OpenAIConnection.defaultBaseURL
 
     public var id: ProviderID { .openai }
 
@@ -20,25 +20,23 @@ public struct OpenAIChatProvider: LayoutProvider, VisionProvider, TextStyleProvi
     }
 
     public func generateLayout(_ request: LayoutRequest) async throws(ProviderError) -> LayoutResult {
-        let messages: [[String: Any]] = [
-            ["role": "system", "content": request.system],
-            ["role": "user", "content": request.user],
-        ]
-        let reply = try await send(model: request.model.id, messages: messages,
-                                   name: StructuredSchemas.templateDraftName, schema: StructuredSchemas.templateDraft)
-        let draft: TemplateDraft = try reply.decode()
-        return LayoutResult(draft: draft, usage: reply.usage, parametersSent: reply.parameters)
+        try await structured(request, name: StructuredSchemas.templateDraftName, schema: StructuredSchemas.templateDraft)
     }
 
     public func styleText(_ request: TextStyleRequest) async throws(ProviderError) -> TextStyleResult {
+        try await structured(request, name: StructuredSchemas.textStyleName, schema: StructuredSchemas.textStyle)
+    }
+
+    /// A system-plus-user request whose reply decodes to the schema's `Draft`.
+    private func structured<Draft: Decodable & Hashable & Sendable>(
+        _ request: StructuredTextRequest, name: String, schema: String
+    ) async throws(ProviderError) -> StructuredTextResult<Draft> {
         let messages: [[String: Any]] = [
             ["role": "system", "content": request.system],
             ["role": "user", "content": request.user],
         ]
-        let reply = try await send(model: request.model.id, messages: messages,
-                                   name: StructuredSchemas.textStyleName, schema: StructuredSchemas.textStyle)
-        let draft: TextStyleDraft = try reply.decode()
-        return TextStyleResult(draft: draft, usage: reply.usage, parametersSent: reply.parameters)
+        let reply = try await send(model: request.model.id, messages: messages, name: name, schema: schema)
+        return StructuredTextResult(draft: try reply.decode(), usage: reply.usage, parametersSent: reply.parameters)
     }
 
     public func checkConsistency(_ request: ConsistencyRequest) async throws(ProviderError) -> ConsistencyResult {
@@ -113,9 +111,9 @@ public struct OpenAIChatProvider: LayoutProvider, VisionProvider, TextStyleProvi
         let response = try await connection.send("POST", "chat/completions", contentType: "application/json",
                                                  body: data, key: key)
 
+        let root = try OpenAIConnection.jsonRoot(of: response, key: key)
         let raw = OpenAIErrorMapper.raw(response, code: nil, key: key)
-        guard let root = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
-              let choice = (root["choices"] as? [[String: Any]])?.first else {
+        guard let choice = (root["choices"] as? [[String: Any]])?.first else {
             throw .unknown(raw)
         }
         let message = choice["message"] as? [String: Any]

@@ -148,7 +148,7 @@ public struct LibraryView: View {
         Button("Open") { openWindow(value: entry.id) }
         Divider()
         Button("Rename…") { actions.renaming = entry }
-        Button("Duplicate") { duplicate(entry) }
+        Button("Duplicate") { $actions.duplicate(entry, in: app) { selection = $0.id } }
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([entry.url]) }
         Divider()
         Button("Move to Trash…", role: .destructive) { actions.trashing = entry }
@@ -156,17 +156,6 @@ public struct LibraryView: View {
 
     private func openSample() {
         Task { await app.openSampleBook { openWindow(value: $0) } }
-    }
-
-    private func duplicate(_ entry: LibraryEntry) {
-        Task {
-            do {
-                selection = try await app.duplicate(entry).id
-            } catch {
-                actions.error = .init(title: "Couldn't duplicate the book",
-                                      message: "“\(entry.title)” wasn't duplicated. \(StoreErrorText.message(for: error))")
-            }
-        }
     }
 }
 

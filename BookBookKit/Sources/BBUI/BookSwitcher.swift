@@ -34,8 +34,10 @@ struct BookSwitcher: View {
                 app.newBookRequest = .blank
                 openWindow(id: SceneID.library)
             }
-            Button("Duplicate") { duplicate() }
-                .disabled(entry == nil)
+            Button("Duplicate") {
+                if let entry { $actions.duplicate(entry, in: app) { openWindow(value: $0.id) } }
+            }
+            .disabled(entry == nil)
             Button("Move to Trash…", role: .destructive) { actions.trashing = entry }
                 .disabled(entry == nil)
             Divider()
@@ -59,18 +61,5 @@ struct BookSwitcher: View {
         .crayonHover(tilt: -1, scale: 1.02)
         .help("Switch, create, duplicate or delete books")
         .bookActions($actions)
-    }
-
-    private func duplicate() {
-        guard let entry else { return }
-        Task {
-            do {
-                let copy = try await app.duplicate(entry)
-                openWindow(value: copy.id)
-            } catch {
-                actions.error = .init(title: "Couldn't duplicate the book",
-                                      message: "“\(entry.title)” wasn't duplicated. \(StoreErrorText.message(for: error))")
-            }
-        }
     }
 }

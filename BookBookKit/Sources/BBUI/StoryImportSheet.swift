@@ -18,7 +18,7 @@ final class StoryImportModel {
 
     /// Pasted text. Typing here replaces a file that was opened.
     var pastedText = "" {
-        didSet { if pastedText != oldValue, !settingFromFile { file = nil } }
+        didSet { if pastedText != oldValue { file = nil } }
     }
     /// Text read from a `.txt`/`.rtf` file (keeps RTF formatting), with its file name.
     private(set) var file: (name: String, text: RichText)?
@@ -26,7 +26,6 @@ final class StoryImportModel {
     var marker = StoryImportModel.defaultMarker
     var templateID: TemplateID?
     var readError: String?
-    @ObservationIgnored private var settingFromFile = false
 
     init(templateID: TemplateID?) {
         self.templateID = templateID
@@ -55,9 +54,8 @@ final class StoryImportModel {
     func open(_ url: URL, typography: Typography) {
         do {
             let text = try StoryTextImporter.read(url, typography: typography)
-            settingFromFile = true
+            // The text first: setting it clears `file`.
             pastedText = text.plainText
-            settingFromFile = false
             file = (url.lastPathComponent, text)
             readError = nil
         } catch {

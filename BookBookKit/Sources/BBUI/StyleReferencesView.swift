@@ -10,7 +10,7 @@ struct StyleReferencesView: View {
     @State private var isTargeted = false
     @State private var errorText: String?
     @State private var cache: ImageCache
-    @State private var preview: PreviewImage?
+    @State private var preview: ImagePreview?
 
     init(document: BookDocument, model: StyleTabModel) {
         self.document = document
@@ -65,9 +65,7 @@ struct StyleReferencesView: View {
             add(files)
             return !files.isEmpty
         } isTargeted: { isTargeted = $0 }
-        .sheet(item: $preview) { item in
-            ImagePreviewSheet(title: "Style reference \(item.number)", image: item.image)
-        }
+        .imagePreviewSheet($preview)
         .fileImporter(isPresented: $showImporter, allowedContentTypes: Self.types, allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): add(urls)
@@ -76,18 +74,12 @@ struct StyleReferencesView: View {
         }
     }
 
-    /// A reference image enlarged in `ImagePreviewSheet`.
-    private struct PreviewImage: Identifiable {
-        let id = UUID()
-        let number: Int
-        let image: CGImage
-    }
-
+    /// Opens the reference image enlarged in `ImagePreviewSheet`.
     private func expand(_ ref: ImageRef, number: Int) {
         // The row's cache is downsampled; the enlarged view reads the full-size image.
         let full = ImageCache(store: document.store, maxPixelSize: nil)
         guard let image = full.image(for: ref) ?? cache.image(for: ref) else { return }
-        preview = PreviewImage(number: number, image: image)
+        preview = ImagePreview(title: "Style reference \(number)", image: image)
     }
 
     private func thumbnail(_ ref: ImageRef, number: Int) -> some View {
@@ -103,11 +95,7 @@ struct StyleReferencesView: View {
             .clipShape(RoundedRectangle(cornerRadius: Crayon.thumbCornerRadius, style: .continuous))
             .crayonCard(cornerRadius: Crayon.smallCornerRadius, padding: 3)
             .onTapGesture(count: 2) { expand(ref, number: number) }
-            .contextMenu {
-                Button("View Larger", systemImage: "arrow.up.left.and.arrow.down.right") {
-                    expand(ref, number: number)
-                }
-            }
+            .contextMenu { ViewLargerButton { expand(ref, number: number) } }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Style reference image \(number)")
             .accessibilityAction(named: "View larger") { expand(ref, number: number) }

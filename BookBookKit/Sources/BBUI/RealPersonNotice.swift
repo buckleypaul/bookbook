@@ -61,9 +61,7 @@ struct RealPersonQuestionSheet: View {
                 answerButton("Yes", answer: true)
             }
         }
-        .padding(20)
-        .frame(width: 400)
-        .crayonPaper()
+        .crayonSheet(width: 400)
     }
 
     @ViewBuilder
@@ -106,16 +104,9 @@ struct RealPersonNoticeSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .crayonCard(tint: Crayon.bubblegum, padding: 12)
-            HStack {
-                Spacer()
-                Button("Cancel", role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
-                Button("Continue", action: onContinue).keyboardShortcut(.defaultAction)
-                    .buttonStyle(.crayon(Crayon.bubblegum))
-            }
+            CrayonSheetFooter("Continue", color: Crayon.bubblegum, onCancel: onCancel, action: onContinue)
         }
-        .padding(20)
-        .frame(width: 440)
-        .crayonPaper()
+        .crayonSheet(width: 440)
     }
 }
 

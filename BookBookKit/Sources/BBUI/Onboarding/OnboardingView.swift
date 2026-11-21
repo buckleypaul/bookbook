@@ -153,7 +153,7 @@ public struct OnboardingView: View {
     }
 
     private func costText(_ amount: Decimal?) -> String {
-        amount == nil ? "Not available" : TypicalCosts.format(amount)
+        amount.map(TypicalCosts.format) ?? "Not available"
     }
 
     private var costsPage: some View {

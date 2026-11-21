@@ -14,11 +14,11 @@ struct PageNumbersSheetTests {
         var style = PageNumberStyle()
         style.skipFrontMatter = false
         style.skippedPages = [PageID()]  // a deleted page
-        #expect(PageNumbersSheet.skippedCount(style: style, content: content, isStoryPage: { _ in false }) == 0)
+        #expect(PageNumbersSheet.skippedCount(style: style, content: content) == 0)
 
         let first = try #require(content.storyPages.first)
         style.skippedPages = [first.id, PageID()]
-        #expect(PageNumbersSheet.skippedCount(style: style, content: content, isStoryPage: { _ in true }) == 1)
+        #expect(PageNumbersSheet.skippedCount(style: style, content: content) == 1)
 
         // Front matter counts when the rule is on.
         var edited = content
@@ -27,14 +27,7 @@ struct PageNumbersSheetTests {
         edited.pages[first.id]?.templateID = frontTemplate.id
         style.skipFrontMatter = true
         style.skippedPages = []
-        #expect(PageNumbersSheet.skippedCount(style: style, content: edited, isStoryPage: { _ in true }) == 1)
-    }
-
-    @Test func skippedCount_withoutContent_filtersDeletedIDs() {
-        var style = PageNumberStyle()
-        let live = PageID()
-        style.skippedPages = [live, PageID()]
-        #expect(PageNumbersSheet.skippedCount(style: style, content: nil, isStoryPage: { $0 == live }) == 1)
+        #expect(PageNumbersSheet.skippedCount(style: style, content: edited) == 1)
     }
 
     @Test func sizeParsesWhatItShows_inACommaDecimalLocale() {

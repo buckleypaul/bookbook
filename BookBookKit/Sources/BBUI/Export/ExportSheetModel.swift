@@ -274,22 +274,9 @@ public final class ExportSheetModel {
         guard canExport else { return }
         guard let url = chooseDestination(suggestedFileName(base: content().book.title)) else { return }
         let options = options
-        isExporting = true
-        progress = ExportProgress(completedUnits: 0, totalUnits: 1)
         result = nil
-        task = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let outcome = try await services.export(options, to: url) { [weak self] in self?.progress = $0 }
-                result = outcome
-            } catch is CancellationError {
-                // Cancelled by the user: nothing to report.
-            } catch {
-                errorMessage = Self.message(for: error)
-            }
-            isExporting = false
-            progress = nil
-            task = nil
+        runJob { model in
+            model.result = try await model.services.export(options, to: url) { [weak model] in model?.progress = $0 }
         }
     }
 
@@ -297,13 +284,20 @@ public final class ExportSheetModel {
     public func startPrint() {
         guard canExport else { return }
         let options = options
+        runJob { try await $0.services.print(options) }
+    }
+
+    /// Runs an export or a print as `task`: the sheet shows progress meanwhile, a failure goes
+    /// to `errorMessage`, and a cancel by the user reports nothing.
+    private func runJob(_ work: @escaping @MainActor (ExportSheetModel) async throws -> Void) {
         isExporting = true
         progress = ExportProgress(completedUnits: 0, totalUnits: 1)
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                try await services.print(options)
+                try await work(self)
             } catch is CancellationError {
+                // Cancelled by the user: nothing to report.
             } catch {
                 errorMessage = Self.message(for: error)
             }

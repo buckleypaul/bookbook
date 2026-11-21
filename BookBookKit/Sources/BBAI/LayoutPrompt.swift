@@ -17,11 +17,10 @@ public enum LayoutPrompt {
         }.joined(separator: "\n\n")
 
         var values = setupValues(kind: kind, pageSetup: pageSetup)
-        values["description"] = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        values["description"] = description.trimmed
         values["examples"] = examplesText.isEmpty ? "" : "Examples of the output format:\n\n" + examplesText
-        let user = PromptTemplates.render(PromptTemplates.text(for: "user", set: set) ?? "", values)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return LayoutRequest(model: model, system: PromptTemplates.text(for: "system", set: set) ?? "", user: user)
+        let prompt = PromptTemplates.textPrompt(set: set, user: "user", values)
+        return LayoutRequest(model: model, system: prompt.system, user: prompt.user)
     }
 
     /// Renders a revision of `current` in the Layouts chat: the current layout as the schema's
@@ -29,14 +28,13 @@ public enum LayoutPrompt {
     /// the new instruction and the page setup. Same system prompt and schema as `request`.
     public static func revisionRequest(instruction: String, history: [String], current: Template,
                                        pageSetup: PageSetup, model: CatalogTextModel) -> LayoutRequest {
-        let earlier = history.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        let earlier = history.map(\.trimmed).filter { !$0.isEmpty }
         var values = setupValues(kind: current.kind, pageSetup: pageSetup)
         values["current"] = json(draft(from: current, pageSetup: pageSetup))
-        values["history"] = earlier.isEmpty ? "(none)" : earlier.map { "- \($0)" }.joined(separator: "\n")
-        values["instruction"] = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
-        let user = PromptTemplates.render(PromptTemplates.text(for: "revise", set: set) ?? "", values)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return LayoutRequest(model: model, system: PromptTemplates.text(for: "system", set: set) ?? "", user: user)
+        values["history"] = PromptTemplates.bulletList(earlier)
+        values["instruction"] = instruction.trimmed
+        let prompt = PromptTemplates.textPrompt(set: set, user: "revise", values)
+        return LayoutRequest(model: model, system: prompt.system, user: prompt.user)
     }
 
     /// The page-setup placeholders shared by both prompts: kind, size, orientation, margins, bleed.
@@ -102,9 +100,6 @@ public enum LayoutPrompt {
              "textAlignment": nullable(box.textAlignment?.rawValue), "cornerRadius": nullable(box.cornerRadius),
              "backgroundColor": nullable(box.backgroundColor)]
         }
-        let object: [String: Any] = ["name": draft.name, "boxes": boxes]
-        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .prettyPrinted]),
-              let text = String(data: data, encoding: .utf8) else { return "{}" }
-        return text
+        return PromptTemplates.sortedJSON(["name": draft.name, "boxes": boxes])
     }
 }

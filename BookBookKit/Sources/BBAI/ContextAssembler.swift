@@ -1,7 +1,6 @@
 import BBAICore
 import BBModel
 import Foundation
-import Synchronization
 
 /// An image the assembler needs bytes for, in send order (A §7.3, §7.9).
 public struct PlannedImage: Hashable, Sendable {
@@ -334,7 +333,7 @@ public enum ContextAssembler {
         var styleText = style.visualDescription.trimmed
         if let first = styleIndexes.first, let last = styleIndexes.last {
             let range = first == last ? "Image \(first) is a style reference" : "Images \(first)–\(last) are style references"
-            let note = PromptTemplates.render(PromptTemplates.text(for: "style-references") ?? "{{range}}.", ["range": range])
+            let note = PromptTemplates.render(file: "style-references", fallback: "{{range}}.", ["range": range])
             styleText = styleText.isEmpty ? note : styleText + " " + note
         }
         let isRefinement = sent.first?.plan.role == .base
@@ -349,8 +348,7 @@ public enum ContextAssembler {
         let legend = sent.enumerated().map { index, entry in
             let name = entry.plan.asset.flatMap { content.assets[$0]?.name } ?? ""
             let key = isDecoration && entry.plan.role == .base ? "decoration-legend-base" : "legend-\(entry.plan.role.rawValue)"
-            return PromptTemplates.render(PromptTemplates.text(for: key) ?? "Image {{n}}.",
-                                          ["n": "\(index + 1)", "name": name])
+            return PromptTemplates.render(file: key, fallback: "Image {{n}}.", ["n": "\(index + 1)", "name": name])
         }.joined(separator: "\n")
         let cast = castLines(prepared.assets, sent: sent.map(\.plan), numbers: numbers)
 
@@ -491,9 +489,9 @@ public enum ContextAssembler {
 
     /// What to draw in an asset session: the asset's one reference image, worded per asset type.
     static func assetSubject(_ asset: Asset) -> String {
-        let template = PromptTemplates.text(for: "asset-reference-\(asset.type.rawValue)") ?? "A reference image of {{name}}."
         // One pass over the template, so a name containing `{{...}}` is never expanded.
-        return PromptTemplates.render(template, ["name": asset.name, "type": asset.type.rawValue])
+        PromptTemplates.render(file: "asset-reference-\(asset.type.rawValue)", fallback: "A reference image of {{name}}.",
+                               ["name": asset.name, "type": asset.type.rawValue])
     }
 
     // MARK: Composition wording
@@ -535,8 +533,7 @@ public enum ContextAssembler {
         let position = (0.5 - box.frame.x) / box.frame.width
         guard position > 0.03, position < 0.97 else { return "" }
         let percent = Int((position * 100).rounded())
-        return " " + PromptTemplates.render(PromptTemplates.text(for: "fold") ?? "{{percent}}%",
-                                            ["percent": "\(percent)"])
+        return " " + PromptTemplates.render(file: "fold", fallback: "{{percent}}%", ["percent": "\(percent)"])
     }
 
     /// Leading-space sentence about the trimmed outer edge when the box bleeds, or "". Geometry follows
@@ -574,7 +571,7 @@ public enum ContextAssembler {
         case (true, false): area = "the central \(percent(safeW))% horizontally"
         default: area = "the central \(percent(safeH))% vertically"
         }
-        return " " + PromptTemplates.render(PromptTemplates.text(for: "safe-area") ?? "{{area}}", ["area": area])
+        return " " + PromptTemplates.render(file: "safe-area", fallback: "{{area}}", ["area": area])
     }
 
     private static func describeRegion(_ r: NormalizedRect) -> String {
@@ -608,48 +605,5 @@ extension Page {
             .map { $0.trimmed }
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
-    }
-}
-
-extension String {
-    fileprivate var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
-}
-
-/// Versioned prompt text files in `Resources/Prompts/<version>/<key>.txt` with `{{name}}` substitution.
-enum PromptTemplates {
-    static let version = "image-v1"
-
-    /// Loaded files by `set/key`, misses included. The bundle is read-only, so entries never go stale.
-    private static let cache = Mutex<[String: String?]>([:])
-
-    /// The trimmed text of `Prompts/<set>/<key>.txt`, or nil if the file is missing. Cached.
-    static func text(for key: String, set: String = version) -> String? {
-        let path = "\(set)/\(key)"
-        if let cached = cache.withLock({ $0[path] }) { return cached }
-        var text: String?
-        if let url = Bundle.module.resourceURL?.appendingPathComponent("Prompts/\(path).txt"),
-           let contents = try? String(contentsOf: url, encoding: .utf8) {
-            text = contents.trimmingCharacters(in: .newlines)
-        }
-        cache.withLock { $0[path] = .some(text) }
-        return text
-    }
-
-    /// One left-to-right scan, so substituted text (a name containing `{{name}}`) is never re-expanded.
-    static func render(_ template: String, _ values: [String: String]) -> String {
-        var out = ""
-        var rest = Substring(template)
-        while let open = rest.range(of: "{{") {
-            out += rest[..<open.lowerBound]
-            let afterOpen = rest[open.upperBound...]
-            if let close = afterOpen.range(of: "}}"), let value = values[String(afterOpen[..<close.lowerBound])] {
-                out += value
-                rest = afterOpen[close.upperBound...]
-            } else {
-                out += "{{"
-                rest = afterOpen
-            }
-        }
-        return out + rest
     }
 }

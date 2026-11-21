@@ -30,16 +30,15 @@ public enum ConsistencyPrompt {
         let assetLines = assets.isEmpty
             ? "(none)"
             : assets.map { asset in
-                let detail = asset.description.trimmingCharacters(in: .whitespacesAndNewlines)
+                let detail = asset.description.trimmed
                 return detail.isEmpty ? "- \(asset.name)" : "- \(asset.name): \(detail)"
             }.joined(separator: "\n")
-        let style = styleDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        let user = PromptTemplates.render(PromptTemplates.text(for: "user", set: set) ?? "", [
+        let style = styleDescription.trimmed
+        return PromptTemplates.textPrompt(set: set, user: "user", [
             "images": images,
             "assets": assetLines,
             "style": style.isEmpty ? "(not described)" : style,
-        ]).trimmingCharacters(in: .whitespacesAndNewlines)
-        return (PromptTemplates.text(for: "system", set: set) ?? "", user)
+        ])
     }
 
     /// The one-click fix message (A §7.8): "Keep everything the same, but: make Pip's scarf red
@@ -52,9 +51,9 @@ public enum ConsistencyPrompt {
     }
 
     private static func clause(_ difference: ConsistencyDifference) -> String? {
-        let name = difference.asset?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let aspect = difference.aspect.trimmingCharacters(in: .whitespacesAndNewlines)
-        let expected = difference.expected.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = difference.asset?.trimmed ?? ""
+        let aspect = difference.aspect.trimmed
+        let expected = difference.expected.trimmed
         let subject: String
         if name.isEmpty {
             subject = aspect.isEmpty ? "" : "the \(aspect)"

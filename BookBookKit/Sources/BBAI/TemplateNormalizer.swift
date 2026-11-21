@@ -28,7 +28,7 @@ public enum TemplateNormalizer {
             if let box = normalize(raw, area: area, xLines: lines.x, yLines: lines.y) { boxes.append(box) }
         }
         guard !boxes.isEmpty else { throw .noBoxes }
-        let trimmed = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = draft.name.trimmed
         return Template(name: trimmed.isEmpty ? fallbackName : trimmed, kind: kind, boxes: boxes)
     }
 

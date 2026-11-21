@@ -80,7 +80,7 @@ public final class TextStyleModel {
 
     /// The Settings layout model (text styling uses the same text model).
     public func model(_ app: AppModel) -> CatalogTextModel? {
-        app.catalog.textModel(provider: app.textStyleProvider?.id ?? .openai, id: app.preferences.defaultTemplateModelID)
+        app.defaultTextModel(for: app.textStyleProvider?.id)
     }
 
     // MARK: Requests and estimates
@@ -93,7 +93,7 @@ public final class TextStyleModel {
         guard !text.isEmpty, let model = model(app), let page = content.pages[key.page],
               let template = content.template(for: page), let box = template.box(key.box),
               case .text = box.content else { return nil }
-        let rect = PageGeometry(setup: content.style.pageSetup, kind: template.kind).renderRect(for: box)
+        let rect = PageGeometry.drawGeometry(for: page, in: content).renderRect(for: box)
         let current = snapshot(for: key)
         let boxText = content.displayedText(page: page, box: box)?.plainText ?? ""
         return backend.buildRequest(text, boxText, box.role, PointSize(width: rect.width, height: rect.height),
@@ -166,7 +166,7 @@ public final class TextStyleModel {
         guard let model = model(app) else {
             return fail(FailureAdvice(
                 headline: "The text model isn't available",
-                explanation: "“\(app.preferences.defaultTemplateModelID)” isn't in the model list. Choose another layout model in Settings."))
+                explanation: app.missingTextModelAdvice))
         }
         guard document.isEditable else {
             return fail(FailureAdvice(headline: "Couldn't style the text",
@@ -185,14 +185,12 @@ public final class TextStyleModel {
         do throws(ProviderError) {
             result = try await provider.styleText(request)
         } catch {
-            let rule = QueueLedgerRule.forFailure(error)
+            let cost = await app.recordTextModelFailure(error, kind: .textStyle, model: model, provider: provider.id,
+                                                        target: target, estimate: estimate, in: document.id)
             var call: TextStyleCall?
-            if rule != QueueLedgerRule.none {
+            if QueueLedgerRule.forFailure(error) != QueueLedgerRule.none {
                 call = TextStyleCall(provider: provider.id, model: model.id, system: request.system, user: request.user)
-            }
-            if let charge = rule.charge {
-                call?.cost = await recordCost(app, model: model, provider: provider.id, target: target,
-                                              estimate: estimate, charge)
+                call?.cost = cost
             }
             if error == .cancelled {
                 states[key] = .idle
@@ -201,9 +199,11 @@ public final class TextStyleModel {
             }
             return
         }
-        let costID = await recordCost(app, model: model, provider: provider.id, target: target, estimate: estimate,
-                                      .completed(usage: result.usage, provider: provider.id, model: model.id,
-                                                 pricing: app.prices.calculator))
+        let costID = await app.recordTextModelCost(
+            kind: .textStyle, model: model, provider: provider.id, target: target, estimate: estimate,
+            charge: .completed(usage: result.usage, provider: provider.id, model: model.id,
+                               pricing: app.prices.calculator),
+            in: document.id)
         let call = TextStyleCall(provider: provider.id, model: model.id, system: request.system, user: request.user,
                                  parametersSent: result.parametersSent, usage: result.usage, cost: costID)
         let normalized = backend.normalize(result.draft, fonts, current)
@@ -315,7 +315,7 @@ public final class TextStyleModel {
             return TextStyleSnapshot(fontFamily: t.bodyFont.postScriptName, fontSize: t.bodySize, textColor: t.color,
                                      alignment: t.alignment, textInset: 0, panelColor: nil, decoration: nil)
         }
-        let rect = PageGeometry(setup: content.style.pageSetup, kind: template.kind).renderRect(for: box)
+        let rect = PageGeometry.drawGeometry(for: page, in: content).renderRect(for: box)
         let appearance = TextBoxAppearance.resolve(box: box, style: style, pageID: key.page, content: content,
                                                    renderSize: rect.size)
         let applied = content.appliedTextStyle(page: key.page, box: key.box)
@@ -325,15 +325,6 @@ public final class TextStyleModel {
             fontSize: appearance.typography.bodySize, textColor: appearance.typography.color,
             alignment: appearance.typography.alignment, textInset: applied?.styling.insetFraction ?? 0,
             panelColor: appearance.background, decoration: applied?.version.textStyle?.decorationPrompt)
-    }
-
-    private func recordCost(_ app: AppModel, model: CatalogTextModel, provider: ProviderID, target: GenerationTarget,
-                            estimate: CostEstimate, _ charge: LedgerCharge) async -> CostRecordID {
-        let record = CostRecord(at: app.now(), kind: .textStyle, provider: provider, model: model.id, quality: nil,
-                                target: target, charge: charge, estimate: estimate,
-                                currentPriceListAsOf: app.prices.current.asOf)
-        await app.openBooks.recordCost(record, in: document.id)
-        return record.id
     }
 }
 

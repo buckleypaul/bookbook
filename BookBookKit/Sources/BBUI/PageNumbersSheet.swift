@@ -47,8 +47,8 @@ struct PageNumbersSheet: View {
     @State private var startText: String
 
     /// The book when the sheet opened, for counting skipped pages (front matter needs each
-    /// page's template role). Without it only individually skipped pages are counted.
-    let content: BookContent?
+    /// page's template role).
+    let content: BookContent
     /// The family the picker showed on open; unchanged means the stored face stays as it was.
     private let initialFamily: String?
 
@@ -74,7 +74,7 @@ struct PageNumbersSheet: View {
         return v
     }
 
-    init(pages: PagesController, style: PageNumberStyle, content: BookContent? = nil) {
+    init(pages: PagesController, style: PageNumberStyle, content: BookContent) {
         self.pages = pages
         self.content = content
         let initialFamily = style.fontFamily.map { FontFamilies.family(of: $0) ?? $0 }
@@ -87,16 +87,15 @@ struct PageNumbersSheet: View {
 
     /// Pages without a number: individually skipped ones that still exist, plus front matter
     /// when that rule is on. The cover and deleted pages never count.
-    static func skippedCount(style: PageNumberStyle, content: BookContent?, isStoryPage: (PageID) -> Bool) -> Int {
-        guard let content else { return style.skippedPages.filter(isStoryPage).count }
-        return content.storyPages.filter { page in
+    static func skippedCount(style: PageNumberStyle, content: BookContent) -> Int {
+        content.storyPages.filter { page in
             style.skippedPages.contains(page.id)
                 || (style.skipFrontMatter && content.template(for: page)?.pageRole?.isFrontMatter == true)
         }.count
     }
 
     var body: some View {
-        let skipped = Self.skippedCount(style: draft, content: content, isStoryPage: { pages.isStoryPage($0) })
+        let skipped = Self.skippedCount(style: draft, content: content)
         VStack(alignment: .leading, spacing: 12) {
             CrayonHeader("Page Numbers", color: Crayon.sky)
             Form {

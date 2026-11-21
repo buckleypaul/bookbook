@@ -625,11 +625,8 @@ struct SessionPanel: View {
             let document = document
             Task {
                 do throws(RegionEditRefusal) {
-                    _ = try await app.generateRegionEdit(
-                        prompt: request.intent.messageText, quality: request.intent.quality,
-                        includeStoryText: request.intent.includeStoryText, refines: request.version.id,
-                        drawing: request.drawing, attachedReferences: request.intent.attachedReferences,
-                        target: target, in: document)
+                    _ = try await app.generateRegionEdit(request.intent, drawing: request.drawing,
+                                                         target: target, in: document)
                 } catch {
                     problem = error.message
                 }

@@ -51,7 +51,7 @@ extension AppModel {
     /// The estimate for checking one version on demand (any version, imported included).
     /// `.unknown` when there's no vision model; a book that isn't open, or a version that can't
     /// be resolved, is estimated with a conservative image count.
-    public func consistencyCheckEstimate(bookID: BookID, sessionID: SessionID, versionID: VersionID) -> CostEstimate {
+    public func consistencyCheckEstimate(bookID: BookID, versionID: VersionID) -> CostEstimate {
         guard let model = consistencyModel else { return .unknown }
         let count = openBooks.document(for: bookID).flatMap {
             ConsistencyAssembler.plan(version: versionID, content: $0.content, provider: model.provider)?.imageCount
@@ -86,17 +86,12 @@ extension AppModel {
         let intent = GenerationIntent(messageText: "", refines: versionID, provider: model.provider, model: model.id,
                                       quality: version.provenance?.intent.quality ?? .draft,
                                       includeStoryText: version.provenance?.intent.includeStoryText ?? true)
-        var display: QueueItemDisplay
-        switch target {
-        case let .pageBox(page, box): display = DraftAllPlanner.display(page: page, box: box, in: content)
-        case .asset: display = AssetQueueDisplay.display(target.owner, in: content)
-        case let .textBox(page, box): display = DraftAllPlanner.textStyleDisplay(page: page, box: box, in: content)
-        }
+        var display = AssetQueueDisplay.display(for: target, in: content)
         display.boxLabel = ConsistencyQueueLabel.label(for: display.boxLabel)
         let item = QueueItem(bookID: bookID, target: target,
                              messageID: session.messages.first { $0.producedVersion == versionID }?.id ?? MessageID(),
                              intent: intent,
-                             estimate: consistencyCheckEstimate(bookID: bookID, sessionID: sessionID, versionID: versionID),
+                             estimate: consistencyCheckEstimate(bookID: bookID, versionID: versionID),
                              display: display, enqueuedAt: now(), kind: .consistencyCheck(versionID))
         queueOperation { await $0.enqueue([item], position: .front) }
         return true

@@ -20,6 +20,7 @@ struct TextStylePanel: View {
     @State private var selection = SessionVersionSelection()
     @State private var detailsExpanded = false
     @State private var quality: QualityLevel?
+    private var chosenQuality: QualityLevel { quality ?? app.defaults.quality }
     @State private var estimate = CostEstimate.unknown
     @State private var pendingDelete: VersionID?
     @State private var confirmReset = false
@@ -252,13 +253,13 @@ struct TextStylePanel: View {
                       text: $prompt, axis: .vertical)
                 .crayonComposerField()
                 .onSubmit { style() }
-                .onChange(of: EstimateKey(prompt: prompt, quality: quality ?? app.defaults.quality, base: base,
+                .onChange(of: EstimateKey(prompt: prompt, quality: chosenQuality, base: base,
                                           model: app.defaults.model, shown: shownID), initial: true) { _, key in
                     estimate = model.estimate(key.prompt.isEmpty ? "style" : key.prompt, quality: key.quality,
                                               refines: key.base, for: self.key, app: app)
                 }
             HStack {
-                QualityPicker(selection: Binding(get: { quality ?? app.defaults.quality }, set: { quality = $0 }),
+                QualityPicker(selection: Binding(get: { chosenQuality }, set: { quality = $0 }),
                               showsLabel: false)
                 Spacer(minLength: 0)
             }
@@ -286,7 +287,7 @@ struct TextStylePanel: View {
     private func style() {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard app.aiBlocker(for: document) == nil, !text.isEmpty, !model.isDesigning(key) else { return }
-        confirmFlow.start(.style(text, quality: quality ?? app.defaults.quality, refines: baseID(session)))
+        confirmFlow.start(.style(text, quality: chosenQuality, refines: baseID(session)))
     }
 
     private var confirmFlow: GenerationConfirmFlow<PendingStyle> {

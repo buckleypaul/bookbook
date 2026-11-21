@@ -169,7 +169,7 @@ struct ConsistencyFlowTests {
         defer { s.h.tearDown() }
         let (document, page, box, session) = try await openBook(s)
         let imported = try await importVersion(into: session, page: page, box: box, in: document)
-        #expect(s.app.consistencyCheckEstimate(bookID: document.id, sessionID: session, versionID: imported.id).amount
+        #expect(s.app.consistencyCheckEstimate(bookID: document.id, versionID: imported.id).amount
             == Decimal(1) / 1000)
         s.app.pauseQueue()
         #expect(s.app.checkConsistency(bookID: document.id, sessionID: session, versionID: imported.id))

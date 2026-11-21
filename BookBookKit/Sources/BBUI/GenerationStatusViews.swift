@@ -52,7 +52,7 @@ struct MessageStatusLine: View {
                 }
             }
         case let .failed(error):
-            let entry = failedEntry(for: message)
+            let entry = liveEntry(for: message)
             VStack(alignment: .leading, spacing: 6) {
                 if let advice = entry.flatMap({ app.advice(for: $0) }) {
                     FailureAdviceView(advice: advice)
@@ -91,10 +91,6 @@ struct MessageStatusLine: View {
                 }
             }
         }
-    }
-
-    private func failedEntry(for message: Message) -> QueueEntry? {
-        liveEntry(for: message)
     }
 
     /// The queue entry for the message's request, if the queue still has it.

@@ -25,7 +25,7 @@ struct SessionPanel: View {
     @State private var selection = SessionVersionSelection()
     @State private var detailsExpanded = false
     @State private var quality: QualityLevel?
-    @State private var includeStoryText: Bool?
+    @State private var includeStoryText = true
     @State private var attached: [VersionRef] = []
     @State private var showReferencePicker = false
     @State private var pendingDelete: VersionID?
@@ -50,7 +50,7 @@ struct SessionPanel: View {
         selection.base(in: session, placed: placedID)
     }
 
-    private var storyText: Bool { includeStoryText ?? app.defaults.includeStoryText }
+    private var chosenQuality: QualityLevel { quality ?? app.defaults.quality }
 
     /// The attached references whose versions still exist.
     private var liveAttached: [VersionRef] {
@@ -309,12 +309,12 @@ struct SessionPanel: View {
                     .disabled(!document.isEditable)
                 }
                 Button(version.consistency == nil ? "Check Consistency" : "Check Again") {
-                    checkThenPerform(.checkConsistency(session: session.id, version: version.id))
+                    confirmFlow.start(.checkConsistency(session: session.id, version: version.id))
                 }
                 .disabled(reason != nil)
                 .help(reason ?? Self.withEstimate(
                     "Compare this picture with the images of the assets in it.",
-                    app.consistencyCheckEstimate(bookID: document.id, sessionID: session.id, versionID: version.id)))
+                    app.consistencyCheckEstimate(bookID: document.id, versionID: version.id)))
             }
             .controlSize(.small)
             .buttonBorderShape(.capsule)
@@ -338,7 +338,7 @@ struct SessionPanel: View {
     private func startConsistencyFix(_ version: Version, sessionID: SessionID) {
         guard let intent = app.consistencyFixIntent(bookID: document.id, sessionID: sessionID, versionID: version.id)
         else { return }
-        checkThenPerform(.fixConsistency(intent))
+        confirmFlow.start(.fixConsistency(intent))
     }
 
     /// Why "Edit Region…" is unavailable for `version`, or nil when it can run.
@@ -361,7 +361,7 @@ struct SessionPanel: View {
     /// `submitRegionEdit` sends and the region editor's estimate prices.
     private func regionEditIntent(_ version: Version, prompt text: String) -> GenerationIntent {
         app.generationIntent(prompt: MentionText.tokenizing(text, assets: Array(content.assets.values)),
-                             quality: quality ?? app.defaults.quality, includeStoryText: storyText,
+                             quality: chosenQuality, includeStoryText: includeStoryText,
                              refines: version.id, attachedReferences: liveAttached)
     }
 
@@ -373,7 +373,7 @@ struct SessionPanel: View {
 
     private func submitRegionEdit(_ version: Version, drawing: RegionMaskDrawing, prompt text: String) {
         let request = RegionEditRequest(version: version, drawing: drawing, intent: regionEditIntent(version, prompt: text))
-        checkThenPerform(.regionEdit(request))
+        confirmFlow.start(.regionEdit(request))
     }
 
     private func choose(_ version: Version) {
@@ -465,8 +465,8 @@ struct SessionPanel: View {
                         generate(refining: base)
                     }
                 }
-                .onChange(of: EstimateKey(prompt: storedPrompt, quality: quality ?? app.defaults.quality,
-                                          story: storyText, base: base, attached: liveAttached,
+                .onChange(of: EstimateKey(prompt: storedPrompt, quality: chosenQuality,
+                                          story: includeStoryText, base: base, attached: liveAttached,
                                           model: app.defaults.model), initial: true) { _, key in
                     estimate = app.estimate(prompt: key.prompt, quality: key.quality, includeStoryText: key.story,
                                             refines: key.base, attachedReferences: key.attached, target: target,
@@ -481,7 +481,7 @@ struct SessionPanel: View {
             // The inspector is narrow (about 260 pt) and doesn't widen with the window: one control
             // per row wherever a label could otherwise wrap.
             HStack(spacing: 8) {
-                QualityPicker(selection: Binding(get: { quality ?? app.defaults.quality }, set: { quality = $0 }),
+                QualityPicker(selection: Binding(get: { chosenQuality }, set: { quality = $0 }),
                               showsLabel: false)
                 Button {
                     showImporter = true
@@ -494,8 +494,7 @@ struct SessionPanel: View {
                 .disabled(!document.isEditable)
                 Spacer(minLength: 0)
             }
-            Toggle("Include story text", isOn: Binding(get: { includeStoryText ?? app.defaults.includeStoryText },
-                                                       set: { includeStoryText = $0 }))
+            Toggle("Include story text", isOn: $includeStoryText)
                 .toggleStyle(.checkbox)
                 .font(.caption)
             ComposerSendRow(modelName: app.defaultModelName, estimate: app.isOnline ? estimate : nil) {
@@ -554,23 +553,20 @@ struct SessionPanel: View {
 
     private func generate(refining base: VersionID?) {
         guard panelBlocker == nil, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let intent = app.generationIntent(prompt: storedPrompt, quality: quality ?? app.defaults.quality,
-                                          includeStoryText: storyText, refines: base,
+        let intent = app.generationIntent(prompt: storedPrompt, quality: chosenQuality,
+                                          includeStoryText: includeStoryText, refines: base,
                                           attachedReferences: liveAttached)
-        checkThenPerform(.generate(intent))
+        confirmFlow.start(.generate(intent))
     }
 
     /// "Regenerate with Same Settings" goes through the same checks as Generate.
     private func regenerate(_ version: Version) {
         guard panelBlocker == nil, version.provenance != nil else { return }
-        checkThenPerform(.regenerate(version))
+        confirmFlow.start(.regenerate(version))
     }
 
-    /// The real-person notice first (once per provider and book, A §11), then the cost decision.
-    private func checkThenPerform(_ action: PendingGeneration) {
-        confirmFlow.start(action)
-    }
-
+    /// The real-person notice first (once per provider and book, A §11), then the cost decision:
+    /// `confirmFlow.start`.
     private var confirmFlow: GenerationConfirmFlow<PendingGeneration> {
         GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
                               notice: { noticeProvider(for: $0) },
@@ -601,8 +597,8 @@ struct SessionPanel: View {
             app.regenerateEstimate(version, target: target, in: document) ?? .unknown
         case let .regionEdit(request):
             app.estimate(for: request.intent, target: target, in: document)
-        case let .checkConsistency(sessionID, versionID):
-            app.consistencyCheckEstimate(bookID: document.id, sessionID: sessionID, versionID: versionID)
+        case let .checkConsistency(_, versionID):
+            app.consistencyCheckEstimate(bookID: document.id, versionID: versionID)
         }
     }
 

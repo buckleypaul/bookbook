@@ -39,14 +39,7 @@ extension AppModel {
         if case .textBox = item.target { item.intent.checkConsistency = false }
         item.estimate = ownEstimate(item.intent, target: item.target, content: content)
         item.consistencyFollowUp = consistencyFollowUp(for: item.intent, target: item.target, content: content)
-        switch item.target {
-        case let .pageBox(page, box):
-            item.display = DraftAllPlanner.display(page: page, box: box, in: content)
-        case .asset:
-            item.display = AssetQueueDisplay.display(item.target.owner, in: content)
-        case let .textBox(page, box):
-            item.display = DraftAllPlanner.textStyleDisplay(page: page, box: box, in: content)
-        }
+        item.display = AssetQueueDisplay.display(for: item.target, in: content)
         item.enqueuedAt = now()
         return item
     }

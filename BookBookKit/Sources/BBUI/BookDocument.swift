@@ -116,6 +116,7 @@ public final class BookDocument {
         }
         // Imported fonts (A §8.3): every file in `fonts/` is registered for this process.
         FontRegistry.register(store.fontFileURLs())
+        FontFamilies.invalidate()
         refreshMissingFonts()
         fontsObserver = NotificationCenter.default.addObserver(
             forName: Self.fontsRegisteredNotification, object: nil, queue: nil

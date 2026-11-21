@@ -21,6 +21,10 @@ enum FontFamilies {
 
     static var all: [String] { all() }
 
+    /// Forgets the list. For registrations that post neither notification: a book registering
+    /// its own fonts as it opens.
+    static func invalidate() { cached = nil }
+
     private static var cached: [String]?
     private static var cachedRevision = 0
 

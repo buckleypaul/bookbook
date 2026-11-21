@@ -38,16 +38,13 @@ final class StyleTabModel {
     /// Fills the description and negative guidance from `preset`. `nil` only clears the preset
     /// ID, leaving the text as it was. References are kept.
     func choosePreset(_ preset: StylePreset?) {
-        var v = visual
         guard let preset else {
+            var v = visual
             v.presetID = nil
             commit(v)
             return
         }
-        v.presetID = preset.id
-        v.visualDescription = preset.visualDescription
-        v.negativeGuidance = preset.negativeGuidance ?? StyleGuide.defaultNegativeGuidance
-        commit(v)
+        commit(visual.applying(preset))
     }
 
     func setDescription(_ text: String) {

@@ -235,9 +235,7 @@ struct BookEditor: View {
                                onDropImageFiles: { page, box, urls in importDroppedImages(urls, page: page, box: box) })
                         // Read-only: no text editing or box selection (the canvas is AppKit).
                         .allowsHitTesting(document.isEditable)
-                        .alert("Couldn't use that image", isPresented: $canvasImportError.isPresent()) {
-                            Button("OK", role: .cancel) {}
-                        } message: { Text(canvasImportError ?? "") }
+                        .messageAlert("Couldn't use that image", $canvasImportError)
                 } else {
                     CrayonEmptyState("No Page Selected", systemImage: "doc", color: Crayon.sky,
                                      message: "Choose a page, or add one with +.")

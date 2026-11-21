@@ -53,9 +53,10 @@ struct RegionEditTests {
     @Test func generateRegionEdit_storesTheMaskAndQueuesTheIntent() async throws {
         let s = try setup()
         defer { s.h.tearDown() }
-        let id = try await s.app.generateRegionEdit(prompt: " make the scarf yellow ", quality: .draft,
-                                                    includeStoryText: false, refines: s.base.id,
-                                                    drawing: Self.drawing, target: s.target, in: s.document)
+        let id = try await s.app.generateRegionEdit(
+            s.app.generationIntent(prompt: " make the scarf yellow ", quality: .draft, includeStoryText: false,
+                                   refines: s.base.id),
+            drawing: Self.drawing, target: s.target, in: s.document)
         let mask = try Self.expectedMaskRef()
         #expect(FileManager.default.fileExists(atPath: s.document.store.imageURL(for: mask).path))
         let message = try #require(messages(s).first)
@@ -75,9 +76,10 @@ struct RegionEditTests {
         defer { s.h.tearDown() }
         func refusal(_ drawing: RegionMaskDrawing, prompt: String = "yellow") async -> RegionEditRefusal? {
             do {
-                _ = try await s.app.generateRegionEdit(prompt: prompt, quality: .draft, includeStoryText: false,
-                                                       refines: s.base.id, drawing: drawing, target: s.target,
-                                                       in: s.document)
+                _ = try await s.app.generateRegionEdit(
+                    s.app.generationIntent(prompt: prompt, quality: .draft, includeStoryText: false,
+                                           refines: s.base.id),
+                    drawing: drawing, target: s.target, in: s.document)
                 return nil
             } catch {
                 return error

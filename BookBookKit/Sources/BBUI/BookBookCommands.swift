@@ -146,6 +146,7 @@ public struct BookBookCommands: Commands {
         .disabled(!editable || !story)
         Divider()
         Button("Draft All Empty Boxes…") { draftAll?.wrappedValue = true }
-            .disabled(!editable || draftAll == nil || !app.hasOpenAIKey || !app.isOnline)
+            .disabled(draftAll == nil || UnavailableText.blocker(isEditable: editable, isOnline: app.isOnline,
+                                                                 hasKey: app.hasOpenAIKey) != nil)
     }
 }

@@ -135,7 +135,7 @@ public final class TemplateChatModel {
 
     /// The Settings default layout model, when the catalog has it.
     public func model(_ app: AppModel) -> CatalogTextModel? {
-        app.catalog.textModel(provider: app.layoutProvider?.id ?? .openai, id: app.preferences.defaultTemplateModelID)
+        app.defaultTextModel(for: app.layoutProvider?.id)
     }
 
     /// The rendered request for `instruction` against the template as it is now; nil without
@@ -195,7 +195,7 @@ public final class TemplateChatModel {
         guard let model = model(app) else {
             return fail(id, instruction: text, isRetry: isRetry, FailureAdvice(
                 headline: "The layout model isn't available",
-                explanation: "“\(app.preferences.defaultTemplateModelID)” isn't in the model list. Choose another layout model in Settings."))
+                explanation: app.missingTextModelAdvice))
         }
         guard let request = request(text, for: id, app: app, isRetry: isRetry) else { return }
         let estimate = backend.estimate(request, app.prices.current)
@@ -213,17 +213,18 @@ public final class TemplateChatModel {
         do throws(ProviderError) {
             let result = try await provider.generateLayout(request)
             let sent = Self.record(request, parametersSent: result.parametersSent)
-            await recordCost(app, model: model, provider: provider.id, estimate: estimate, .completed(
-                usage: result.usage, provider: provider.id, model: model.id, pricing: app.prices.calculator))
+            await app.recordTextModelCost(
+                kind: .template, model: model, provider: provider.id, target: nil, estimate: estimate,
+                charge: .completed(usage: result.usage, provider: provider.id, model: model.id,
+                                   pricing: app.prices.calculator),
+                in: document.id)
             apply(result.draft, to: id, instruction: text, sent: sent)
         } catch {
             // The queue's rule (A §7.10), so a layout request is billed like an image request.
-            let rule = QueueLedgerRule.forFailure(error)
+            let cost = await app.recordTextModelFailure(error, kind: .template, model: model, provider: provider.id,
+                                                        target: nil, estimate: estimate, in: document.id)
             // No ledger line means nothing left the machine (no key, offline): nothing to show as sent.
-            let sent = rule == QueueLedgerRule.none ? nil : Self.record(request, parametersSent: [:])
-            if let charge = rule.charge {
-                await recordCost(app, model: model, provider: provider.id, estimate: estimate, charge)
-            }
+            let sent = cost == nil ? nil : Self.record(request, parametersSent: [:])
             if error == .cancelled {
                 append(id, TemplateChatMessage(role: .assistant, text: "Stopped.", sent: sent, retryInstruction: text))
             } else {
@@ -311,8 +312,8 @@ public final class TemplateChatModel {
     }
 
     static func summary(_ template: Template, designed: Bool) -> String {
-        let images = template.boxes.filter { if case .image = $0.content { true } else { false } }.count
-        let texts = template.boxes.count - images
+        let images = template.imageBoxes.count
+        let texts = template.textBoxes.count
         var parts: [String] = []
         if images > 0 { parts.append(images == 1 ? "1 image box" : "\(images) image boxes") }
         if texts > 0 { parts.append(texts == 1 ? "1 text box" : "\(texts) text boxes") }
@@ -323,13 +324,5 @@ public final class TemplateChatModel {
     private static func record(_ request: LayoutRequest, parametersSent: [String: String]) -> TemplateSentRecord {
         TemplateSentRecord(model: request.model.id, system: request.system, user: request.user,
                            parametersSent: parametersSent)
-    }
-
-    private func recordCost(_ app: AppModel, model: CatalogTextModel, provider: ProviderID, estimate: CostEstimate,
-                            _ charge: LedgerCharge) async {
-        let record = CostRecord(at: app.now(), kind: .template, provider: provider, model: model.id, quality: nil,
-                                target: nil, charge: charge, estimate: estimate,
-                                currentPriceListAsOf: app.prices.current.asOf)
-        await app.openBooks.recordCost(record, in: document.id)
     }
 }

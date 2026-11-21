@@ -124,37 +124,18 @@ private struct TemplateChatThread: View {
 
     @ViewBuilder private var intro: some View {
         if chat.messages(for: id).isEmpty {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "sparkles")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(Crayon.sunflower)
-                    .accessibilityHidden(true)
-                Text(template.boxes.isEmpty
-                     ? "Describe the layout, for example “big picture across the top two-thirds, two lines of text at the bottom in a rounded cream box”."
-                     : "Describe a change to this layout, for example “make the picture full-bleed” or “move the text to the left page”.")
-                    .font(Crayon.font(.callout, weight: .medium))
-                    .foregroundStyle(Crayon.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Crayon.sunflower.opacity(0.12), in: ThreadBubble.shape)
-            .overlay(ThreadBubble.shape.strokeBorder(Crayon.sunflower.opacity(0.5),
-                                                     style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+            ThreadIntroBubble(
+                text: template.boxes.isEmpty
+                    ? "Describe the layout, for example “big picture across the top two-thirds, two lines of text at the bottom in a rounded cream box”."
+                    : "Describe a change to this layout, for example “make the picture full-bleed” or “move the text to the left page”.",
+                systemImage: "sparkles", color: Crayon.sunflower, fillOpacity: 0.12, rimOpacity: 0.5)
         }
     }
 
     @ViewBuilder private func row(_ message: TemplateChatMessage) -> some View {
         switch message.role {
         case .user:
-            Text(message.text)
-                .foregroundStyle(Crayon.ink)
-                .textSelection(.enabled)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Crayon.sky.opacity(0.16), in: ThreadBubble.shape)
-                .overlay(ThreadBubble.shape.strokeBorder(Crayon.sky.opacity(0.35), lineWidth: 1))
+            Text(message.text).threadBubble(Crayon.sky, fillOpacity: 0.16, rimOpacity: 0.35)
         case .assistant:
             reply(message)
         }

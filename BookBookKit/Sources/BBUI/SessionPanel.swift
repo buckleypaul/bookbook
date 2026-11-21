@@ -22,12 +22,10 @@ struct SessionPanel: View {
     private var owner: SessionOwner { .pageBox(pageID, boxID) }
 
     @State private var prompt = ""
-    @State private var selectedVersion: VersionID?
-    /// The `resetEpoch` of a reset that kept versions; the placed version isn't the base while it matches.
-    @State private var freshEpoch: Int?
+    @State private var selection = SessionVersionSelection()
     @State private var detailsExpanded = false
     @State private var quality: QualityLevel?
-    @State private var includeStoryText: Bool?
+    @State private var includeStoryText = true
     @State private var attached: [VersionRef] = []
     @State private var showReferencePicker = false
     @State private var pendingDelete: VersionID?
@@ -49,14 +47,10 @@ struct SessionPanel: View {
 
     /// The version Details and refinement use: the selection if it still exists, else the placed one.
     private func baseID(_ session: Session) -> VersionID? {
-        if let selectedVersion, session.version(selectedVersion) != nil { return selectedVersion }
-        // After Reset Session → Keep Versions the thread starts fresh (PD §8.6): no refining the placed
-        // version until the user clicks one.
-        if freshEpoch == session.resetEpoch { return nil }
-        return placedID.flatMap { session.version($0)?.id }
+        selection.base(in: session, placed: placedID)
     }
 
-    private var storyText: Bool { includeStoryText ?? app.defaults.includeStoryText }
+    private var chosenQuality: QualityLevel { quality ?? app.defaults.quality }
 
     /// The attached references whose versions still exist.
     private var liveAttached: [VersionRef] {
@@ -110,8 +104,7 @@ struct SessionPanel: View {
         .onChange(of: placedID) {
             // An undo (or any other change) moved the placement: a stale selection would refine a
             // picture that isn't on the page.
-            selectedVersion = nil
-            freshEpoch = nil
+            selection.placedChanged()
         }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.image]) { result in
             switch result {
@@ -154,11 +147,7 @@ struct SessionPanel: View {
         .problemAlert($problem)
     }
 
-    /// "Delete version 2?"
-    private var deleteTitle: String {
-        let number = pendingDelete.flatMap { id in session?.versionNumber(id) }
-        return number.map { "Delete version \($0)?" } ?? "Delete this version?"
-    }
+    private var deleteTitle: String { SessionPanelState.deleteTitle(pendingDelete, in: session) }
 
     private var deleteMessage: String {
         let placed = pendingDelete != nil && pendingDelete == placedID
@@ -167,27 +156,13 @@ struct SessionPanel: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            CrayonHeader(Self.headerTitle(page: pageID, box: boxID, in: content), color: Crayon.sky)
-            Spacer()
-            Menu {
-                Button("Choose Image…") { showImporter = true }
-                    .disabled(!document.isEditable)
-                Divider()
-                Button("Reset Session…", role: .destructive) { confirmReset = true }
-                    .disabled(!document.isEditable)
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .foregroundStyle(Crayon.inkSoft)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Session actions")
-            .accessibilityLabel("Session actions")
+        SessionPanelHeader(title: Self.headerTitle(page: pageID, box: boxID, in: content), color: Crayon.sky) {
+            Button("Choose Image…") { showImporter = true }
+                .disabled(!document.isEditable)
+            Divider()
+            Button("Reset Session…", role: .destructive) { confirmReset = true }
+                .disabled(!document.isEditable)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(Crayon.paperDeep)
     }
 
     // MARK: Thread
@@ -196,21 +171,8 @@ struct SessionPanel: View {
     private func thread(_ session: Session) -> some View {
         let messages = session.visibleMessages.filter { $0.role == .user }
         if messages.isEmpty {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "sparkles")
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(Crayon.sunflower)
-                    .accessibilityHidden(true)
-                Text("Describe the picture for this box, then press Generate. Or drop in your own image.")
-                    .font(Crayon.font(.callout, weight: .medium))
-                    .foregroundStyle(Crayon.inkSoft)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Crayon.sunflower.opacity(0.12), in: ThreadBubble.shape)
-            .overlay(ThreadBubble.shape.strokeBorder(Crayon.sunflower.opacity(0.5),
-                                                     style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+            ThreadIntroBubble(text: "Describe the picture for this box, then press Generate. Or drop in your own image.",
+                              systemImage: "sparkles", color: Crayon.sunflower, fillOpacity: 0.12, rimOpacity: 0.5)
         }
         ForEach(messages) { message in
             VStack(alignment: .leading, spacing: 5) {
@@ -220,13 +182,7 @@ struct SessionPanel: View {
                 }
                 Text(MentionText.displayText(message.text, assets: content.assets,
                                              fallback: VersionDetailsContent.deletedAssetName))
-                    .foregroundStyle(Crayon.ink)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Crayon.sky.opacity(0.16), in: ThreadBubble.shape)
-                    .overlay(ThreadBubble.shape.strokeBorder(Crayon.sky.opacity(0.35), lineWidth: 1))
+                    .threadBubble(Crayon.sky, fillOpacity: 0.16, rimOpacity: 0.35)
                 ForEach(message.attachedReferences, id: \.self) { ref in
                     if let label = ReferenceSources.chipLabel(ref, in: content) {
                         Label("With \(label)", systemImage: "paperclip")
@@ -353,12 +309,12 @@ struct SessionPanel: View {
                     .disabled(!document.isEditable)
                 }
                 Button(version.consistency == nil ? "Check Consistency" : "Check Again") {
-                    checkThenPerform(.checkConsistency(session: session.id, version: version.id))
+                    confirmFlow.start(.checkConsistency(session: session.id, version: version.id))
                 }
                 .disabled(reason != nil)
                 .help(reason ?? Self.withEstimate(
                     "Compare this picture with the images of the assets in it.",
-                    app.consistencyCheckEstimate(bookID: document.id, sessionID: session.id, versionID: version.id)))
+                    app.consistencyCheckEstimate(bookID: document.id, versionID: version.id)))
             }
             .controlSize(.small)
             .buttonBorderShape(.capsule)
@@ -371,12 +327,7 @@ struct SessionPanel: View {
 
     /// What stops every AI and editing action on this panel (read-only, offline, no key), said once
     /// under the version actions instead of under each one; nil when nothing does.
-    private var panelBlocker: String? {
-        if !document.isEditable { return UnavailableText.readOnly }
-        if !app.isOnline { return UnavailableText.offline }
-        if !app.hasOpenAIKey { return UnavailableText.noKey }
-        return nil
-    }
+    private var panelBlocker: String? { app.aiBlocker(for: document) }
 
     /// A paid action's tooltip with its estimate (PD §5: the estimate is shown before sending).
     static func withEstimate(_ help: String, _ estimate: CostEstimate?) -> String {
@@ -387,7 +338,7 @@ struct SessionPanel: View {
     private func startConsistencyFix(_ version: Version, sessionID: SessionID) {
         guard let intent = app.consistencyFixIntent(bookID: document.id, sessionID: sessionID, versionID: version.id)
         else { return }
-        checkThenPerform(.fixConsistency(intent))
+        confirmFlow.start(.fixConsistency(intent))
     }
 
     /// Why "Edit Region…" is unavailable for `version`, or nil when it can run.
@@ -410,7 +361,7 @@ struct SessionPanel: View {
     /// `submitRegionEdit` sends and the region editor's estimate prices.
     private func regionEditIntent(_ version: Version, prompt text: String) -> GenerationIntent {
         app.generationIntent(prompt: MentionText.tokenizing(text, assets: Array(content.assets.values)),
-                             quality: quality ?? app.defaults.quality, includeStoryText: storyText,
+                             quality: chosenQuality, includeStoryText: includeStoryText,
                              refines: version.id, attachedReferences: liveAttached)
     }
 
@@ -422,24 +373,22 @@ struct SessionPanel: View {
 
     private func submitRegionEdit(_ version: Version, drawing: RegionMaskDrawing, prompt text: String) {
         let request = RegionEditRequest(version: version, drawing: drawing, intent: regionEditIntent(version, prompt: text))
-        checkThenPerform(.regionEdit(request))
+        confirmFlow.start(.regionEdit(request))
     }
 
     private func choose(_ version: Version) {
-        selectedVersion = version.id
-        freshEpoch = nil
+        selection.choose(version.id)
         guard version.id != placedID else { return }
         document.perform(.chooseVersion(page: pageID, box: boxID, version: version.id))
     }
 
     private func delete(_ id: VersionID) {
-        if selectedVersion == id { selectedVersion = nil }
+        selection.deleted(id)
         document.deleteVersion(id, owner: owner)
     }
 
     private func reset(keepVersions: Bool) {
-        selectedVersion = nil
-        freshEpoch = keepVersions ? session.map { $0.resetEpoch + 1 } : nil
+        selection.reset(keepVersions: keepVersions, session: session)
         document.resetSession(owner: owner, keepVersions: keepVersions)
     }
 
@@ -459,7 +408,7 @@ struct SessionPanel: View {
         Task {
             for url in urls {
                 do {
-                    selectedVersion = try await document.importImage(from: url, page: pageID, box: boxID)
+                    selection.selected = try await document.importImage(from: url, page: pageID, box: boxID)
                 } catch {
                     problem = ImageImportFailure.message(for: error)
                 }
@@ -469,9 +418,9 @@ struct SessionPanel: View {
 
     @ViewBuilder
     private func details(_ session: Session) -> some View {
-        if let id = baseID(session) ?? session.versions.last?.id, let version = session.version(id) {
-            DisclosureGroup(isExpanded: $detailsExpanded) {
-                VersionDetailsGrid(version: version, session: session, bookID: document.id, assets: content.assets)
+        if let version = selection.detailsVersion(in: session, placed: placedID) {
+            VersionDetailsDisclosure(isExpanded: $detailsExpanded, version: version, session: session,
+                                     bookID: document.id, assets: content.assets) {
                 if version.provenance != nil {
                     WrappingRow(spacing: 8, lineSpacing: 6) {
                         Button("Regenerate with Same Settings") {
@@ -487,14 +436,7 @@ struct SessionPanel: View {
                     }
                     .padding(.top, 6)
                 }
-            } label: {
-                Text("Version details")
-                    .font(Crayon.font(.subheadline, weight: .bold))
-                    .foregroundStyle(Crayon.ink)
             }
-            .padding(12)
-            .background(Crayon.paperDeep,
-                        in: RoundedRectangle(cornerRadius: Crayon.mediumCornerRadius, style: .continuous))
         }
     }
 
@@ -523,8 +465,8 @@ struct SessionPanel: View {
                         generate(refining: base)
                     }
                 }
-                .onChange(of: EstimateKey(prompt: storedPrompt, quality: quality ?? app.defaults.quality,
-                                          story: storyText, base: base, attached: liveAttached,
+                .onChange(of: EstimateKey(prompt: storedPrompt, quality: chosenQuality,
+                                          story: includeStoryText, base: base, attached: liveAttached,
                                           model: app.defaults.model), initial: true) { _, key in
                     estimate = app.estimate(prompt: key.prompt, quality: key.quality, includeStoryText: key.story,
                                             refines: key.base, attachedReferences: key.attached, target: target,
@@ -539,7 +481,7 @@ struct SessionPanel: View {
             // The inspector is narrow (about 260 pt) and doesn't widen with the window: one control
             // per row wherever a label could otherwise wrap.
             HStack(spacing: 8) {
-                QualityPicker(selection: Binding(get: { quality ?? app.defaults.quality }, set: { quality = $0 }),
+                QualityPicker(selection: Binding(get: { chosenQuality }, set: { quality = $0 }),
                               showsLabel: false)
                 Button {
                     showImporter = true
@@ -552,8 +494,7 @@ struct SessionPanel: View {
                 .disabled(!document.isEditable)
                 Spacer(minLength: 0)
             }
-            Toggle("Include story text", isOn: Binding(get: { includeStoryText ?? app.defaults.includeStoryText },
-                                                       set: { includeStoryText = $0 }))
+            Toggle("Include story text", isOn: $includeStoryText)
                 .toggleStyle(.checkbox)
                 .font(.caption)
             ComposerSendRow(modelName: app.defaultModelName, estimate: app.isOnline ? estimate : nil) {
@@ -562,8 +503,7 @@ struct SessionPanel: View {
                 }
                 .buttonStyle(.crayon)
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!document.isEditable || !app.isOnline || !app.hasOpenAIKey
-                          || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(panelBlocker != nil || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             GenerationSetupNotes()
         }
@@ -612,25 +552,21 @@ struct SessionPanel: View {
     }
 
     private func generate(refining base: VersionID?) {
-        guard document.isEditable, app.hasOpenAIKey, app.isOnline,
-              !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let intent = app.generationIntent(prompt: storedPrompt, quality: quality ?? app.defaults.quality,
-                                          includeStoryText: storyText, refines: base,
+        guard panelBlocker == nil, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let intent = app.generationIntent(prompt: storedPrompt, quality: chosenQuality,
+                                          includeStoryText: includeStoryText, refines: base,
                                           attachedReferences: liveAttached)
-        checkThenPerform(.generate(intent))
+        confirmFlow.start(.generate(intent))
     }
 
     /// "Regenerate with Same Settings" goes through the same checks as Generate.
     private func regenerate(_ version: Version) {
-        guard document.isEditable, app.hasOpenAIKey, app.isOnline, version.provenance != nil else { return }
-        checkThenPerform(.regenerate(version))
+        guard panelBlocker == nil, version.provenance != nil else { return }
+        confirmFlow.start(.regenerate(version))
     }
 
-    /// The real-person notice first (once per provider and book, A §11), then the cost decision.
-    private func checkThenPerform(_ action: PendingGeneration) {
-        confirmFlow.start(action)
-    }
-
+    /// The real-person notice first (once per provider and book, A §11), then the cost decision:
+    /// `confirmFlow.start`.
     private var confirmFlow: GenerationConfirmFlow<PendingGeneration> {
         GenerationConfirmFlow(app: app, document: document, pending: $confirmation,
                               notice: { noticeProvider(for: $0) },
@@ -661,8 +597,8 @@ struct SessionPanel: View {
             app.regenerateEstimate(version, target: target, in: document) ?? .unknown
         case let .regionEdit(request):
             app.estimate(for: request.intent, target: target, in: document)
-        case let .checkConsistency(sessionID, versionID):
-            app.consistencyCheckEstimate(bookID: document.id, sessionID: sessionID, versionID: versionID)
+        case let .checkConsistency(_, versionID):
+            app.consistencyCheckEstimate(bookID: document.id, versionID: versionID)
         }
     }
 
@@ -685,11 +621,8 @@ struct SessionPanel: View {
             let document = document
             Task {
                 do throws(RegionEditRefusal) {
-                    _ = try await app.generateRegionEdit(
-                        prompt: request.intent.messageText, quality: request.intent.quality,
-                        includeStoryText: request.intent.includeStoryText, refines: request.version.id,
-                        drawing: request.drawing, attachedReferences: request.intent.attachedReferences,
-                        target: target, in: document)
+                    _ = try await app.generateRegionEdit(request.intent, drawing: request.drawing,
+                                                         target: target, in: document)
                 } catch {
                     problem = error.message
                 }
@@ -727,86 +660,5 @@ struct SessionPanel: View {
         case fixConsistency(GenerationIntent)
         /// Phase 12: an on-demand check of one version.
         case checkConsistency(session: SessionID, version: VersionID)
-    }
-}
-
-/// The shape of a chat bubble in the session thread: rounded, with a small "tail" corner.
-enum ThreadBubble {
-    static let shape = UnevenRoundedRectangle(topLeadingRadius: Crayon.cornerRadius,
-                                              bottomLeadingRadius: 4,
-                                              bottomTrailingRadius: Crayon.cornerRadius,
-                                              topTrailingRadius: Crayon.cornerRadius,
-                                              style: .continuous)
-}
-
-/// The availability text for "Edit Region…" (PD §8.6: unavailable, with a short explanation).
-enum RegionEditEntry {
-    static func unavailableMessage(isEditable: Bool, isOnline: Bool, hasKey: Bool,
-                                   refusal: RegionEditRefusal?) -> String? {
-        if !isEditable { return RegionEditRefusal.readOnly.message }
-        if let refusal { return refusal.message }
-        if !isOnline { return UnavailableText.offline }
-        if !hasKey { return UnavailableText.noKey }
-        return nil
-    }
-}
-
-/// Which request a cost confirmation guards, so its button names the action (not always "Generate").
-enum CostConfirmKind: Equatable {
-    case generate, regionEdit, fixConsistency, checkConsistency, textStyle, repaint
-
-    var buttonTitle: String {
-        switch self {
-        case .generate: "Generate"
-        case .regionEdit: "Edit Region"
-        case .fixConsistency: "Fix"
-        case .checkConsistency: "Check"
-        case .textStyle: "Style"
-        case .repaint: "Repaint"
-        }
-    }
-
-    /// The cost alert's closing question, without its "?" (`CostText.requestAlert`).
-    var question: String {
-        switch self {
-        case .generate: "Generate this picture"
-        case .regionEdit: "Edit this region"
-        case .fixConsistency: "Fix this picture"
-        case .checkConsistency: "Check this picture"
-        case .textStyle: "Style this text"
-        case .repaint: "Repaint this decoration"
-        }
-    }
-}
-
-extension SessionPanel {
-    /// The panel's title: the box it's for, as the Queue window names it ("Image", "Image 2",
-    /// "Cover Image"). The number is left out when the page has one image box.
-    static func headerTitle(page pageID: PageID, box boxID: BoxID, in content: BookContent) -> String {
-        let display = DraftAllPlanner.display(page: pageID, box: boxID, in: content)
-        let count = content.pages[pageID].flatMap { content.template(for: $0) }?.imageBoxes.count ?? 0
-        let box = count > 1 ? display.boxLabel : "Image"
-        return pageID == content.book.coverPageID ? "Cover \(box)" : box
-    }
-}
-
-/// The panel's pure lookups (testable without a view).
-enum SessionPanelState {
-    /// The owner's session. An asset whose session file is missing (a legacy book) gets an
-    /// empty stand-in, so the panel shows its composer; the first message or import creates
-    /// the real one. Nil when the box or asset is gone.
-    static func session(for owner: SessionOwner, in content: BookContent) -> Session? {
-        guard let id = BookMutations.sessionID(for: owner, in: content) else { return nil }
-        if let session = content.sessions[id] { return session }
-        return owner.assetID == nil ? nil : Session(id: id, owner: owner)
-    }
-
-    /// The placed version (page boxes) or the asset's chosen image.
-    static func placedVersion(for owner: SessionOwner, in content: BookContent) -> VersionID? {
-        switch owner {
-        case let .pageBox(page, box): content.pages[page]?.images[box]?.placement?.versionID
-        case let .asset(asset): content.assets[asset]?.chosen
-        case let .textBox(page, box): content.pages[page]?.textStyles[box]?.versionID
-        }
     }
 }

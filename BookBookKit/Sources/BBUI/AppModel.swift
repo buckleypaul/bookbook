@@ -79,7 +79,7 @@ public final class AppModel {
     /// ID, dismisses itself and calls `windowDidClose`.
     public private(set) var windowCloseRequests: Set<BookID> = []
 
-    @ObservationIgnored private var pendingThisLaunch: Set<QueueItemID> = []
+    @ObservationIgnored var pendingThisLaunch: Set<QueueItemID> = []
     /// Every call into the queue that can change it, in order. Starts with `restore()`, so
     /// nothing is enqueued (and no save can overwrite `queue.json`) before the restore is done.
     @ObservationIgnored private var queueChain: Task<Void, Never>?
@@ -505,112 +505,9 @@ public final class AppModel {
         refreshAvailability()
     }
 
-    // MARK: Generation
-
-    /// "Regenerate with same settings": a new pending message and queue item built from the
-    /// version's stored intent, unchanged (same text, same `refines`), for any target. False for
-    /// versions with no provenance (imported), a target that's gone, or a real-person photo the
-    /// book hasn't acknowledged sending (A §11).
-    @discardableResult
-    public func regenerate(_ version: Version, target: GenerationTarget, in document: BookDocument) -> Bool {
-        guard let intent = (version.provenance?.intent).map(replayed) else { return false }
-        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, target: target,
-                                                           now: now())
-        return enqueue(message, prepared(item, content: document.content), in: document)
-    }
-
-    /// A stored intent replayed now: unchanged, except the consistency follow-up follows today's
-    /// Settings switch (it's captured at enqueue time, A §7.8), and `versionSource` is cleared:
-    /// a replay is a plain generation, not another consistency fix (#18).
-    func replayed(_ intent: GenerationIntent) -> GenerationIntent {
-        var intent = intent
-        intent.checkConsistency = preferences.consistencyCheckEnabled
-        intent.versionSource = nil
-        return intent
-    }
-
-    /// Fills in the item's estimate, display labels and enqueue time (A §7.9, §7.10), and its
-    /// consistency follow-up (A §7.8): `checkConsistency` defaults to the Settings switch.
-    func prepared(_ item: QueueItem, content: BookContent) -> QueueItem {
-        var item = item
-        if item.intent.checkConsistency == nil { item.intent.checkConsistency = preferences.consistencyCheckEnabled }
-        if case .textBox = item.target { item.intent.checkConsistency = false }
-        item.estimate = ownEstimate(item.intent, target: item.target, content: content)
-        item.consistencyFollowUp = consistencyFollowUp(for: item.intent, target: item.target, content: content)
-        switch item.target {
-        case let .pageBox(page, box):
-            item.display = DraftAllPlanner.display(page: page, box: box, in: content)
-        case .asset:
-            item.display = AssetQueueDisplay.display(item.target.owner, in: content)
-        case let .textBox(page, box):
-            item.display = DraftAllPlanner.textStyleDisplay(page: page, box: box, in: content)
-        }
-        item.enqueuedAt = now()
-        return item
-    }
-
-    /// What the user is shown for a generation: its own request plus its consistency follow-up
-    /// when one would be queued (`intent.checkConsistency`, nil = the Settings switch; A §7.10).
-    func estimate(_ intent: GenerationIntent, target: GenerationTarget, content: BookContent) -> CostEstimate {
-        let own = ownEstimate(intent, target: target, content: content)
-        guard let followUp = consistencyFollowUp(for: intent, target: target, content: content) else { return own }
-        return CostEstimate.total([own, followUp.estimate])
-    }
-
-    /// `CostEstimator` on the effective catalog and the current price list for this request
-    /// alone (the queue item's `estimate`); `.unknown` if the model or target can't be resolved
-    /// or the model has no price entry.
-    func ownEstimate(_ intent: GenerationIntent, target: GenerationTarget, content: BookContent) -> CostEstimate {
-        guard let input = CostEstimator.estimateInput(intent: intent, target: target, content: content,
-                                                      catalog: catalog) else { return .unknown }
-        return CostEstimator.estimate(input, priceList: prices.current)
-    }
-
-    /// Whether a message in the session `owner` owns still has a live request (waiting, running
-    /// or retrying), including one put back by Try Again (`QueueSnapshot.entry(answering:in:)`).
-    func isPending(_ message: Message, in owner: SessionOwner) -> Bool {
-        if let id = message.queueItemID, queueSnapshot.entry(for: id) == nil { return pendingThisLaunch.contains(id) }
-        guard let entry = queueSnapshot.entry(answering: message, in: owner) else { return false }
-        if case .failed = entry.state { return false }
-        return true
-    }
-
-    func notePending(_ ids: some Sequence<QueueItemID>) {
-        pendingThisLaunch.formUnion(ids)
-    }
-
-    /// The one path every single-request generation (`generate`, `enqueueGeneration`,
-    /// `regenerate`, region edits) enqueues through. Refuses (false, nothing appended) when the
-    /// request would send a real-person photo to a provider the book hasn't acknowledged (A §11):
-    /// callers show the notice first, but the book can change while the cost alert is up.
-    func enqueue(_ message: Message, _ item: QueueItem, in document: BookDocument) -> Bool {
-        guard realPersonNoticeNeeded(intent: item.intent, target: item.target, in: document) == nil,
-              document.performIrreversible({
-            BookMutations.appendPendingMessage(message, target: item.target, to: &$0)
-        }) else { return false }
-        pendingThisLaunch.insert(item.id)
-        // Chained (after the restore) so presses reach the queue in order.
-        queueOperation { await $0.enqueue([item], position: .end) }
-        return true
-    }
-
-    /// `owner` owns the session the message is in.
-    public func status(of message: Message, in owner: SessionOwner) -> MessageStatus {
-        MessageStatus.resolve(message, in: owner, snapshot: queueSnapshot, pendingThisLaunch: pendingThisLaunch,
-                              deliveryFailures: deliveryFailures) { typicalDuration(for: $0) }
-    }
-
-    /// The model's typical seconds for a queue item: the image model at its quality, or the
-    /// vision model for a consistency check. Nil when the catalog doesn't say.
-    func typicalDuration(for item: QueueItem) -> Double? {
-        let intent = item.intent
-        return item.kind == .image
-            ? catalog.imageModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds[intent.quality]
-            : catalog.textModel(provider: intent.provider, id: intent.model)?.typicalDurationSeconds
-    }
-
-    /// e.g. "GPT Image 2.5 Sunburst".
-    public var defaultModelName: String {
-        catalog.imageModel(provider: defaults.provider, id: defaults.model)?.displayName ?? defaults.model
+    /// What stops an AI request into `document` right now (read-only, then offline, then no key),
+    /// in `UnavailableText`'s words; nil when one can be sent.
+    public func aiBlocker(for document: BookDocument) -> String? {
+        UnavailableText.blocker(isEditable: document.isEditable, isOnline: isOnline, hasKey: hasOpenAIKey)
     }
 }

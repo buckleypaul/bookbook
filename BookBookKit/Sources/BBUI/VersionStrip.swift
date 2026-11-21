@@ -53,11 +53,11 @@ struct VersionStrip: View {
                 Text("Aa")
                     .font(style.styling.font.map { Font.custom($0.postScriptName, size: 20) } ?? .system(size: 20))
                     .foregroundStyle(style.styling.color.map {
-                        Color(.sRGB, red: $0.red, green: $0.green, blue: $0.blue, opacity: $0.alpha)
+                        $0.swiftUIColor
                     } ?? Crayon.ink)
                     .padding(4)
                     .background(style.styling.background.map {
-                        Color(.sRGB, red: $0.red, green: $0.green, blue: $0.blue, opacity: $0.alpha)
+                        $0.swiftUIColor
                     } ?? .clear, in: RoundedRectangle(cornerRadius: 4))
             }
         } else {

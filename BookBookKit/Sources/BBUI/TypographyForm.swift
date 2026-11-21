@@ -147,7 +147,7 @@ struct TypographyForm: View {
                 }
             })) {
             if family == nil { Text("\(name) (missing)").tag(name) }
-            ForEach(FontFamilies.all, id: \.self) { Text($0).tag($0) }
+            ForEach(FontFamilies.all(revision: document.fontsRevision), id: \.self) { Text($0).tag($0) }
         }
         .labelsHidden()
         .frame(width: 240, alignment: .leading)

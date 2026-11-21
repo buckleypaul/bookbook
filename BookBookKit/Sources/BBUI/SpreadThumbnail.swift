@@ -9,13 +9,14 @@ import SwiftUI
 @MainActor
 final class PageThumbnailRenderer {
     /// What `PageRenderer` reads to draw a page at the thumbnail target: the template, the
-    /// page's text and placed images, the style's typography, page setup and page-number style,
+    /// page's text, placed images and AI text styles, the style's typography, page setup and page-number style,
     /// and the cover's bound title and author. The rest of the style (description, guidance,
     /// references) and of the page (status, asset list, flag baselines) never shows.
     private struct Key: Hashable {
         var template: Template?
         var text: [BoxID: RichText]
         var images: [BoxID: PlacedImage]
+        var textStyles: [BoxID: StyledText]
         var typography: Typography
         var pageSetup: PageSetup
         var pageNumbers: PageNumberStyle
@@ -33,6 +34,12 @@ final class PageThumbnailRenderer {
                                           placement: placement)
             }
             self.images = images
+            var textStyles: [BoxID: StyledText] = [:]
+            for box in page.textStyles.keys {
+                guard let applied = content.appliedTextStyle(page: page.id, box: box) else { continue }
+                textStyles[box] = StyledText(styling: applied.styling, decoration: applied.decoration)
+            }
+            self.textStyles = textStyles
             typography = content.style.typography
             pageSetup = content.style.pageSetup
             pageNumbers = content.style.pageNumbers
@@ -46,6 +53,12 @@ final class PageThumbnailRenderer {
     private struct PlacedImage: Hashable {
         var image: ImageRef?
         var placement: ImagePlacement
+    }
+
+    /// A text box's AI text style as drawn: its typography and its decoration picture.
+    private struct StyledText: Hashable {
+        var styling: TextStyling
+        var decoration: ImageRef?
     }
 
     private let images: any PageImageSource

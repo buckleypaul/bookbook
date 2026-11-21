@@ -64,11 +64,11 @@ struct CommitField: View {
     }
 }
 
+private typealias Align = BBModel.TextAlignment
+
 /// The trailing inspector of the Layouts tab: the selected box's frame, rotation, corner radius,
 /// bleed edges and text style. Every edit is a `model.update` (one undo step) or, for sliders,
 /// colour wells and steppers, one interaction.
-private typealias Align = BBModel.TextAlignment
-
 struct BoxInspector: View {
     let model: TemplateEditorModel
     /// The open slider drag's interaction token. An undo mid-drag ends the interaction; the
@@ -121,67 +121,55 @@ struct BoxInspector: View {
         .crayonPaper()
     }
 
+    /// One change to the box `id`, named `name` for Undo: a `model.update`, or a
+    /// `model.updateContinuously` when `continuous` (colour wells and steppers).
+    private func edit(_ id: BoxID, _ name: String, continuous: Bool = false, _ change: @escaping (inout Box) -> Void) {
+        let body: (inout Template) -> Void = { t in
+            if let i = t.boxes.firstIndex(where: { $0.id == id }) { change(&t.boxes[i]) }
+        }
+        if continuous { model.updateContinuously(actionName: name, body) } else { model.update(actionName: name, body) }
+    }
+
     private func single(_ box: Box, geometry: PageGeometry) -> some View {
         let id = box.id
         let rect = geometry.trimRect(for: box.frame)
-        func edit(_ name: String, continuous: Bool = false, _ change: @escaping (inout Box) -> Void) {
-            let body: (inout Template) -> Void = { t in
-                if let i = t.boxes.firstIndex(where: { $0.id == id }) { change(&t.boxes[i]) }
-            }
-            if continuous { model.updateContinuously(actionName: name, body) } else { model.update(actionName: name, body) }
-        }
-        func setRect(_ name: String, _ change: @escaping (inout CGRect) -> Void) {
-            edit(name) { b in
-                var r = geometry.trimRect(for: b.frame)
-                change(&r)
-                b.frame = geometry.normalizedFrame(for: r)
-            }
-        }
         return Form {
             Section {
-                // The same field width and unit column as the Shape sliders, so the fields line up.
-                LabeledContent("X") {
-                    unitField(CommitField(title: "X", value: rect.minX) { v in setRect("Move Box") { $0.origin.x = v } }, unit: "pt")
+                frameRow("X", value: rect.minX, action: "Move Box", box: id, geometry: geometry) { $0.origin.x = $1 }
+                frameRow("Y", value: rect.minY, action: "Move Box", box: id, geometry: geometry) { $0.origin.y = $1 }
+                frameRow("Width", value: rect.width, action: "Resize Box", box: id, geometry: geometry) {
+                    $0.size.width = max(1, $1)
                 }
-                LabeledContent("Y") {
-                    unitField(CommitField(title: "Y", value: rect.minY) { v in setRect("Move Box") { $0.origin.y = v } }, unit: "pt")
-                }
-                LabeledContent("Width") {
-                    unitField(CommitField(title: "Width", value: rect.width) { v in
-                        setRect("Resize Box") { $0.size.width = max(1, v) }
-                    }, unit: "pt")
-                }
-                LabeledContent("Height") {
-                    unitField(CommitField(title: "Height", value: rect.height) { v in
-                        setRect("Resize Box") { $0.size.height = max(1, v) }
-                    }, unit: "pt")
+                frameRow("Height", value: rect.height, action: "Resize Box", box: id, geometry: geometry) {
+                    $0.size.height = max(1, $1)
                 }
             } header: {
                 CrayonHeader("Frame", color: Crayon.sky)
             }
             Section {
-                slider("Rotation", value: box.rotationDegrees, range: -180...180, unit: "°", action: "Rotate Box") { b, v in
+                slider("Rotation", value: box.rotationDegrees, range: -180...180, unit: "°", action: "Rotate Box", box: id) { b, v in
                     b.rotationDegrees = v
-                } edit: { name, body in edit(name, body) }
-                slider("Corner radius", value: box.cornerRadius, range: 0...120, unit: "pt", action: "Change Corner Radius") { b, v in
+                }
+                slider("Corner radius", value: box.cornerRadius, range: 0...120, unit: "pt", action: "Change Corner Radius",
+                       box: id) { b, v in
                     b.cornerRadius = max(0, v)
-                } edit: { name, body in edit(name, body) }
+                }
             } header: {
                 CrayonHeader("Shape", color: Crayon.grape)
             }
             Section {
                 let all = box.bleedEdges == .all
                 Toggle("All", isOn: Binding(get: { all }, set: { on in
-                    edit("Change Full Bleed") { $0.bleedEdges = on ? .all : [] }
+                    edit(id, "Change Full Bleed") { $0.bleedEdges = on ? .all : [] }
                 }))
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                     GridRow {
-                        edgeToggle("Top", .top, box, edit)
-                        edgeToggle("Left", .leading, box, edit)
+                        edgeToggle("Top", .top, box)
+                        edgeToggle("Left", .leading, box)
                     }
                     GridRow {
-                        edgeToggle("Bottom", .bottom, box, edit)
-                        edgeToggle("Right", .trailing, box, edit)
+                        edgeToggle("Bottom", .bottom, box)
+                        edgeToggle("Right", .trailing, box)
                     }
                 }
                 .toggleStyle(.checkbox)
@@ -190,7 +178,7 @@ struct BoxInspector: View {
                 CrayonHeader("Full bleed", color: Crayon.grass)
             }
             if case let .text(style) = box.content {
-                textSection(style, edit: edit)
+                textSection(style, box: id)
             }
         }
         .formStyle(.grouped)
@@ -198,27 +186,40 @@ struct BoxInspector: View {
         .crayonPaper()
     }
 
-    private func edgeToggle(_ title: String, _ edge: EdgeSet, _ box: Box,
-                            _ edit: @escaping (String, Bool, @escaping (inout Box) -> Void) -> Void) -> some View {
+    /// One Frame row: a point field that sets one part of the box's rect on the trimmed page. The
+    /// same field width and unit column as the Shape sliders, so the fields line up.
+    private func frameRow(_ title: String, value: Double, action: String, box id: BoxID, geometry: PageGeometry,
+                          set: @escaping (inout CGRect, Double) -> Void) -> some View {
+        LabeledContent(title) {
+            unitField(CommitField(title: title, value: value) { v in
+                edit(id, action) { b in
+                    var r = geometry.trimRect(for: b.frame)
+                    set(&r, v)
+                    b.frame = geometry.normalizedFrame(for: r)
+                }
+            }, unit: "pt")
+        }
+    }
+
+    private func edgeToggle(_ title: String, _ edge: EdgeSet, _ box: Box) -> some View {
         Toggle(title, isOn: Binding(get: { box.bleedEdges.contains(edge) }, set: { on in
-            edit("Change Full Bleed", false) { if on { $0.bleedEdges.insert(edge) } else { $0.bleedEdges.remove(edge) } }
+            edit(box.id, "Change Full Bleed") { if on { $0.bleedEdges.insert(edge) } else { $0.bleedEdges.remove(edge) } }
         }))
     }
 
     private func slider(_ title: String, value: Double, range: ClosedRange<Double>, unit: String, action: String,
-                        apply: @escaping (inout Box, Double) -> Void,
-                        edit: @escaping (String, @escaping (inout Box) -> Void) -> Void) -> some View {
+                        box id: BoxID, apply: @escaping (inout Box, Double) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             // Baseline-aligned, so the unit ("°" or "pt") sits on the same line as the number.
             HStack(alignment: .firstTextBaseline) {
                 Text(title).lineLimit(1).fixedSize(horizontal: true, vertical: false).layoutPriority(1)
                 Spacer(minLength: 4)
-                unitField(CommitField(title: title, value: value) { v in edit(action) { apply(&$0, v) } }, unit: unit)
+                unitField(CommitField(title: title, value: value) { v in edit(id, action) { apply(&$0, v) } }, unit: unit)
             }
             Slider(value: Binding(get: { min(max(value, range.lowerBound), range.upperBound) },
                                   set: { v in
                                       if let token = sliderInteraction, !model.isInteractionOpen(token) { return }
-                                      edit(action) { apply(&$0, v) }
+                                      edit(id, action) { apply(&$0, v) }
                                   }),
                    in: range) { editing in
                 if editing {
@@ -243,10 +244,9 @@ struct BoxInspector: View {
         }
     }
 
-    private func textSection(_ style: TextBoxStyle,
-                             edit: @escaping (String, Bool, @escaping (inout Box) -> Void) -> Void) -> some View {
+    private func textSection(_ style: TextBoxStyle, box id: BoxID) -> some View {
         func setStyle(_ name: String, continuous: Bool = false, _ change: @escaping (inout TextBoxStyle) -> Void) {
-            edit(name, continuous) { b in
+            edit(id, name, continuous: continuous) { b in
                 if case var .text(s) = b.content { change(&s); b.content = .text(s) }
             }
         }

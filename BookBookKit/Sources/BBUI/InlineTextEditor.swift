@@ -59,8 +59,9 @@ final class InlineTextEditor: NSObject, NSTextViewDelegate, TextFormatTarget {
     /// How long after the last colour change a burst closes.
     static let colorBurstIdle: Duration = .milliseconds(600)
 
-    /// `typography` is the box's own (`InlineTextEditor.typography(for:base:)`): role-resolved,
-    /// with its style overrides applied, so the editor wraps and styles like the renderer.
+    /// `typography` is the box's own (`TextBoxAppearance.typography`): role-resolved, with its
+    /// style overrides and the page's AI text style applied, so the editor wraps and styles like
+    /// the renderer.
     init(pageID: PageID, boxID: BoxID, text: RichText, typography: Typography,
          formatting: TextFormatController? = nil,
          undoManager: @escaping () -> UndoManager?, onChange: @escaping (RichText, Bool) -> Void) {
@@ -457,18 +458,6 @@ extension InlineTextEditor {
         let attributed = RichTextBridge.attributedString(
             from: RichText(paragraphs: [Paragraph(runs: [run], alignment: alignment)]), typography: typography)
         textView.typingAttributes = attributed.attributes(at: 0, effectiveRange: nil)
-    }
-}
-
-extension InlineTextEditor {
-    /// The typography a text box lays out with, the same as `PageRenderer`'s: the style guide
-    /// resolved for the box's role (title-role boxes use the title font), with the box's style
-    /// overrides on top (A §4.2). The canvas passes this to the editor, so every load, reload
-    /// and format commit in the editor (`RichTextBridge`) matches the rendered page.
-    static func typography(for box: Box, base: Typography) -> Typography {
-        let resolved = base.resolved(for: box.role)
-        guard case let .text(style) = box.content else { return resolved }
-        return resolved.applying(style)
     }
 }
 

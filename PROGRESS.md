@@ -28,6 +28,7 @@ Updated by each phase session (see `implementation-plan.md` §2.6). Phases are l
 | 16 | Import, book settings, onboarding, sample | done (hand checks deferred) | `phase-16-import-onboarding` | — | $0.00 | No live checks listed. Sample book and preset samples are placeholders until you make them. [Log](progress/phase-16-import-onboarding.md) |
 | 16b | Bug fixes and edge cases | done (hand checks deferred) | `phase-16b-bug-fixes` | — | $0.00 | Merged 2026-11-09. 181 follow-ups triaged; 92 fixed. No live checks. [Log](progress/phase-16b-bug-fixes.md) |
 | — | UI polish pass | done (hand checks deferred) | `ui-polish` | — | $0.00 | 2026-11-14. Six audits (five of the code, one of the running app), ten fix lanes, two code reviews and an on-screen check. No live checks. [Log](progress/ui-polish.md) |
+| — | Simplify pass | done (hand checks deferred) | `simplify-pass` | — | $0.00 | 2026-11-21. Whole-codebase quality pass: seven read-only reviews, six fix lanes. Behaviour-preserving refactors only; one bug fixed (stale page thumbnail after an AI text style change). No live checks. [Log](progress/simplify-pass.md) |
 | 17 | Hardening and v1.0 (M5) | not started | | | | |
 
 ## Standing decisions
@@ -135,11 +136,42 @@ An agent ran the app after the fixes and saw the composer, box inspector, overvi
 - An enabled sunflower or bubblegum button (e.g. the save-error Try Again) has readable dark text; Settings ▸ API Keys and Models in Dark Mode.
 - Opening a book that another copy of BookBook has locked shows one message with Open Read-Only, Open Anyway… and Close, and Open Anyway… shows its confirmation.
 
+### Simplify pass (2026-11-21)
+Refactors meant to change nothing on screen; nothing here was looked at in the running app.
+- Session panel and text-style panel: header with its "Session actions" menu, intro and message bubbles, and Version details look as before; after Reset Session ▸ Keep Versions no version is the base until one is clicked.
+- Read-only, offline and no-key states still disable Generate, Regenerate, Fix, Check Consistency and the Layouts chat, with the same explanation text.
+- Escape closes the Export, Page Numbers, Typography and image-preview sheets (each now relies on its footer's Escape binding).
+- The two real-person notice sheets look as before.
+- Style tab ▸ Edit Typography… opens the Typography sheet (now the window's one sheet).
+- Box inspector: X/Y/Width/Height, rotation, corner radius and the bleed toggles edit as before and Edit ▸ Undo shows the same action names.
+- Duplicate from the library selects the copy; Duplicate from the book switcher opens it.
+- Cancel an export, then a print: progress resets each time.
+- Format bar font menu lists a book's imported fonts after opening it, and a font imported in another open book appears.
+- Region editor: the brush ring leaves no trails when moved quickly in and out of the picture; the lasso shows no ring.
+- Pages overview and sidebar: a page's thumbnail updates when an AI text style is chosen or removed.
+- `make install` (Makefile change, still uncommitted at the end of the pass).
+
 ## Open follow-ups
 
 Collected from the finished phase logs. Remove an item when it is done; add new ones from the running phase.
 
 ### Phase 17
+- Simplify pass 2026-11-21, found by the reviews and not applied (detail in the [log](progress/simplify-pass.md)):
+  - BBUI exports about 780 `public` declarations; the app uses about a dozen types. Narrowing it is mechanical but touches every BBUI file.
+  - Images are decoded synchronously on the main actor in canvas draws and view bodies (`ImageCache.image`); `ImageCache` is bounded by count, not bytes; the library thumbnail is rendered and PNG-encoded on the main actor.
+  - The page canvas redraws on every `updateNSView`, including every keystroke (`PlacementController.update`).
+  - Each journaled save issues one `F_FULLFSYNC` per file plus four more; two barriers would give the same guarantee. Needs a durability review, not a refactor.
+  - The four panel cost-estimate caches (`EstimateKey`) are hand-synced and disagree; `SessionPanel`'s omits book content, so a changed checklist or style reference leaves its estimate stale.
+  - `DirtySet.formUnion` merges pages and templates in a different order from assets (an ID both written and deleted ends up in different sets).
+  - `PageRenderer.textRect` has no fallback when padding is at least half the box (draws nothing and reports overflow), while the editor falls back to the whole rect.
+  - Label-on-fill contrast is plumbed through `@Environment(\.colorScheme)` at nine call sites; an adaptive `Crayon.label(on:)` would remove it.
+  - `TemplateEditorModel` watches `NSUndoManager` to cover a gap in the document's undo groups (an undo before a group's first edit never reaches `onClosedByReplay`).
+  - The content-address hash is computed separately in BBStore and BBAI and must agree; the only shared home is BBModel, which would need CryptoKit (a "Foundation only" rule call).
+  - `FixtureRecorder` and `FixtureHTTPClient` (test-only) ship in BBNet and are linked into the app.
+  - Test-only production API, e.g. `AppModel.generate(prompt:)`, `createBook(title:thenImportStory:)`, `BookDocument.chooseAssetImage`, strict `CostLedger.records`.
+  - Read-only wording differs from `UnavailableText.readOnly` in `BookDocument+ImageImport`, `TextStyleModel` and `TemplateChatModel`; `StatusText` has a second `ProviderError` wording with "OpenAI" hard-coded; the Gemini display name differs between `VersionDetailsContent` and `RefusalAdvisor`.
+  - `architecture.md` §6.4 says `BookWriter.apply` writes deliveries; the work is in `OpenBooks.deliver`.
+  - `scripts/test.sh` still builds and tests the Phase 0 `Spikes` package on every run.
 - UI polish 2026-11-14, left for a product call (the pass fixed only unambiguous polish; detail in the [log](progress/ui-polish.md)):
   - A read-only book's canvas ignores clicks, so boxes can't be selected to look at their versions or Version details.
   - The sidebar numbers story pages by position ("Page 4") while the overview and the canvas show printed numbers; after a spread or with Start at ≠ 1 they disagree.

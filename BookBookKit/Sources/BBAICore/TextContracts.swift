@@ -14,7 +14,7 @@ public enum TextModelKind: String, Codable, Sendable {
 }
 
 /// A text or vision model from `ModelCatalog.json` (`kind: text | vision`).
-public struct CatalogTextModel: Hashable, Codable, Sendable {
+public struct CatalogTextModel: Hashable, Sendable {
     public var provider: ProviderID
     public var id: String
     public var displayName: String
@@ -44,7 +44,7 @@ public struct CatalogTextModel: Hashable, Codable, Sendable {
 }
 
 /// A §7.8: warn on at least `warnOnMajor` major differences, or at least `warnOnMinor` minor ones.
-public struct ConsistencyThresholds: Hashable, Codable, Sendable {
+public struct ConsistencyThresholds: Hashable, Sendable {
     public var warnOnMajor: Int
     public var warnOnMinor: Int
 

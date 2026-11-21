@@ -8,7 +8,7 @@ import Foundation
 
 /// One image model from `ModelCatalog.json`, with `copyCapabilitiesFrom` already resolved
 /// by `BBAI.ModelCatalog` (A §7.1).
-public struct CatalogModel: Hashable, Codable, Sendable {
+public struct CatalogModel: Hashable, Sendable {
     public var provider: ProviderID
     public var id: String
     public var displayName: String
@@ -41,7 +41,7 @@ public enum ModelStatus: String, Codable, Sendable {
     case current, deprecated, retired
 }
 
-public struct ImageCapabilities: Hashable, Codable, Sendable {
+public struct ImageCapabilities: Hashable, Sendable {
     public var maxReferenceImages: Int
     /// Per-image upload cap (OpenAI: 50 MB, SP-5).
     public var maxImageBytes: Int
@@ -67,26 +67,9 @@ public struct ImageCapabilities: Hashable, Codable, Sendable {
         self.aspect = aspect
         self.quality = quality
     }
-
-    private enum CodingKeys: String, CodingKey {
-        case maxReferenceImages, maxImageBytes, maxRequestBytes, supportsMask, supportsTransparentBackground,
-             nativeMultiTurn, aspect, quality
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        maxReferenceImages = try c.decode(Int.self, forKey: .maxReferenceImages)
-        maxImageBytes = try c.decode(Int.self, forKey: .maxImageBytes)
-        maxRequestBytes = try c.decode(Int.self, forKey: .maxRequestBytes)
-        supportsMask = try c.decode(Bool.self, forKey: .supportsMask)
-        supportsTransparentBackground = try c.decodeIfPresent(Bool.self, forKey: .supportsTransparentBackground) ?? false
-        nativeMultiTurn = try c.decode(Bool.self, forKey: .nativeMultiTurn)
-        aspect = try c.decode(AspectRule.self, forKey: .aspect)
-        quality = try c.decode([QualityLevel: QualityMapping].self, forKey: .quality)
-    }
 }
 
-public enum AspectRule: Hashable, Codable, Sendable {
+public enum AspectRule: Hashable, Sendable {
     /// Free-size models (OpenAI). Sides are multiples of `multipleOf`.
     case free(minRatio: Double, maxRatio: Double, multipleOf: Int, minPixels: Int, maxPixels: Int,
               experimentalAbovePixels: Int?)
@@ -114,8 +97,8 @@ public struct QualityMapping: Hashable, Codable, Sendable {
 // MARK: - Request / result
 
 /// Structured prompt sections (A §7.3), rendered per provider.
-public struct ComposedPrompt: Hashable, Codable, Sendable {
-    public struct Section: Hashable, Codable, Sendable {
+public struct ComposedPrompt: Hashable, Sendable {
+    public struct Section: Hashable, Sendable {
         /// Stable key, e.g. `role`, `style`, `avoid`, `composition`, `story`, `request`.
         public var key: String
         public var text: String
@@ -136,7 +119,7 @@ public struct ComposedPrompt: Hashable, Codable, Sendable {
 
 /// The requested output shape: the box aspect. The adapter picks the concrete size with
 /// `AspectFitter`, unless `exactSize` is set (refinements send the base image's size).
-public struct OutputShape: Hashable, Codable, Sendable {
+public struct OutputShape: Hashable, Sendable {
     /// width / height of the image box.
     public var boxAspect: Double
     public var exactSize: PixelSize?

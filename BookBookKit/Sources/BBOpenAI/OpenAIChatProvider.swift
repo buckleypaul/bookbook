@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// consistency (vision) requests (architecture.md §7.7, §7.8, §7.13; plan P-5): `store: false`,
 /// strict `json_schema`.
 public struct OpenAIChatProvider: LayoutProvider, VisionProvider, TextStyleProvider {
-    public static let defaultBaseURL = OpenAIImageProvider.defaultBaseURL
+    public static let defaultBaseURL = OpenAIConnection.defaultBaseURL
 
     public var id: ProviderID { .openai }
 
@@ -111,9 +111,9 @@ public struct OpenAIChatProvider: LayoutProvider, VisionProvider, TextStyleProvi
         let response = try await connection.send("POST", "chat/completions", contentType: "application/json",
                                                  body: data, key: key)
 
+        let root = try OpenAIConnection.jsonRoot(of: response, key: key)
         let raw = OpenAIErrorMapper.raw(response, code: nil, key: key)
-        guard let root = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
-              let choice = (root["choices"] as? [[String: Any]])?.first else {
+        guard let choice = (root["choices"] as? [[String: Any]])?.first else {
             throw .unknown(raw)
         }
         let message = choice["message"] as? [String: Any]

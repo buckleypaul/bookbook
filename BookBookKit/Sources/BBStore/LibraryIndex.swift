@@ -217,7 +217,7 @@ public actor LibraryIndex {
         guard first.hasSuffix(".bookbook") else { return false }
         switch rel.count {
         case 1: return true
-        case 2: return rel.last == "book.json" || rel.last == "thumbnail.png"
+        case 2: return rel.last.map { $0 == PackageCoding.bookPath || $0 == PackageCoding.thumbnailName } ?? false
         default: return false
         }
     }

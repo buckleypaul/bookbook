@@ -20,12 +20,25 @@ public enum Presets {
     /// Every bundled template. Phase 2 ships two with fixed IDs: the story template
     /// "Image above text" and a cover template.
     public static func templates() throws(StoreError) -> [Template] {
-        guard let url = Bundle.module.url(forResource: "TemplatePresets", withExtension: "json",
-                                          subdirectory: "Presets") else {
-            throw StoreError.notFound("Presets/TemplatePresets.json")
+        try bundledTemplates.get()
+    }
+
+    /// The bundled files never change while the app runs, so each is read and decoded once.
+    private static let bundledTemplates = Result { () throws(StoreError) -> [Template] in
+        try PackageCoding.decode([Template].self, from: bundledData("TemplatePresets"), what: "TemplatePresets.json")
+    }
+
+    private static let bundledStylePresets = Result { () throws(StoreError) -> [StylePreset] in
+        try PackageCoding.decode(StylePresetFile.self, from: bundledData("StylePresets"),
+                                 what: "StylePresets.json").presets
+    }
+
+    /// The bytes of `Presets/<name>.json` in the BBStore bundle.
+    private static func bundledData(_ name: String) throws(StoreError) -> Data {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Presets") else {
+            throw StoreError.notFound("Presets/\(name).json")
         }
-        let data = try PackageCoding.io("read presets") { try Data(contentsOf: url) }
-        return try PackageCoding.decode([Template].self, from: data, what: "TemplatePresets.json")
+        return try PackageCoding.io("read presets") { try Data(contentsOf: url) }
     }
 
     /// "Image on top, text below" (Phase 2's one story template).
@@ -86,15 +99,22 @@ public struct StylePreset: Hashable, Codable, Sendable, Identifiable {
     }
 }
 
+extension StyleVisual {
+    /// These visual fields with `preset` chosen: its ID and description, and its negative
+    /// guidance (the default when it has none). References are kept.
+    public func applying(_ preset: StylePreset) -> StyleVisual {
+        var copy = self
+        copy.presetID = preset.id
+        copy.visualDescription = preset.visualDescription
+        copy.negativeGuidance = preset.negativeGuidance ?? StyleGuide.defaultNegativeGuidance
+        return copy
+    }
+}
+
 extension Presets {
     /// The bundled style presets, in menu order (decoded from `Presets/StylePresets.json`).
     public static func stylePresets() throws(StoreError) -> [StylePreset] {
-        guard let url = Bundle.module.url(forResource: "StylePresets", withExtension: "json",
-                                          subdirectory: "Presets") else {
-            throw StoreError.notFound("Presets/StylePresets.json")
-        }
-        let data = try PackageCoding.io("read presets") { try Data(contentsOf: url) }
-        return try PackageCoding.decode(StylePresetFile.self, from: data, what: "StylePresets.json").presets
+        try bundledStylePresets.get()
     }
 
     private struct StylePresetFile: Decodable {

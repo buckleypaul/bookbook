@@ -36,20 +36,19 @@ extension Library {
             if opened.count > 1 { continue }
             let keeper = opened.first ?? Self.keeper(in: group, preferred: known[id])
             for entry in group where !Self.samePackage(entry.url, keeper.url) {
-                let store = BookStore(packageURL: entry.url)
-                do throws(StoreError) {
-                    if case .heldByOther = try await store.acquireLockExclusively() { continue }
-                    var content = try await store.load()
-                    if content.book.id == id {
-                        content.book.id = BookID()
-                        try await store.save(content, dirty: DirtySet(book: true))
-                        var updated = entry
-                        updated.id = content.book.id
-                        changed.append(updated)
-                    }
-                    await store.releaseLock()
-                } catch {
-                    await store.releaseLock()
+                // Locked, unreadable or unwritable: skipped (retried on the next call).
+                let newID = try? await BookStore(packageURL: entry.url).withLock(exclusively: true) {
+                    store throws(StoreError) -> BookID? in
+                    var content = try store.load()
+                    guard content.book.id == id else { return nil }
+                    content.book.id = BookID()
+                    try store.save(content, dirty: DirtySet(book: true))
+                    return content.book.id
+                }
+                if let newID {
+                    var updated = entry
+                    updated.id = newID
+                    changed.append(updated)
                 }
             }
         }

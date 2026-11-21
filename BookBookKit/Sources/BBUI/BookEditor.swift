@@ -221,6 +221,7 @@ struct BookEditor: View {
                 LayoutsDetail(document: document, model: layouts, images: images)
             } else if sidebarTab == .style {
                 StyleTab(document: document, model: styleModel, section: styleSection, scrollRequest: styleScrollRequest,
+                         onEditTypography: { showTypography = true },
                          onEditPageNumbers: { [pages] in pages.sheet = .pageNumbers })
             } else {
             switch pages.mode {

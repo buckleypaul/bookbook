@@ -136,26 +136,6 @@ extension AppModel {
                                 checkConsistency: preferences.consistencyCheckEnabled, versionSource: .consistencyFix)
     }
 
-    /// The estimate for a prepared intent (e.g. `consistencyFixIntent`), including its
-    /// consistency follow-up when `intent.checkConsistency` is true.
-    public func estimate(for intent: GenerationIntent, target: GenerationTarget, in document: BookDocument) -> CostEstimate {
-        estimate(intent, target: target, content: document.content)
-    }
-
-    /// Appends the pending message and enqueues a prepared intent unchanged (its
-    /// `versionSource` and `checkConsistency` included), like `generate`. Callers run the cost
-    /// and real-person checks first. False if the message is empty, the target is gone, the
-    /// book is read-only, or it would send a real-person photo whose notice the book hasn't
-    /// acknowledged (`realPersonNoticeNeeded(intent:target:in:)`, A §11).
-    @discardableResult
-    public func enqueueGeneration(_ intent: GenerationIntent, target: GenerationTarget,
-                                  in document: BookDocument) -> Bool {
-        guard !intent.messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        let (message, item) = BookMutations.makeGeneration(intent: intent, bookID: document.id, target: target,
-                                                           now: now())
-        return enqueue(message, prepared(item, content: document.content), in: document)
-    }
-
     /// Hides (or shows again) a version's consistency warning (PD §8.9). Not undoable, like
     /// starring. False if nothing changed.
     @discardableResult

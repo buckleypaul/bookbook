@@ -41,6 +41,14 @@ public enum DraftAllPlanner {
     }
 }
 
+/// Queue labels for asset targets: the asset's name, then "Image".
+enum AssetQueueDisplay {
+    static func display(_ owner: SessionOwner, in content: BookContent) -> QueueItemDisplay {
+        QueueItemDisplay(bookTitle: content.book.title, pageLabel: BookDocument.ownerLabel(owner, in: content),
+                         boxLabel: "Image")
+    }
+}
+
 /// Names for text boxes in the styling UI.
 enum TextStyleLabels {
     /// "Title", "Author", or "Text" / "Text 2" for the n-th plain text box.
